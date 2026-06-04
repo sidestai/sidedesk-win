@@ -1,0 +1,36 @@
+﻿<local:AppBarWindow x:Class="SideDesk.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:SideDesk"
+        mc:Ignorable="d"
+        Title="SideDesk"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Topmost="True"
+        AllowDrop="True"
+        Drop="Window_Drop"
+        DragEnter="Window_DragEnter"
+        Background="#FF4444">
+    <Grid>
+        <Border Background="#FF4444">
+            <TextBlock Text="SideDesk" 
+                       HorizontalAlignment="Center" 
+                       VerticalAlignment="Center"
+                       FontSize="16" 
+                       Foreground="White"/>
+        </Border>
+        <Button Content="✕" 
+                HorizontalAlignment="Right" 
+                VerticalAlignment="Top"
+                Width="30" Height="30"
+                FontSize="14"
+                Background="Transparent"
+                Foreground="White"
+                BorderThickness="0"
+                Cursor="Hand"
+                Click="CloseButton_Click"/>
+    </Grid>
+</local:AppBarWindow>
