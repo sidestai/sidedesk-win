@@ -7,15 +7,9 @@ namespace SideDesk
     public partial class App : Application
     {
         public LayoutMode CurrentLayout { get; private set; } = LayoutMode.Left;
+        public Settings AppSettings { get; private set; } = new();
 
-        /// <summary>
-        /// A屏网址（默认屏）
-        /// </summary>
         public string ScreenAUrl { get; set; } = "https://www.baidu.com";
-
-        /// <summary>
-        /// B屏网址
-        /// </summary>
         public string ScreenBUrl { get; set; } = "https://www.bing.com";
 
         private MainWindow? _leftWindow;
@@ -24,7 +18,10 @@ namespace SideDesk
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
-            SwitchLayout(LayoutMode.Left);
+
+            // 加载上次保存的设置
+            AppSettings = Settings.Load();
+            SwitchLayout(AppSettings.Layout, AppSettings.LeftScreen, AppSettings.RightScreen, save: false);
         }
 
         public string GetUrlForScreen(ScreenType screen)
@@ -37,6 +34,14 @@ namespace SideDesk
         /// </summary>
         public void SwitchLayout(LayoutMode mode)
         {
+            // 默认屏幕分配：单窗口显示 A，双侧左A右B
+            ScreenType left = ScreenType.A;
+            ScreenType right = mode == LayoutMode.Both ? ScreenType.B : ScreenType.A;
+            SwitchLayout(mode, left, right, save: true);
+        }
+
+        public void SwitchLayout(LayoutMode mode, ScreenType leftScreen, ScreenType rightScreen, bool save)
+        {
             CloseWindow(ref _leftWindow);
             CloseWindow(ref _rightWindow);
 
@@ -45,22 +50,36 @@ namespace SideDesk
             switch (mode)
             {
                 case LayoutMode.Left:
-                    _leftWindow = CreatePanel(DockEdge.Left, ScreenType.A);
+                    _leftWindow = CreatePanel(DockEdge.Left, leftScreen);
                     break;
 
                 case LayoutMode.Right:
-                    _rightWindow = CreatePanel(DockEdge.Right, ScreenType.A);
+                    _rightWindow = CreatePanel(DockEdge.Right, rightScreen);
                     break;
 
                 case LayoutMode.Both:
-                    _leftWindow = CreatePanel(DockEdge.Left, ScreenType.A);
-                    _rightWindow = CreatePanel(DockEdge.Right, ScreenType.B);
+                    _leftWindow = CreatePanel(DockEdge.Left, leftScreen);
+                    _rightWindow = CreatePanel(DockEdge.Right, rightScreen);
                     break;
             }
+
+            if (save) SaveState();
+        }
+
+        /// <summary>
+        /// 保存当前状态
+        /// </summary>
+        public void SaveState()
+        {
+            AppSettings.Layout = CurrentLayout;
+            AppSettings.LeftScreen = _leftWindow?.CurrentScreen ?? ScreenType.A;
+            AppSettings.RightScreen = _rightWindow?.CurrentScreen ?? ScreenType.B;
+            AppSettings.Save();
         }
 
         public void CloseAll()
         {
+            SaveState();
             CloseWindow(ref _leftWindow);
             CloseWindow(ref _rightWindow);
             Shutdown();

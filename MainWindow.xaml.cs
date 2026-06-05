@@ -9,6 +9,8 @@ namespace SideDesk
     {
         private ScreenType _currentScreen;
 
+        public ScreenType CurrentScreen => _currentScreen;
+
         public MainWindow(DockEdge side, ScreenType screen)
         {
             InitializeComponent();
@@ -64,6 +66,7 @@ namespace SideDesk
             _currentScreen = ScreenType.A;
             UpdateTitle();
             NavigateToCurrentScreen();
+            ((App)Application.Current).SaveState();
         }
 
         private void SwitchToScreenB(object sender, RoutedEventArgs e)
@@ -71,6 +74,7 @@ namespace SideDesk
             _currentScreen = ScreenType.B;
             UpdateTitle();
             NavigateToCurrentScreen();
+            ((App)Application.Current).SaveState();
         }
 
         #endregion
