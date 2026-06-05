@@ -7,28 +7,32 @@ namespace SideDesk
 {
     public partial class MainWindow : AppBarWindow
     {
-        public MainWindow()
+        private ScreenType _currentScreen;
+
+        public MainWindow(DockEdge side, ScreenType screen)
         {
             InitializeComponent();
 
+            _currentScreen = screen;
+
             // 配置 AppBar
-            DockSide = DockEdge.Left;   // 停靠在左侧
-            AppBarWidth = 205;          // 宽度 205 物理像素
-            ScreenIndex = 0;            // 主显示器
+            DockSide = side;
+            AppBarWidth = 205;
+            ScreenIndex = 0;
 
             Loaded += MainWindow_Loaded;
         }
 
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            // 窗口加载后注册 AppBar
             RegisterAppBar();
+            UpdateTitle();
 
             // 初始化 WebView2
             try
             {
                 await webView.EnsureCoreWebView2Async();
-                webView.CoreWebView2.Navigate("https://www.baidu.com");
+                NavigateToCurrentScreen();
             }
             catch (Exception ex)
             {
@@ -36,16 +40,64 @@ namespace SideDesk
             }
         }
 
+        private void NavigateToCurrentScreen()
+        {
+            var app = (App)Application.Current;
+            string url = app.GetUrlForScreen(_currentScreen);
+            webView.CoreWebView2?.Navigate(url);
+        }
+
+        private void UpdateTitle()
+        {
+            titleText.Text = $"SideDesk [{_currentScreen}]";
+        }
+
         private void CloseButton_Click(object sender, RoutedEventArgs e)
         {
-            // 先注销 AppBar 释放屏幕空间，再关闭窗口
-            UnregisterAppBar();
-            Close();
+            ((App)Application.Current).CloseAll();
         }
+
+        #region 屏幕切换
+
+        private void SwitchToScreenA(object sender, RoutedEventArgs e)
+        {
+            _currentScreen = ScreenType.A;
+            UpdateTitle();
+            NavigateToCurrentScreen();
+        }
+
+        private void SwitchToScreenB(object sender, RoutedEventArgs e)
+        {
+            _currentScreen = ScreenType.B;
+            UpdateTitle();
+            NavigateToCurrentScreen();
+        }
+
+        #endregion
+
+        #region 布局切换菜单
+
+        private void Layout_Left(object sender, RoutedEventArgs e)
+        {
+            ((App)Application.Current).SwitchLayout(LayoutMode.Left);
+        }
+
+        private void Layout_Right(object sender, RoutedEventArgs e)
+        {
+            ((App)Application.Current).SwitchLayout(LayoutMode.Right);
+        }
+
+        private void Layout_Both(object sender, RoutedEventArgs e)
+        {
+            ((App)Application.Current).SwitchLayout(LayoutMode.Both);
+        }
+
+        #endregion
+
+        #region 拖拽支持
 
         private void Window_DragEnter(object sender, DragEventArgs e)
         {
-            // 拖拽进入时显示复制指针
             if (e.Data.GetDataPresent(DataFormats.FileDrop) || e.Data.GetDataPresent(DataFormats.Text))
             {
                 e.Effects = DragDropEffects.Copy;
@@ -59,7 +111,6 @@ namespace SideDesk
 
         private void Window_Drop(object sender, DragEventArgs e)
         {
-            // 处理拖放的文件
             if (e.Data.GetDataPresent(DataFormats.FileDrop))
             {
                 string[] files = (string[])e.Data.GetData(DataFormats.FileDrop)!;
@@ -67,7 +118,6 @@ namespace SideDesk
                 {
                     Debug.WriteLine($"[Drop] 文件: {file}");
                 }
-
                 MessageBox.Show($"拖入了 {files.Length} 个文件:\n{string.Join("\n", files)}",
                     "SideDesk", MessageBoxButton.OK, MessageBoxImage.Information);
             }
@@ -76,8 +126,9 @@ namespace SideDesk
                 string text = (string)e.Data.GetData(DataFormats.Text)!;
                 Debug.WriteLine($"[Drop] 文本: {text}");
             }
-
             e.Handled = true;
         }
+
+        #endregion
     }
 }

@@ -2,30 +2,84 @@
 
 namespace SideDesk
 {
+    public enum ScreenType { A, B }
+
     public partial class App : Application
     {
+        public LayoutMode CurrentLayout { get; private set; } = LayoutMode.Left;
+
+        /// <summary>
+        /// A屏网址（默认屏）
+        /// </summary>
+        public string ScreenAUrl { get; set; } = "https://www.baidu.com";
+
+        /// <summary>
+        /// B屏网址
+        /// </summary>
+        public string ScreenBUrl { get; set; } = "https://www.bing.com";
+
+        private MainWindow? _leftWindow;
+        private MainWindow? _rightWindow;
+
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
-            Exit += App_Exit;
-            SessionEnding += App_SessionEnding;
+            SwitchLayout(LayoutMode.Left);
         }
 
-        private void App_Exit(object sender, ExitEventArgs e)
+        public string GetUrlForScreen(ScreenType screen)
         {
-            CleanupAppBar();
+            return screen == ScreenType.A ? ScreenAUrl : ScreenBUrl;
         }
 
-        private void App_SessionEnding(object sender, SessionEndingCancelEventArgs e)
+        /// <summary>
+        /// 切换布局模式
+        /// </summary>
+        public void SwitchLayout(LayoutMode mode)
         {
-            CleanupAppBar();
-        }
+            CloseWindow(ref _leftWindow);
+            CloseWindow(ref _rightWindow);
 
-        private void CleanupAppBar()
-        {
-            if (MainWindow is AppBarWindow appBar)
+            CurrentLayout = mode;
+
+            switch (mode)
             {
-                appBar.UnregisterAppBar();
+                case LayoutMode.Left:
+                    _leftWindow = CreatePanel(DockEdge.Left, ScreenType.A);
+                    break;
+
+                case LayoutMode.Right:
+                    _rightWindow = CreatePanel(DockEdge.Right, ScreenType.A);
+                    break;
+
+                case LayoutMode.Both:
+                    _leftWindow = CreatePanel(DockEdge.Left, ScreenType.A);
+                    _rightWindow = CreatePanel(DockEdge.Right, ScreenType.B);
+                    break;
+            }
+        }
+
+        public void CloseAll()
+        {
+            CloseWindow(ref _leftWindow);
+            CloseWindow(ref _rightWindow);
+            Shutdown();
+        }
+
+        private MainWindow CreatePanel(DockEdge side, ScreenType screen)
+        {
+            var window = new MainWindow(side, screen);
+            window.Show();
+            return window;
+        }
+
+        private void CloseWindow(ref MainWindow? window)
+        {
+            if (window != null)
+            {
+                window.UnregisterAppBar();
+                window.Close();
+                window = null;
             }
         }
     }

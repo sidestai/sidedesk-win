@@ -347,4 +347,11 @@ namespace SideDesk
         Left,
         Right
     }
+
+    public enum LayoutMode
+    {
+        Left,
+        Right,
+        Both
+    }
 }

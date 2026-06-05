@@ -14,18 +14,44 @@
         AllowDrop="True"
         Drop="Window_Drop"
         DragEnter="Window_DragEnter"
-        Background="#FF4444">
+        Background="#222222">
     <Grid>
-        <wv2:WebView2 x:Name="webView" />
-        <Button Content="✕" 
-                HorizontalAlignment="Right" 
-                VerticalAlignment="Top"
-                Width="30" Height="30"
-                FontSize="14"
-                Background="Transparent"
-                Foreground="White"
-                BorderThickness="0"
-                Cursor="Hand"
-                Click="CloseButton_Click"/>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="30"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <Border Grid.Row="0" Background="#333333">
+            <Border.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="切换到 A 屏" Click="SwitchToScreenA"/>
+                    <MenuItem Header="切换到 B 屏" Click="SwitchToScreenB"/>
+                    <Separator/>
+                    <MenuItem Header="居左" Click="Layout_Left"/>
+                    <MenuItem Header="居右" Click="Layout_Right"/>
+                    <MenuItem Header="双侧" Click="Layout_Both"/>
+                    <Separator/>
+                    <MenuItem Header="关闭" Click="CloseButton_Click"/>
+                </ContextMenu>
+            </Border.ContextMenu>
+            <Grid>
+                <TextBlock x:Name="titleText" Text="SideDesk [A]"
+                           HorizontalAlignment="Left"
+                           VerticalAlignment="Center"
+                           Margin="8,0,0,0"
+                           FontSize="12"
+                           Foreground="#AAAAAA"/>
+                <Button Content="✕" 
+                        HorizontalAlignment="Right" 
+                        VerticalAlignment="Center"
+                        Width="30" Height="30"
+                        FontSize="14"
+                        Background="Transparent"
+                        Foreground="White"
+                        BorderThickness="0"
+                        Cursor="Hand"
+                        Click="CloseButton_Click"/>
+            </Grid>
+        </Border>
+        <wv2:WebView2 Grid.Row="1" x:Name="webView" />
     </Grid>
 </local:AppBarWindow>
