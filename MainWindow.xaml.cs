@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Windows;
 using System.Diagnostics;
+using Microsoft.Web.WebView2.Core;
 
 namespace SideDesk
 {
@@ -18,10 +19,21 @@ namespace SideDesk
             Loaded += MainWindow_Loaded;
         }
 
-        private void MainWindow_Loaded(object sender, RoutedEventArgs e)
+        private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
             // 窗口加载后注册 AppBar
             RegisterAppBar();
+
+            // 初始化 WebView2
+            try
+            {
+                await webView.EnsureCoreWebView2Async();
+                webView.CoreWebView2.Navigate("https://www.baidu.com");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[WebView2] 初始化失败: {ex.Message}");
+            }
         }
 
         private void CloseButton_Click(object sender, RoutedEventArgs e)
@@ -54,7 +66,6 @@ namespace SideDesk
                 foreach (var file in files)
                 {
                     Debug.WriteLine($"[Drop] 文件: {file}");
-                    // TODO: 处理拖入的文件
                 }
 
                 MessageBox.Show($"拖入了 {files.Length} 个文件:\n{string.Join("\n", files)}",
@@ -64,7 +75,6 @@ namespace SideDesk
             {
                 string text = (string)e.Data.GetData(DataFormats.Text)!;
                 Debug.WriteLine($"[Drop] 文本: {text}");
-                // TODO: 处理拖入的文本
             }
 
             e.Handled = true;

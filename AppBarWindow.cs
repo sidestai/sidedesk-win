@@ -40,6 +40,7 @@ namespace SideDesk
         private bool _isMoveLocked = false;
         private bool _isPositioning = false;
         private HwndSource? _hwndSource;
+        private IntPtr _registeredHwnd = IntPtr.Zero; // 保存注册时的窗口句柄
 
         #endregion
 
@@ -56,6 +57,7 @@ namespace SideDesk
             if (_hwndSource == null) return;
 
             var hwnd = new WindowInteropHelper(this).Handle;
+            _registeredHwnd = hwnd; // 保存句柄用于关闭时注销
 
             // 注册回调消息
             _callbackMessageId = NativeMethods.RegisterWindowMessage("SideDesk_AppBarMessage");
@@ -88,10 +90,16 @@ namespace SideDesk
 
             _hwndSource?.RemoveHook(AppBarWndProc);
 
-            var hwnd = new WindowInteropHelper(this).Handle;
-            var data = CreateAppBarData(hwnd);
-            NativeMethods.SHAppBarMessage(AppBarMessage.ABM_REMOVE, ref data);
+            // 使用保存的句柄，避免窗口关闭后 Handle 已无效
+            var hwnd = _registeredHwnd != IntPtr.Zero ? _registeredHwnd : new WindowInteropHelper(this).Handle;
+            if (hwnd != IntPtr.Zero)
+            {
+                var data = CreateAppBarData(hwnd);
+                NativeMethods.SHAppBarMessage(AppBarMessage.ABM_REMOVE, ref data);
+                System.Diagnostics.Debug.WriteLine($"[AppBar] ABM_REMOVE called with hwnd={hwnd}");
+            }
 
+            _registeredHwnd = IntPtr.Zero;
             IsAppBarRegistered = false;
         }
 
@@ -196,6 +204,13 @@ namespace SideDesk
             // 禁止 Aero Peek 遮挡
             int excludeFromPeek = 1;
             NativeMethods.DwmSetWindowAttribute(hwnd, 12 /* DWMWA_EXCLUDED_FROM_PEEK */, ref excludeFromPeek, sizeof(int));
+        }
+
+        protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+        {
+            // 确保关闭前释放 AppBar
+            UnregisterAppBar();
+            base.OnClosing(e);
         }
 
         protected override void OnClosed(EventArgs e)

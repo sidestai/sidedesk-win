@@ -4,6 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:SideDesk"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         mc:Ignorable="d"
         Title="SideDesk"
         WindowStyle="None"
@@ -15,13 +16,7 @@
         DragEnter="Window_DragEnter"
         Background="#FF4444">
     <Grid>
-        <Border Background="#FF4444">
-            <TextBlock Text="SideDesk" 
-                       HorizontalAlignment="Center" 
-                       VerticalAlignment="Center"
-                       FontSize="16" 
-                       Foreground="White"/>
-        </Border>
+        <wv2:WebView2 x:Name="webView" />
         <Button Content="✕" 
                 HorizontalAlignment="Right" 
                 VerticalAlignment="Top"
