@@ -9,6 +9,16 @@
              d:DesignHeight="800" d:DesignWidth="205">
     <UserControl.ContextMenu>
         <ContextMenu Opened="ContextMenu_Opened">
+            <MenuItem Header="添加模块">
+                <MenuItem Header="快捷分组" Click="AddQuickGroupPanel_Click"/>
+                <MenuItem Header="便签" Click="AddStickyNotesPanel_Click"/>
+                <MenuItem Header="剪贴板历史" Click="AddClipboardPanel_Click"/>
+                <MenuItem Header="系统信息" Click="AddSystemMonitorPanel_Click"/>
+                <MenuItem Header="使用统计" Click="AddUsageStatsPanel_Click"/>
+                <MenuItem Header="AI 对话" Click="AddAIChatPanel_Click"/>
+                <MenuItem Header="文件区" Click="AddFileAreaPanel_Click"/>
+            </MenuItem>
+            <Separator />
             <MenuItem Header="布局" x:Name="LayoutMenu">
                 <MenuItem Header="左侧停靠" Click="Layout_Left_Click" />
                 <MenuItem Header="右侧停靠" Click="Layout_Right_Click" />
@@ -35,82 +45,18 @@
     </UserControl.ContextMenu>
     <DockPanel x:Name="nativeContent" LastChildFill="True">
         
-        <!-- 顶部标题栏 (DockPanel.Dock="Top", Height=30) -->
-        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Height="30" Margin="5,0">
-            <Label Content="SideDesk" Style="{StaticResource AppTitle}" VerticalAlignment="Center"/>
-            <!-- 间隔 -->
-            <Border Width="15"/>
-            <Button Content="🤖" ToolTip="AI对话" Click="AIChatButton_Click" 
-                    Style="{StaticResource IconButton}" Width="26" Height="26" FontSize="14"/>
-            <Button Content="🎨" ToolTip="主题编辑" Click="ThemeEditorButton_Click" 
-                    Style="{StaticResource IconButton}" Width="26" Height="26" FontSize="14"/>
-            <Button Content="⚙" ToolTip="设置" Click="SettingsButton_Click" 
-                    Style="{StaticResource IconButton}" Width="26" Height="26" FontSize="14"/>
-        </StackPanel>
-        
-        <!-- 添加分组按钮 (DockPanel.Dock="Top") -->
-        <Button DockPanel.Dock="Top" Content="+ 添加分组" Click="AddGroupButton_Click" 
-                Style="{StaticResource SidebarActionButton}" Height="28" Margin="5,3"
-                Background="{Binding AccentColor, Source={x:Static framework:AppSettings.Instance}, Converter={StaticResource StringToSolidColorBrushConverter}}"/>
-        
-        <!-- 底部状态栏/按钮 (DockPanel.Dock="Bottom") -->
-        <StackPanel DockPanel.Dock="Bottom" Margin="0,3">
-            <Button Content="📊 使用统计" Click="UsageStatsButton_Click" 
-                    Style="{StaticResource SidebarActionButton}" Height="28" Margin="5,2"
-                    Background="{Binding AccentColor, Source={x:Static framework:AppSettings.Instance}, Converter={StaticResource StringToSolidColorBrushConverter}}"/>
-            <Button Content="📌 任务栏标记" Click="TaskbarOverlayButton_Click" 
-                    Style="{StaticResource SidebarActionButton}" Height="28" Margin="5,2"
-                    Background="{Binding AccentColor, Source={x:Static framework:AppSettings.Instance}, Converter={StaticResource StringToSolidColorBrushConverter}}"/>
-            <!-- 按键/鼠标计数显示 -->
-            <Border Margin="5,2" Padding="5,3" CornerRadius="3"
-                    Background="{Binding GroupBGColor, Source={x:Static framework:AppSettings.Instance}, Converter={StaticResource StringToSolidColorBrushConverter}}">
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock x:Name="keyCountText" Text="⌨ 0" Margin="0,0,10,0" Style="{StaticResource DataText}"/>
-                    <TextBlock x:Name="mouseDistText" Text="🖱 0m" Style="{StaticResource DataText}"/>
-                </StackPanel>
-            </Border>
-        </StackPanel>
-        
-        <!-- 主内容区域 (ScrollViewer 包裹，填充剩余空间) -->
-        <ScrollViewer VerticalScrollBarVisibility="Auto" Style="{StaticResource ContentView}">
-            <StackPanel>
-                
-                <!-- 分组列表区域 -->
-                <StackPanel x:Name="groupPanel"/>
-                
-                <!-- 便签区域 -->
-                <Border Margin="5,5" Padding="5" CornerRadius="5"
-                        Style="{StaticResource SidebarGroupBorder}">
-                    <StackPanel>
-                        <DockPanel>
-                            <TextBlock Text="📝 便签" Style="{StaticResource AppText}" DockPanel.Dock="Left"/>
-                            <Button Content="+" Click="AddStickyNote_Click" 
-                                    Style="{StaticResource IconButton}" DockPanel.Dock="Right" HorizontalAlignment="Right"
-                                    Width="20" Height="20" FontSize="14"/>
-                        </DockPanel>
-                        <StackPanel x:Name="stickyNotePanel" Margin="0,5,0,0"/>
-                    </StackPanel>
-                </Border>
-                
-                <!-- 剪贴板历史 -->
-                <Border Margin="5,5" Padding="5" CornerRadius="5"
-                        Style="{StaticResource SidebarGroupBorder}">
-                    <StackPanel>
-                        <TextBlock Text="📋 剪贴板历史" Style="{StaticResource AppText}"/>
-                        <StackPanel x:Name="clipboardPanel" Margin="0,5,0,0"/>
-                    </StackPanel>
-                </Border>
-                
-                <!-- 系统信息 -->
-                <Border Margin="5,5" Padding="5" CornerRadius="5"
-                        Style="{StaticResource SidebarGroupBorder}">
-                    <StackPanel>
-                        <TextBlock Text="💻 系统信息" Style="{StaticResource AppText}"/>
-                        <StackPanel x:Name="systemMonitorPanel" Margin="0,5,0,0"/>
-                    </StackPanel>
-                </Border>
-                
+        <!-- 底部状态栏 -->
+        <Border DockPanel.Dock="Bottom" Margin="5,2" Padding="5,3" CornerRadius="3"
+                Background="{Binding GroupBGColor, Source={x:Static framework:AppSettings.Instance}, Converter={StaticResource StringToSolidColorBrushConverter}}">
+            <StackPanel x:Name="statusBar" Orientation="Horizontal">
+                <TextBlock x:Name="keyCountText" Text="⌨ 0" Margin="0,0,10,0" Style="{StaticResource DataText}"/>
+                <TextBlock x:Name="mouseDistText" Text="🖱 0m" Style="{StaticResource DataText}"/>
             </StackPanel>
+        </Border>
+        
+        <!-- 动态内容区 -->
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Style="{StaticResource ContentView}">
+            <StackPanel x:Name="dynamicContent"/>
         </ScrollViewer>
         
     </DockPanel>

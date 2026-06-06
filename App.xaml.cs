@@ -1,4 +1,5 @@
 ﻿using System.Windows;
+using SideDesk.Models;
 
 namespace SideDesk
 {
@@ -8,6 +9,7 @@ namespace SideDesk
     {
         public LayoutMode CurrentLayout { get; private set; } = LayoutMode.Left;
         public Settings AppSettings { get; private set; } = new();
+        public WindowConfigManager WindowConfigs { get; private set; } = new();
 
         public string ScreenAUrl { get; set; } = "https://www.baidu.com";
         public string ScreenBUrl { get; set; } = "https://www.bing.com";
@@ -21,6 +23,11 @@ namespace SideDesk
 
             // 加载上次保存的设置
             AppSettings = Settings.Load();
+
+            // 加载窗口配置
+            WindowConfigs = WindowConfigManager.Load();
+            WindowConfigs.EnsureDefault();
+
             SwitchLayout(AppSettings.Layout, AppSettings.LeftScreen, AppSettings.RightScreen, save: false);
         }
 
@@ -80,6 +87,7 @@ namespace SideDesk
         public void CloseAll()
         {
             SaveState();
+            WindowConfigs.Save();
             CloseWindow(ref _leftWindow);
             CloseWindow(ref _rightWindow);
             Shutdown();
@@ -88,6 +96,7 @@ namespace SideDesk
         private MainWindow CreatePanel(DockEdge side, ScreenType screen)
         {
             var window = new MainWindow(side, screen);
+            window.SetWindowConfigManager(WindowConfigs);
             window.Show();
             return window;
         }

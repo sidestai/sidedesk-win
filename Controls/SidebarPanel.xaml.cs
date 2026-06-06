@@ -2,6 +2,7 @@ using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Diagnostics;
+using SideDesk.Models;
 
 namespace SideDesk.Controls
 {
@@ -96,6 +97,31 @@ namespace SideDesk.Controls
         public void NavigateToUrl(string url)
         {
             webViewPanel.Navigate(url);
+        }
+
+        /// <summary>
+        /// 根据窗口配置切换显示内容
+        /// </summary>
+        public void SwitchToWindow(WindowConfig? config, WindowConfigManager? manager = null)
+        {
+            if (config == null) return;
+
+            if (config.Type == WindowType.WebView)
+            {
+                SwitchToWebViewMode();
+                if (!string.IsNullOrEmpty(config.Url))
+                {
+                    webViewPanel.Navigate(config.Url);
+                }
+            }
+            else
+            {
+                SwitchToNativeMode();
+                if (manager != null)
+                {
+                    nativePanel.LoadWindow(config, manager);
+                }
+            }
         }
     }
 }

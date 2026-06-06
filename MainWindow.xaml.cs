@@ -1,30 +1,22 @@
 ﻿using System;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
 using System.Diagnostics;
 using Microsoft.Web.WebView2.Core;
 using SideDesk.Controls;
+using SideDesk.Models;
 
 namespace SideDesk
 {
     public partial class MainWindow : AppBarWindow
     {
         private ScreenType _currentScreen;
+        private WindowConfigManager? _configManager;
+        private DockWindowState? _dockState;
 
         public ScreenType CurrentScreen => _currentScreen;
 
-        /// <summary>
-        /// 当前显示模式
-        /// </summary>
-        public DisplayMode CurrentDisplayMode => sidebarPanel.CurrentMode;
-
-        /// <summary>
-        /// 保存显示模式到设置
-        /// </summary>
-        public void SaveDisplayMode()
-        {
-            // TODO: 保存到 Settings
-            Debug.WriteLine($"[MainWindow] 显示模式: {sidebarPanel.CurrentMode}");
-        }
 
         public MainWindow(DockEdge side, ScreenType screen)
         {
@@ -50,6 +42,12 @@ namespace SideDesk
 
             // 初始化 SidebarPanel（默认 WebView2 模式）
             sidebarPanel.InitializeWebView();
+
+            // 如果已设置窗口配置，切换到当前活动窗口
+            if (_dockState != null && _dockState.WindowIds.Count > 0)
+            {
+                SwitchToWindowByIndex(_dockState.ActiveIndex);
+            }
         }
 
         private void NavigateToCurrentScreen()
@@ -69,18 +67,6 @@ namespace SideDesk
             ((App)Application.Current).CloseAll();
         }
 
-        private void ToggleMode_Click(object sender, RoutedEventArgs e)
-        {
-            if (sidebarPanel.CurrentMode == DisplayMode.WebView)
-            {
-                sidebarPanel.SwitchToNativeMode();
-            }
-            else
-            {
-                sidebarPanel.SwitchToWebViewMode();
-            }
-            SaveDisplayMode();
-        }
 
         #region 屏幕切换
 
@@ -122,6 +108,111 @@ namespace SideDesk
         private void Layout_Both(object sender, RoutedEventArgs e)
         {
             ((App)Application.Current).SwitchLayout(LayoutMode.Both);
+        }
+
+        #endregion
+
+        #region 窗口标签页系统
+
+        /// <summary>
+        /// 由 App 调用设置窗口配置管理器
+        /// </summary>
+        public void SetWindowConfigManager(WindowConfigManager manager)
+        {
+            _configManager = manager;
+            _dockState = (DockSide == DockEdge.Left) ? manager.LeftDock : manager.RightDock;
+            RefreshWindowTabs();
+        }
+
+        private void RefreshWindowTabs()
+        {
+            if (_configManager == null || _dockState == null) return;
+            windowTabsPanel.Children.Clear();
+
+            for (int i = 0; i < _dockState.WindowIds.Count; i++)
+            {
+                var winId = _dockState.WindowIds[i];
+                var config = _configManager.GetById(winId);
+                if (config == null) continue;
+
+                var index = i;
+                var btn = new Button
+                {
+                    Content = $"[{i + 1}]",
+                    ToolTip = config.Name,
+                    Tag = index,
+                    Margin = new Thickness(1, 0, 1, 0),
+                    Padding = new Thickness(4, 2, 4, 2),
+                    FontSize = 11,
+                    Cursor = System.Windows.Input.Cursors.Hand,
+                    Background = (i == _dockState.ActiveIndex)
+                        ? new SolidColorBrush(Color.FromRgb(80, 120, 200))
+                        : Brushes.Transparent,
+                    Foreground = Brushes.White,
+                    BorderThickness = new Thickness(0)
+                };
+                btn.Click += (s, e) => WindowTab_Click(index);
+
+                // 右键删除
+                var ctx = new ContextMenu();
+                var deleteItem = new MenuItem { Header = "删除此窗口" };
+                deleteItem.Click += (s, e) => RemoveWindow(index);
+                ctx.Items.Add(deleteItem);
+                btn.ContextMenu = ctx;
+
+                windowTabsPanel.Children.Add(btn);
+            }
+        }
+
+        private void WindowTab_Click(int index)
+        {
+            if (_configManager == null || _dockState == null) return;
+            if (index < 0 || index >= _dockState.WindowIds.Count) return;
+
+            _dockState.ActiveIndex = index;
+            var config = _configManager.GetById(_dockState.WindowIds[index]);
+            sidebarPanel.SwitchToWindow(config, _configManager);
+            RefreshWindowTabs();
+            _configManager.Save();
+        }
+
+        private void SwitchToWindowByIndex(int index)
+        {
+            if (_dockState == null || _configManager == null) return;
+            if (index < 0 || index >= _dockState.WindowIds.Count) index = 0;
+            if (_dockState.WindowIds.Count == 0) return;
+
+            _dockState.ActiveIndex = index;
+            var config = _configManager.GetById(_dockState.WindowIds[index]);
+            sidebarPanel.SwitchToWindow(config, _configManager);
+            RefreshWindowTabs();
+        }
+
+        private void AddWindow_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new AddWindowDialog { Owner = this };
+            if (dialog.ShowDialog() == true && dialog.Result != null)
+            {
+                _configManager!.Add(dialog.Result);
+                _dockState!.WindowIds.Add(dialog.Result.Id);
+                _configManager.Save();
+                RefreshWindowTabs();
+                WindowTab_Click(_dockState.WindowIds.Count - 1);
+            }
+        }
+
+        private void RemoveWindow(int index)
+        {
+            if (_configManager == null || _dockState == null) return;
+            if (_dockState.WindowIds.Count <= 1) return; // 至少保留一个
+
+            _dockState.WindowIds.RemoveAt(index);
+            if (_dockState.ActiveIndex >= _dockState.WindowIds.Count)
+                _dockState.ActiveIndex = _dockState.WindowIds.Count - 1;
+
+            _configManager.Save();
+            RefreshWindowTabs();
+            SwitchToWindowByIndex(_dockState.ActiveIndex);
         }
 
         #endregion

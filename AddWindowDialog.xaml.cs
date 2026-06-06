@@ -1,0 +1,38 @@
+using System.Windows;
+using SideDesk.Models;
+
+namespace SideDesk;
+
+public partial class AddWindowDialog : Window
+{
+    public WindowConfig? Result { get; private set; }
+
+    public AddWindowDialog()
+    {
+        InitializeComponent();
+    }
+
+    private void ModeChanged(object sender, RoutedEventArgs e)
+    {
+        if (urlBox != null)
+            urlBox.IsEnabled = webviewRadio.IsChecked == true;
+    }
+
+    private void OkButton_Click(object sender, RoutedEventArgs e)
+    {
+        Result = new WindowConfig
+        {
+            Name = string.IsNullOrWhiteSpace(nameBox.Text) ? "新窗口" : nameBox.Text.Trim(),
+            Type = webviewRadio.IsChecked == true ? WindowType.WebView : WindowType.Native,
+            Url = webviewRadio.IsChecked == true ? urlBox.Text.Trim() : null
+        };
+        DialogResult = true;
+        Close();
+    }
+
+    private void CancelButton_Click(object sender, RoutedEventArgs e)
+    {
+        DialogResult = false;
+        Close();
+    }
+}

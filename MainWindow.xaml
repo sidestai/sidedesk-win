@@ -35,22 +35,18 @@
                 </ContextMenu>
             </Border.ContextMenu>
             <Grid>
-                <TextBlock x:Name="titleText" Text="SideDesk [A]"
-                           HorizontalAlignment="Left"
-                           VerticalAlignment="Center"
-                           Margin="8,0,0,0"
-                           FontSize="12"
-                           Foreground="#AAAAAA"/>
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <Button x:Name="modeToggleButton" Content="🔄" 
-                            Width="30" Height="30"
-                            FontSize="12"
+                <TextBlock x:Name="titleText" Text="SideDesk [A]" Visibility="Collapsed"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                    <StackPanel x:Name="windowTabsPanel" Orientation="Horizontal" Margin="3,0"/>
+                    <Button Content="+" Click="AddWindow_Click"
+                            Width="22" Height="22"
+                            FontSize="14"
                             Background="Transparent"
                             Foreground="White"
                             BorderThickness="0"
                             Cursor="Hand"
-                            ToolTip="切换显示模式"
-                            Click="ToggleMode_Click"/>
+                            ToolTip="添加窗口"
+                            Margin="2,0"/>
                     <Button Content="✕" 
                             Width="30" Height="30"
                             FontSize="14"
