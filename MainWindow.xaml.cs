@@ -26,7 +26,7 @@ namespace SideDesk
 
             // 配置 AppBar
             DockSide = side;
-            AppBarWidth = 205;
+            AppBarWidth = 105;
             ScreenIndex = 0;
 
             Loaded += MainWindow_Loaded;
@@ -62,7 +62,70 @@ namespace SideDesk
             titleText.Text = $"SideDesk [{_currentScreen}]";
         }
 
-        private void CloseButton_Click(object sender, RoutedEventArgs e)
+        private void MoreButton_Click(object sender, RoutedEventArgs e)
+        {
+            var btn = sender as Button;
+            if (btn?.ContextMenu != null)
+            {
+                btn.ContextMenu.PlacementTarget = btn;
+                btn.ContextMenu.IsOpen = true;
+            }
+        }
+
+        private void MoreMenu_Opened(object sender, RoutedEventArgs e)
+        {
+            var menu = sender as ContextMenu;
+            if (menu == null) return;
+
+            // 清除旧的动态窗口列表项（menuSeparator1 之前的所有项）
+            int separatorIndex = menu.Items.IndexOf(menuSeparator1);
+            for (int i = separatorIndex - 1; i >= 0; i--)
+            {
+                menu.Items.RemoveAt(i);
+            }
+
+            // 动态生成窗口列表
+            if (_dockState != null && _configManager != null)
+            {
+                int insertIndex = 0;
+                for (int i = 0; i < _dockState.WindowIds.Count; i++)
+                {
+                    var config = _configManager.GetById(_dockState.WindowIds[i]);
+                    if (config == null) continue;
+
+                    int index = i;
+                    var item = new MenuItem
+                    {
+                        Header = $"{i + 1}. {config.Name}",
+                        IsCheckable = true,
+                        IsChecked = (i == _dockState.ActiveIndex)
+                    };
+                    item.Click += (s, args) => SwitchToWindowByIndex(index);
+                    menu.Items.Insert(insertIndex, item);
+                    insertIndex++;
+                }
+
+                // 当前dock只有1个窗口时隐藏"关闭窗口"及其前面的分隔符
+                var showClose = _dockState.WindowIds.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
+                closeWindowMenu.Visibility = showClose;
+                closeWindowSeparator.Visibility = showClose;
+            }
+        }
+
+        private void Settings_Click(object sender, RoutedEventArgs e)
+        {
+            var settingsWin = new SettingsWindow();
+            settingsWin.Owner = this;
+            settingsWin.ShowDialog();
+        }
+
+        private void CloseWindow_Click(object sender, RoutedEventArgs e)
+        {
+            if (_dockState == null) return;
+            RemoveWindow(_dockState.ActiveIndex);
+        }
+
+        private void Exit_Click(object sender, RoutedEventArgs e)
         {
             ((App)Application.Current).CloseAll();
         }

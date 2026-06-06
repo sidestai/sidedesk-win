@@ -96,6 +96,7 @@ namespace SideDesk
         private MainWindow CreatePanel(DockEdge side, ScreenType screen)
         {
             var window = new MainWindow(side, screen);
+            window.AppBarWidth = AppSettings.PanelWidth;
             window.SetWindowConfigManager(WindowConfigs);
             window.Show();
             return window;
@@ -109,6 +110,19 @@ namespace SideDesk
                 window.Close();
                 window = null;
             }
+        }
+
+        /// <summary>
+        /// 应用新的面板宽度（重新注册 AppBar）
+        /// </summary>
+        public void ApplyPanelWidth(int width)
+        {
+            AppSettings.PanelWidth = width;
+            // 重新切换布局以应用新宽度
+            SwitchLayout(CurrentLayout, 
+                _leftWindow?.CurrentScreen ?? ScreenType.A, 
+                _rightWindow?.CurrentScreen ?? ScreenType.B, 
+                save: true);
         }
     }
 }

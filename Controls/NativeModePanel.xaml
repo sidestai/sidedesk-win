@@ -9,7 +9,9 @@
              d:DesignHeight="800" d:DesignWidth="205">
     <UserControl.ContextMenu>
         <ContextMenu Opened="ContextMenu_Opened">
-            <MenuItem Header="添加模块">
+            <MenuItem x:Name="editModeMenu" Header="编辑模式" IsCheckable="True" IsChecked="False" Click="ToggleEditMode_Click"/>
+            <Separator />
+            <MenuItem x:Name="addModuleMenu" Header="添加模块">
                 <MenuItem Header="快捷分组" Click="AddQuickGroupPanel_Click"/>
                 <MenuItem Header="便签" Click="AddStickyNotesPanel_Click"/>
                 <MenuItem Header="剪贴板历史" Click="AddClipboardPanel_Click"/>

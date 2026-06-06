@@ -51,6 +51,7 @@ public class WindowConfig
     public string? Url { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.Now;
     public List<PanelItem> Panels { get; set; } = new();
+    public bool IsEditMode { get; set; } = false;
 }
 
 public class DockWindowState

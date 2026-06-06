@@ -9,6 +9,8 @@ namespace SideDesk
         public LayoutMode Layout { get; set; } = LayoutMode.Left;
         public ScreenType LeftScreen { get; set; } = ScreenType.A;
         public ScreenType RightScreen { get; set; } = ScreenType.B;
+        public int PanelWidth { get; set; } = 105;
+        public string ThemeName { get; set; } = "";
 
         private static readonly string SettingsPath = Path.Combine(
             AppDomain.CurrentDomain.BaseDirectory, "settings.json");

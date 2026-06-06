@@ -52,6 +52,9 @@ namespace SideDesk.Controls
         // 初始化标志
         private bool _isInitialized = false;
 
+        // 编辑模式（持久化到 AppSettings）
+        private bool _isEditMode = false;
+
         // 对话框实例
         private AIChatDialog? _aiChatDialog;
         private WindowUsagePanel? _windowUsagePanel;
@@ -83,6 +86,9 @@ namespace SideDesk.Controls
         {
             _currentWindowConfig = config;
             _configManager = manager;
+            _isEditMode = config.IsEditMode;  // 从窗口配置读取
+
+
 
             // 确保全局服务已启动（只启动一次）
             InitializeGlobalServices();
@@ -240,8 +246,11 @@ namespace SideDesk.Controls
                 Child = stack
             };
 
-            border.MouseEnter += (s, e) => deleteBtn.Visibility = Visibility.Visible;
-            border.MouseLeave += (s, e) => deleteBtn.Visibility = Visibility.Collapsed;
+            if (_isEditMode)
+            {
+                border.MouseEnter += (s, e) => deleteBtn.Visibility = Visibility.Visible;
+                border.MouseLeave += (s, e) => deleteBtn.Visibility = Visibility.Collapsed;
+            }
 
             return border;
         }
@@ -268,7 +277,8 @@ namespace SideDesk.Controls
                 Content = "+ 添加分组",
                 Height = 28,
                 Margin = new Thickness(0, 0, 0, 5),
-                Cursor = Cursors.Hand
+                Cursor = Cursors.Hand,
+                Visibility = _isEditMode ? Visibility.Visible : Visibility.Collapsed
             };
             addBtn.Click += (s, e) => _quickGroupUIService?.ShowAddMenu(addBtn);
             container.Children.Add(addBtn);
@@ -296,7 +306,8 @@ namespace SideDesk.Controls
                 Content = "+", Width = 20, Height = 20, FontSize = 14,
                 Background = Brushes.Transparent, Foreground = Brushes.White,
                 BorderThickness = new Thickness(0), Cursor = Cursors.Hand,
-                HorizontalAlignment = HorizontalAlignment.Right
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Visibility = _isEditMode ? Visibility.Visible : Visibility.Collapsed
             };
             DockPanel.SetDock(addNoteBtn, Dock.Right);
             headerPanel.Children.Add(addNoteBtn);
@@ -335,7 +346,8 @@ namespace SideDesk.Controls
                 Height = 28,
                 Margin = new Thickness(0, 0, 0, 5),
                 HorizontalAlignment = HorizontalAlignment.Stretch,
-                Cursor = Cursors.Hand
+                Cursor = Cursors.Hand,
+                Visibility = _isEditMode ? Visibility.Visible : Visibility.Collapsed
             };
             addBtn.Click += (s, e) =>
             {
@@ -436,9 +448,17 @@ namespace SideDesk.Controls
                     };
                     itemPanel.Children.Add(preview);
 
-                    // hover 显示按钮
-                    itemPanel.MouseEnter += (s, ev) => { delBtn.Visibility = Visibility.Visible; copyBtn.Visibility = Visibility.Visible; };
-                    itemPanel.MouseLeave += (s, ev) => { delBtn.Visibility = Visibility.Collapsed; copyBtn.Visibility = Visibility.Collapsed; };
+                    // hover 显示按钮（删除按钮仅编辑模式，复制按钮始终可hover）
+                    if (_isEditMode)
+                    {
+                        itemPanel.MouseEnter += (s, ev) => { delBtn.Visibility = Visibility.Visible; copyBtn.Visibility = Visibility.Visible; };
+                        itemPanel.MouseLeave += (s, ev) => { delBtn.Visibility = Visibility.Collapsed; copyBtn.Visibility = Visibility.Collapsed; };
+                    }
+                    else
+                    {
+                        itemPanel.MouseEnter += (s, ev) => { copyBtn.Visibility = Visibility.Visible; };
+                        itemPanel.MouseLeave += (s, ev) => { copyBtn.Visibility = Visibility.Collapsed; };
+                    }
 
                     // 复制事件
                     string clipContent = clip.Content;
@@ -533,7 +553,7 @@ namespace SideDesk.Controls
             var container = new StackPanel();
 
             // 添加按钮区域
-            var addPanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 5) };
+            var addPanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 5), Visibility = _isEditMode ? Visibility.Visible : Visibility.Collapsed };
 
             var addFileBtn = new Button
             {
@@ -696,9 +716,17 @@ namespace SideDesk.Controls
                     row.Children.Add(openBtn);
                     row.Children.Add(nameBlock);
 
-                    // hover 显示操作按钮
-                    row.MouseEnter += (s, e) => { delBtn.Visibility = Visibility.Visible; openBtn.Visibility = Visibility.Visible; };
-                    row.MouseLeave += (s, e) => { delBtn.Visibility = Visibility.Collapsed; openBtn.Visibility = Visibility.Collapsed; };
+                    // hover 显示操作按钮（删除按钮仅编辑模式，打开按钮始终可hover）
+                    if (_isEditMode)
+                    {
+                        row.MouseEnter += (s, e) => { delBtn.Visibility = Visibility.Visible; openBtn.Visibility = Visibility.Visible; };
+                        row.MouseLeave += (s, e) => { delBtn.Visibility = Visibility.Collapsed; openBtn.Visibility = Visibility.Collapsed; };
+                    }
+                    else
+                    {
+                        row.MouseEnter += (s, e) => { openBtn.Visibility = Visibility.Visible; };
+                        row.MouseLeave += (s, e) => { openBtn.Visibility = Visibility.Collapsed; };
+                    }
 
                     listContainer.Children.Add(row);
                 }
@@ -761,6 +789,12 @@ namespace SideDesk.Controls
         {
             if (_currentWindowConfig == null || _configManager == null) return;
             _currentWindowConfig.Panels.Add(new PanelItem { Type = type });
+
+            // 自动开启编辑模式
+            _isEditMode = true;
+            if (_currentWindowConfig != null)
+                _currentWindowConfig.IsEditMode = true;
+
             _configManager.Save();
             RenderPanels();
         }
@@ -941,8 +975,11 @@ namespace SideDesk.Controls
             DockPanel.SetDock(delBtn, Dock.Right);
             row.Children.Add(delBtn);
 
-            row.MouseEnter += (s, e) => delBtn.Visibility = Visibility.Visible;
-            row.MouseLeave += (s, e) => delBtn.Visibility = Visibility.Collapsed;
+            if (_isEditMode)
+            {
+                row.MouseEnter += (s, e) => delBtn.Visibility = Visibility.Visible;
+                row.MouseLeave += (s, e) => delBtn.Visibility = Visibility.Collapsed;
+            }
 
             var textBlock = new TextBlock
             {
@@ -1642,6 +1679,21 @@ namespace SideDesk.Controls
             UsageStatsButton_Click(sender, e);
         }
 
+        private void ToggleEditMode_Click(object sender, RoutedEventArgs e)
+        {
+            var menuItem = sender as MenuItem;
+            _isEditMode = menuItem?.IsChecked ?? false;
+
+            // 保存到当前窗口配置
+            if (_currentWindowConfig != null)
+            {
+                _currentWindowConfig.IsEditMode = _isEditMode;
+                _configManager?.Save();
+            }
+
+            RenderPanels();
+        }
+
         #endregion
 
         #region 布局与屏幕切换
@@ -1651,6 +1703,9 @@ namespace SideDesk.Controls
         /// </summary>
         private void ContextMenu_Opened(object sender, RoutedEventArgs e)
         {
+            // 同步编辑模式 checkbox 状态
+            editModeMenu.IsChecked = _isEditMode;
+
             var app = (App)Application.Current;
             var currentLayout = app.CurrentLayout;
 
