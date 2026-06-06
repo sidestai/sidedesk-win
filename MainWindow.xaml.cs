@@ -84,20 +84,25 @@ namespace SideDesk
 
         #region 屏幕切换
 
-        private void SwitchToScreenA(object sender, RoutedEventArgs e)
+        /// <summary>
+        /// 切换当前窗口显示的屏幕内容
+        /// </summary>
+        public void SwitchScreen(ScreenType screen)
         {
-            _currentScreen = ScreenType.A;
+            _currentScreen = screen;
             UpdateTitle();
             NavigateToCurrentScreen();
             ((App)Application.Current).SaveState();
         }
 
+        private void SwitchToScreenA(object sender, RoutedEventArgs e)
+        {
+            SwitchScreen(ScreenType.A);
+        }
+
         private void SwitchToScreenB(object sender, RoutedEventArgs e)
         {
-            _currentScreen = ScreenType.B;
-            UpdateTitle();
-            NavigateToCurrentScreen();
-            ((App)Application.Current).SaveState();
+            SwitchScreen(ScreenType.B);
         }
 
         #endregion

@@ -8,7 +8,17 @@
              mc:Ignorable="d" 
              d:DesignHeight="800" d:DesignWidth="205">
     <UserControl.ContextMenu>
-        <ContextMenu>
+        <ContextMenu Opened="ContextMenu_Opened">
+            <MenuItem Header="布局" x:Name="LayoutMenu">
+                <MenuItem Header="左侧停靠" Click="Layout_Left_Click" />
+                <MenuItem Header="右侧停靠" Click="Layout_Right_Click" />
+                <MenuItem Header="双侧停靠" Click="Layout_Both_Click" />
+            </MenuItem>
+            <MenuItem Header="屏幕" x:Name="ScreenMenu">
+                <MenuItem Header="切换到 A 屏" Click="SwitchToScreenA_Click" />
+                <MenuItem Header="切换到 B 屏" Click="SwitchToScreenB_Click" />
+            </MenuItem>
+            <Separator />
             <MenuItem Header="显示设置" x:Name="DisplaySettingsMenu" SubmenuOpened="DisplaySettingsMenu_SubmenuOpened">
                 <MenuItem Header="(加载中...)" />
             </MenuItem>

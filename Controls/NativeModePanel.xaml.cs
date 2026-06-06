@@ -1186,5 +1186,81 @@ namespace SideDesk.Controls
         }
 
         #endregion
+
+        #region 布局与屏幕切换
+
+        /// <summary>
+        /// 右键菜单打开时，动态设置布局和屏幕的勾选状态
+        /// </summary>
+        private void ContextMenu_Opened(object sender, RoutedEventArgs e)
+        {
+            var app = (App)Application.Current;
+            var currentLayout = app.CurrentLayout;
+
+            // 设置布局菜单勾选
+            if (LayoutMenu?.Items != null)
+            {
+                foreach (var item in LayoutMenu.Items)
+                {
+                    if (item is MenuItem mi)
+                    {
+                        mi.IsChecked = mi.Header switch
+                        {
+                            "左侧停靠" => currentLayout == LayoutMode.Left,
+                            "右侧停靠" => currentLayout == LayoutMode.Right,
+                            "双侧停靠" => currentLayout == LayoutMode.Both,
+                            _ => false
+                        };
+                    }
+                }
+            }
+
+            // 设置屏幕菜单勾选
+            if (ScreenMenu?.Items != null && _mainWindow != null)
+            {
+                var currentScreen = _mainWindow.CurrentScreen;
+                foreach (var item in ScreenMenu.Items)
+                {
+                    if (item is MenuItem mi)
+                    {
+                        mi.IsChecked = mi.Header switch
+                        {
+                            "切换到 A 屏" => currentScreen == ScreenType.A,
+                            "切换到 B 屏" => currentScreen == ScreenType.B,
+                            _ => false
+                        };
+                    }
+                }
+            }
+        }
+
+        private void Layout_Left_Click(object sender, RoutedEventArgs e)
+        {
+            ((App)Application.Current).SwitchLayout(LayoutMode.Left);
+        }
+
+        private void Layout_Right_Click(object sender, RoutedEventArgs e)
+        {
+            ((App)Application.Current).SwitchLayout(LayoutMode.Right);
+        }
+
+        private void Layout_Both_Click(object sender, RoutedEventArgs e)
+        {
+            ((App)Application.Current).SwitchLayout(LayoutMode.Both);
+        }
+
+        private void SwitchToScreenA_Click(object sender, RoutedEventArgs e)
+        {
+            if (_mainWindow == null) return;
+            _mainWindow.SwitchScreen(ScreenType.A);
+        }
+
+        private void SwitchToScreenB_Click(object sender, RoutedEventArgs e)
+        {
+            if (_mainWindow == null) return;
+            _mainWindow.SwitchScreen(ScreenType.B);
+        }
+
+        #endregion
     }
 }
