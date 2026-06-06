@@ -7,6 +7,22 @@
              xmlns:framework="clr-namespace:SideDesk.Framework"
              mc:Ignorable="d" 
              d:DesignHeight="800" d:DesignWidth="205">
+    <UserControl.ContextMenu>
+        <ContextMenu>
+            <MenuItem Header="显示设置" x:Name="DisplaySettingsMenu" SubmenuOpened="DisplaySettingsMenu_SubmenuOpened">
+                <MenuItem Header="(加载中...)" />
+            </MenuItem>
+            <Separator />
+            <MenuItem Header="主题" SubmenuOpened="ThemeMenu_SubmenuOpened">
+                <MenuItem Header="主题编辑器" Click="ThemeEditorMenu_Click" />
+                <Separator />
+                <!-- 动态主题列表由代码填充 -->
+            </MenuItem>
+            <Separator />
+            <MenuItem Header="AI 对话" Click="ContextMenu_AIChatClick" />
+            <MenuItem Header="使用统计" Click="ContextMenu_UsageStatsClick" />
+        </ContextMenu>
+    </UserControl.ContextMenu>
     <DockPanel x:Name="nativeContent" LastChildFill="True">
         
         <!-- 顶部标题栏 (DockPanel.Dock="Top", Height=30) -->

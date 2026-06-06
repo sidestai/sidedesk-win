@@ -12,7 +12,9 @@ using System.Windows.Threading;
 using System.Diagnostics;
 using SideDesk.Models;
 using SideDesk.Services;
+using SideDesk.Theming;
 using SideDesk.Windows;
+using SideDesk.Framework;
 
 namespace SideDesk.Controls
 {
@@ -1054,6 +1056,133 @@ namespace SideDesk.Controls
                     _mainWindow.Left + _mainWindow.Width,
                     _mainWindow.Top, 400, _mainWindow.Height);
             }
+        }
+
+        #endregion
+
+        #region 右键菜单事件处理
+
+        /// <summary>
+        /// "显示设置"菜单展开时动态填充可切换的显示选项
+        /// </summary>
+        private void DisplaySettingsMenu_SubmenuOpened(object sender, RoutedEventArgs e)
+        {
+            var menu = sender as MenuItem;
+            if (menu == null) return;
+
+            menu.Items.Clear();
+
+            var settings = AppSettings.Instance;
+            var items = new[]
+            {
+                new { Header = "便签",           Checked = settings.ShowStickyNotes, Key = "ShowStickyNotes" },
+                new { Header = "自定义程序书签", Checked = settings.ShowQuickGroups,  Key = "ShowQuickGroups" },
+                new { Header = "鼠键计数器",   Checked = settings.ShowCounter,      Key = "ShowCounter" },
+                new { Header = "AI 对话",        Checked = settings.ShowAIChat,       Key = "ShowAIChat" },
+                new { Header = "使用时长分析", Checked = settings.ShowUsageStats,   Key = "ShowUsageStats" },
+                new { Header = "剪贴板历史",   Checked = settings.ShowClipboard,    Key = "ShowClipboard" }
+            };
+
+            foreach (var def in items)
+            {
+                var mi = new MenuItem
+                {
+                    Header = def.Header,
+                    IsCheckable = true,
+                    IsChecked = def.Checked,
+                    Tag = def.Key
+                };
+                string key = def.Key;
+                mi.Click += (s, ev) => ToggleDisplaySetting(key, mi.IsChecked);
+                menu.Items.Add(mi);
+            }
+        }
+
+        private void ToggleDisplaySetting(string key, bool value)
+        {
+            var settings = AppSettings.Instance;
+            switch (key)
+            {
+                case "ShowStickyNotes": settings.ShowStickyNotes = value; break;
+                case "ShowQuickGroups":  settings.ShowQuickGroups = value; break;
+                case "ShowCounter":      settings.ShowCounter = value; break;
+                case "ShowAIChat":       settings.ShowAIChat = value; break;
+                case "ShowUsageStats":   settings.ShowUsageStats = value; break;
+                case "ShowClipboard":    settings.ShowClipboard = value; break;
+            }
+            settings.Save();
+        }
+
+        /// <summary>
+        /// "主题"菜单展开时动态填充可用主题列表
+        /// </summary>
+        private void ThemeMenu_SubmenuOpened(object sender, RoutedEventArgs e)
+        {
+            var menu = sender as MenuItem;
+            if (menu == null) return;
+
+            // 移除旧的动态项（保留主题编辑器项和 Separator）
+            for (int i = menu.Items.Count - 1; i >= 0; i--)
+            {
+                var item = menu.Items[i];
+                var mi = item as MenuItem;
+                if (mi != null && mi.Tag is string && (string)mi.Tag == "DynamicTheme")
+                {
+                    menu.Items.RemoveAt(i);
+                }
+            }
+
+            // 动态填充主题列表
+            try
+            {
+                string current = AppSettings.Instance.CurrentTheme;
+                foreach (var name in ThemeManager.GetAvailableThemes())
+                {
+                    var item = new MenuItem
+                    {
+                        Header = name,
+                        Tag = "DynamicTheme",
+                        IsCheckable = true,
+                        IsChecked = string.Equals(name, current, StringComparison.Ordinal)
+                    };
+                    string capturedName = name;
+                    item.Click += (s, ev) => ApplyThemeByName(capturedName);
+                    menu.Items.Add(item);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("填充主题列表失败: " + ex.Message);
+            }
+        }
+
+        private void ApplyThemeByName(string name)
+        {
+            try
+            {
+                ThemeManager.ApplyByName(name);
+                AppSettings.Instance.Save();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("应用主题失败：" + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void ThemeEditorMenu_Click(object sender, RoutedEventArgs e)
+        {
+            var editor = new ThemeEditor(_mainWindow);
+            editor.Show();
+        }
+
+        private void ContextMenu_AIChatClick(object sender, RoutedEventArgs e)
+        {
+            AIChatButton_Click(sender, e);
+        }
+
+        private void ContextMenu_UsageStatsClick(object sender, RoutedEventArgs e)
+        {
+            UsageStatsButton_Click(sender, e);
         }
 
         #endregion
