@@ -24,6 +24,7 @@ namespace SideDesk.Controls
     {
         private MainWindow? _mainWindow;
         private DisplayMode _currentMode = DisplayMode.WebView;
+        private string? _currentWebViewWindowId;
 
         public DisplayMode CurrentMode => _currentMode;
 
@@ -109,9 +110,15 @@ namespace SideDesk.Controls
             if (config.Type == WindowType.WebView)
             {
                 SwitchToWebViewMode();
-                if (!string.IsNullOrEmpty(config.Url))
+                // 只有切换到不同的 WebView 窗口时才尝试 Navigate
+                // 切换回同一个窗口时保留已有状态，不重新加载
+                if (_currentWebViewWindowId != config.Id)
                 {
-                    webViewPanel.Navigate(config.Url);
+                    if (!string.IsNullOrEmpty(config.Url))
+                    {
+                        webViewPanel.Navigate(config.Url);
+                    }
+                    _currentWebViewWindowId = config.Id;
                 }
             }
             else

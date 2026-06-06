@@ -12,6 +12,7 @@ namespace SideDesk.Controls
     public partial class WebViewModePanel : UserControl
     {
         private bool _isInitialized = false;
+        private string? _pendingUrl = null;
 
         public WebViewModePanel()
         {
@@ -30,6 +31,15 @@ namespace SideDesk.Controls
                 await webView.EnsureCoreWebView2Async();
                 _isInitialized = true;
                 Debug.WriteLine("[WebViewModePanel] WebView2 初始化成功");
+
+                // 初始化完成后，执行待处理的导航
+                if (!string.IsNullOrEmpty(_pendingUrl))
+                {
+                    var pendingUrl = _pendingUrl;
+                    _pendingUrl = null;
+                    Debug.WriteLine($"[WebViewModePanel] 执行待处理导航: {pendingUrl}");
+                    webView.CoreWebView2.Navigate(pendingUrl);
+                }
             }
             catch (Exception ex)
             {
@@ -38,14 +48,43 @@ namespace SideDesk.Controls
         }
 
         /// <summary>
-        /// 导航到指定 URL
+        /// 导航到指定 URL（如果当前已是该URL则跳过）
         /// </summary>
         public void Navigate(string url)
         {
+            if (string.IsNullOrEmpty(url)) return;
+
             if (_isInitialized && webView.CoreWebView2 != null)
             {
+                // 如果当前已是该URL，不重复加载
+                var current = webView.Source?.ToString()?.TrimEnd('/');
+                var target = url.TrimEnd('/');
+
+                // about:blank 或 null 不应阻止导航
+                if (!string.IsNullOrEmpty(current)
+                    && !current.Equals("about:blank", StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(current, target, StringComparison.OrdinalIgnoreCase))
+                {
+                    Debug.WriteLine($"[WebViewModePanel] URL相同，跳过Navigate: {url}");
+                    return;
+                }
+
                 webView.CoreWebView2.Navigate(url);
             }
+            else
+            {
+                // WebView2 尚未初始化完成，保存待处理URL
+                _pendingUrl = url;
+                Debug.WriteLine($"[WebViewModePanel] WebView2未就绪，URL已暂存: {url}");
+            }
+        }
+
+        /// <summary>
+        /// 获取当前已加载的 URL
+        /// </summary>
+        public string? GetCurrentUrl()
+        {
+            return webView?.Source?.ToString();
         }
 
         /// <summary>
