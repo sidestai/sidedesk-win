@@ -4,6 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:SideDesk"
+        xmlns:controls="clr-namespace:SideDesk.Controls"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         mc:Ignorable="d"
         Title="SideDesk"
@@ -40,18 +41,27 @@
                            Margin="8,0,0,0"
                            FontSize="12"
                            Foreground="#AAAAAA"/>
-                <Button Content="✕" 
-                        HorizontalAlignment="Right" 
-                        VerticalAlignment="Center"
-                        Width="30" Height="30"
-                        FontSize="14"
-                        Background="Transparent"
-                        Foreground="White"
-                        BorderThickness="0"
-                        Cursor="Hand"
-                        Click="CloseButton_Click"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Button x:Name="modeToggleButton" Content="🔄" 
+                            Width="30" Height="30"
+                            FontSize="12"
+                            Background="Transparent"
+                            Foreground="White"
+                            BorderThickness="0"
+                            Cursor="Hand"
+                            ToolTip="切换显示模式"
+                            Click="ToggleMode_Click"/>
+                    <Button Content="✕" 
+                            Width="30" Height="30"
+                            FontSize="14"
+                            Background="Transparent"
+                            Foreground="White"
+                            BorderThickness="0"
+                            Cursor="Hand"
+                            Click="CloseButton_Click"/>
+                </StackPanel>
             </Grid>
         </Border>
-        <wv2:WebView2 Grid.Row="1" x:Name="webView" />
+        <controls:SidebarPanel x:Name="sidebarPanel" Grid.Row="1" />
     </Grid>
 </local:AppBarWindow>

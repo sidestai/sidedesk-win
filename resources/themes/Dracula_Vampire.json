@@ -1,0 +1,31 @@
+{
+  "name": "Dracula Vampire",
+  "version": 1,
+  "color": {
+    "background": "#282A36",
+    "backgroundOpacity": 0.93,
+    "textPrimary": "#F8F8F2",
+    "textAlert": "#FF5555",
+    "groupBackground": "#343746",
+    "accent": "#BD93F9",
+    "accentBookmark": "#50FA7B",
+    "accentAITool": "#BD93F9",
+    "accentBrowser": "#8BE9FD",
+    "accentProgram": "#FF79C6",
+    "accentCounter": "#FF5555",
+    "accentTaskbar": "#FFB86C",
+    "separator": "#44475A"
+  },
+  "font": {
+    "family": "Microsoft YaHei UI",
+    "size": 14,
+    "bold": true
+  },
+  "layout": {
+    "cornerRadius": 8,
+    "buttonPadding": 8,
+    "groupSpacing": 5,
+    "itemSpacing": 2,
+    "sidebarPadding": 5
+  }
+}

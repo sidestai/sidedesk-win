@@ -2,6 +2,7 @@
 using System.Windows;
 using System.Diagnostics;
 using Microsoft.Web.WebView2.Core;
+using SideDesk.Controls;
 
 namespace SideDesk
 {
@@ -10,6 +11,20 @@ namespace SideDesk
         private ScreenType _currentScreen;
 
         public ScreenType CurrentScreen => _currentScreen;
+
+        /// <summary>
+        /// 当前显示模式
+        /// </summary>
+        public DisplayMode CurrentDisplayMode => sidebarPanel.CurrentMode;
+
+        /// <summary>
+        /// 保存显示模式到设置
+        /// </summary>
+        public void SaveDisplayMode()
+        {
+            // TODO: 保存到 Settings
+            Debug.WriteLine($"[MainWindow] 显示模式: {sidebarPanel.CurrentMode}");
+        }
 
         public MainWindow(DockEdge side, ScreenType screen)
         {
@@ -30,23 +45,18 @@ namespace SideDesk
             RegisterAppBar();
             UpdateTitle();
 
-            // 初始化 WebView2
-            try
-            {
-                await webView.EnsureCoreWebView2Async();
-                NavigateToCurrentScreen();
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[WebView2] 初始化失败: {ex.Message}");
-            }
+            // 设置主窗口引用
+            sidebarPanel.SetMainWindow(this);
+
+            // 初始化 SidebarPanel（默认 WebView2 模式）
+            sidebarPanel.InitializeWebView();
         }
 
         private void NavigateToCurrentScreen()
         {
             var app = (App)Application.Current;
             string url = app.GetUrlForScreen(_currentScreen);
-            webView.CoreWebView2?.Navigate(url);
+            sidebarPanel.NavigateToUrl(url);
         }
 
         private void UpdateTitle()
@@ -57,6 +67,19 @@ namespace SideDesk
         private void CloseButton_Click(object sender, RoutedEventArgs e)
         {
             ((App)Application.Current).CloseAll();
+        }
+
+        private void ToggleMode_Click(object sender, RoutedEventArgs e)
+        {
+            if (sidebarPanel.CurrentMode == DisplayMode.WebView)
+            {
+                sidebarPanel.SwitchToNativeMode();
+            }
+            else
+            {
+                sidebarPanel.SwitchToWebViewMode();
+            }
+            SaveDisplayMode();
         }
 
         #region 屏幕切换

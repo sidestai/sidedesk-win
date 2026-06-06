@@ -1,0 +1,31 @@
+{
+  "name": "Matrix Green Terminal",
+  "version": 1,
+  "color": {
+    "background": "#000000",
+    "backgroundOpacity": 0.95,
+    "textPrimary": "#00FF00",
+    "textAlert": "#FF4444",
+    "groupBackground": "#001A00",
+    "accent": "#00FF00",
+    "accentBookmark": "#00FF00",
+    "accentAITool": "#00DDDD",
+    "accentBrowser": "#009900",
+    "accentProgram": "#00AA00",
+    "accentCounter": "#FF4444",
+    "accentTaskbar": "#FFCC00",
+    "separator": "#003300"
+  },
+  "font": {
+    "family": "Consolas",
+    "size": 14,
+    "bold": true
+  },
+  "layout": {
+    "cornerRadius": 4,
+    "buttonPadding": 8,
+    "groupSpacing": 4,
+    "itemSpacing": 2,
+    "sidebarPadding": 5
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "name": "DarkFlat Classic",
+  "version": 1,
+  "color": {
+    "background": "#3C3C3C",
+    "backgroundOpacity": 0.85,
+    "textPrimary": "#FFFFFF",
+    "textAlert": "#FF6666",
+    "groupBackground": "#2E2E2E",
+    "accent": "#66FF99",
+    "accentBookmark": "#66FF99",
+    "accentAITool": "#7C3AED",
+    "accentBrowser": "#4A90D9",
+    "accentProgram": "#9B59B6",
+    "accentCounter": "#FF6666",
+    "accentTaskbar": "#FFD666",
+    "separator": "#555555"
+  },
+  "font": {
+    "family": "Microsoft YaHei UI",
+    "size": 14,
+    "bold": false
+  },
+  "layout": {
+    "cornerRadius": 8,
+    "buttonPadding": 8,
+    "groupSpacing": 5,
+    "itemSpacing": 2,
+    "sidebarPadding": 5
+  }
+}

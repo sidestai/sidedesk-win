@@ -2,8 +2,386 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:SideDesk"
+             xmlns:framework="clr-namespace:SideDesk.Framework"
              ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
-         
+        <ResourceDictionary>
+            <!-- ===== Converters ===== -->
+            <local:MetricLabelConverter x:Key="MetricLabelConverter" />
+            <local:FontToSpaceConverter x:Key="FontToSpaceConverter" />
+            <local:BoolInverseConverter x:Key="BoolInverseConverter" />
+            <local:PercentConverter x:Key="PercentConverter" />
+            <local:BoolToFontWeightConverter x:Key="BoolToFontWeightConverter" />
+            <local:IntToCornerRadiusConverter x:Key="IntToCornerRadiusConverter" />
+            <local:IntToThicknessConverter x:Key="IntToThicknessConverter" />
+            <local:StringToSolidColorBrushConverter x:Key="StringToSolidColorBrushConverter" />
+
+            <!-- ===== Icon Button (flat transparent) ===== -->
+            <Style x:Key="IconButton" TargetType="{x:Type Button}">
+                <Setter Property="Foreground" Value="{Binding Source={x:Static framework:AppSettings.Instance}, Path=FontColor, Mode=OneWay, Converter={StaticResource StringToSolidColorBrushConverter}}" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="{x:Type Button}">
+                            <Border Background="{TemplateBinding Background}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Opacity" Value="0.8" />
+                                    <Setter Property="Cursor" Value="Hand" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+                <Style.Resources>
+                    <Style TargetType="{x:Type Path}">
+                        <Setter Property="Fill" Value="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}" />
+                        <Setter Property="Stretch" Value="Uniform" />
+                    </Style>
+                </Style.Resources>
+            </Style>
+
+            <!-- ===== Menu Button (small icon button) ===== -->
+            <Style x:Key="MenuButton" TargetType="{x:Type Button}" BasedOn="{StaticResource IconButton}">
+                <Setter Property="HorizontalAlignment" Value="Right" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="Width" Value="14" />
+                <Setter Property="Height" Value="14" />
+                <Setter Property="Margin" Value="10,0,0,0" />
+            </Style>
+
+            <!-- ===== Sidebar Action Button (themed with corner radius) ===== -->
+            <Style x:Key="SidebarActionButton" TargetType="{x:Type Button}">
+                <Setter Property="Foreground" Value="White" />
+                <Setter Property="FontWeight" Value="Bold" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="Padding" Value="{Binding Source={x:Static framework:AppSettings.Instance}, Path=ThemeButtonPadding, Mode=OneWay, Converter={StaticResource IntToThicknessConverter}}" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="{x:Type Button}">
+                            <Border x:Name="PART_Border"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="{Binding Source={x:Static framework:AppSettings.Instance}, Path=ThemeCornerRadius, Mode=OneWay, Converter={StaticResource IntToCornerRadiusConverter}}"
+                                    Padding="{TemplateBinding Padding}"
+                                    SnapsToDevicePixels="True">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  TextElement.Foreground="{TemplateBinding Foreground}"
+                                                  TextElement.FontWeight="{TemplateBinding FontWeight}"
+                                                  TextElement.FontSize="{TemplateBinding FontSize}" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="PART_Border" Property="Opacity" Value="0.85" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="PART_Border" Property="Opacity" Value="0.7" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- ===== Sidebar Group Border (themed card container) ===== -->
+            <Style x:Key="SidebarGroupBorder" TargetType="{x:Type Border}">
+                <Setter Property="Background" Value="{Binding Source={x:Static framework:AppSettings.Instance}, Path=GroupBGColor, Mode=OneWay, Converter={StaticResource StringToSolidColorBrushConverter}}" />
+                <Setter Property="CornerRadius" Value="{Binding Source={x:Static framework:AppSettings.Instance}, Path=ThemeCornerRadius, Mode=OneWay, Converter={StaticResource IntToCornerRadiusConverter}}" />
+                <Setter Property="SnapsToDevicePixels" Value="True" />
+            </Style>
+
+            <!-- ===== App Text (themed text block) ===== -->
+            <Style x:Key="AppText" TargetType="{x:Type TextBlock}">
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="Margin" Value="0" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="Foreground" Value="{Binding Source={x:Static framework:AppSettings.Instance}, Path=FontColor, Mode=OneWay, Converter={StaticResource StringToSolidColorBrushConverter}}" />
+                <Setter Property="FontSize" Value="{Binding Source={x:Static framework:AppSettings.Instance}, Path=FontSetting.SmallFontSize, Mode=OneWay}" />
+                <Setter Property="TextWrapping" Value="WrapWithOverflow" />
+            </Style>
+
+            <!-- ===== Data Text (themed data display) ===== -->
+            <Style x:Key="DataText" TargetType="{x:Type TextBlock}">
+                <Setter Property="Foreground" Value="{Binding Source={x:Static framework:AppSettings.Instance}, Path=FontColor, Mode=OneWay, Converter={StaticResource StringToSolidColorBrushConverter}}" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="Margin" Value="0" />
+                <Setter Property="FontSize" Value="{Binding Source={x:Static framework:AppSettings.Instance}, Path=FontSetting.FontSize, Mode=OneWay}" />
+                <Setter Property="TextWrapping" Value="WrapWithOverflow" />
+            </Style>
+
+            <!-- ===== App Title (themed label) ===== -->
+            <Style x:Key="AppTitle" TargetType="{x:Type Label}">
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="Margin" Value="0" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="Foreground" Value="{Binding Source={x:Static framework:AppSettings.Instance}, Path=FontColor, Mode=OneWay, Converter={StaticResource StringToSolidColorBrushConverter}}" />
+                <Setter Property="FontSize" Value="{Binding Source={x:Static framework:AppSettings.Instance}, Path=FontSetting.TitleFontSize, Mode=OneWay}" />
+            </Style>
+
+            <!-- ===== App Icon (themed path icon) ===== -->
+            <Style x:Key="AppIcon" TargetType="{x:Type Path}">
+                <Setter Property="Width" Value="{Binding Source={x:Static framework:AppSettings.Instance}, Path=FontSetting.IconSize, Mode=OneWay}" />
+                <Setter Property="Height" Value="{Binding Source={x:Static framework:AppSettings.Instance}, Path=FontSetting.IconSize, Mode=OneWay}" />
+                <Setter Property="Margin" Value="0,0,10,0" />
+                <Setter Property="Stretch" Value="Uniform" />
+                <Setter Property="Fill" Value="{Binding Source={x:Static framework:AppSettings.Instance}, Path=FontColor, Mode=OneWay, Converter={StaticResource StringToSolidColorBrushConverter}}" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
+
+            <!-- ===== Layout Panel Styles ===== -->
+            <Style x:Key="ContentPanel" TargetType="{x:Type StackPanel}">
+                <Setter Property="Margin" Value="15,0" />
+                <Setter Property="Orientation" Value="Vertical" />
+                <Setter Property="VerticalAlignment" Value="Top" />
+            </Style>
+
+            <Style x:Key="VerticalPanel" TargetType="{x:Type StackPanel}">
+                <Setter Property="Orientation" Value="Vertical" />
+            </Style>
+
+            <Style x:Key="HeaderPanel" TargetType="{x:Type StackPanel}">
+                <Setter Property="Orientation" Value="Vertical" />
+                <Setter Property="Margin" Value="0,0,0,10" />
+            </Style>
+
+            <Style x:Key="GroupPanel" TargetType="{x:Type StackPanel}">
+                <Setter Property="Orientation" Value="Vertical" />
+                <Setter Property="Margin" Value="0,10" />
+            </Style>
+
+            <!-- ===== Settings Left Navigation Button ===== -->
+            <Style x:Key="SettingsNavButton" TargetType="{x:Type RadioButton}">
+                <Setter Property="GroupName" Value="SettingsNav" />
+                <Setter Property="Height" Value="40" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="FontFamily" Value="Microsoft YaHei UI" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="Foreground" Value="#202020" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="{x:Type RadioButton}">
+                            <Border x:Name="Bd" Background="Transparent" Padding="15,0,10,0">
+                                <Grid>
+                                    <Rectangle x:Name="Indicator" Width="3" HorizontalAlignment="Left" Fill="#0078D7" Visibility="Collapsed" Margin="-15,8,-10,8" />
+                                    <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Left" />
+                                </Grid>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#EBEBEB" />
+                                </Trigger>
+                                <Trigger Property="IsChecked" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#E6E6E6" />
+                                    <Setter TargetName="Indicator" Property="Visibility" Value="Visible" />
+                                    <Setter Property="FontWeight" Value="Bold" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- ===== ScrollBar Styles ===== -->
+            <Style x:Key="ScrollBarTrackThumb" TargetType="{x:Type Thumb}">
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="{x:Type Thumb}">
+                            <Grid x:Name="Grid">
+                                <Rectangle HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Width="Auto" Height="Auto" Fill="Transparent" />
+                                <Border x:Name="CornerScrollBarRectangle" CornerRadius="5" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Width="Auto" Height="Auto" Margin="0,1" Background="{TemplateBinding Background}" Opacity="0.6" />
+                            </Grid>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="Tag" Value="Horizontal">
+                                    <Setter TargetName="CornerScrollBarRectangle" Property="Width" Value="Auto" />
+                                    <Setter TargetName="CornerScrollBarRectangle" Property="Height" Value="6" />
+                                </Trigger>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="CornerScrollBarRectangle" Property="Opacity" Value="0.8" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style x:Key="MinScrollBar" TargetType="{x:Type ScrollBar}">
+                <Setter Property="Stylus.IsFlicksEnabled" Value="false" />
+                <Setter Property="Foreground" Value="{Binding Source={x:Static framework:AppSettings.Instance}, Path=FontColor, Mode=OneWay, Converter={StaticResource StringToSolidColorBrushConverter}}" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="Width" Value="7" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="{x:Type ScrollBar}">
+                            <Grid x:Name="GridRoot" Width="7" Background="{TemplateBinding Background}">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="0.00001*" />
+                                </Grid.RowDefinitions>
+                                <Track x:Name="PART_Track" Grid.Row="0" IsDirectionReversed="true" Focusable="false">
+                                    <Track.Thumb>
+                                        <Thumb x:Name="Thumb" Background="{TemplateBinding Foreground}" Style="{DynamicResource ScrollBarTrackThumb}" />
+                                    </Track.Thumb>
+                                    <Track.IncreaseRepeatButton>
+                                        <RepeatButton x:Name="PageUp" Command="ScrollBar.PageDownCommand" Opacity="0" Focusable="false" />
+                                    </Track.IncreaseRepeatButton>
+                                    <Track.DecreaseRepeatButton>
+                                        <RepeatButton x:Name="PageDown" Command="ScrollBar.PageUpCommand" Opacity="0" Focusable="false" />
+                                    </Track.DecreaseRepeatButton>
+                                </Track>
+                            </Grid>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsEnabled" Value="false">
+                                    <Setter TargetName="Thumb" Property="Visibility" Value="Collapsed" />
+                                </Trigger>
+                                <Trigger Property="Orientation" Value="Horizontal">
+                                    <Setter TargetName="GridRoot" Property="LayoutTransform">
+                                        <Setter.Value>
+                                            <RotateTransform Angle="-90" />
+                                        </Setter.Value>
+                                    </Setter>
+                                    <Setter TargetName="PART_Track" Property="LayoutTransform">
+                                        <Setter.Value>
+                                            <RotateTransform Angle="-90" />
+                                        </Setter.Value>
+                                    </Setter>
+                                    <Setter Property="Width" Value="Auto" />
+                                    <Setter Property="Height" Value="8" />
+                                    <Setter TargetName="Thumb" Property="Tag" Value="Horizontal" />
+                                    <Setter TargetName="PageDown" Property="Command" Value="ScrollBar.PageLeftCommand" />
+                                    <Setter TargetName="PageUp" Property="Command" Value="ScrollBar.PageRightCommand" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style x:Key="ContentView" TargetType="ScrollViewer">
+                <Setter Property="Margin" Value="5,15" />
+                <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
+                <Setter Property="VerticalScrollBarVisibility" Value="Hidden" />
+                <Style.Resources>
+                    <Style TargetType="{x:Type ScrollBar}" BasedOn="{StaticResource MinScrollBar}" />
+                </Style.Resources>
+            </Style>
+
+            <!-- ===== Window Button (from FlatStyle - blue themed) ===== -->
+            <Style x:Key="WindowButton" TargetType="{x:Type Button}">
+                <Setter Property="FontSize" Value="14" />
+                <Setter Property="FontWeight" Value="500" />
+                <Setter Property="Margin" Value="10,0,0,0" />
+                <Setter Property="Padding" Value="20,8" />
+                <Setter Property="Foreground" Value="#FFFFFF" />
+                <Setter Property="Background" Value="#3498DB" />
+                <Setter Property="BorderBrush" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="{x:Type Button}">
+                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}" CornerRadius="4">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+                <Style.Triggers>
+                    <Trigger Property="IsEnabled" Value="False">
+                        <Setter Property="Foreground" Value="#666666" />
+                        <Setter Property="Background" Value="#FFFFFF" />
+                        <Setter Property="BorderBrush" Value="#666666" />
+                        <Setter Property="BorderThickness" Value="1" />
+                    </Trigger>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter Property="Background" Value="#2980B9" />
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <Style x:Key="WindowButton_SM" TargetType="{x:Type Button}" BasedOn="{StaticResource WindowButton}">
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="Padding" Value="14,8" />
+            </Style>
+
+            <!-- ===== Success Button (green) ===== -->
+            <Style x:Key="SuccessButton" TargetType="{x:Type Button}" BasedOn="{StaticResource WindowButton}">
+                <Setter Property="Background" Value="#2ECC71" />
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter Property="Background" Value="#27AE60" />
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <Style x:Key="SuccessButton_SM" TargetType="{x:Type Button}" BasedOn="{StaticResource SuccessButton}">
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="Padding" Value="14,8" />
+            </Style>
+
+            <!-- ===== Error Button (red) ===== -->
+            <Style x:Key="ErrorButton" TargetType="{x:Type Button}" BasedOn="{StaticResource WindowButton}">
+                <Setter Property="Background" Value="#E74C3C" />
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter Property="Background" Value="#C0392B" />
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <Style x:Key="ErrorButton_SM" TargetType="{x:Type Button}" BasedOn="{StaticResource ErrorButton}">
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="Padding" Value="14,8" />
+            </Style>
+
+            <!-- ===== Neutral Button (gray) ===== -->
+            <Style x:Key="NeutralButton" TargetType="{x:Type Button}" BasedOn="{StaticResource WindowButton}">
+                <Setter Property="Background" Value="#95A5A6" />
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter Property="Background" Value="#7F8C8D" />
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <Style x:Key="NeutralButton_SM" TargetType="{x:Type Button}" BasedOn="{StaticResource NeutralButton}">
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="Padding" Value="14,8" />
+            </Style>
+
+            <!-- ===== Window Buttons Panel ===== -->
+            <Style x:Key="WindowButtons" TargetType="{x:Type StackPanel}">
+                <Setter Property="HorizontalAlignment" Value="Right" />
+                <Setter Property="VerticalAlignment" Value="Bottom" />
+                <Setter Property="Orientation" Value="Horizontal" />
+                <Setter Property="Margin" Value="20" />
+                <Style.Resources>
+                    <Style TargetType="{x:Type Button}" BasedOn="{StaticResource WindowButton}" />
+                </Style.Resources>
+            </Style>
+
+            <Style x:Key="WindowButtons_SM" TargetType="{x:Type StackPanel}" BasedOn="{StaticResource WindowButtons}">
+                <Setter Property="Margin" Value="15" />
+                <Style.Resources>
+                    <Style TargetType="{x:Type Button}" BasedOn="{StaticResource WindowButton_SM}" />
+                </Style.Resources>
+            </Style>
+
+            <!-- ===== Settings Buttons Panel ===== -->
+            <Style x:Key="SettingButtons" TargetType="{x:Type StackPanel}">
+                <Setter Property="HorizontalAlignment" Value="Right" />
+                <Setter Property="VerticalAlignment" Value="Bottom" />
+                <Setter Property="Orientation" Value="Horizontal" />
+                <Setter Property="Margin" Value="10,0,10,10" />
+                <Style.Resources>
+                    <Style TargetType="{x:Type Button}">
+                        <Setter Property="Margin" Value="10,0,0,0" />
+                        <Setter Property="Padding" Value="16,6" />
+                    </Style>
+                </Style.Resources>
+            </Style>
+
+        </ResourceDictionary>
     </Application.Resources>
 </Application>

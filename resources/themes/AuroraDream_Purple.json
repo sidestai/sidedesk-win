@@ -1,0 +1,31 @@
+{
+  "name": "AuroraDream Purple",
+  "version": 1,
+  "color": {
+    "background": "#1A102A",
+    "backgroundOpacity": 0.92,
+    "textPrimary": "#FFFFFF",
+    "textAlert": "#FF4081",
+    "groupBackground": "#2C1742",
+    "accent": "#E040FB",
+    "accentBookmark": "#69F0AE",
+    "accentAITool": "#B388FF",
+    "accentBrowser": "#40C4FF",
+    "accentProgram": "#EA80FC",
+    "accentCounter": "#FF4081",
+    "accentTaskbar": "#FFAB40",
+    "separator": "#4A2068"
+  },
+  "font": {
+    "family": "Microsoft YaHei UI",
+    "size": 14,
+    "bold": false
+  },
+  "layout": {
+    "cornerRadius": 12,
+    "buttonPadding": 9,
+    "groupSpacing": 5,
+    "itemSpacing": 2,
+    "sidebarPadding": 5
+  }
+}

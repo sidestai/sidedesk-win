@@ -1,0 +1,31 @@
+{
+  "name": "DeepOcean Blue",
+  "version": 1,
+  "color": {
+    "background": "#001F3F",
+    "backgroundOpacity": 0.92,
+    "textPrimary": "#FFFFFF",
+    "textAlert": "#FF4136",
+    "groupBackground": "#002855",
+    "accent": "#39CCCC",
+    "accentBookmark": "#39CCCC",
+    "accentAITool": "#7FDBFF",
+    "accentBrowser": "#0074D9",
+    "accentProgram": "#B10DC9",
+    "accentCounter": "#FF4136",
+    "accentTaskbar": "#FFDC00",
+    "separator": "#003366"
+  },
+  "font": {
+    "family": "Microsoft YaHei UI",
+    "size": 14,
+    "bold": true
+  },
+  "layout": {
+    "cornerRadius": 10,
+    "buttonPadding": 8,
+    "groupSpacing": 5,
+    "itemSpacing": 2,
+    "sidebarPadding": 5
+  }
+}

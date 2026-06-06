@@ -1,0 +1,31 @@
+{
+  "name": "SolarAmber Warm",
+  "version": 1,
+  "color": {
+    "background": "#2B1B0E",
+    "backgroundOpacity": 0.92,
+    "textPrimary": "#FFE0B2",
+    "textAlert": "#FF5722",
+    "groupBackground": "#3A2614",
+    "accent": "#FFC107",
+    "accentBookmark": "#8BC34A",
+    "accentAITool": "#FF9800",
+    "accentBrowser": "#29B6F6",
+    "accentProgram": "#FFAB00",
+    "accentCounter": "#FF5722",
+    "accentTaskbar": "#FFD54F",
+    "separator": "#5D4037"
+  },
+  "font": {
+    "family": "Microsoft YaHei UI",
+    "size": 14,
+    "bold": false
+  },
+  "layout": {
+    "cornerRadius": 8,
+    "buttonPadding": 8,
+    "groupSpacing": 5,
+    "itemSpacing": 2,
+    "sidebarPadding": 5
+  }
+}

@@ -1,0 +1,225 @@
+<Window
+    x:Class="SideDesk.ThemeEditor"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:framework="clr-namespace:SideDesk.Framework"
+    xmlns:local="clr-namespace:SideDesk"
+    Title="主题编辑器"
+    Width="450"
+    Height="550"
+    WindowStartupLocation="CenterOwner"
+    ResizeMode="CanResizeWithGrip">
+    <Window.Resources>
+        <local:StringToSolidColorBrushConverter x:Key="ColorBrushConverter"/>
+    </Window.Resources>
+
+    <DockPanel LastChildFill="True">
+        <!-- 底部按钮栏 -->
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="10,8">
+            <Button Content="另存主题" Click="SaveAsButton_Click" Padding="12,6" Margin="0,0,8,0"/>
+            <Button Content="保存" Click="SaveButton_Click" Padding="12,6" Margin="0,0,8,0"/>
+            <Button Content="关闭" Click="CloseButton_Click" Padding="12,6"/>
+        </StackPanel>
+
+        <!-- 主题选择器 -->
+        <DockPanel DockPanel.Dock="Top" Margin="12,10,12,6">
+            <TextBlock Text="当前主题：" DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <ComboBox x:Name="ThemeComboBox" SelectionChanged="ThemeComboBox_SelectionChanged"/>
+        </DockPanel>
+
+        <!-- Tab控件 -->
+        <TabControl Margin="10,4,10,4">
+            <!-- 颜色 Tab -->
+            <TabItem Header="颜色">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="5">
+                    <StackPanel Margin="5">
+                        <!-- 背景颜色 -->
+                        <DockPanel Margin="5,3">
+                            <TextBlock Text="背景颜色" Width="100" VerticalAlignment="Center"/>
+                            <Border Width="24" Height="24" Margin="5,0" CornerRadius="3"
+                                    Background="{Binding BGColor, Source={x:Static framework:AppSettings.Instance}, Converter={StaticResource ColorBrushConverter}}"/>
+                            <TextBox Text="{Binding BGColor, Source={x:Static framework:AppSettings.Instance}, UpdateSourceTrigger=PropertyChanged}"/>
+                        </DockPanel>
+
+                        <!-- 背景透明度 -->
+                        <DockPanel Margin="5,3">
+                            <TextBlock Text="背景透明度" Width="100" VerticalAlignment="Center"/>
+                            <TextBox Width="50" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                     Text="{Binding ElementName=OpacitySlider, Path=Value, StringFormat=F2, UpdateSourceTrigger=PropertyChanged}"/>
+                            <Slider x:Name="OpacitySlider" VerticalAlignment="Center" Margin="5,0"
+                                    Value="{Binding BGOpacity, Source={x:Static framework:AppSettings.Instance}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                    Minimum="0.01" Maximum="1.0" LargeChange="0.1" TickFrequency="0.01"/>
+                        </DockPanel>
+
+                        <!-- 文本颜色 -->
+                        <DockPanel Margin="5,3">
+                            <TextBlock Text="文本颜色" Width="100" VerticalAlignment="Center"/>
+                            <Border Width="24" Height="24" Margin="5,0" CornerRadius="3"
+                                    Background="{Binding FontColor, Source={x:Static framework:AppSettings.Instance}, Converter={StaticResource ColorBrushConverter}}"/>
+                            <TextBox Text="{Binding FontColor, Source={x:Static framework:AppSettings.Instance}, UpdateSourceTrigger=PropertyChanged}"/>
+                        </DockPanel>
+
+                        <!-- 告警颜色 -->
+                        <DockPanel Margin="5,3">
+                            <TextBlock Text="告警颜色" Width="100" VerticalAlignment="Center"/>
+                            <Border Width="24" Height="24" Margin="5,0" CornerRadius="3"
+                                    Background="{Binding AlertFontColor, Source={x:Static framework:AppSettings.Instance}, Converter={StaticResource ColorBrushConverter}}"/>
+                            <TextBox Text="{Binding AlertFontColor, Source={x:Static framework:AppSettings.Instance}, UpdateSourceTrigger=PropertyChanged}"/>
+                        </DockPanel>
+
+                        <!-- 分组背景 -->
+                        <DockPanel Margin="5,3">
+                            <TextBlock Text="分组背景" Width="100" VerticalAlignment="Center"/>
+                            <Border Width="24" Height="24" Margin="5,0" CornerRadius="3"
+                                    Background="{Binding GroupBGColor, Source={x:Static framework:AppSettings.Instance}, Converter={StaticResource ColorBrushConverter}}"/>
+                            <TextBox Text="{Binding GroupBGColor, Source={x:Static framework:AppSettings.Instance}, UpdateSourceTrigger=PropertyChanged}"/>
+                        </DockPanel>
+
+                        <!-- 主题色 -->
+                        <DockPanel Margin="5,3">
+                            <TextBlock Text="主题色" Width="100" VerticalAlignment="Center"/>
+                            <Border Width="24" Height="24" Margin="5,0" CornerRadius="3"
+                                    Background="{Binding AccentColor, Source={x:Static framework:AppSettings.Instance}, Converter={StaticResource ColorBrushConverter}}"/>
+                            <TextBox Text="{Binding AccentColor, Source={x:Static framework:AppSettings.Instance}, UpdateSourceTrigger=PropertyChanged}"/>
+                        </DockPanel>
+
+                        <!-- 书签色 -->
+                        <DockPanel Margin="5,3">
+                            <TextBlock Text="书签色" Width="100" VerticalAlignment="Center"/>
+                            <Border Width="24" Height="24" Margin="5,0" CornerRadius="3"
+                                    Background="{Binding AccentBookmark, Source={x:Static framework:AppSettings.Instance}, Converter={StaticResource ColorBrushConverter}}"/>
+                            <TextBox Text="{Binding AccentBookmark, Source={x:Static framework:AppSettings.Instance}, UpdateSourceTrigger=PropertyChanged}"/>
+                        </DockPanel>
+
+                        <!-- AI工具色 -->
+                        <DockPanel Margin="5,3">
+                            <TextBlock Text="AI工具色" Width="100" VerticalAlignment="Center"/>
+                            <Border Width="24" Height="24" Margin="5,0" CornerRadius="3"
+                                    Background="{Binding AccentAITool, Source={x:Static framework:AppSettings.Instance}, Converter={StaticResource ColorBrushConverter}}"/>
+                            <TextBox Text="{Binding AccentAITool, Source={x:Static framework:AppSettings.Instance}, UpdateSourceTrigger=PropertyChanged}"/>
+                        </DockPanel>
+
+                        <!-- 浏览器色 -->
+                        <DockPanel Margin="5,3">
+                            <TextBlock Text="浏览器色" Width="100" VerticalAlignment="Center"/>
+                            <Border Width="24" Height="24" Margin="5,0" CornerRadius="3"
+                                    Background="{Binding AccentBrowser, Source={x:Static framework:AppSettings.Instance}, Converter={StaticResource ColorBrushConverter}}"/>
+                            <TextBox Text="{Binding AccentBrowser, Source={x:Static framework:AppSettings.Instance}, UpdateSourceTrigger=PropertyChanged}"/>
+                        </DockPanel>
+
+                        <!-- 程序色 -->
+                        <DockPanel Margin="5,3">
+                            <TextBlock Text="程序色" Width="100" VerticalAlignment="Center"/>
+                            <Border Width="24" Height="24" Margin="5,0" CornerRadius="3"
+                                    Background="{Binding AccentProgram, Source={x:Static framework:AppSettings.Instance}, Converter={StaticResource ColorBrushConverter}}"/>
+                            <TextBox Text="{Binding AccentProgram, Source={x:Static framework:AppSettings.Instance}, UpdateSourceTrigger=PropertyChanged}"/>
+                        </DockPanel>
+
+                        <!-- 计数器色 -->
+                        <DockPanel Margin="5,3">
+                            <TextBlock Text="计数器色" Width="100" VerticalAlignment="Center"/>
+                            <Border Width="24" Height="24" Margin="5,0" CornerRadius="3"
+                                    Background="{Binding AccentCounter, Source={x:Static framework:AppSettings.Instance}, Converter={StaticResource ColorBrushConverter}}"/>
+                            <TextBox Text="{Binding AccentCounter, Source={x:Static framework:AppSettings.Instance}, UpdateSourceTrigger=PropertyChanged}"/>
+                        </DockPanel>
+
+                        <!-- 任务栏色 -->
+                        <DockPanel Margin="5,3">
+                            <TextBlock Text="任务栏色" Width="100" VerticalAlignment="Center"/>
+                            <Border Width="24" Height="24" Margin="5,0" CornerRadius="3"
+                                    Background="{Binding AccentTaskbar, Source={x:Static framework:AppSettings.Instance}, Converter={StaticResource ColorBrushConverter}}"/>
+                            <TextBox Text="{Binding AccentTaskbar, Source={x:Static framework:AppSettings.Instance}, UpdateSourceTrigger=PropertyChanged}"/>
+                        </DockPanel>
+
+                        <!-- 分隔线色 -->
+                        <DockPanel Margin="5,3">
+                            <TextBlock Text="分隔线色" Width="100" VerticalAlignment="Center"/>
+                            <Border Width="24" Height="24" Margin="5,0" CornerRadius="3"
+                                    Background="{Binding SeparatorColor, Source={x:Static framework:AppSettings.Instance}, Converter={StaticResource ColorBrushConverter}}"/>
+                            <TextBox Text="{Binding SeparatorColor, Source={x:Static framework:AppSettings.Instance}, UpdateSourceTrigger=PropertyChanged}"/>
+                        </DockPanel>
+
+                        <!-- 告警闪烁 -->
+                        <DockPanel Margin="5,3">
+                            <TextBlock Text="告警闪烁" Width="100" VerticalAlignment="Center"/>
+                            <CheckBox VerticalAlignment="Center"
+                                      IsChecked="{Binding AlertBlink, Source={x:Static framework:AppSettings.Instance}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                        </DockPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- 字体 Tab -->
+            <TabItem Header="字体">
+                <StackPanel Margin="16,12">
+                    <DockPanel Margin="5,5">
+                        <TextBlock Text="字体" Width="80" VerticalAlignment="Center"/>
+                        <ComboBox x:Name="FontFamilyComboBox" IsEditable="True"
+                                  Text="{Binding FontFamily, Source={x:Static framework:AppSettings.Instance}, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                    </DockPanel>
+
+                    <DockPanel Margin="5,5">
+                        <TextBlock Text="字号" Width="80" VerticalAlignment="Center"/>
+                        <ComboBox x:Name="FontSizeComboBox" SelectionChanged="FontSizeComboBox_SelectionChanged"/>
+                    </DockPanel>
+
+                    <DockPanel Margin="5,5">
+                        <TextBlock Text="粗体" Width="80" VerticalAlignment="Center"/>
+                        <CheckBox VerticalAlignment="Center"
+                                  IsChecked="{Binding FontBold, Source={x:Static framework:AppSettings.Instance}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                    </DockPanel>
+                </StackPanel>
+            </TabItem>
+
+            <!-- 布局 Tab -->
+            <TabItem Header="布局">
+                <StackPanel Margin="16,12">
+                    <DockPanel Margin="5,5">
+                        <TextBlock Text="圆角半径" Width="80" VerticalAlignment="Center"/>
+                        <TextBox Width="40" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                 Text="{Binding ElementName=CornerRadiusSlider, Path=Value, StringFormat=N0, UpdateSourceTrigger=PropertyChanged}"/>
+                        <Slider x:Name="CornerRadiusSlider" VerticalAlignment="Center" Margin="5,0"
+                                Value="{Binding ThemeCornerRadius, Source={x:Static framework:AppSettings.Instance}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                Minimum="0" Maximum="20" TickFrequency="1" IsSnapToTickEnabled="True"/>
+                    </DockPanel>
+
+                    <DockPanel Margin="5,5">
+                        <TextBlock Text="按钮内边距" Width="80" VerticalAlignment="Center"/>
+                        <TextBox Width="40" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                 Text="{Binding ElementName=ButtonPaddingSlider, Path=Value, StringFormat=N0, UpdateSourceTrigger=PropertyChanged}"/>
+                        <Slider x:Name="ButtonPaddingSlider" VerticalAlignment="Center" Margin="5,0"
+                                Value="{Binding ThemeButtonPadding, Source={x:Static framework:AppSettings.Instance}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                Minimum="2" Maximum="20" TickFrequency="1" IsSnapToTickEnabled="True"/>
+                    </DockPanel>
+
+                    <DockPanel Margin="5,5">
+                        <TextBlock Text="分组间距" Width="80" VerticalAlignment="Center"/>
+                        <TextBox Width="40" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                 Text="{Binding ElementName=GroupSpacingSlider, Path=Value, StringFormat=N0, UpdateSourceTrigger=PropertyChanged}"/>
+                        <Slider x:Name="GroupSpacingSlider" VerticalAlignment="Center" Margin="5,0"
+                                Value="{Binding ThemeGroupSpacing, Source={x:Static framework:AppSettings.Instance}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                Minimum="0" Maximum="15" TickFrequency="1" IsSnapToTickEnabled="True"/>
+                    </DockPanel>
+
+                    <DockPanel Margin="5,5">
+                        <TextBlock Text="项目间距" Width="80" VerticalAlignment="Center"/>
+                        <TextBox Width="40" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                 Text="{Binding ElementName=ItemSpacingSlider, Path=Value, StringFormat=N0, UpdateSourceTrigger=PropertyChanged}"/>
+                        <Slider x:Name="ItemSpacingSlider" VerticalAlignment="Center" Margin="5,0"
+                                Value="{Binding ThemeItemSpacing, Source={x:Static framework:AppSettings.Instance}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                Minimum="0" Maximum="10" TickFrequency="1" IsSnapToTickEnabled="True"/>
+                    </DockPanel>
+
+                    <DockPanel Margin="5,5">
+                        <TextBlock Text="侧边栏边距" Width="80" VerticalAlignment="Center"/>
+                        <TextBox Width="40" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                 Text="{Binding ElementName=SidebarPaddingSlider, Path=Value, StringFormat=N0, UpdateSourceTrigger=PropertyChanged}"/>
+                        <Slider x:Name="SidebarPaddingSlider" VerticalAlignment="Center" Margin="5,0"
+                                Value="{Binding ThemeSidebarPadding, Source={x:Static framework:AppSettings.Instance}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                Minimum="0" Maximum="15" TickFrequency="1" IsSnapToTickEnabled="True"/>
+                    </DockPanel>
+                </StackPanel>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>

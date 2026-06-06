@@ -1,0 +1,31 @@
+{
+  "name": "CyberBlue Neon",
+  "version": 1,
+  "color": {
+    "background": "#0A0F1C",
+    "backgroundOpacity": 0.94,
+    "textPrimary": "#FFFFFF",
+    "textAlert": "#FF1744",
+    "groupBackground": "#111C2F",
+    "accent": "#00E5FF",
+    "accentBookmark": "#00E676",
+    "accentAITool": "#651FFF",
+    "accentBrowser": "#00B0FF",
+    "accentProgram": "#D500F9",
+    "accentCounter": "#FF1744",
+    "accentTaskbar": "#FF9100",
+    "separator": "#1A2E4A"
+  },
+  "font": {
+    "family": "Consolas",
+    "size": 14,
+    "bold": true
+  },
+  "layout": {
+    "cornerRadius": 4,
+    "buttonPadding": 8,
+    "groupSpacing": 4,
+    "itemSpacing": 2,
+    "sidebarPadding": 4
+  }
+}

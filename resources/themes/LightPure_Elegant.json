@@ -1,0 +1,31 @@
+{
+  "name": "LightPure Elegant",
+  "version": 1,
+  "color": {
+    "background": "#F2F3F5",
+    "backgroundOpacity": 0.95,
+    "textPrimary": "#222222",
+    "textAlert": "#D32F2F",
+    "groupBackground": "#FFFFFF",
+    "accent": "#1976D2",
+    "accentBookmark": "#388E3C",
+    "accentAITool": "#7B1FA2",
+    "accentBrowser": "#0288D1",
+    "accentProgram": "#F57C00",
+    "accentCounter": "#D32F2F",
+    "accentTaskbar": "#FBC02D",
+    "separator": "#BDBDBD"
+  },
+  "font": {
+    "family": "Microsoft YaHei UI",
+    "size": 14,
+    "bold": false
+  },
+  "layout": {
+    "cornerRadius": 10,
+    "buttonPadding": 10,
+    "groupSpacing": 6,
+    "itemSpacing": 3,
+    "sidebarPadding": 6
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "name": "Monokai Pro",
+  "version": 1,
+  "color": {
+    "background": "#2D2A2E",
+    "backgroundOpacity": 0.93,
+    "textPrimary": "#FCFCFA",
+    "textAlert": "#FF6188",
+    "groupBackground": "#363437",
+    "accent": "#A9DC76",
+    "accentBookmark": "#A9DC76",
+    "accentAITool": "#AB9DF2",
+    "accentBrowser": "#78DCE8",
+    "accentProgram": "#FC9867",
+    "accentCounter": "#FF6188",
+    "accentTaskbar": "#FFD866",
+    "separator": "#504E52"
+  },
+  "font": {
+    "family": "Consolas",
+    "size": 14,
+    "bold": false
+  },
+  "layout": {
+    "cornerRadius": 6,
+    "buttonPadding": 8,
+    "groupSpacing": 5,
+    "itemSpacing": 2,
+    "sidebarPadding": 5
+  }
+}
