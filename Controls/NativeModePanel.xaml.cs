@@ -54,6 +54,10 @@ namespace SideDesk.Controls
         // 编辑模式（持久化到 AppSettings）
         private bool _isEditMode = false;
 
+        // 剪贴板历史
+        private ClipboardService? _clipboardService;
+        private StackPanel? _clipboardHistoryContainer;
+
         // 对话框实例
         private AIChatDialog? _aiChatDialog;
         private WindowUsagePanel? _windowUsagePanel;
@@ -201,6 +205,7 @@ namespace SideDesk.Controls
                 PanelType.UsageStats => BuildUsageStatsWidget(item),
                 PanelType.AIChat => BuildAIChatWidget(item),
                 PanelType.FileArea => BuildFileAreaWidget(item),
+                PanelType.ClipboardHistory => BuildClipboardHistoryWidget(item),
                 _ => null
             };
         }
@@ -765,7 +770,26 @@ namespace SideDesk.Controls
                         VerticalAlignment = VerticalAlignment.Center,
                         TextTrimming = TextTrimming.CharacterEllipsis,
                         Foreground = (Brush)FindResource("BrushTextMain"),
-                        ToolTip = fileItem.Path
+                        ToolTip = fileItem.Path,
+                        Cursor = Cursors.Hand
+                    };
+
+                    // 点击项：目录则打开目录，文件则打开所在目录并选中
+                    bool isFolder = fileItem.IsFolder;
+                    nameBlock.MouseLeftButtonUp += (s, e) =>
+                    {
+                        try
+                        {
+                            if (isFolder)
+                            {
+                                Process.Start(new ProcessStartInfo("explorer.exe", filePath) { UseShellExecute = false });
+                            }
+                            else
+                            {
+                                Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{filePath}\"") { UseShellExecute = false });
+                            }
+                        }
+                        catch { }
                     };
 
                     DockPanel.SetDock(delBtn, Dock.Right);
@@ -773,6 +797,87 @@ namespace SideDesk.Controls
                     row.Children.Add(delBtn);
                     row.Children.Add(openBtn);
                     row.Children.Add(nameBlock);
+
+                    // 右键菜单
+                    var ctx = new ContextMenu();
+                    if (isFolder)
+                    {
+                        var menuOpen = new MenuItem { Header = "打开" };
+                        menuOpen.Click += (s, e) =>
+                        {
+                            try { Process.Start(new ProcessStartInfo("explorer.exe", filePath) { UseShellExecute = false }); }
+                            catch { }
+                        };
+                        ctx.Items.Add(menuOpen);
+
+                        var menuEmpty = new MenuItem { Header = "清空文件夹" };
+                        menuEmpty.Click += (s, e) =>
+                        {
+                            if (MessageBox.Show($"确定清空\n{filePath}\n下的所有内容？", "确认清空", MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK)
+                            {
+                                try
+                                {
+                                    foreach (var f in System.IO.Directory.GetFiles(filePath)) System.IO.File.Delete(f);
+                                    foreach (var d in System.IO.Directory.GetDirectories(filePath)) System.IO.Directory.Delete(d, true);
+                                }
+                                catch (Exception ex) { MessageBox.Show($"清空失败: {ex.Message}"); }
+                            }
+                        };
+                        ctx.Items.Add(menuEmpty);
+
+                        var menuDel = new MenuItem { Header = "删除" };
+                        menuDel.Click += (s, e) =>
+                        {
+                            if (MessageBox.Show($"确定删除文件夹\n{filePath}\n及其所有内容？", "确认删除", MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK)
+                            {
+                                try
+                                {
+                                    System.IO.Directory.Delete(filePath, true);
+                                    item.FileItems.Remove(capturedFileItem);
+                                    _configManager?.Save();
+                                    RenderPanels();
+                                }
+                                catch (Exception ex) { MessageBox.Show($"删除失败: {ex.Message}"); }
+                            }
+                        };
+                        ctx.Items.Add(menuDel);
+                    }
+                    else
+                    {
+                        var menuOpen = new MenuItem { Header = "打开" };
+                        menuOpen.Click += (s, e) =>
+                        {
+                            try { Process.Start(new ProcessStartInfo(filePath) { UseShellExecute = true }); }
+                            catch { }
+                        };
+                        ctx.Items.Add(menuOpen);
+
+                        var menuLocate = new MenuItem { Header = "定位" };
+                        menuLocate.Click += (s, e) =>
+                        {
+                            try { Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{filePath}\"") { UseShellExecute = false }); }
+                            catch { }
+                        };
+                        ctx.Items.Add(menuLocate);
+
+                        var menuDel = new MenuItem { Header = "删除" };
+                        menuDel.Click += (s, e) =>
+                        {
+                            if (MessageBox.Show($"确定删除文件\n{filePath}？", "确认删除", MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK)
+                            {
+                                try
+                                {
+                                    System.IO.File.Delete(filePath);
+                                    item.FileItems.Remove(capturedFileItem);
+                                    _configManager?.Save();
+                                    RenderPanels();
+                                }
+                                catch (Exception ex) { MessageBox.Show($"删除失败: {ex.Message}"); }
+                            }
+                        };
+                        ctx.Items.Add(menuDel);
+                    }
+                    row.ContextMenu = ctx;
 
                     // hover 显示操作按钮（删除按钮仅编辑模式，打开按钮始终可hover）
                     if (_isEditMode)
@@ -839,6 +944,169 @@ namespace SideDesk.Controls
             }
         }
 
+        #region 剪贴板历史面板
+
+        private UIElement BuildClipboardHistoryWidget(PanelItem item)
+        {
+            var container = new StackPanel();
+            _clipboardHistoryContainer = container;
+
+            // 初始化剪贴板监控服务
+            EnsureClipboardServiceStarted();
+
+            // 初始渲染
+            RefreshClipboardHistoryUI();
+
+            return WrapWidget("📋 剪贴板历史", container, item);
+        }
+
+        private void EnsureClipboardServiceStarted()
+        {
+            if (_clipboardService != null) return;
+
+            _clipboardService = new ClipboardService();
+            _clipboardService.ClipboardChanged += () =>
+            {
+                Dispatcher.BeginInvoke((Action)RefreshClipboardHistoryUI,
+                    System.Windows.Threading.DispatcherPriority.Background);
+            };
+
+            // 获取父窗口 HWND 启动监控
+            if (_mainWindow != null)
+            {
+                var hwnd = new WindowInteropHelper(_mainWindow).Handle;
+                if (hwnd != IntPtr.Zero)
+                {
+                    _clipboardService.Start(hwnd);
+                    // 添加消息 Hook
+                    var source = HwndSource.FromHwnd(hwnd);
+                    source?.AddHook((IntPtr h, int msg, IntPtr wParam, IntPtr lParam, ref bool handled) =>
+                    {
+                        _clipboardService.ProcessMessage(msg);
+                        return IntPtr.Zero;
+                    });
+                }
+            }
+        }
+
+        private void RefreshClipboardHistoryUI()
+        {
+            if (_clipboardHistoryContainer == null || _clipboardService == null) return;
+            _clipboardHistoryContainer.Children.Clear();
+
+            if (_clipboardService.ClipboardHistory.Count == 0)
+            {
+                _clipboardHistoryContainer.Children.Add(new TextBlock
+                {
+                    Text = "暂无记录，复制内容后自动显示",
+                    Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
+                    FontSize = (double)Application.Current.FindResource("FontSizeTiny"),
+                    Margin = new Thickness(4)
+                });
+                return;
+            }
+
+            foreach (var entry in _clipboardService.ClipboardHistory)
+            {
+                _clipboardHistoryContainer.Children.Add(BuildClipboardHistoryItem(entry));
+            }
+        }
+
+        private UIElement BuildClipboardHistoryItem(ClipboardEntry entry)
+        {
+            var row = new DockPanel
+            {
+                Margin = new Thickness(3, 1, 3, 1),
+                Cursor = Cursors.Hand,
+                Height = 22
+            };
+
+            // 内容类型图标
+            string icon = ClipboardService.GetContentTypeIcon(entry.ContentType);
+            string timeStr = entry.Time.ToString("HH:mm:ss");
+            var iconText = new TextBlock
+            {
+                Text = icon,
+                FontSize = 12,
+                Foreground = ClipboardService.GetContentTypeColor(entry.ContentType),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 4, 0),
+                ToolTip = timeStr
+            };
+            DockPanel.SetDock(iconText, Dock.Left);
+            row.Children.Add(iconText);
+
+            // 复制按钮（悬停显示）
+            var copyBtn = new Button
+            {
+                Content = "⎘",
+                Width = 20, Height = 20,
+                Background = Brushes.Transparent,
+                Foreground = new SolidColorBrush(Color.FromRgb(140, 140, 140)),
+                BorderThickness = new Thickness(0),
+                FontSize = 12,
+                Padding = new Thickness(0),
+                Cursor = Cursors.Hand,
+                ToolTip = "复制到剪贴板",
+                Visibility = Visibility.Collapsed
+            };
+            DockPanel.SetDock(copyBtn, Dock.Right);
+            row.Children.Add(copyBtn);
+
+            row.MouseEnter += (s, e) => copyBtn.Visibility = Visibility.Visible;
+            row.MouseLeave += (s, e) => copyBtn.Visibility = Visibility.Collapsed;
+
+            // 文本内容
+            string displayText = entry.Text;
+            if (entry.ContentType == ClipboardContentType.Text)
+            {
+                int newline = displayText.IndexOfAny(new char[] { '\n', '\r' });
+                if (newline >= 0) displayText = displayText.Substring(0, newline) + "…";
+            }
+            if (displayText.Length > 30) displayText = displayText.Substring(0, 30) + "…";
+
+            var textBlock = new TextBlock
+            {
+                Text = displayText,
+                FontSize = 11,
+                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                ToolTip = entry.Text.Length > 200 ? entry.Text.Substring(0, 200) + "..." : entry.Text
+            };
+            row.Children.Add(textBlock);
+
+            // 点击复制逻辑
+            var text = entry.Text;
+            var filePaths = entry.FilePaths;
+            var contentType = entry.ContentType;
+
+            Action doCopy = () =>
+            {
+                try
+                {
+                    if (contentType == ClipboardContentType.File && filePaths != null && filePaths.Count > 0)
+                    {
+                        var sc = new StringCollection();
+                        sc.AddRange(filePaths.ToArray());
+                        Clipboard.SetFileDropList(sc);
+                    }
+                    else
+                    {
+                        Clipboard.SetText(text);
+                    }
+                }
+                catch { }
+            };
+
+            copyBtn.Click += (s, e) => { doCopy(); e.Handled = true; };
+            row.MouseLeftButtonUp += (s, e) => { if (!e.Handled) doCopy(); };
+
+            return row;
+        }
+
+        #endregion
+
         #endregion
 
         #region 添加模块菜单事件
@@ -864,6 +1132,7 @@ namespace SideDesk.Controls
         private void AddUsageStatsPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.UsageStats);
         private void AddAIChatPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.AIChat);
         private void AddFileAreaPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.FileArea);
+        private void AddClipboardHistoryPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.ClipboardHistory);
 
         #endregion
 
@@ -1632,7 +1901,8 @@ namespace SideDesk.Controls
                 new { Header = "鼠键计数器",   Checked = settings.ShowCounter,      Key = "ShowCounter" },
                 new { Header = "AI 对话",        Checked = settings.ShowAIChat,       Key = "ShowAIChat" },
                 new { Header = "使用时长分析", Checked = settings.ShowUsageStats,   Key = "ShowUsageStats" },
-                new { Header = "剪贴板历史",   Checked = settings.ShowClipboard,    Key = "ShowClipboard" }
+                new { Header = "剪贴板收藏",   Checked = settings.ShowClipboard,    Key = "ShowClipboard" },
+                new { Header = "剪贴板历史",   Checked = settings.ShowClipboardHistory,    Key = "ShowClipboardHistory" }
             };
 
             foreach (var def in items)
@@ -1661,6 +1931,7 @@ namespace SideDesk.Controls
                 case "ShowAIChat":       settings.ShowAIChat = value; break;
                 case "ShowUsageStats":   settings.ShowUsageStats = value; break;
                 case "ShowClipboard":    settings.ShowClipboard = value; break;
+                case "ShowClipboardHistory": settings.ShowClipboardHistory = value; break;
             }
             settings.Save();
         }

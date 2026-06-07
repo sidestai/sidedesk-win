@@ -37,7 +37,7 @@ namespace SideDesk.Services
         private IntPtr _hwnd = IntPtr.Zero;
         private bool _isRunning = false;
 
-        /// <summary>剪贴板历史记录（只读访问）</summary>
+        /// <summary>剪贴板收藏记录（只读访问）</summary>
         public IReadOnlyList<ClipboardEntry> ClipboardHistory => _clipboardHistory;
 
         /// <summary>剪贴板内容变化事件</summary>

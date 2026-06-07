@@ -9,11 +9,12 @@ public enum PanelType
 {
     QuickGroup,      // 快捷分组
     StickyNotes,     // 便签
-    Clipboard,       // 剪贴板历史
+    Clipboard,       // 剪贴板收藏
     SystemMonitor,   // 系统信息/计数器
     UsageStats,      // 使用统计
     AIChat,          // AI 对话
-    FileArea         // 文件区
+    FileArea,        // 文件区
+    ClipboardHistory  // 剪贴板历史
 }
 
 public class PanelItem

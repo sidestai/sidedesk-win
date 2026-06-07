@@ -274,6 +274,14 @@ namespace SideDesk.Framework
             set { _showClipboard = value; NotifyPropertyChanged("ShowClipboard"); }
         }
 
+        private bool _showClipboardHistory { get; set; } = true;
+        [JsonProperty]
+        public bool ShowClipboardHistory
+        {
+            get { return _showClipboardHistory; }
+            set { _showClipboardHistory = value; NotifyPropertyChanged("ShowClipboardHistory"); }
+        }
+
         private bool _showMachineName { get; set; } = false;
 
         [JsonProperty]
