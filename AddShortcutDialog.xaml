@@ -1,0 +1,63 @@
+<Window x:Class="SideDesk.AddShortcutDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="添加快捷项" Height="220" Width="400"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        Background="#FF2D2D30" Foreground="White">
+    <DockPanel Margin="15">
+        <!-- 顶部切换按钮 -->
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+            <Button x:Name="toggleBatchBtn" Content="批量模式" Click="ToggleBatch_Click"
+                    DockPanel.Dock="Right" Padding="8,3"
+                    Background="#FF3E3E42" Foreground="#FFAAAAAA" BorderBrush="#FF555555" Cursor="Hand"/>
+            <TextBlock Text="添加快捷项" FontWeight="Bold" VerticalAlignment="Center"/>
+        </DockPanel>
+
+        <!-- 底部按钮 -->
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+            <Button Content="确定" Width="70" Margin="0,0,10,0" Click="Ok_Click"
+                    Background="#FF3E3E42" Foreground="White" BorderBrush="#FF555555" Cursor="Hand"/>
+            <Button Content="取消" Width="70" Click="Cancel_Click"
+                    Background="#FF3E3E42" Foreground="White" BorderBrush="#FF555555" Cursor="Hand"/>
+        </StackPanel>
+
+        <!-- 内容区（单个/批量互斥显示） -->
+        <Grid>
+            <!-- 单个模式 -->
+            <StackPanel x:Name="singlePanel">
+                <DockPanel Margin="0,0,0,8" LastChildFill="True">
+                    <TextBlock DockPanel.Dock="Left" Text="名称：" Width="60" VerticalAlignment="Center"/>
+                    <TextBox x:Name="nameBox" Background="#FF3E3E42" Foreground="White" BorderBrush="#FF555555" Padding="3"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,8" LastChildFill="True">
+                    <TextBlock DockPanel.Dock="Left" Text="网址：" Width="60" VerticalAlignment="Center"/>
+                    <TextBox x:Name="urlBox" Text="https://" Background="#FF3E3E42" Foreground="White" BorderBrush="#FF555555" Padding="3"/>
+                </DockPanel>
+                <CheckBox x:Name="appModeCheck" Content="App模式（无地址栏）" Foreground="White" IsChecked="True"/>
+            </StackPanel>
+
+            <!-- 批量模式 -->
+            <Grid x:Name="batchPanel" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <!-- 表头 -->
+                <Grid Grid.Row="0" Margin="0,0,0,5">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="100"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="45"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="名称" FontSize="11" Foreground="#FFAAAAAA"/>
+                    <TextBlock Grid.Column="1" Text="网址/路径" FontSize="11" Foreground="#FFAAAAAA" Margin="5,0,0,0"/>
+                    <TextBlock Grid.Column="2" Text="App" FontSize="11" Foreground="#FFAAAAAA" HorizontalAlignment="Center"/>
+                </Grid>
+                <!-- 行列表 -->
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                    <StackPanel x:Name="batchRows"/>
+                </ScrollViewer>
+            </Grid>
+        </Grid>
+    </DockPanel>
+</Window>

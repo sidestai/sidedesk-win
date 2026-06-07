@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls;
 using SideDesk.Models;
 
 namespace SideDesk;
@@ -24,7 +25,8 @@ public partial class AddWindowDialog : Window
         {
             Name = string.IsNullOrWhiteSpace(nameBox.Text) ? "新窗口" : nameBox.Text.Trim(),
             Type = webviewRadio.IsChecked == true ? WindowType.WebView : WindowType.Native,
-            Url = webviewRadio.IsChecked == true ? urlBox.Text.Trim() : null
+            Url = webviewRadio.IsChecked == true ? urlBox.Text.Trim() : null,
+            IsAppMode = false
         };
         DialogResult = true;
         Close();

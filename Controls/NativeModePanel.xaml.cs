@@ -209,16 +209,75 @@ namespace SideDesk.Controls
         /// <summary>
         /// 通用面板包裹器：带标题和删除按钮
         /// </summary>
-        private Border WrapWidget(string title, UIElement content, PanelItem item)
+        private Border WrapWidget(string defaultTitle, UIElement content, PanelItem item)
         {
+            var displayTitle = string.IsNullOrEmpty(item.Title) ? defaultTitle : item.Title;
+
             var header = new DockPanel { Margin = new Thickness(0, 0, 0, 3) };
             var titleBlock = new TextBlock
             {
-                Text = title,
+                Text = displayTitle,
                 FontWeight = FontWeights.Bold,
                 VerticalAlignment = VerticalAlignment.Center,
                 Foreground = Brushes.White
             };
+
+            if (_isEditMode)
+            {
+                titleBlock.Cursor = Cursors.Hand;
+                titleBlock.ToolTip = "双击编辑名称";
+                titleBlock.MouseLeftButtonDown += (s, e) =>
+                {
+                    if (e.ClickCount == 2)
+                    {
+                        var parent = titleBlock.Parent as Panel;
+                        if (parent == null) return;
+
+                        var editBox = new TextBox
+                        {
+                            Text = titleBlock.Text,
+                            FontWeight = FontWeights.Bold,
+                            MinWidth = 50,
+                            Background = Brushes.Transparent,
+                            Foreground = Brushes.White,
+                            BorderThickness = new Thickness(0, 0, 0, 1),
+                            BorderBrush = Brushes.CornflowerBlue,
+                            Padding = new Thickness(0),
+                            VerticalAlignment = VerticalAlignment.Center,
+                            CaretBrush = Brushes.White
+                        };
+
+                        int index = parent.Children.IndexOf(titleBlock);
+                        parent.Children.Remove(titleBlock);
+                        parent.Children.Insert(index, editBox);
+                        editBox.Focus();
+                        editBox.SelectAll();
+
+                        bool committed = false;
+                        void CommitEdit()
+                        {
+                            if (committed) return;
+                            committed = true;
+                            var newTitle = editBox.Text.Trim();
+                            item.Title = string.IsNullOrEmpty(newTitle) ? null : newTitle;
+                            _configManager?.Save();
+                            RenderPanels();
+                        }
+
+                        editBox.LostFocus += (s2, e2) => CommitEdit();
+                        editBox.KeyDown += (s2, e2) =>
+                        {
+                            if (e2.Key == System.Windows.Input.Key.Enter)
+                                CommitEdit();
+                            else if (e2.Key == System.Windows.Input.Key.Escape)
+                                RenderPanels();
+                        };
+
+                        e.Handled = true;
+                    }
+                };
+            }
+
             var deleteBtn = new Button
             {
                 Content = "✕", FontSize = 10, Padding = new Thickness(3, 0, 3, 0),
@@ -238,11 +297,11 @@ namespace SideDesk.Controls
 
             var border = new Border
             {
-                Margin = new Thickness(5, 5, 5, 5),
-                Padding = new Thickness(8),
-                CornerRadius = new CornerRadius(5),
-                BorderBrush = Brushes.DimGray,
-                BorderThickness = new Thickness(0.5),
+                Margin = new Thickness(0),
+                Padding = new Thickness(0),
+                CornerRadius = new CornerRadius(0),
+                BorderBrush = null,
+                BorderThickness = new Thickness(0),
                 Child = stack
             };
 

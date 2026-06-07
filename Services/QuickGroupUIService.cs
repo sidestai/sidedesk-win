@@ -307,15 +307,7 @@ namespace SideDesk.Services
             DockPanel.SetDock(toggleBtn, Dock.Right);
             titleBar.Children.Add(toggleBtn);
 
-            // + 按钮
-            var addItemBtn = new Button
-            {
-                Content = "+", Width = 22, Height = 22,
-                Background = Brushes.Transparent, Foreground = Brushes.White,
-                BorderThickness = new Thickness(0), FontSize = 14, FontWeight = FontWeights.Bold, Padding = new Thickness(0)
-            };
-            DockPanel.SetDock(addItemBtn, Dock.Right);
-            titleBar.Children.Add(addItemBtn);
+
 
             // 分组名
             var titleText = new TextBlock
@@ -353,6 +345,21 @@ namespace SideDesk.Services
             toggleBtn.Click += (s, ev) =>
             {
                 var popup = new ContextMenu();
+
+                // 添加子菜单
+                var addSubMenu = new MenuItem { Header = "添加" };
+                var miProg = new MenuItem { Header = "添加程序" };
+                miProg.Click += (s2, ev2) => ShowAddItemDialog(group.Id, contentPanel, "program");
+                addSubMenu.Items.Add(miProg);
+                var miUrl = new MenuItem { Header = "添加网址" };
+                miUrl.Click += (s2, ev2) => ShowAddItemDialog(group.Id, contentPanel, "url");
+                addSubMenu.Items.Add(miUrl);
+                var miWin = new MenuItem { Header = "添加窗口" };
+                miWin.Click += (s2, ev2) => ShowPickWindowDialog(group.Id);
+                addSubMenu.Items.Add(miWin);
+                popup.Items.Add(addSubMenu);
+                popup.Items.Add(new Separator());
+
                 var expandItem = new MenuItem { Header = group.IsExpanded ? "收起" : "展开" };
                 expandItem.Click += (s2, ev2) =>
                 {
@@ -417,23 +424,7 @@ namespace SideDesk.Services
                 popup.IsOpen = true;
             };
 
-            // + 按钮事件
-            addItemBtn.Click += (s, ev) =>
-            {
-                var addMenu = new ContextMenu();
-                var miProg = new MenuItem { Header = "添加程序" };
-                miProg.Click += (s2, ev2) => ShowAddItemDialog(group.Id, contentPanel, "program");
-                addMenu.Items.Add(miProg);
-                var miUrl = new MenuItem { Header = "添加网址" };
-                miUrl.Click += (s2, ev2) => ShowAddItemDialog(group.Id, contentPanel, "url");
-                addMenu.Items.Add(miUrl);
-                var miWin = new MenuItem { Header = "添加窗口" };
-                miWin.Click += (s2, ev2) => ShowPickWindowDialog(group.Id);
-                addMenu.Items.Add(miWin);
-                addMenu.PlacementTarget = addItemBtn;
-                addMenu.Placement = PlacementMode.Bottom;
-                addMenu.IsOpen = true;
-            };
+
 
             return border;
         }
@@ -533,51 +524,124 @@ namespace SideDesk.Services
                 else
                 {
                     // URL
-                    string browserExe = "msedge";
+                    string? browserExe = null;
                     var exeEntry = BrowserProfileManager.GetExeById(item.BrowserExeId);
                     if (exeEntry != null && !string.IsNullOrEmpty(exeEntry.ExePath))
                         browserExe = exeEntry.ExePath;
 
-                    var process = new Process();
-                    process.StartInfo.FileName = browserExe;
-                    string args = item.Target ?? "";
-                    if (item.UseAppMode) args = $"--app={item.Target}";
-
+                    bool hasProfile = false;
+                    string profileArgs = "";
                     var profileEntry = BrowserProfileManager.GetProfileById(item.BrowserProfileId);
                     if (profileEntry != null && !string.IsNullOrEmpty(profileEntry.UserDataDir))
-                        args += $" --user-data-dir=\"{profileEntry.UserDataDir}\"";
-
-                    process.StartInfo.Arguments = args;
-                    process.Start();
-
-                    string pName = Path.GetFileNameWithoutExtension(browserExe);
-                    Task.Run(async () =>
                     {
-                        IntPtr foundHandle = IntPtr.Zero;
-                        int attempts = 0;
-                        while (foundHandle == IntPtr.Zero && attempts < 20)
+                        hasProfile = true;
+                        profileArgs = $" --user-data-dir=\"{profileEntry.UserDataDir}\"";
+                    }
+
+                    // 需要用特定浏览器启动的情况：App模式 或 指定了profile
+                    bool needSpecificBrowser = item.UseAppMode || hasProfile;
+
+                    if (needSpecificBrowser)
+                    {
+                        // 确定浏览器完整路径
+                        if (string.IsNullOrEmpty(browserExe))
+                            browserExe = FindEdgePath();
+
+                        if (string.IsNullOrEmpty(browserExe))
                         {
-                            await Task.Delay(500);
-                            attempts++;
-                            foundHandle = WindowFinder.FindNewWindow(pName, _quickItemHandles);
+                            // 找不到浏览器，回退到系统默认浏览器（无法支持app模式和profile）
+                            Process.Start(new ProcessStartInfo(item.Target ?? "") { UseShellExecute = true });
+                            return;
                         }
-                        if (foundHandle != IntPtr.Zero)
+
+                        string args = item.UseAppMode ? $"--app={item.Target}" : (item.Target ?? "");
+                        args += profileArgs;
+
+                        var process = new Process();
+                        process.StartInfo.FileName = browserExe;
+                        process.StartInfo.Arguments = args;
+                        process.Start();
+
+                        string pName = Path.GetFileNameWithoutExtension(browserExe);
+                        Task.Run(async () =>
                         {
-                            await _dispatcher.InvokeAsync(() =>
+                            IntPtr foundHandle = IntPtr.Zero;
+                            int attempts = 0;
+                            while (foundHandle == IntPtr.Zero && attempts < 20)
                             {
-                                item.WindowHandle = foundHandle;
-                                _quickItemHandles.Add(foundHandle);
-                                ApplyTaskbarVisibility(item);
-                                ApplyTopmostIfPossible(item);
+                                await Task.Delay(500);
+                                attempts++;
+                                foundHandle = WindowFinder.FindNewWindow(pName, _quickItemHandles);
+                            }
+                            if (foundHandle != IntPtr.Zero)
+                            {
+                                await _dispatcher.InvokeAsync(() =>
+                                {
+                                    item.WindowHandle = foundHandle;
+                                    _quickItemHandles.Add(foundHandle);
+                                    ApplyTaskbarVisibility(item);
+                                    ApplyTopmostIfPossible(item);
+                                });
+                            }
+                        });
+                    }
+                    else
+                    {
+                        // 普通模式：使用系统默认浏览器
+                        if (!string.IsNullOrEmpty(browserExe))
+                        {
+                            // 用户指定了浏览器exe
+                            var process = new Process();
+                            process.StartInfo.FileName = browserExe;
+                            process.StartInfo.Arguments = item.Target ?? "";
+                            process.Start();
+
+                            string pName = Path.GetFileNameWithoutExtension(browserExe);
+                            Task.Run(async () =>
+                            {
+                                IntPtr foundHandle = IntPtr.Zero;
+                                int attempts = 0;
+                                while (foundHandle == IntPtr.Zero && attempts < 20)
+                                {
+                                    await Task.Delay(500);
+                                    attempts++;
+                                    foundHandle = WindowFinder.FindNewWindow(pName, _quickItemHandles);
+                                }
+                                if (foundHandle != IntPtr.Zero)
+                                {
+                                    await _dispatcher.InvokeAsync(() =>
+                                    {
+                                        item.WindowHandle = foundHandle;
+                                        _quickItemHandles.Add(foundHandle);
+                                        ApplyTaskbarVisibility(item);
+                                        ApplyTopmostIfPossible(item);
+                                    });
+                                }
                             });
                         }
-                    });
+                        else
+                        {
+                            // 使用系统默认浏览器
+                            Process.Start(new ProcessStartInfo(item.Target ?? "") { UseShellExecute = true });
+                        }
+                    }
                 }
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"打开失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        private static string? FindEdgePath()
+        {
+            var paths = new[]
+            {
+                @"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+                @"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Microsoft\Edge\Application\msedge.exe")
+            };
+            return paths.FirstOrDefault(File.Exists);
         }
 
         private bool TryActivateExistingWindow(QuickItem item)
@@ -981,9 +1045,59 @@ namespace SideDesk.Services
 
         private void ShowAddItemDialog(string groupId, UniformGrid? contentPanel, string? presetType)
         {
+            if (presetType == "url")
+            {
+                // 使用 AddShortcutDialog（支持批量模式）
+                var shortcutDialog = new AddShortcutDialog();
+                shortcutDialog.Owner = OwnerWindow;
+                if (shortcutDialog.ShowDialog() == true)
+                {
+                    if (shortcutDialog.BatchResults != null && shortcutDialog.BatchResults.Count > 0)
+                    {
+                        foreach (var result in shortcutDialog.BatchResults)
+                        {
+                            var newItem = new QuickItem
+                            {
+                                Name = string.IsNullOrEmpty(result.Name)
+                                    ? (string.IsNullOrEmpty(result.Url) ? "新快捷项" : result.Url)
+                                    : result.Name,
+                                Type = "url",
+                                Target = result.Url,
+                                UseAppMode = result.IsAppMode
+                            };
+                            QuickGroupManager.AddItem(groupId, newItem);
+                            contentPanel?.Children.Add(BuildItemButton(newItem, groupId));
+                        }
+                        QuickGroupManager.Save();
+                        if (contentPanel == null) LoadGroups();
+                    }
+                    else if (shortcutDialog.SingleResult != null)
+                    {
+                        var result = shortcutDialog.SingleResult;
+                        var newItem = new QuickItem
+                        {
+                            Name = string.IsNullOrEmpty(result.Name)
+                                ? (string.IsNullOrEmpty(result.Url) ? "新快捷项" : result.Url)
+                                : result.Name,
+                            Type = "url",
+                            Target = result.Url,
+                            UseAppMode = result.IsAppMode
+                        };
+                        QuickGroupManager.AddItem(groupId, newItem);
+                        QuickGroupManager.Save();
+                        if (contentPanel != null)
+                            contentPanel.Children.Add(BuildItemButton(newItem, groupId));
+                        else
+                            LoadGroups();
+                    }
+                }
+                return;
+            }
+
+            // 程序类型：保持原有简单对话框
             var dialog = new Window
             {
-                Title = "添加项目", Width = 440, Height = 340,
+                Title = "添加程序", Width = 440, Height = 280,
                 WindowStartupLocation = WindowStartupLocation.CenterScreen,
                 ResizeMode = ResizeMode.NoResize,
                 Background = new SolidColorBrush(Color.FromRgb(30, 30, 30)),
@@ -993,15 +1107,6 @@ namespace SideDesk.Services
 
             var rootPanel = new StackPanel { Margin = new Thickness(15) };
 
-            var typePanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 5, 0, 5) };
-            typePanel.Children.Add(new TextBlock { Text = "类型:", Foreground = Brushes.White, Width = 60, VerticalAlignment = VerticalAlignment.Center });
-            var typeCombo = new ComboBox { Width = 120 };
-            typeCombo.Items.Add("网址"); typeCombo.Items.Add("程序");
-            typeCombo.SelectedIndex = (presetType == "program") ? 1 : 0;
-            if (presetType != null) typeCombo.IsEnabled = false;
-            typePanel.Children.Add(typeCombo);
-            rootPanel.Children.Add(typePanel);
-
             var namePanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 5, 0, 5) };
             namePanel.Children.Add(new TextBlock { Text = "名称:", Foreground = Brushes.White, Width = 60, VerticalAlignment = VerticalAlignment.Center });
             var nameBox = new TextBox { Width = 280 };
@@ -1009,13 +1114,10 @@ namespace SideDesk.Services
             rootPanel.Children.Add(namePanel);
 
             var targetPanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 5, 0, 5) };
-            targetPanel.Children.Add(new TextBlock { Text = "目标:", Foreground = Brushes.White, Width = 60, VerticalAlignment = VerticalAlignment.Center });
+            targetPanel.Children.Add(new TextBlock { Text = "路径:", Foreground = Brushes.White, Width = 60, VerticalAlignment = VerticalAlignment.Center });
             var targetBox = new TextBox { Width = 280 };
             targetPanel.Children.Add(targetBox);
             rootPanel.Children.Add(targetPanel);
-
-            var appModeCheck = new CheckBox { Content = "App 模式 (无地址栏)", Foreground = Brushes.White, IsChecked = true, Margin = new Thickness(60, 5, 0, 5) };
-            rootPanel.Children.Add(appModeCheck);
 
             var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 15, 0, 0) };
             var okBtn = new Button { Content = "确定", Width = 70, Margin = new Thickness(0, 0, 10, 0) };
@@ -1024,13 +1126,13 @@ namespace SideDesk.Services
             {
                 string name = nameBox.Text.Trim();
                 string target = targetBox.Text.Trim();
-                if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(target)) { MessageBox.Show("请填写名称和目标"); return; }
+                if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(target)) { MessageBox.Show("请填写名称和路径"); return; }
                 var newItem = new QuickItem
                 {
                     Name = name,
-                    Type = typeCombo.SelectedIndex == 0 ? "url" : "program",
+                    Type = "program",
                     Target = target,
-                    UseAppMode = appModeCheck.IsChecked == true
+                    UseAppMode = false
                 };
                 QuickGroupManager.AddItem(groupId, newItem);
                 QuickGroupManager.Save();

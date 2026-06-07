@@ -52,6 +52,7 @@ public class WindowConfig
     public DateTime CreatedAt { get; set; } = DateTime.Now;
     public List<PanelItem> Panels { get; set; } = new();
     public bool IsEditMode { get; set; } = false;
+    public bool IsAppMode { get; set; } = false;
 }
 
 public class DockWindowState

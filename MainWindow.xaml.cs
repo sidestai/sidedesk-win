@@ -104,11 +104,32 @@ namespace SideDesk
                     menu.Items.Insert(insertIndex, item);
                     insertIndex++;
                 }
+            }
 
-                // 当前dock只有1个窗口时隐藏"关闭窗口"及其前面的分隔符
-                var showClose = _dockState.WindowIds.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
-                closeWindowMenu.Visibility = showClose;
-                closeWindowSeparator.Visibility = showClose;
+            // 仅双侧模式下显示"关闭面板"（非双侧时不能关闭唯一的 dock）
+            var app = (App)Application.Current;
+            bool isBothSide = app.CurrentLayout == LayoutMode.Both;
+            var showClose = isBothSide ? Visibility.Visible : Visibility.Collapsed;
+            closeWindowMenu.Visibility = showClose;
+            closeWindowSeparator.Visibility = showClose;
+        }
+
+        private void EditWindowAtIndex(int index)
+        {
+            if (_configManager == null || _dockState == null) return;
+            if (index < 0 || index >= _dockState.WindowIds.Count) return;
+
+            var windowId = _dockState.WindowIds[index];
+            var windowConfig = _configManager.GetById(windowId);
+            if (windowConfig == null) return;
+
+            var dialog = new EditWindowDialog(windowConfig.Name);
+            dialog.Owner = this;
+            if (dialog.ShowDialog() == true)
+            {
+                windowConfig.Name = dialog.NewName;
+                _configManager.Save();
+                RefreshWindowTabs();
             }
         }
 
@@ -121,8 +142,14 @@ namespace SideDesk
 
         private void CloseWindow_Click(object sender, RoutedEventArgs e)
         {
-            if (_dockState == null) return;
-            RemoveWindow(_dockState.ActiveIndex);
+            var app = (App)Application.Current;
+            if (app.CurrentLayout != LayoutMode.Both) return;
+
+            // 关闭当前 dock 面板：切换为只保留另一侧
+            if (DockSide == DockEdge.Left)
+                app.SwitchLayout(LayoutMode.Right);
+            else
+                app.SwitchLayout(LayoutMode.Left);
         }
 
         private void Exit_Click(object sender, RoutedEventArgs e)
@@ -216,11 +243,20 @@ namespace SideDesk
                 };
                 btn.Click += (s, e) => WindowTab_Click(index);
 
-                // 右键删除
+                // 右键菜单
                 var ctx = new ContextMenu();
+
+                var editItem = new MenuItem { Header = "编辑窗口" };
+                int editIdx = index;
+                editItem.Click += (s, e) => EditWindowAtIndex(editIdx);
+                ctx.Items.Add(editItem);
+
                 var deleteItem = new MenuItem { Header = "删除此窗口" };
                 deleteItem.Click += (s, e) => RemoveWindow(index);
+                if (_dockState.WindowIds.Count <= 1)
+                    deleteItem.Visibility = Visibility.Collapsed;
                 ctx.Items.Add(deleteItem);
+
                 btn.ContextMenu = ctx;
 
                 windowTabsPanel.Children.Add(btn);

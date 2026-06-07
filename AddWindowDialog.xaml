@@ -6,36 +6,42 @@
         Background="#FF2D2D30" Foreground="White">
     <Grid Margin="15">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        
-        <!-- 名称 -->
-        <DockPanel Grid.Row="0" Margin="0,0,0,10">
-            <TextBlock Text="名称：" Width="60" VerticalAlignment="Center"/>
-            <TextBox x:Name="nameBox" Text="新窗口"/>
-        </DockPanel>
-        
-        <!-- 模式选择 -->
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">
-            <TextBlock Text="模式：" Width="60" VerticalAlignment="Center"/>
-            <RadioButton x:Name="nativeRadio" Content="Native" IsChecked="True" 
-                         Foreground="White" Margin="0,0,15,0" Checked="ModeChanged"/>
-            <RadioButton x:Name="webviewRadio" Content="WebView" 
-                         Foreground="White" Checked="ModeChanged"/>
-        </StackPanel>
-        
-        <!-- URL -->
-        <DockPanel Grid.Row="2" Margin="0,0,0,10">
-            <TextBlock Text="URL：" Width="60" VerticalAlignment="Center"/>
-            <TextBox x:Name="urlBox" IsEnabled="False" Text="https://"/>
-        </DockPanel>
-        
+
+        <!-- 单个模式面板 -->
+        <Grid Grid.Row="0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- 名称 -->
+            <DockPanel Grid.Row="0" Margin="0,0,0,10">
+                <TextBlock Text="名称：" Width="60" VerticalAlignment="Center"/>
+                <TextBox x:Name="nameBox" Text="新窗口"/>
+            </DockPanel>
+
+            <!-- 模式选择 -->
+            <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">
+                <TextBlock Text="模式：" Width="60" VerticalAlignment="Center"/>
+                <RadioButton x:Name="nativeRadio" Content="Native" IsChecked="True" 
+                             Foreground="White" Margin="0,0,15,0" Checked="ModeChanged"/>
+                <RadioButton x:Name="webviewRadio" Content="WebView" 
+                             Foreground="White" Checked="ModeChanged"/>
+            </StackPanel>
+
+            <!-- URL -->
+            <DockPanel Grid.Row="2" Margin="0,0,0,10">
+                <TextBlock Text="URL：" Width="60" VerticalAlignment="Center"/>
+                <TextBox x:Name="urlBox" IsEnabled="False" Text="https://"/>
+            </DockPanel>
+        </Grid>
+
         <!-- 按钮 -->
-        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
             <Button Content="确定" Width="70" Margin="0,0,10,0" Click="OkButton_Click"/>
             <Button Content="取消" Width="70" Click="CancelButton_Click"/>
         </StackPanel>

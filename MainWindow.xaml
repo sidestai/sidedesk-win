@@ -64,7 +64,7 @@
                             <Separator x:Name="menuSeparator1"/>
                             <MenuItem Header="设置" Click="Settings_Click"/>
                             <Separator x:Name="closeWindowSeparator"/>
-                            <MenuItem x:Name="closeWindowMenu" Header="关闭窗口" Click="CloseWindow_Click"/>
+                            <MenuItem x:Name="closeWindowMenu" Header="关闭面板" Click="CloseWindow_Click"/>
                             <MenuItem Header="退出" Click="Exit_Click"/>
                         </ContextMenu>
                     </Button.ContextMenu>
