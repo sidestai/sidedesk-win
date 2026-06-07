@@ -138,6 +138,24 @@ namespace SideDesk
         internal delegate bool MonitorEnumCallback(IntPtr hMonitor, IntPtr hdc, ref RECT pRect, int dwData);
         internal delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
         internal delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+        // Shell Properties
+        [DllImport("shell32.dll", CharSet = CharSet.Auto)]
+        internal static extern bool ShellExecuteEx(ref SHELLEXECUTEINFO lpExecInfo);
+
+        internal const uint SEE_MASK_INVOKEIDLIST = 0x0C;
+
+        /// <summary>显示文件/文件夹的系统属性对话框</summary>
+        internal static void ShowFileProperties(string path)
+        {
+            var info = new SHELLEXECUTEINFO();
+            info.cbSize = Marshal.SizeOf(info);
+            info.lpVerb = "properties";
+            info.lpFile = path;
+            info.fMask = SEE_MASK_INVOKEIDLIST;
+            info.nShow = 1; // SW_SHOWNORMAL
+            ShellExecuteEx(ref info);
+        }
     }
 
     #region Structs
@@ -254,6 +272,30 @@ namespace SideDesk
     {
         public static readonly IntPtr HWND_BOTTOM = new IntPtr(1);
         public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+    }
+
+    #endregion
+
+    #region Shell Properties
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    internal struct SHELLEXECUTEINFO
+    {
+        public int cbSize;
+        public uint fMask;
+        public IntPtr hwnd;
+        [MarshalAs(UnmanagedType.LPTStr)] public string lpVerb;
+        [MarshalAs(UnmanagedType.LPTStr)] public string lpFile;
+        [MarshalAs(UnmanagedType.LPTStr)] public string lpParameters;
+        [MarshalAs(UnmanagedType.LPTStr)] public string lpDirectory;
+        public int nShow;
+        public IntPtr hInstApp;
+        public IntPtr lpIDList;
+        [MarshalAs(UnmanagedType.LPTStr)] public string lpClass;
+        public IntPtr hkeyClass;
+        public uint dwHotKey;
+        public IntPtr hIcon;
+        public IntPtr hProcess;
     }
 
     #endregion

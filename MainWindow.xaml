@@ -40,9 +40,12 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock x:Name="titleText" Text="SideDesk [A]" Visibility="Collapsed"/>
+                <TextBlock x:Name="singleWindowTitle" Text="元桌左右屏" Visibility="Collapsed"
+                           VerticalAlignment="Center" Margin="6,0,0,0"
+                           Foreground="{DynamicResource BrushTextMain}" FontSize="12"/>
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" ClipToBounds="True">
                     <StackPanel x:Name="windowTabsPanel" Orientation="Horizontal" Margin="3,0"/>
-                    <Button Content="+" Click="AddWindow_Click"
+                    <Button x:Name="addWindowBtn" Content="+" Click="AddWindow_Click"
                             Width="22" Height="22"
                             FontSize="14"
                             Background="Transparent"

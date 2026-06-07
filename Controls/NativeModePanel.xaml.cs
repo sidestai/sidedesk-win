@@ -841,6 +841,15 @@ namespace SideDesk.Controls
                             }
                         };
                         ctx.Items.Add(menuDel);
+
+                        ctx.Items.Add(new Separator());
+                        var menuProps1 = new MenuItem { Header = "属性" };
+                        menuProps1.Click += (s, e) =>
+                        {
+                            try { NativeMethods.ShowFileProperties(filePath); }
+                            catch { }
+                        };
+                        ctx.Items.Add(menuProps1);
                     }
                     else
                     {
@@ -876,8 +885,22 @@ namespace SideDesk.Controls
                             }
                         };
                         ctx.Items.Add(menuDel);
+
+                        ctx.Items.Add(new Separator());
+                        var menuProps2 = new MenuItem { Header = "属性" };
+                        menuProps2.Click += (s, e) =>
+                        {
+                            try { NativeMethods.ShowFileProperties(filePath); }
+                            catch { }
+                        };
+                        ctx.Items.Add(menuProps2);
                     }
                     row.ContextMenu = ctx;
+
+                    // 右键时高亮选中项
+                    var highlightBrush = (Brush)FindResource("BrushListViewItemMouseOver");
+                    ctx.Opened += (s, e) => row.Background = highlightBrush;
+                    ctx.Closed += (s, e) => row.Background = Brushes.Transparent;
 
                     // hover 显示操作按钮（删除按钮仅编辑模式，打开按钮始终可hover）
                     if (_isEditMode)

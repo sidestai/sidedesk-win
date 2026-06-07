@@ -219,6 +219,19 @@ namespace SideDesk
             if (_configManager == null || _dockState == null) return;
             windowTabsPanel.Children.Clear();
 
+            // 只有一个窗口时不显示标签和加号，显示标题
+            if (_dockState.WindowIds.Count <= 1)
+            {
+                singleWindowTitle.Visibility = Visibility.Visible;
+                windowTabsPanel.Visibility = Visibility.Collapsed;
+                addWindowBtn.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            singleWindowTitle.Visibility = Visibility.Collapsed;
+            windowTabsPanel.Visibility = Visibility.Visible;
+            addWindowBtn.Visibility = Visibility.Visible;
+
             for (int i = 0; i < _dockState.WindowIds.Count; i++)
             {
                 var winId = _dockState.WindowIds[i];
