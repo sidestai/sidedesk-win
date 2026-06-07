@@ -12,6 +12,8 @@ namespace SideDesk
         public LayoutMode CurrentLayout { get; private set; } = LayoutMode.Left;
         public Settings AppSettings { get; private set; } = new();
         public WindowConfigManager WindowConfigs { get; private set; } = new();
+        public ProgramRegistryManager ProgramRegistry { get; private set; } = new();
+        public ExtensionManager Extensions { get; private set; } = new();
 
         public string ScreenAUrl { get; set; } = "https://www.baidu.com";
         public string ScreenBUrl { get; set; } = "https://www.bing.com";
@@ -29,6 +31,12 @@ namespace SideDesk
             // 加载窗口配置
             WindowConfigs = WindowConfigManager.Load();
             WindowConfigs.EnsureDefault();
+
+            // 加载程序注册表
+            ProgramRegistry = ProgramRegistryManager.Load();
+
+            // 加载扩展管理器
+            Extensions = ExtensionManager.Load();
 
             // 应用主题
             ApplyTheme(AppSettings.ThemeMode);

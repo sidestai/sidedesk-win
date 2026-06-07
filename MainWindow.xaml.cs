@@ -228,7 +228,7 @@ namespace SideDesk
                 var index = i;
                 var btn = new Button
                 {
-                    Content = $"[{i + 1}]",
+                    Content = $"{i + 1}",
                     ToolTip = config.Name,
                     Tag = index,
                     Margin = new Thickness(1, 0, 1, 0),
@@ -236,9 +236,9 @@ namespace SideDesk
                     FontSize = 11,
                     Cursor = System.Windows.Input.Cursors.Hand,
                     Background = (i == _dockState.ActiveIndex)
-                        ? new SolidColorBrush(Color.FromRgb(80, 120, 200))
+                        ? (Brush)FindResource("BrushAccent")
                         : Brushes.Transparent,
-                    Foreground = Brushes.White,
+                    Foreground = (Brush)FindResource("BrushTextMain"),
                     BorderThickness = new Thickness(0)
                 };
                 btn.Click += (s, e) => WindowTab_Click(index);

@@ -17,6 +17,40 @@ public partial class AddShortcutDialog : Window
     public AddShortcutDialog()
     {
         InitializeComponent();
+        SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(this);
+
+        // 加载浏览器列表
+        var app = (App)Application.Current;
+        browserCombo.Items.Add("默认浏览器");
+        foreach (var browser in app.ProgramRegistry.Browsers)
+        {
+            browserCombo.Items.Add(browser.Name);
+        }
+        browserCombo.SelectedIndex = 0;
+    }
+
+    private void BrowserCombo_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (browserCombo.SelectedIndex <= 0)
+        {
+            profilePanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var app = (App)Application.Current;
+        var browserIndex = browserCombo.SelectedIndex - 1;
+        if (browserIndex >= 0 && browserIndex < app.ProgramRegistry.Browsers.Count)
+        {
+            var browser = app.ProgramRegistry.Browsers[browserIndex];
+            profileCombo.Items.Clear();
+            profileCombo.Items.Add("无");
+            foreach (var profile in browser.Profiles)
+            {
+                profileCombo.Items.Add(profile.Name);
+            }
+            profileCombo.SelectedIndex = 0;
+            profilePanel.Visibility = browser.Profiles.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
     }
 
     private void ToggleBatch_Click(object sender, RoutedEventArgs e)
@@ -25,7 +59,7 @@ public partial class AddShortcutDialog : Window
         singlePanel.Visibility = _isBatchMode ? Visibility.Collapsed : Visibility.Visible;
         batchPanel.Visibility = _isBatchMode ? Visibility.Visible : Visibility.Collapsed;
         toggleBatchBtn.Content = _isBatchMode ? "单个模式" : "批量模式";
-        this.Height = _isBatchMode ? 350 : 220;
+        this.Height = _isBatchMode ? 350 : 290;
         this.Width = _isBatchMode ? 500 : 400;
 
         if (_isBatchMode && batchRows.Children.Count == 0)
@@ -46,9 +80,9 @@ public partial class AddShortcutDialog : Window
         var nameBox = new TextBox
         {
             Margin = new Thickness(0, 0, 5, 0),
-            Background = new SolidColorBrush(Color.FromRgb(0x3E, 0x3E, 0x42)),
-            Foreground = Brushes.White,
-            BorderBrush = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55)),
+            Background = (Brush)FindResource("BrushInputBG"),
+            Foreground = (Brush)FindResource("BrushTextMain"),
+            BorderBrush = (Brush)FindResource("BrushBorder"),
             Padding = new Thickness(2)
         };
         Grid.SetColumn(nameBox, 0);
@@ -56,9 +90,9 @@ public partial class AddShortcutDialog : Window
         var urlBox = new TextBox
         {
             Margin = new Thickness(0, 0, 5, 0),
-            Background = new SolidColorBrush(Color.FromRgb(0x3E, 0x3E, 0x42)),
-            Foreground = Brushes.White,
-            BorderBrush = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55)),
+            Background = (Brush)FindResource("BrushInputBG"),
+            Foreground = (Brush)FindResource("BrushTextMain"),
+            BorderBrush = (Brush)FindResource("BrushBorder"),
             Text = "https://",
             Padding = new Thickness(2)
         };
@@ -68,7 +102,8 @@ public partial class AddShortcutDialog : Window
         {
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center,
-            IsChecked = true
+            IsChecked = true,
+            Style = (Style)FindResource("RaycastSwitchStyle")
         };
         Grid.SetColumn(appCheck, 2);
 
@@ -155,11 +190,37 @@ public partial class AddShortcutDialog : Window
         {
             var url = urlBox.Text?.Trim() ?? "";
             if (url == "https://") url = "";
+
+            // 获取选中的浏览器 ID
+            string? browserId = null;
+            string? profileId = null;
+            if (browserCombo.SelectedIndex > 0)
+            {
+                var app = (App)Application.Current;
+                var browserIndex = browserCombo.SelectedIndex - 1;
+                if (browserIndex >= 0 && browserIndex < app.ProgramRegistry.Browsers.Count)
+                {
+                    var browser = app.ProgramRegistry.Browsers[browserIndex];
+                    browserId = browser.Id;
+
+                    if (profileCombo.SelectedIndex > 0)
+                    {
+                        var profileIndex = profileCombo.SelectedIndex - 1;
+                        if (profileIndex >= 0 && profileIndex < browser.Profiles.Count)
+                        {
+                            profileId = browser.Profiles[profileIndex].Id;
+                        }
+                    }
+                }
+            }
+
             SingleResult = new ShortcutResult
             {
                 Name = nameBox.Text?.Trim() ?? "",
                 Url = url,
-                IsAppMode = appModeCheck.IsChecked ?? false
+                IsAppMode = appModeCheck.IsChecked ?? false,
+                BrowserId = browserId,
+                ProfileId = profileId
             };
             DialogResult = true;
             Close();
@@ -178,4 +239,6 @@ public class ShortcutResult
     public string Name { get; set; } = "";
     public string Url { get; set; } = "";
     public bool IsAppMode { get; set; } = false;
+    public string? BrowserId { get; set; }
+    public string? ProfileId { get; set; }
 }

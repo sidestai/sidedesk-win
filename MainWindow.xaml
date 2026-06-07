@@ -15,13 +15,13 @@
         AllowDrop="True"
         Drop="Window_Drop"
         DragEnter="Window_DragEnter"
-        Background="#222222">
+        Background="{DynamicResource BrushBG}">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="30"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
-        <Border Grid.Row="0" Background="#333333">
+        <Border Grid.Row="0" Background="{DynamicResource BrushInputBG}">
             <Border.ContextMenu>
                 <ContextMenu>
                     <MenuItem Header="切换到 A 屏" Click="SwitchToScreenA"/>
@@ -46,7 +46,7 @@
                             Width="22" Height="22"
                             FontSize="14"
                             Background="Transparent"
-                            Foreground="White"
+                            Foreground="{DynamicResource BrushTextMain}"
                             BorderThickness="0"
                             Cursor="Hand"
                             ToolTip="添加窗口"
@@ -56,7 +56,7 @@
                         VerticalAlignment="Center"
                         Width="30" Height="30"
                         FontSize="16" FontWeight="Bold" Padding="5,2"
-                        Background="Transparent" Foreground="White"
+                        Background="Transparent" Foreground="{DynamicResource BrushTextMain}"
                         BorderThickness="0" Cursor="Hand"
                         ToolTip="更多">
                     <Button.ContextMenu>

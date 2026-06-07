@@ -44,6 +44,14 @@ namespace SideDesk.Models
         /// <summary>URL 类型打开时使用的 user-data-dir 配置 ID（空=不指定）</summary>
         public string BrowserProfileId { get; set; }
 
+        /// <summary>程序启动时的命令行参数</summary>
+        public string LaunchArgs { get; set; }
+
+        /// <summary>URL 类型打开时使用的 ProgramRegistry 浏览器 ID（空=默认）</summary>
+        public string BrowserId { get; set; }
+        /// <summary>URL 类型打开时使用的 ProgramRegistry Profile ID（空=不指定）</summary>
+        public string ProfileId { get; set; }
+
         [JsonIgnore]
         public IntPtr WindowHandle { get; set; } = IntPtr.Zero;
 

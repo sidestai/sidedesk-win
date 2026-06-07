@@ -11,6 +11,7 @@ public partial class AddWindowDialog : Window
     public AddWindowDialog()
     {
         InitializeComponent();
+        SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(this);
     }
 
     private void ModeChanged(object sender, RoutedEventArgs e)

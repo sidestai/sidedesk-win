@@ -177,7 +177,7 @@ namespace SideDesk.Controls
                 dynamicContent.Children.Add(new TextBlock
                 {
                     Text = "右键添加模块",
-                    Foreground = Brushes.Gray,
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
                     HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(0, 50, 0, 0),
@@ -218,7 +218,7 @@ namespace SideDesk.Controls
                 Text = displayTitle,
                 FontWeight = FontWeights.Bold,
                 VerticalAlignment = VerticalAlignment.Center,
-                Foreground = Brushes.White
+                Foreground = (Brush)FindResource("BrushTextMain")
             };
 
             if (_isEditMode)
@@ -238,12 +238,12 @@ namespace SideDesk.Controls
                             FontWeight = FontWeights.Bold,
                             MinWidth = 50,
                             Background = Brushes.Transparent,
-                            Foreground = Brushes.White,
+                            Foreground = (Brush)FindResource("BrushTextMain"),
                             BorderThickness = new Thickness(0, 0, 0, 1),
-                            BorderBrush = Brushes.CornflowerBlue,
+                            BorderBrush = (Brush)FindResource("BrushAccent"),
                             Padding = new Thickness(0),
                             VerticalAlignment = VerticalAlignment.Center,
-                            CaretBrush = Brushes.White
+                            CaretBrush = (Brush)FindResource("BrushTextMain")
                         };
 
                         int index = parent.Children.IndexOf(titleBlock);
@@ -280,7 +280,7 @@ namespace SideDesk.Controls
             var deleteBtn = new Button
             {
                 Content = "✕", FontSize = 10, Padding = new Thickness(3, 0, 3, 0),
-                Background = Brushes.Transparent, Foreground = Brushes.Gray,
+                Background = Brushes.Transparent, Foreground = (Brush)FindResource("BrushTextMuted"),
                 BorderThickness = new Thickness(0), Cursor = Cursors.Hand,
                 HorizontalAlignment = HorizontalAlignment.Right
             };
@@ -362,7 +362,7 @@ namespace SideDesk.Controls
             var addNoteBtn = new Button
             {
                 Content = "+", Width = 20, Height = 20, FontSize = 14,
-                Background = Brushes.Transparent, Foreground = Brushes.White,
+                Background = Brushes.Transparent, Foreground = (Brush)FindResource("BrushTextMain"),
                 BorderThickness = new Thickness(0), Cursor = Cursors.Hand,
                 HorizontalAlignment = HorizontalAlignment.Right,
                 Visibility = _isEditMode ? Visibility.Visible : Visibility.Collapsed
@@ -448,7 +448,7 @@ namespace SideDesk.Controls
                 container.Children.Add(new TextBlock
                 {
                     Text = "（暂无收藏）",
-                    Foreground = Brushes.Gray,
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
                     FontSize = 11,
                     Margin = new Thickness(4)
                 });
@@ -468,7 +468,7 @@ namespace SideDesk.Controls
                     {
                         Content = "✕", Width = 20, Height = 20, FontSize = 10,
                         Background = Brushes.Transparent,
-                        Foreground = new SolidColorBrush(Color.FromRgb(180, 80, 80)),
+                        Foreground = (Brush)FindResource("BrushTextMuted"),
                         BorderThickness = new Thickness(0), Padding = new Thickness(0),
                         Cursor = Cursors.Hand, ToolTip = "删除",
                         Visibility = Visibility.Collapsed
@@ -481,7 +481,7 @@ namespace SideDesk.Controls
                     {
                         Content = "⎘", Width = 20, Height = 20, FontSize = 12,
                         Background = Brushes.Transparent,
-                        Foreground = new SolidColorBrush(Color.FromRgb(140, 140, 140)),
+                        Foreground = (Brush)FindResource("BrushTextSec"),
                         BorderThickness = new Thickness(0), Padding = new Thickness(0),
                         Cursor = Cursors.Hand, ToolTip = "复制到剪贴板",
                         Visibility = Visibility.Collapsed
@@ -499,7 +499,7 @@ namespace SideDesk.Controls
                     {
                         Text = displayText,
                         FontSize = 11,
-                        Foreground = Brushes.White,
+                        Foreground = (Brush)FindResource("BrushTextMain"),
                         VerticalAlignment = VerticalAlignment.Center,
                         TextTrimming = TextTrimming.CharacterEllipsis,
                         ToolTip = clip.Content.Length > 200 ? clip.Content.Substring(0, 200) + "..." : clip.Content
@@ -640,13 +640,13 @@ namespace SideDesk.Controls
                 if (e.Data.GetDataPresent(DataFormats.FileDrop))
                 {
                     e.Effects = DragDropEffects.Copy;
-                    zone.BorderBrush = Brushes.CornflowerBlue;
+                    zone.BorderBrush = (Brush)FindResource("BrushAccent");
                 }
                 e.Handled = true;
             }
             void HandleFileDragLeave(object sender, DragEventArgs e, Border zone)
             {
-                zone.BorderBrush = Brushes.DimGray;
+                zone.BorderBrush = (Brush)FindResource("BrushBorder");
             }
             void HandleFileDrop(object sender, DragEventArgs e)
             {
@@ -673,7 +673,7 @@ namespace SideDesk.Controls
             {
                 MinHeight = 40,
                 Margin = new Thickness(0, 0, 0, 5),
-                BorderBrush = Brushes.DimGray,
+                BorderBrush = (Brush)FindResource("BrushBorder"),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(3),
                 AllowDrop = true,
@@ -682,14 +682,14 @@ namespace SideDesk.Controls
 
             dropZone.DragEnter += (s, e) => HandleFileDragEnter(s, e, dropZone);
             dropZone.DragLeave += (s, e) => HandleFileDragLeave(s, e, dropZone);
-            dropZone.Drop += (s, e) => { dropZone.BorderBrush = Brushes.DimGray; HandleFileDrop(s, e); };
+            dropZone.Drop += (s, e) => { dropZone.BorderBrush = (Brush)FindResource("BrushBorder"); HandleFileDrop(s, e); };
 
             if (item.FileItems.Count == 0)
             {
                 dropZone.Child = new TextBlock
                 {
                     Text = "拖拽文件到此处",
-                    Foreground = Brushes.Gray,
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
                     HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(0, 8, 0, 8),
@@ -705,7 +705,7 @@ namespace SideDesk.Controls
                 {
                     AllowDrop = true,
                     Background = Brushes.Transparent,
-                    BorderBrush = Brushes.DimGray,
+                    BorderBrush = (Brush)FindResource("BrushBorder"),
                     BorderThickness = new Thickness(1),
                     CornerRadius = new CornerRadius(3),
                     Padding = new Thickness(4)
@@ -715,7 +715,7 @@ namespace SideDesk.Controls
 
                 listBorder.DragEnter += (s, e) => HandleFileDragEnter(s, e, listBorder);
                 listBorder.DragLeave += (s, e) => HandleFileDragLeave(s, e, listBorder);
-                listBorder.Drop += (s, e) => { listBorder.BorderBrush = Brushes.DimGray; HandleFileDrop(s, e); };
+                listBorder.Drop += (s, e) => { listBorder.BorderBrush = (Brush)FindResource("BrushBorder"); HandleFileDrop(s, e); };
 
                 foreach (var fileItem in item.FileItems.OrderByDescending(f => f.AddedAt))
                 {
@@ -727,7 +727,7 @@ namespace SideDesk.Controls
                         Content = "✕", FontSize = 10,
                         Padding = new Thickness(3, 0, 3, 0),
                         Background = Brushes.Transparent,
-                        Foreground = Brushes.Gray,
+                        Foreground = (Brush)FindResource("BrushTextMuted"),
                         BorderThickness = new Thickness(0),
                         Cursor = Cursors.Hand,
                         Visibility = Visibility.Collapsed
@@ -764,7 +764,7 @@ namespace SideDesk.Controls
                         Text = $"{icon} {fileItem.Name}",
                         VerticalAlignment = VerticalAlignment.Center,
                         TextTrimming = TextTrimming.CharacterEllipsis,
-                        Foreground = Brushes.White,
+                        Foreground = (Brush)FindResource("BrushTextMain"),
                         ToolTip = fileItem.Path
                     };
 
@@ -930,8 +930,8 @@ namespace SideDesk.Controls
                 Content = (_keyboardHookService?.TodayKeyCount ?? 0).ToString("N0"),
                 Width = 70, Height = 28,
                 Margin = new Thickness(2, 0, 4, 0), Padding = new Thickness(2),
-                Background = (SolidColorBrush)new BrushConverter().ConvertFrom("#27AE60")!,
-                Foreground = Brushes.White, BorderThickness = new Thickness(0),
+                Background = (Brush)FindResource("BrushAccent"),
+                Foreground = (Brush)FindResource("BrushTextMain"), BorderThickness = new Thickness(0),
                 FontSize = 12, FontWeight = FontWeights.Bold,
                 HorizontalAlignment = HorizontalAlignment.Right
             };
@@ -942,7 +942,7 @@ namespace SideDesk.Controls
             {
                 Text = "今日按键",
                 Padding = new Thickness(8, 5, 0, 5),
-                Foreground = Brushes.White,
+                Foreground = (Brush)FindResource("BrushTextMain"),
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
@@ -964,8 +964,8 @@ namespace SideDesk.Controls
                 Content = MouseHookService.FormatDistance(_mouseHookService?.TodayMouseDistance ?? 0),
                 Width = 70, Height = 28,
                 Margin = new Thickness(2, 0, 4, 0), Padding = new Thickness(2),
-                Background = (SolidColorBrush)new BrushConverter().ConvertFrom("#2980B9")!,
-                Foreground = Brushes.White, BorderThickness = new Thickness(0),
+                Background = (Brush)FindResource("BrushAccent"),
+                Foreground = (Brush)FindResource("BrushTextMain"), BorderThickness = new Thickness(0),
                 FontSize = 12, FontWeight = FontWeights.Bold,
                 HorizontalAlignment = HorizontalAlignment.Right
             };
@@ -976,7 +976,7 @@ namespace SideDesk.Controls
             {
                 Text = "鼠标移动",
                 Padding = new Thickness(8, 5, 0, 5),
-                Foreground = Brushes.White,
+                Foreground = (Brush)FindResource("BrushTextMain"),
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
@@ -1004,7 +1004,7 @@ namespace SideDesk.Controls
                 container.Children.Add(new TextBlock
                 {
                     Text = "（暂无便签）",
-                    Foreground = Brushes.Gray,
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
                     FontSize = 11,
                     Margin = new Thickness(4)
                 });
@@ -1025,7 +1025,7 @@ namespace SideDesk.Controls
             {
                 Content = "✕", Width = 18, Height = 18,
                 Background = Brushes.Transparent,
-                Foreground = new SolidColorBrush(Color.FromRgb(180, 80, 80)),
+                Foreground = (Brush)FindResource("BrushTextMuted"),
                 BorderThickness = new Thickness(0), FontSize = 10,
                 Padding = new Thickness(0), Cursor = Cursors.Hand,
                 ToolTip = "删除", Visibility = Visibility.Collapsed
@@ -1042,7 +1042,7 @@ namespace SideDesk.Controls
             var textBlock = new TextBlock
             {
                 Text = note.Preview, FontSize = 11,
-                Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center,
+                Foreground = (Brush)FindResource("BrushTextMain"), VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 ToolTip = note.Content?.Length > 200 ? note.Content.Substring(0, 200) + "..." : note.Content
             };
@@ -1154,7 +1154,7 @@ namespace SideDesk.Controls
                     WindowStartupLocation = WindowStartupLocation.CenterScreen,
                     ResizeMode = ResizeMode.CanResize,
                     Owner = _mainWindow,
-                    Background = Brushes.White
+                    Background = (Brush)FindResource("BrushDialogBG")
                 };
 
                 // 主布局：左 = 已锁定列表，右 = 可选窗口列表 + 按钮
@@ -1242,7 +1242,7 @@ namespace SideDesk.Controls
                         sp.Children.Add(new TextBlock
                         {
                             Text = detail,
-                            Foreground = Brushes.Gray,
+                            Foreground = (Brush)FindResource("BrushTextSec"),
                             FontSize = 11,
                             TextTrimming = TextTrimming.CharacterEllipsis
                         });
@@ -1257,7 +1257,7 @@ namespace SideDesk.Controls
                             Content = new TextBlock
                             {
                                 Text = "（暂无锁定规则）",
-                                Foreground = Brushes.Gray,
+                                Foreground = (Brush)FindResource("BrushTextMuted"),
                                 FontStyle = FontStyles.Italic
                             },
                             IsHitTestVisible = false
@@ -1333,7 +1333,7 @@ namespace SideDesk.Controls
                     textPanel.Children.Add(new TextBlock
                     {
                         Text = w.ProcessName,
-                        Foreground = Brushes.Gray,
+                        Foreground = (Brush)FindResource("BrushTextSec"),
                         FontSize = 11
                     });
                     itemPanel.Children.Add(textPanel);
@@ -1376,7 +1376,7 @@ namespace SideDesk.Controls
                 WindowStartupLocation = WindowStartupLocation.CenterScreen,
                 ResizeMode = ResizeMode.CanResize,
                 Owner = _mainWindow,
-                Background = Brushes.White
+                Background = (Brush)FindResource("BrushDialogBG")
             };
 
             var rootPanel = new DockPanel { Margin = new Thickness(15) };
@@ -1549,7 +1549,7 @@ namespace SideDesk.Controls
                 FontSize = 12,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-                Background = Brushes.WhiteSmoke,
+                Background = (Brush)FindResource("BrushInputBG"),
                 Padding = new Thickness(8)
             };
             rootPanel.Children.Add(detailsBox);

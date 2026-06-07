@@ -25,11 +25,14 @@
                 <ListBox x:Name="navList" 
                          Background="Transparent" 
                          BorderThickness="0"
+                         Foreground="{DynamicResource BrushTextMain}"
                          ItemContainerStyle="{StaticResource GlobalListBoxItemStyle}"
                          SelectionChanged="Nav_Changed"
                          Padding="8,0">
                     <ListBoxItem Content="常规" IsSelected="True"/>
                     <ListBoxItem Content="外观"/>
+                    <ListBoxItem Content="程序管理"/>
+                    <ListBoxItem Content="扩展管理"/>
                     <ListBoxItem Content="关于"/>
                 </ListBox>
             </DockPanel>
@@ -77,13 +80,8 @@
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                             <TextBox x:Name="widthBox" Width="70"
-                                     Background="{DynamicResource BrushInputBG}"
-                                     Foreground="{DynamicResource BrushTextMain}"
-                                     BorderBrush="{DynamicResource BrushBorder}"
-                                     BorderThickness="1"
-                                     Padding="8,6"
+                                     Style="{StaticResource GlobalTextBoxStyle}"
                                      TextAlignment="Center"
-                                     FontSize="{DynamicResource FontSizeNormal}"
                                      LostFocus="Width_LostFocus"
                                      KeyDown="Width_KeyDown"/>
                             <TextBlock Text="px" Foreground="{DynamicResource BrushTextMuted}"
@@ -116,6 +114,100 @@
                                   Style="{StaticResource GlobalComboBoxStyle}"
                                   SelectionChanged="ThemeMode_Changed"/>
                     </Grid>
+                </StackPanel>
+                
+                <!-- 程序管理页面 -->
+                <StackPanel x:Name="pageProgramManager" Visibility="Collapsed" Margin="0,0,0,20">
+                    <TextBlock Text="程序管理" 
+                               FontSize="{DynamicResource FontSizeSubtitle}" 
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource BrushTextMain}"
+                               Margin="0,0,0,24"/>
+                    
+                    <!-- 已注册程序 -->
+                    <TextBlock Text="已注册程序" 
+                               FontSize="{DynamicResource FontSizeNormal}" 
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource BrushTextMain}"
+                               Margin="0,0,0,8"/>
+                    <TextBlock Text="维护可用程序列表，添加快捷项时可从中选取" 
+                               Foreground="{DynamicResource BrushTextMuted}" 
+                               FontSize="{DynamicResource FontSizeSmall}" 
+                               Margin="0,0,0,12"/>
+                    
+                    <Border Background="{DynamicResource BrushInputBG}" 
+                            BorderBrush="{DynamicResource BrushBorder}" 
+                            BorderThickness="1" CornerRadius="6" 
+                            Padding="12" Margin="0,0,0,8">
+                        <StackPanel x:Name="programListPanel"/>
+                    </Border>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,24">
+                        <Button Content="+ 添加程序" Click="AddProgram_Click"
+                                Style="{StaticResource GhostButtonStyle}" Padding="12,6"/>
+                    </StackPanel>
+                    
+                    <!-- 浏览器配置 -->
+                    <TextBlock Text="浏览器配置" 
+                               FontSize="{DynamicResource FontSizeNormal}" 
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource BrushTextMain}"
+                               Margin="0,0,0,8"/>
+                    <TextBlock Text="配置多个浏览器及其 UserData 目录，添加网址快捷项时可选择使用" 
+                               Foreground="{DynamicResource BrushTextMuted}" 
+                               FontSize="{DynamicResource FontSizeSmall}" 
+                               Margin="0,0,0,12"/>
+                    
+                    <!-- 默认 Profile 目录 -->
+                    <Grid Margin="0,0,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="默认 Profile 目录" Foreground="{DynamicResource BrushTextMain}" 
+                                       FontSize="{DynamicResource FontSizeNormal}"/>
+                            <TextBlock Text=" ℹ" FontSize="13" Foreground="{DynamicResource BrushAccent}" 
+                                       VerticalAlignment="Center" Cursor="Help"
+                                       ToolTip="当需要自动新建 Profile 时，将在此目录下新建子目录作为浏览器 UserData"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock x:Name="profileBaseDirText" 
+                                       Text="未设置" 
+                                       Foreground="{DynamicResource BrushTextMuted}" 
+                                       FontSize="{DynamicResource FontSizeSmall}"
+                                       VerticalAlignment="Center"
+                                       MaxWidth="200" TextTrimming="CharacterEllipsis"
+                                       Margin="0,0,8,0"/>
+                            <Button Content="选择" Click="SelectProfileBaseDir_Click"
+                                    Style="{StaticResource GhostButtonStyle}" Padding="8,4"/>
+                        </StackPanel>
+                    </Grid>
+                    
+                    <StackPanel x:Name="browserListPanel"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <Button Content="+ 添加浏览器" Click="AddBrowser_Click"
+                                Style="{StaticResource GhostButtonStyle}" Padding="12,6"/>
+                    </StackPanel>
+                </StackPanel>
+                
+                <!-- 扩展管理页面 -->
+                <StackPanel x:Name="pageExtensions" Visibility="Collapsed" Margin="0,0,0,20">
+                    <TextBlock Text="扩展管理" 
+                               FontSize="{DynamicResource FontSizeSubtitle}" 
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource BrushTextMain}"
+                               Margin="0,0,0,8"/>
+                    <TextBlock Text="管理已创建的扩展，或新建扩展" 
+                               Foreground="{DynamicResource BrushTextMuted}" 
+                               FontSize="{DynamicResource FontSizeSmall}" 
+                               Margin="0,0,0,16"/>
+                    
+                    <StackPanel x:Name="extensionListPanel"/>
+                    
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                        <Button Content="+ 新建扩展" Click="NewExtension_Click"
+                                Style="{StaticResource GhostButtonStyle}" Padding="12,6"/>
+                    </StackPanel>
                 </StackPanel>
                 
                 <!-- 关于页面 -->

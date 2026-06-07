@@ -375,17 +375,33 @@ namespace SideDesk.Services
                 {
                     var dlg = new Window
                     {
-                        Title = "重命名分组", Width = 300, Height = 130,
+                        Title = "重命名分组", Width = 350,
+                        SizeToContent = SizeToContent.Height,
                         WindowStartupLocation = WindowStartupLocation.CenterScreen,
                         ResizeMode = ResizeMode.NoResize,
-                        Background = new SolidColorBrush(Color.FromRgb(30, 30, 30))
+                        Background = (Brush)Application.Current.FindResource("BrushDialogBG"),
+                        Foreground = (Brush)Application.Current.FindResource("BrushTextMain")
                     };
-                    var sp = new StackPanel { Margin = new Thickness(10) };
-                    var tb = new TextBox { Text = group.Name };
+                    dlg.SourceInitialized += (s3, ev3) => App.UpdateWindowDwmTheme(dlg);
+                    var sp = new StackPanel { Margin = new Thickness(20) };
+                    sp.Children.Add(new TextBlock
+                    {
+                        Text = "重命名分组",
+                        FontWeight = FontWeights.Bold,
+                        FontSize = (double)Application.Current.FindResource("FontSizeSubtitle"),
+                        Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
+                        Margin = new Thickness(0, 0, 0, 12)
+                    });
+                    var tb = new TextBox { Text = group.Name, Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
                     sp.Children.Add(tb);
-                    var ok = new Button { Content = "确定", Width = 60, Margin = new Thickness(0, 10, 0, 0), HorizontalAlignment = HorizontalAlignment.Right };
+                    var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
+                    var ok = new Button { Content = "确定", Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)Application.Current.FindResource("PrimaryButtonStyle") };
+                    var cancel = new Button { Content = "取消", Width = 70, Style = (Style)Application.Current.FindResource("StandardButtonStyle") };
                     ok.Click += (s3, ev3) => { group.Name = tb.Text.Trim(); titleText.Text = group.Name; QuickGroupManager.UpdateGroup(group); QuickGroupManager.Save(); dlg.Close(); };
-                    sp.Children.Add(ok);
+                    cancel.Click += (s3, ev3) => dlg.Close();
+                    btnPanel.Children.Add(ok);
+                    btnPanel.Children.Add(cancel);
+                    sp.Children.Add(btnPanel);
                     dlg.Content = sp;
                     dlg.ShowDialog();
                 };
@@ -518,12 +534,79 @@ namespace SideDesk.Services
                     {
                         psi.FileName = target;
                     }
+                    if (!string.IsNullOrEmpty(item.LaunchArgs))
+                    {
+                        psi.Arguments = string.IsNullOrEmpty(psi.Arguments)
+                            ? item.LaunchArgs
+                            : psi.Arguments + " " + item.LaunchArgs;
+                    }
+                    psi.UseShellExecute = true;
                     var proc = Process.Start(psi);
                     if (proc != null) TrackProcessMainWindow(item, proc);
                 }
                 else
                 {
                     // URL
+                    // 优先检查 ProgramRegistry 浏览器配置
+                    if (!string.IsNullOrEmpty(item.BrowserId))
+                    {
+                        var app = (App)Application.Current;
+                        var browser = app.ProgramRegistry.GetBrowserById(item.BrowserId);
+                        if (browser != null && File.Exists(browser.ExePath))
+                        {
+                            string args = item.Target ?? "";
+                            string regProfileArgs = "";
+
+                            if (!string.IsNullOrEmpty(item.ProfileId))
+                            {
+                                var profile = app.ProgramRegistry.GetProfileById(item.BrowserId, item.ProfileId);
+                                if (profile != null && !string.IsNullOrEmpty(profile.Directory))
+                                {
+                                    regProfileArgs = $" --user-data-dir=\"{profile.Directory}\"";
+                                }
+                            }
+
+                            if (item.UseAppMode)
+                            {
+                                args = $"--app={item.Target}" + regProfileArgs;
+                            }
+                            else
+                            {
+                                args = (item.Target ?? "") + regProfileArgs;
+                            }
+
+                            var process = new Process();
+                            process.StartInfo.FileName = browser.ExePath;
+                            process.StartInfo.Arguments = args;
+                            process.Start();
+
+                            string pName = Path.GetFileNameWithoutExtension(browser.ExePath);
+                            Task.Run(async () =>
+                            {
+                                IntPtr foundHandle = IntPtr.Zero;
+                                int attempts = 0;
+                                while (foundHandle == IntPtr.Zero && attempts < 20)
+                                {
+                                    await Task.Delay(500);
+                                    attempts++;
+                                    foundHandle = WindowFinder.FindNewWindow(pName, _quickItemHandles);
+                                }
+                                if (foundHandle != IntPtr.Zero)
+                                {
+                                    await _dispatcher.InvokeAsync(() =>
+                                    {
+                                        item.WindowHandle = foundHandle;
+                                        _quickItemHandles.Add(foundHandle);
+                                        ApplyTaskbarVisibility(item);
+                                        ApplyTopmostIfPossible(item);
+                                    });
+                                }
+                            });
+                            return;
+                        }
+                    }
+
+                    // 回退到原有 BrowserProfileManager 逻辑
                     string? browserExe = null;
                     var exeEntry = BrowserProfileManager.GetExeById(item.BrowserExeId);
                     if (exeEntry != null && !string.IsNullOrEmpty(exeEntry.ExePath))
@@ -1063,7 +1146,9 @@ namespace SideDesk.Services
                                     : result.Name,
                                 Type = "url",
                                 Target = result.Url,
-                                UseAppMode = result.IsAppMode
+                                UseAppMode = result.IsAppMode,
+                                BrowserId = result.BrowserId,
+                                ProfileId = result.ProfileId
                             };
                             QuickGroupManager.AddItem(groupId, newItem);
                             contentPanel?.Children.Add(BuildItemButton(newItem, groupId));
@@ -1081,7 +1166,9 @@ namespace SideDesk.Services
                                 : result.Name,
                             Type = "url",
                             Target = result.Url,
-                            UseAppMode = result.IsAppMode
+                            UseAppMode = result.IsAppMode,
+                            BrowserId = result.BrowserId,
+                            ProfileId = result.ProfileId
                         };
                         QuickGroupManager.AddItem(groupId, newItem);
                         QuickGroupManager.Save();
@@ -1094,35 +1181,315 @@ namespace SideDesk.Services
                 return;
             }
 
-            // 程序类型：保持原有简单对话框
+            // 程序类型：Tab式对话框
             var dialog = new Window
             {
-                Title = "添加程序", Width = 440, Height = 280,
+                Title = "添加程序",
+                Width = 460,
+                SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterScreen,
                 ResizeMode = ResizeMode.NoResize,
-                Background = new SolidColorBrush(Color.FromRgb(30, 30, 30)),
-                Foreground = Brushes.White,
+                Background = (Brush)Application.Current.FindResource("BrushDialogBG"),
+                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                 Owner = OwnerWindow
             };
+            dialog.SourceInitialized += (s, ev) => App.UpdateWindowDwmTheme(dialog);
 
-            var rootPanel = new StackPanel { Margin = new Thickness(15) };
+            var app = (App)Application.Current;
+            var rootPanel = new StackPanel { Margin = new Thickness(20) };
 
-            var namePanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 5, 0, 5) };
-            namePanel.Children.Add(new TextBlock { Text = "名称:", Foreground = Brushes.White, Width = 60, VerticalAlignment = VerticalAlignment.Center });
-            var nameBox = new TextBox { Width = 280 };
-            namePanel.Children.Add(nameBox);
-            rootPanel.Children.Add(namePanel);
+            // 标题
+            rootPanel.Children.Add(new TextBlock
+            {
+                Text = "添加程序",
+                FontWeight = FontWeights.Bold,
+                FontSize = (double)Application.Current.FindResource("FontSizeSubtitle"),
+                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
+                Margin = new Thickness(0, 0, 0, 16)
+            });
 
-            var targetPanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 5, 0, 5) };
-            targetPanel.Children.Add(new TextBlock { Text = "路径:", Foreground = Brushes.White, Width = 60, VerticalAlignment = VerticalAlignment.Center });
-            var targetBox = new TextBox { Width = 280 };
-            targetPanel.Children.Add(targetBox);
-            rootPanel.Children.Add(targetPanel);
+            // === Tab 按钮栏 ===
+            var tabBar = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
+            var tabManual = new Button { Content = "自行输入", Padding = new Thickness(12, 6, 12, 6), Margin = new Thickness(0, 0, 6, 0) };
+            var tabList = new Button { Content = "从列表", Padding = new Thickness(12, 6, 12, 6), Margin = new Thickness(0, 0, 6, 0) };
+            var tabBrowser = new Button { Content = "浏览器", Padding = new Thickness(12, 6, 12, 6) };
+            tabBar.Children.Add(tabManual);
+            tabBar.Children.Add(tabList);
+            tabBar.Children.Add(tabBrowser);
+            rootPanel.Children.Add(tabBar);
 
-            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 15, 0, 0) };
-            var okBtn = new Button { Content = "确定", Width = 70, Margin = new Thickness(0, 0, 10, 0) };
-            var cancelBtn = new Button { Content = "取消", Width = 70 };
-            okBtn.Click += (s, ev) =>
+            // === Tab 内容容器 ===
+            var tabContentArea = new Border
+            {
+                MinHeight = 60,
+                Margin = new Thickness(0, 0, 0, 12),
+                Background = (Brush)Application.Current.FindResource("BrushInputBG"),
+                BorderBrush = (Brush)Application.Current.FindResource("BrushBorder"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(12)
+            };
+            rootPanel.Children.Add(tabContentArea);
+
+            // Tab 1 内容：自行输入
+            var manualPanel = new StackPanel();
+            var browseBtn = new Button
+            {
+                Content = "浏览选择 exe...",
+                Style = (Style)Application.Current.FindResource("GhostButtonStyle"),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Padding = new Thickness(12, 6, 12, 6)
+            };
+            manualPanel.Children.Add(new TextBlock
+            {
+                Text = "点击下方按钮选择可执行文件，或在下方直接输入路径",
+                Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
+                FontSize = (double)Application.Current.FindResource("FontSizeSmall"),
+                Margin = new Thickness(0, 0, 0, 8),
+                TextWrapping = TextWrapping.Wrap
+            });
+            manualPanel.Children.Add(browseBtn);
+
+            // Tab 2 内容：从列表选择
+            var listPanel = new StackPanel();
+            if (app.ProgramRegistry.Programs.Count == 0)
+            {
+                listPanel.Children.Add(new TextBlock
+                {
+                    Text = "暂无已注册程序，请先在设置→程序管理中添加",
+                    Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
+                    FontSize = (double)Application.Current.FindResource("FontSizeSmall"),
+                    TextWrapping = TextWrapping.Wrap
+                });
+            }
+            else
+            {
+                var progListBox = new ListBox
+                {
+                    Background = Brushes.Transparent,
+                    BorderThickness = new Thickness(0),
+                    MaxHeight = 150,
+                    Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
+                    ItemContainerStyle = (Style)Application.Current.FindResource("GlobalListBoxItemStyle")
+                };
+                ScrollViewer.SetHorizontalScrollBarVisibility(progListBox, ScrollBarVisibility.Disabled);
+                foreach (var prog in app.ProgramRegistry.Programs)
+                {
+                    var itemPanel = new StackPanel();
+                    itemPanel.Children.Add(new TextBlock
+                    {
+                        Text = prog.Name,
+                        Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
+                        FontSize = (double)Application.Current.FindResource("FontSizeNormal")
+                    });
+                    itemPanel.Children.Add(new TextBlock
+                    {
+                        Text = prog.ExePath,
+                        Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
+                        FontSize = (double)Application.Current.FindResource("FontSizeTiny"),
+                        TextTrimming = TextTrimming.CharacterEllipsis
+                    });
+                    progListBox.Items.Add(itemPanel);
+                }
+                listPanel.Children.Add(progListBox);
+            }
+
+            // Tab 3 内容：浏览器选择
+            var browserPanel = new StackPanel();
+            ComboBox? profileCombo = null;
+            if (app.ProgramRegistry.Browsers.Count == 0)
+            {
+                browserPanel.Children.Add(new TextBlock
+                {
+                    Text = "暂无已配置浏览器，请先在设置→程序管理中添加",
+                    Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
+                    FontSize = (double)Application.Current.FindResource("FontSizeSmall"),
+                    TextWrapping = TextWrapping.Wrap
+                });
+            }
+            else
+            {
+                var browserListBox = new ListBox
+                {
+                    Background = Brushes.Transparent,
+                    BorderThickness = new Thickness(0),
+                    MaxHeight = 150,
+                    Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
+                    ItemContainerStyle = (Style)Application.Current.FindResource("GlobalListBoxItemStyle")
+                };
+                ScrollViewer.SetHorizontalScrollBarVisibility(browserListBox, ScrollBarVisibility.Disabled);
+                foreach (var browser in app.ProgramRegistry.Browsers)
+                {
+                    var itemPanel = new StackPanel();
+                    itemPanel.Children.Add(new TextBlock
+                    {
+                        Text = browser.Name,
+                        Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
+                        FontSize = (double)Application.Current.FindResource("FontSizeNormal")
+                    });
+                    itemPanel.Children.Add(new TextBlock
+                    {
+                        Text = browser.ExePath,
+                        Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
+                        FontSize = (double)Application.Current.FindResource("FontSizeTiny"),
+                        TextTrimming = TextTrimming.CharacterEllipsis
+                    });
+                    browserListBox.Items.Add(itemPanel);
+                }
+                browserPanel.Children.Add(browserListBox);
+
+                // Profile 选择（默认隐藏，选中有 Profile 的浏览器后才显示）
+                profileCombo = new ComboBox
+                {
+                    Style = (Style)Application.Current.FindResource("GlobalComboBoxStyle"),
+                    Margin = new Thickness(0, 8, 0, 0),
+                    Visibility = Visibility.Collapsed
+                };
+                browserPanel.Children.Add(profileCombo);
+            }
+
+            // 默认显示 Tab 1
+            tabContentArea.Child = manualPanel;
+
+            // === 通用区域 ===
+            // 名称
+            var nameDock = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
+            var nameLabel = new TextBlock { Text = "名称：", Width = 60, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)Application.Current.FindResource("BrushTextMain") };
+            DockPanel.SetDock(nameLabel, Dock.Left);
+            nameDock.Children.Add(nameLabel);
+            var nameBox = new TextBox { Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
+            nameDock.Children.Add(nameBox);
+            rootPanel.Children.Add(nameDock);
+
+            // 路径
+            var targetDock = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
+            var targetLabel = new TextBlock { Text = "路径：", Width = 60, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)Application.Current.FindResource("BrushTextMain") };
+            DockPanel.SetDock(targetLabel, Dock.Left);
+            targetDock.Children.Add(targetLabel);
+            var targetBox = new TextBox { Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
+            targetDock.Children.Add(targetBox);
+            rootPanel.Children.Add(targetDock);
+
+            // 启动命令行
+            var argsDock = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
+            var argsLabel = new TextBlock { Text = "命令行：", Width = 60, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)Application.Current.FindResource("BrushTextMain") };
+            DockPanel.SetDock(argsLabel, Dock.Left);
+            argsDock.Children.Add(argsLabel);
+            var argsBox = new TextBox { Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
+            argsDock.Children.Add(argsBox);
+            rootPanel.Children.Add(argsDock);
+
+            // === Tab 切换逻辑 ===
+            Action<int> switchTab = (int tabIndex) =>
+            {
+                tabManual.Style = tabIndex == 0 ? (Style)Application.Current.FindResource("PrimaryButtonStyle") : (Style)Application.Current.FindResource("GhostButtonStyle");
+                tabList.Style = tabIndex == 1 ? (Style)Application.Current.FindResource("PrimaryButtonStyle") : (Style)Application.Current.FindResource("GhostButtonStyle");
+                tabBrowser.Style = tabIndex == 2 ? (Style)Application.Current.FindResource("PrimaryButtonStyle") : (Style)Application.Current.FindResource("GhostButtonStyle");
+
+                switch (tabIndex)
+                {
+                    case 0: tabContentArea.Child = manualPanel; break;
+                    case 1: tabContentArea.Child = listPanel; break;
+                    case 2: tabContentArea.Child = browserPanel; break;
+                }
+            };
+            // 默认选中第一个
+            switchTab(0);
+
+            tabManual.Click += (s, ev2) => switchTab(0);
+            tabList.Click += (s, ev2) => switchTab(1);
+            tabBrowser.Click += (s, ev2) => switchTab(2);
+
+            // === 浏览按钮事件 ===
+            browseBtn.Click += (s, ev2) =>
+            {
+                var dlg = new Microsoft.Win32.OpenFileDialog
+                {
+                    Filter = "可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*",
+                    Title = "选择程序"
+                };
+                if (dlg.ShowDialog() == true)
+                {
+                    targetBox.Text = dlg.FileName;
+                    if (string.IsNullOrEmpty(nameBox.Text))
+                        nameBox.Text = System.IO.Path.GetFileNameWithoutExtension(dlg.FileName);
+                }
+            };
+
+            // === 列表选择事件 ===
+            if (app.ProgramRegistry.Programs.Count > 0)
+            {
+                var progListBox = listPanel.Children[0] as ListBox;
+                if (progListBox != null)
+                {
+                    progListBox.SelectionChanged += (s, ev2) =>
+                    {
+                        if (progListBox.SelectedIndex < 0) return;
+                        var prog = app.ProgramRegistry.Programs[progListBox.SelectedIndex];
+                        nameBox.Text = prog.Name;
+                        targetBox.Text = prog.ExePath;
+                    };
+                }
+            }
+
+            // === 浏览器选择事件 ===
+            string? selectedBrowserId = null;
+            string? selectedProfileId = null;
+            if (app.ProgramRegistry.Browsers.Count > 0)
+            {
+                var browserListBox = browserPanel.Children[0] as ListBox;
+                if (browserListBox != null)
+                {
+                    browserListBox.SelectionChanged += (s, ev2) =>
+                    {
+                        if (browserListBox.SelectedIndex < 0) return;
+                        var browser = app.ProgramRegistry.Browsers[browserListBox.SelectedIndex];
+                        nameBox.Text = browser.Name;
+                        targetBox.Text = browser.ExePath;
+                        selectedBrowserId = browser.Id;
+                        selectedProfileId = null;
+
+                        // 显示 Profile
+                        if (profileCombo != null)
+                        {
+                            profileCombo.Items.Clear();
+                            if (browser.Profiles.Count > 0)
+                            {
+                                profileCombo.Items.Add("无");
+                                foreach (var p in browser.Profiles)
+                                    profileCombo.Items.Add(p.Name);
+                                profileCombo.SelectedIndex = 0;
+                                profileCombo.Visibility = Visibility.Visible;
+                            }
+                            else
+                            {
+                                profileCombo.Visibility = Visibility.Collapsed;
+                            }
+                        }
+                    };
+                }
+                if (profileCombo != null)
+                {
+                    profileCombo.SelectionChanged += (s, ev2) =>
+                    {
+                        if (profileCombo.SelectedIndex <= 0) { selectedProfileId = null; return; }
+                        var browserListBox2 = browserPanel.Children[0] as ListBox;
+                        if (browserListBox2?.SelectedIndex >= 0)
+                        {
+                            var browser = app.ProgramRegistry.Browsers[browserListBox2.SelectedIndex];
+                            int pIdx = profileCombo.SelectedIndex - 1;
+                            if (pIdx >= 0 && pIdx < browser.Profiles.Count)
+                                selectedProfileId = browser.Profiles[pIdx].Id;
+                        }
+                    };
+                }
+            }
+
+            // === 按钮 ===
+            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
+            var okBtn = new Button { Content = "确定", Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)Application.Current.FindResource("PrimaryButtonStyle") };
+            var cancelBtn = new Button { Content = "取消", Width = 70, Style = (Style)Application.Current.FindResource("StandardButtonStyle") };
+            okBtn.Click += (s, ev2) =>
             {
                 string name = nameBox.Text.Trim();
                 string target = targetBox.Text.Trim();
@@ -1132,7 +1499,10 @@ namespace SideDesk.Services
                     Name = name,
                     Type = "program",
                     Target = target,
-                    UseAppMode = false
+                    UseAppMode = false,
+                    LaunchArgs = argsBox.Text.Trim(),
+                    BrowserId = selectedBrowserId,
+                    ProfileId = selectedProfileId
                 };
                 QuickGroupManager.AddItem(groupId, newItem);
                 QuickGroupManager.Save();
@@ -1142,8 +1512,9 @@ namespace SideDesk.Services
                     LoadGroups();
                 dialog.Close();
             };
-            cancelBtn.Click += (s, ev) => dialog.Close();
-            btnPanel.Children.Add(okBtn); btnPanel.Children.Add(cancelBtn);
+            cancelBtn.Click += (s, ev2) => dialog.Close();
+            btnPanel.Children.Add(okBtn);
+            btnPanel.Children.Add(cancelBtn);
             rootPanel.Children.Add(btnPanel);
 
             dialog.Content = rootPanel;
@@ -1176,8 +1547,27 @@ namespace SideDesk.Services
             targetPanel.Children.Add(targetBox);
             rootPanel.Children.Add(targetPanel);
 
-            var appModeCheck = new CheckBox { Content = "App 模式", Foreground = Brushes.White, IsChecked = item.UseAppMode, Margin = new Thickness(60, 5, 0, 5) };
-            rootPanel.Children.Add(appModeCheck);
+            var appModeSwitch = new CheckBox 
+            { 
+                IsChecked = item.UseAppMode, 
+                Style = (Style)Application.Current.FindResource("RaycastSwitchStyle"),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            var appModeLabel = new TextBlock 
+            { 
+                Text = "App 模式", 
+                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), 
+                VerticalAlignment = VerticalAlignment.Center, 
+                Margin = new Thickness(8, 0, 0, 0) 
+            };
+            var appModePanel = new StackPanel 
+            { 
+                Orientation = Orientation.Horizontal, 
+                Margin = new Thickness(60, 5, 0, 5) 
+            };
+            appModePanel.Children.Add(appModeSwitch);
+            appModePanel.Children.Add(appModeLabel);
+            rootPanel.Children.Add(appModePanel);
 
             var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 15, 0, 0) };
             var okBtn = new Button { Content = "保存", Width = 70, Margin = new Thickness(0, 0, 10, 0) };
@@ -1186,7 +1576,7 @@ namespace SideDesk.Services
             {
                 item.Name = nameBox.Text.Trim();
                 item.Target = targetBox.Text.Trim();
-                item.UseAppMode = appModeCheck.IsChecked == true;
+                item.UseAppMode = appModeSwitch.IsChecked == true;
                 QuickGroupManager.UpdateGroup(QuickGroupManager.GetAll().FirstOrDefault(g => g.Id == groupId) ?? new QuickGroup());
                 QuickGroupManager.Save();
                 itemBtn.Content = item.Name;

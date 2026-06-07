@@ -9,6 +9,7 @@ public partial class EditWindowDialog : Window
     public EditWindowDialog(string currentName)
     {
         InitializeComponent();
+        SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(this);
         nameBox.Text = currentName;
         nameBox.SelectAll();
         nameBox.Focus();
