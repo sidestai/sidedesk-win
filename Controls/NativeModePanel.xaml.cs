@@ -12,7 +12,6 @@ using System.Windows.Media.Imaging;
 using System.Diagnostics;
 using SideDesk.Models;
 using SideDesk.Services;
-using SideDesk.Theming;
 using SideDesk.Windows;
 using SideDesk.Framework;
 
@@ -1666,67 +1665,7 @@ namespace SideDesk.Controls
             settings.Save();
         }
 
-        /// <summary>
-        /// "主题"菜单展开时动态填充可用主题列表
-        /// </summary>
-        private void ThemeMenu_SubmenuOpened(object sender, RoutedEventArgs e)
-        {
-            var menu = sender as MenuItem;
-            if (menu == null) return;
 
-            // 移除旧的动态项（保留主题编辑器项和 Separator）
-            for (int i = menu.Items.Count - 1; i >= 0; i--)
-            {
-                var item = menu.Items[i];
-                var mi = item as MenuItem;
-                if (mi != null && mi.Tag is string && (string)mi.Tag == "DynamicTheme")
-                {
-                    menu.Items.RemoveAt(i);
-                }
-            }
-
-            // 动态填充主题列表
-            try
-            {
-                string current = AppSettings.Instance.CurrentTheme;
-                foreach (var name in ThemeManager.GetAvailableThemes())
-                {
-                    var item = new MenuItem
-                    {
-                        Header = name,
-                        Tag = "DynamicTheme",
-                        IsCheckable = true,
-                        IsChecked = string.Equals(name, current, StringComparison.Ordinal)
-                    };
-                    string capturedName = name;
-                    item.Click += (s, ev) => ApplyThemeByName(capturedName);
-                    menu.Items.Add(item);
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine("填充主题列表失败: " + ex.Message);
-            }
-        }
-
-        private void ApplyThemeByName(string name)
-        {
-            try
-            {
-                ThemeManager.ApplyByName(name);
-                AppSettings.Instance.Save();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("应用主题失败：" + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private void ThemeEditorMenu_Click(object sender, RoutedEventArgs e)
-        {
-            var editor = new ThemeEditor(_mainWindow);
-            editor.Show();
-        }
 
         private void ContextMenu_AIChatClick(object sender, RoutedEventArgs e)
         {

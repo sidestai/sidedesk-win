@@ -6,6 +6,12 @@
              ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
         <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Themes/Typography.xaml" />
+                <ResourceDictionary Source="Themes/Styles.xaml" />
+                <ResourceDictionary Source="Themes/DarkTheme.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+
             <!-- ===== Converters ===== -->
             <local:MetricLabelConverter x:Key="MetricLabelConverter" />
             <local:FontToSpaceConverter x:Key="FontToSpaceConverter" />

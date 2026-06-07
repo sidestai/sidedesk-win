@@ -37,8 +37,10 @@ namespace SideDesk
         internal static extern IntPtr GetDpiForMonitor(IntPtr hmonitor, int dpiType, out uint dpiX, out uint dpiY);
 
         // DWM
-        [DllImport("dwmapi.dll")]
-        internal static extern int DwmSetWindowAttribute(IntPtr hwnd, int dwmAttribute, ref int pvAttribute, int cbAttribute);
+        public const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+
+        [DllImport("dwmapi.dll", PreserveSig = true)]
+        public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
 
         // Window visibility & class
         [DllImport("user32.dll")]
@@ -223,7 +225,9 @@ namespace SideDesk
     {
         public const uint SWP_NOMOVE = 0x0002;
         public const uint SWP_NOSIZE = 0x0001;
+        public const uint SWP_NOZORDER = 0x0004;
         public const uint SWP_NOACTIVATE = 0x0010;
+        public const uint SWP_FRAMECHANGED = 0x0020;
     }
 
     internal static class WindowLongIndex

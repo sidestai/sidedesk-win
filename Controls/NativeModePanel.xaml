@@ -35,12 +35,6 @@
                 <MenuItem Header="(加载中...)" />
             </MenuItem>
             <Separator />
-            <MenuItem Header="主题" SubmenuOpened="ThemeMenu_SubmenuOpened">
-                <MenuItem Header="主题编辑器" Click="ThemeEditorMenu_Click" />
-                <Separator />
-                <!-- 动态主题列表由代码填充 -->
-            </MenuItem>
-            <Separator />
             <MenuItem Header="AI 对话" Click="ContextMenu_AIChatClick" />
             <MenuItem Header="使用统计" Click="ContextMenu_UsageStatsClick" />
         </ContextMenu>

@@ -1,117 +1,117 @@
-using System.Linq;
 using System.Windows;
-using SideDesk.Theming;
+using System.Windows.Controls;
+using System.Windows.Input;
 
 namespace SideDesk
 {
     public partial class SettingsWindow : Window
     {
         private readonly App _app;
+        private bool _isLoading = true;
 
         public SettingsWindow()
         {
             InitializeComponent();
             _app = (App)Application.Current;
             LoadCurrentSettings();
+            _isLoading = false;
+
+            SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(this, App.IsCurrentThemeLight());
         }
 
         private void LoadCurrentSettings()
         {
+            // 主题模式
+            themeModeCombo.Items.Add("深色");
+            themeModeCombo.Items.Add("浅色");
+            themeModeCombo.Items.Add("跟随系统");
+
+            switch (_app.AppSettings.ThemeMode?.ToLower())
+            {
+                case "light": themeModeCombo.SelectedIndex = 1; break;
+                case "system": themeModeCombo.SelectedIndex = 2; break;
+                default: themeModeCombo.SelectedIndex = 0; break;
+            }
+
             // 面板宽度
             widthBox.Text = _app.AppSettings.PanelWidth.ToString();
 
             // 停靠位置
+            dockCombo.Items.Add("左侧");
+            dockCombo.Items.Add("右侧");
+            dockCombo.Items.Add("双侧");
+
             switch (_app.CurrentLayout)
             {
-                case LayoutMode.Left:
-                    dockLeftRadio.IsChecked = true;
-                    break;
-                case LayoutMode.Right:
-                    dockRightRadio.IsChecked = true;
-                    break;
-                case LayoutMode.Both:
-                    dockBothRadio.IsChecked = true;
-                    break;
-            }
-
-            // 主题列表
-            var themes = ThemeManager.GetAvailableThemes().ToList();
-            themeCombo.ItemsSource = themes;
-
-            string currentTheme = _app.AppSettings.ThemeName;
-            if (!string.IsNullOrEmpty(currentTheme) && themes.Contains(currentTheme))
-            {
-                themeCombo.SelectedItem = currentTheme;
-            }
-            else if (themes.Count > 0)
-            {
-                themeCombo.SelectedIndex = 0;
+                case LayoutMode.Right: dockCombo.SelectedIndex = 1; break;
+                case LayoutMode.Both: dockCombo.SelectedIndex = 2; break;
+                default: dockCombo.SelectedIndex = 0; break;
             }
         }
 
-        private void Save_Click(object sender, RoutedEventArgs e)
+        private void ThemeMode_Changed(object sender, SelectionChangedEventArgs e)
         {
-            // 验证宽度
+            if (_isLoading) return;
+
+            string mode = themeModeCombo.SelectedIndex switch
+            {
+                1 => "Light",
+                2 => "System",
+                _ => "Dark"
+            };
+
+            _app.AppSettings.ThemeMode = mode;
+            _app.AppSettings.Save();
+            App.ApplyTheme(mode);
+        }
+
+        private void Width_LostFocus(object sender, RoutedEventArgs e)
+        {
+            ApplyWidth();
+        }
+
+        private void Width_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                ApplyWidth();
+            }
+        }
+
+        private void ApplyWidth()
+        {
+            if (_isLoading) return;
             if (!int.TryParse(widthBox.Text, out int width) || width < 50 || width > 500)
             {
-                MessageBox.Show("面板宽度必须在 50~500 之间", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                widthBox.Text = _app.AppSettings.PanelWidth.ToString();
                 return;
             }
 
-            // 保存面板宽度
-            _app.AppSettings.PanelWidth = width;
-
-            // 保存停靠位置
-            LayoutMode newLayout;
-            if (dockRightRadio.IsChecked == true)
-                newLayout = LayoutMode.Right;
-            else if (dockBothRadio.IsChecked == true)
-                newLayout = LayoutMode.Both;
-            else
-                newLayout = LayoutMode.Left;
-
-            // 保存主题
-            string selectedTheme = themeCombo.SelectedItem as string ?? "";
-            _app.AppSettings.ThemeName = selectedTheme;
-
-            // 持久化
-            _app.AppSettings.Save();
-
-            // 应用主题
-            if (!string.IsNullOrEmpty(selectedTheme))
+            if (width != _app.AppSettings.PanelWidth)
             {
-                try
-                {
-                    ThemeManager.ApplyByName(selectedTheme);
-                }
-                catch { /* 主题加载失败忽略 */ }
+                _app.AppSettings.PanelWidth = width;
+                _app.AppSettings.Save();
+                _app.ApplyPanelWidth(width);
             }
-
-            // 应用布局变更（会重新注册 AppBar）
-            if (newLayout != _app.CurrentLayout)
-            {
-                _app.SwitchLayout(newLayout);
-            }
-
-            // 如果宽度变了，提示重启生效
-            if (width != 105) // 对比初始默认值不够准确，这里只提示
-            {
-                // 宽度变更需要重新注册 AppBar，通过 SwitchLayout 即可触发
-                if (newLayout == _app.CurrentLayout)
-                {
-                    // 布局没变但宽度变了，需要重新应用
-                    _app.ApplyPanelWidth(width);
-                }
-            }
-
-            DialogResult = true;
-            Close();
         }
 
-        private void Cancel_Click(object sender, RoutedEventArgs e)
+        private void Dock_Changed(object sender, SelectionChangedEventArgs e)
         {
-            DialogResult = false;
-            Close();
+            if (_isLoading) return;
+
+            LayoutMode newLayout = dockCombo.SelectedIndex switch
+            {
+                1 => LayoutMode.Right,
+                2 => LayoutMode.Both,
+                _ => LayoutMode.Left
+            };
+
+            if (newLayout != _app.CurrentLayout)
+            {
+                _app.AppSettings.Layout = newLayout;
+                _app.AppSettings.Save();
+                _app.SwitchLayout(newLayout);
+            }
         }
     }
 }

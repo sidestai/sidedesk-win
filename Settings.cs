@@ -11,6 +11,7 @@ namespace SideDesk
         public ScreenType RightScreen { get; set; } = ScreenType.B;
         public int PanelWidth { get; set; } = 105;
         public string ThemeName { get; set; } = "";
+        public string ThemeMode { get; set; } = "Dark"; // 支持 "Dark", "Light", "System"
 
         private static readonly string SettingsPath = Path.Combine(
             AppDomain.CurrentDomain.BaseDirectory, "settings.json");
