@@ -1,66 +1,145 @@
 <Window x:Class="SideDesk.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="设置" Height="420" Width="380"
+        Title="设置" Height="500" Width="700"
         WindowStartupLocation="CenterScreen" ResizeMode="NoResize"
         Background="{DynamicResource BrushBG}">
-    <Grid Margin="24">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-        </Grid.RowDefinitions>
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="200"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
         
-        <!-- 标题 -->
-        <TextBlock Grid.Row="0" Text="设置" 
-                   FontSize="{DynamicResource FontSizeTitle}" 
-                   FontWeight="Bold"
-                   Foreground="{DynamicResource BrushTextMain}"
-                   Margin="0,0,0,24"/>
+        <!-- 左侧导航栏 -->
+        <Border Grid.Column="0" Background="{DynamicResource BrushInputBG}" 
+                BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,1,0">
+            <DockPanel>
+                <!-- 顶部标题 -->
+                <TextBlock DockPanel.Dock="Top" Text="设置" 
+                           FontSize="{DynamicResource FontSizeTitle}" 
+                           FontWeight="Bold"
+                           Foreground="{DynamicResource BrushTextMain}"
+                           Margin="20,20,20,20"/>
+                
+                <!-- 导航列表 -->
+                <ListBox x:Name="navList" 
+                         Background="Transparent" 
+                         BorderThickness="0"
+                         ItemContainerStyle="{StaticResource GlobalListBoxItemStyle}"
+                         SelectionChanged="Nav_Changed"
+                         Padding="8,0">
+                    <ListBoxItem Content="常规" IsSelected="True"/>
+                    <ListBoxItem Content="外观"/>
+                    <ListBoxItem Content="关于"/>
+                </ListBox>
+            </DockPanel>
+        </Border>
         
-        <!-- 设置内容 -->
-        <StackPanel Grid.Row="1">
-            <!-- 主题模式 -->
-            <TextBlock Text="主题模式" 
-                       Foreground="{DynamicResource BrushTextSec}" 
-                       FontSize="{DynamicResource FontSizeSmall}"
-                       Margin="0,0,0,8"/>
-            <ComboBox x:Name="themeModeCombo" 
-                      Style="{StaticResource GlobalComboBoxStyle}"
-                      SelectionChanged="ThemeMode_Changed"/>
-            
-            <!-- 面板宽度 -->
-            <TextBlock Text="面板宽度" 
-                       Foreground="{DynamicResource BrushTextSec}" 
-                       FontSize="{DynamicResource FontSizeSmall}"
-                       Margin="0,20,0,8"/>
+        <!-- 右侧内容区 -->
+        <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" Padding="30,20">
             <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <TextBox x:Name="widthBox" 
-                         Grid.Column="0"
-                         Background="{DynamicResource BrushInputBG}"
-                         Foreground="{DynamicResource BrushTextMain}"
-                         BorderBrush="{DynamicResource BrushBorder}"
-                         BorderThickness="1"
-                         Padding="10,8"
-                         FontSize="{DynamicResource FontSizeNormal}"
-                         LostFocus="Width_LostFocus"
-                         KeyDown="Width_KeyDown"/>
-                <TextBlock Grid.Column="1" Text="px" 
-                           Foreground="{DynamicResource BrushTextMuted}"
-                           VerticalAlignment="Center" Margin="8,0,0,0"/>
+                <!-- 常规页面 -->
+                <StackPanel x:Name="pageGeneral">
+                    <TextBlock Text="常规" 
+                               FontSize="{DynamicResource FontSizeSubtitle}" 
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource BrushTextMain}"
+                               Margin="0,0,0,24"/>
+                    
+                    <!-- 停靠位置 -->
+                    <Grid Margin="0,0,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="停靠位置" Foreground="{DynamicResource BrushTextMain}" 
+                                       FontSize="{DynamicResource FontSizeNormal}"/>
+                            <TextBlock Text="面板停靠在屏幕的哪一侧" Foreground="{DynamicResource BrushTextMuted}" 
+                                       FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0"/>
+                        </StackPanel>
+                        <ComboBox x:Name="dockCombo" Grid.Column="1" Width="120"
+                                  Style="{StaticResource GlobalComboBoxStyle}"
+                                  SelectionChanged="Dock_Changed"/>
+                    </Grid>
+                    
+                    <!-- 面板宽度 -->
+                    <Grid Margin="0,0,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="面板宽度" Foreground="{DynamicResource BrushTextMain}" 
+                                       FontSize="{DynamicResource FontSizeNormal}"/>
+                            <TextBlock Text="侧边面板的像素宽度（50-500）" Foreground="{DynamicResource BrushTextMuted}" 
+                                       FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBox x:Name="widthBox" Width="70"
+                                     Background="{DynamicResource BrushInputBG}"
+                                     Foreground="{DynamicResource BrushTextMain}"
+                                     BorderBrush="{DynamicResource BrushBorder}"
+                                     BorderThickness="1"
+                                     Padding="8,6"
+                                     TextAlignment="Center"
+                                     FontSize="{DynamicResource FontSizeNormal}"
+                                     LostFocus="Width_LostFocus"
+                                     KeyDown="Width_KeyDown"/>
+                            <TextBlock Text="px" Foreground="{DynamicResource BrushTextMuted}"
+                                       VerticalAlignment="Center" Margin="6,0,0,0"/>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+                
+                <!-- 外观页面 -->
+                <StackPanel x:Name="pageAppearance" Visibility="Collapsed">
+                    <TextBlock Text="外观" 
+                               FontSize="{DynamicResource FontSizeSubtitle}" 
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource BrushTextMain}"
+                               Margin="0,0,0,24"/>
+                    
+                    <!-- 主题模式 -->
+                    <Grid Margin="0,0,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="主题模式" Foreground="{DynamicResource BrushTextMain}" 
+                                       FontSize="{DynamicResource FontSizeNormal}"/>
+                            <TextBlock Text="选择界面的颜色主题" Foreground="{DynamicResource BrushTextMuted}" 
+                                       FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0"/>
+                        </StackPanel>
+                        <ComboBox x:Name="themeModeCombo" Grid.Column="1" Width="120"
+                                  Style="{StaticResource GlobalComboBoxStyle}"
+                                  SelectionChanged="ThemeMode_Changed"/>
+                    </Grid>
+                </StackPanel>
+                
+                <!-- 关于页面 -->
+                <StackPanel x:Name="pageAbout" Visibility="Collapsed">
+                    <TextBlock Text="关于" 
+                               FontSize="{DynamicResource FontSizeSubtitle}" 
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource BrushTextMain}"
+                               Margin="0,0,0,24"/>
+                    
+                    <TextBlock Text="SideDesk" 
+                               FontSize="20" FontWeight="Bold"
+                               Foreground="{DynamicResource BrushTextMain}"
+                               Margin="0,0,0,8"/>
+                    <TextBlock Text="版本 v1.0.0" 
+                               Foreground="{DynamicResource BrushTextSec}"
+                               FontSize="{DynamicResource FontSizeNormal}"
+                               Margin="0,0,0,16"/>
+                    <TextBlock Text="一款轻量级的桌面侧边栏工具，帮助你高效管理窗口和快捷方式。" 
+                               Foreground="{DynamicResource BrushTextMuted}"
+                               FontSize="{DynamicResource FontSizeNormal}"
+                               TextWrapping="Wrap"/>
+                </StackPanel>
             </Grid>
-            
-            <!-- 停靠位置 -->
-            <TextBlock Text="停靠位置" 
-                       Foreground="{DynamicResource BrushTextSec}" 
-                       FontSize="{DynamicResource FontSizeSmall}"
-                       Margin="0,20,0,8"/>
-            <ComboBox x:Name="dockCombo" 
-                      Style="{StaticResource GlobalComboBoxStyle}"
-                      SelectionChanged="Dock_Changed"/>
-        </StackPanel>
+        </ScrollViewer>
     </Grid>
 </Window>

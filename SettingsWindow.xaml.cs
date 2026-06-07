@@ -49,6 +49,25 @@ namespace SideDesk
             }
         }
 
+        private void Nav_Changed(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isLoading) return;
+            if (pageGeneral == null || pageAppearance == null || pageAbout == null) return;
+
+            // 隐藏所有页面
+            pageGeneral.Visibility = Visibility.Collapsed;
+            pageAppearance.Visibility = Visibility.Collapsed;
+            pageAbout.Visibility = Visibility.Collapsed;
+
+            // 显示选中页面
+            switch (navList.SelectedIndex)
+            {
+                case 0: pageGeneral.Visibility = Visibility.Visible; break;
+                case 1: pageAppearance.Visibility = Visibility.Visible; break;
+                case 2: pageAbout.Visibility = Visibility.Visible; break;
+            }
+        }
+
         private void ThemeMode_Changed(object sender, SelectionChangedEventArgs e)
         {
             if (_isLoading) return;
