@@ -33,6 +33,7 @@
                     <ListBoxItem Content="外观"/>
                     <ListBoxItem Content="程序管理"/>
                     <ListBoxItem Content="扩展管理"/>
+                    <ListBoxItem Content="工具"/>
                     <ListBoxItem Content="关于"/>
                 </ListBox>
             </DockPanel>
@@ -208,6 +209,46 @@
                         <Button Content="+ 新建扩展" Click="NewExtension_Click"
                                 Style="{StaticResource GhostButtonStyle}" Padding="12,6"/>
                     </StackPanel>
+                </StackPanel>
+                
+                <!-- 工具页面 -->
+                <StackPanel x:Name="pageTools" Visibility="Collapsed" Margin="0,0,0,20">
+                    <TextBlock Text="工具" 
+                               FontSize="{DynamicResource FontSizeSubtitle}" 
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource BrushTextMain}"
+                               Margin="0,0,0,8"/>
+                    <TextBlock Text="内置实用工具" 
+                               Foreground="{DynamicResource BrushTextMuted}" 
+                               FontSize="{DynamicResource FontSizeSmall}" 
+                               Margin="0,0,0,20"/>
+                    
+                    <!-- 任务栏标题锁定 -->
+                    <Border Background="{DynamicResource BrushInputBG}" 
+                            BorderBrush="{DynamicResource BrushBorder}" 
+                            BorderThickness="1" CornerRadius="8" 
+                            Padding="16" Margin="0,0,0,12">
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button Content="立即设置" Click="TaskbarOverlayButton_Click"
+                                        Style="{StaticResource GhostButtonStyle}" 
+                                        Padding="10,6" Margin="0,0,12,0"/>
+                                <CheckBox x:Name="titleLockSwitch" 
+                                          Style="{StaticResource RaycastSwitchStyle}"
+                                          Checked="TitleLockSwitch_Changed" 
+                                          Unchecked="TitleLockSwitch_Changed"/>
+                            </StackPanel>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="任务栏标题锁定" 
+                                           Foreground="{DynamicResource BrushTextMain}"
+                                           FontSize="{DynamicResource FontSizeNormal}"
+                                           FontWeight="SemiBold"/>
+                                <TextBlock Text="锁定指定窗口在任务栏显示的标题文字，开启后启动时自动恢复" 
+                                           Foreground="{DynamicResource BrushTextMuted}"
+                                           FontSize="{DynamicResource FontSizeTiny}"/>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
                 </StackPanel>
                 
                 <!-- 关于页面 -->

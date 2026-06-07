@@ -25,6 +25,9 @@ namespace SideDesk
         {
             base.OnStartup(e);
 
+            // 清理残留 AppBar：杀掉其他 SideDesk 进程
+            CleanupStaleAppBar();
+
             // 加载上次保存的设置
             AppSettings = Settings.Load();
 
@@ -122,6 +125,70 @@ namespace SideDesk
                 window.UnregisterAppBar();
                 window.Close();
                 window = null;
+            }
+        }
+
+        /// <summary>
+        /// 清理崩溃残留的 AppBar 区域：终止其他同名进程 + 重置工作区
+        /// </summary>
+        private static void CleanupStaleAppBar()
+        {
+            try
+            {
+                var currentPid = System.Diagnostics.Process.GetCurrentProcess().Id;
+                var staleProcesses = System.Diagnostics.Process.GetProcessesByName("SideDesk")
+                    .Where(p => p.Id != currentPid)
+                    .ToList();
+
+                if (staleProcesses.Count > 0)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[AppBar] 检测到 {staleProcesses.Count} 个残留 SideDesk 进程，正在清理...");
+                    foreach (var p in staleProcesses)
+                    {
+                        try { p.Kill(); p.WaitForExit(3000); }
+                        catch { }
+                        finally { p.Dispose(); }
+                    }
+
+                    // 等待系统释放 AppBar 区域
+                    System.Threading.Thread.Sleep(500);
+
+                    // 重置所有显示器的工作区为完整区域
+                    ResetWorkArea();
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[AppBar] 清理残留失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 重置显示器工作区为完整屏幕区域（恢复被残留 AppBar 占用的空间）
+        /// </summary>
+        private static void ResetWorkArea()
+        {
+            try
+            {
+                NativeMethods.EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero,
+                    (IntPtr hMonitor, IntPtr hdc, ref RECT pRect, int dwData) =>
+                    {
+                        var monitorInfo = new MONITORINFO();
+                        monitorInfo.cbSize = System.Runtime.InteropServices.Marshal.SizeOf<MONITORINFO>();
+                        if (NativeMethods.GetMonitorInfo(hMonitor, ref monitorInfo))
+                        {
+                            var fullRect = monitorInfo.rcMonitor;
+                            NativeMethods.SystemParametersInfo(
+                                NativeMethods.SPI_SETWORKAREA, 0, ref fullRect, NativeMethods.SPIF_SENDCHANGE);
+                            System.Diagnostics.Debug.WriteLine(
+                                $"[AppBar] 重置工作区: L={fullRect.Left} T={fullRect.Top} R={fullRect.Right} B={fullRect.Bottom}");
+                        }
+                        return true;
+                    }, 0);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[AppBar] 重置工作区失败: {ex.Message}");
             }
         }
 

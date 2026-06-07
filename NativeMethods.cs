@@ -32,6 +32,15 @@ namespace SideDesk
         [DllImport("user32.dll")]
         internal static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
 
+        // SystemParametersInfo
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool SystemParametersInfo(uint uiAction, uint uiParam, ref RECT pvParam, uint fWinIni);
+
+        internal const uint SPI_GETWORKAREA = 0x0030;
+        internal const uint SPI_SETWORKAREA = 0x002F;
+        internal const uint SPIF_SENDCHANGE = 0x0002;
+
         // DPI
         [DllImport("shcore.dll")]
         internal static extern IntPtr GetDpiForMonitor(IntPtr hmonitor, int dpiType, out uint dpiX, out uint dpiY);

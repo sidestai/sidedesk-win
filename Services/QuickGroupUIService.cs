@@ -1525,53 +1525,91 @@ namespace SideDesk.Services
         {
             var dialog = new Window
             {
-                Title = "编辑项目", Width = 440, Height = 300,
+                Title = "编辑项目", Width = 440,
+                SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterScreen,
                 ResizeMode = ResizeMode.NoResize,
-                Background = new SolidColorBrush(Color.FromRgb(30, 30, 30)),
-                Foreground = Brushes.White,
+                Background = (Brush)Application.Current.FindResource("BrushDialogBG"),
+                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                 Owner = OwnerWindow
             };
+            dialog.SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(dialog);
 
-            var rootPanel = new StackPanel { Margin = new Thickness(15) };
+            var rootPanel = new StackPanel { Margin = new Thickness(20) };
 
-            var namePanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 5, 0, 5) };
-            namePanel.Children.Add(new TextBlock { Text = "名称:", Foreground = Brushes.White, Width = 60, VerticalAlignment = VerticalAlignment.Center });
-            var nameBox = new TextBox { Width = 280, Text = item.Name };
-            namePanel.Children.Add(nameBox);
-            rootPanel.Children.Add(namePanel);
+            // 名称
+            rootPanel.Children.Add(new TextBlock
+            {
+                Text = "名称",
+                Foreground = (Brush)Application.Current.FindResource("BrushTextSec"),
+                FontSize = (double)Application.Current.FindResource("FontSizeSmall"),
+                Margin = new Thickness(0, 0, 0, 6)
+            });
+            var nameBox = new TextBox
+            {
+                Text = item.Name,
+                Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle")
+            };
+            rootPanel.Children.Add(nameBox);
 
-            var targetPanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 5, 0, 5) };
-            targetPanel.Children.Add(new TextBlock { Text = "目标:", Foreground = Brushes.White, Width = 60, VerticalAlignment = VerticalAlignment.Center });
-            var targetBox = new TextBox { Width = 280, Text = item.Target };
-            targetPanel.Children.Add(targetBox);
-            rootPanel.Children.Add(targetPanel);
+            // 目标
+            rootPanel.Children.Add(new TextBlock
+            {
+                Text = "目标",
+                Foreground = (Brush)Application.Current.FindResource("BrushTextSec"),
+                FontSize = (double)Application.Current.FindResource("FontSizeSmall"),
+                Margin = new Thickness(0, 12, 0, 6)
+            });
+            var targetBox = new TextBox
+            {
+                Text = item.Target,
+                Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle")
+            };
+            rootPanel.Children.Add(targetBox);
 
-            var appModeSwitch = new CheckBox 
-            { 
-                IsChecked = item.UseAppMode, 
+            // App 模式开关
+            var appModePanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(0, 14, 0, 0)
+            };
+            var appModeSwitch = new CheckBox
+            {
+                IsChecked = item.UseAppMode,
                 Style = (Style)Application.Current.FindResource("RaycastSwitchStyle"),
                 VerticalAlignment = VerticalAlignment.Center
             };
-            var appModeLabel = new TextBlock 
-            { 
-                Text = "App 模式", 
-                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), 
-                VerticalAlignment = VerticalAlignment.Center, 
-                Margin = new Thickness(8, 0, 0, 0) 
-            };
-            var appModePanel = new StackPanel 
-            { 
-                Orientation = Orientation.Horizontal, 
-                Margin = new Thickness(60, 5, 0, 5) 
+            var appModeLabel = new TextBlock
+            {
+                Text = "App 模式",
+                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(8, 0, 0, 0)
             };
             appModePanel.Children.Add(appModeSwitch);
             appModePanel.Children.Add(appModeLabel);
             rootPanel.Children.Add(appModePanel);
 
-            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 15, 0, 0) };
-            var okBtn = new Button { Content = "保存", Width = 70, Margin = new Thickness(0, 0, 10, 0) };
-            var cancelBtn = new Button { Content = "取消", Width = 70 };
+            // 按钮
+            var btnPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 20, 0, 0)
+            };
+            var cancelBtn = new Button
+            {
+                Content = "取消",
+                Style = (Style)Application.Current.FindResource("StandardButtonStyle"),
+                Padding = new Thickness(16, 8, 16, 8),
+                Margin = new Thickness(0, 0, 10, 0)
+            };
+            var okBtn = new Button
+            {
+                Content = "保存",
+                Style = (Style)Application.Current.FindResource("PrimaryButtonStyle"),
+                Padding = new Thickness(16, 8, 16, 8)
+            };
             okBtn.Click += (s, ev) =>
             {
                 item.Name = nameBox.Text.Trim();
@@ -1583,7 +1621,8 @@ namespace SideDesk.Services
                 dialog.Close();
             };
             cancelBtn.Click += (s, ev) => dialog.Close();
-            btnPanel.Children.Add(okBtn); btnPanel.Children.Add(cancelBtn);
+            btnPanel.Children.Add(cancelBtn);
+            btnPanel.Children.Add(okBtn);
             rootPanel.Children.Add(btnPanel);
 
             dialog.Content = rootPanel;
