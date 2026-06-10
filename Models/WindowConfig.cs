@@ -14,7 +14,8 @@ public enum PanelType
     UsageStats,      // 使用统计
     AIChat,          // AI 对话
     FileArea,        // 文件区
-    ClipboardHistory  // 剪贴板历史
+    ClipboardHistory,  // 剪贴板历史
+    DataDashboard     // 数据看板
 }
 
 public class PanelItem
@@ -25,6 +26,7 @@ public class PanelItem
     public string? Title { get; set; }    // 可选自定义标题
     public List<ClipboardSavedItem>? ClipboardItems { get; set; } // 剪贴板收藏数据
     public List<FileAreaItem>? FileItems { get; set; } // 文件区数据
+    public List<DataDashboardItem>? DashboardItems { get; set; } // 数据看板项
 }
 
 public class FileAreaItem
@@ -54,6 +56,8 @@ public class WindowConfig
     public List<PanelItem> Panels { get; set; } = new();
     public bool IsEditMode { get; set; } = false;
     public bool IsAppMode { get; set; } = false;
+    /// <summary>窗口级启用的工具列表（显示在底部工具栏）</summary>
+    public List<string> EnabledTools { get; set; } = new();
 }
 
 public class DockWindowState

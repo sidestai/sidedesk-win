@@ -1,11 +1,15 @@
+using System;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.Win32;
 using SideDesk.Models;
+using SideDesk.Services;
 using SideDesk.Windows;
 using System.Text;
+using Velopack;
 
 namespace SideDesk
 {
@@ -67,12 +71,14 @@ namespace SideDesk
             RefreshExtensionList();
 
             titleLockSwitch.IsChecked = _app.AppSettings.EnableTitleLock;
+
+            InitUpdateUI();
         }
 
         private void Nav_Changed(object sender, SelectionChangedEventArgs e)
         {
             if (_isLoading) return;
-            if (pageGeneral == null || pageAppearance == null || pageProgramManager == null || pageExtensions == null || pageTools == null || pageAbout == null) return;
+            if (pageGeneral == null || pageAppearance == null || pageProgramManager == null || pageExtensions == null || pageTools == null || pageModules == null || pageAbout == null) return;
         
             // 隱藏所有页面
             pageGeneral.Visibility = Visibility.Collapsed;
@@ -80,6 +86,7 @@ namespace SideDesk
             pageProgramManager.Visibility = Visibility.Collapsed;
             pageExtensions.Visibility = Visibility.Collapsed;
             pageTools.Visibility = Visibility.Collapsed;
+            pageModules.Visibility = Visibility.Collapsed;
             pageAbout.Visibility = Visibility.Collapsed;
         
             // 显示选中页面
@@ -90,7 +97,8 @@ namespace SideDesk
                 case 2: pageProgramManager.Visibility = Visibility.Visible; break;
                 case 3: pageExtensions.Visibility = Visibility.Visible; break;
                 case 4: pageTools.Visibility = Visibility.Visible; break;
-                case 5: pageAbout.Visibility = Visibility.Visible; break;
+                case 5: pageModules.Visibility = Visibility.Visible; RefreshTemplateList(); break;
+                case 6: pageAbout.Visibility = Visibility.Visible; break;
             }
         }
 
@@ -907,6 +915,470 @@ namespace SideDesk
 
             editorDialog.Content = rootPanel;
             editorDialog.ShowDialog();
+        }
+
+        #endregion
+
+        #region 模块 - 数据模版管理
+
+        private void RefreshTemplateList()
+        {
+            templateListPanel.Children.Clear();
+            var manager = DataTemplateManager.Load();
+
+            if (manager.Templates.Count == 0)
+            {
+                templateListPanel.Children.Add(new TextBlock
+                {
+                    Text = "暂无数据模版",
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
+                    FontSize = (double)FindResource("FontSizeSmall")
+                });
+                return;
+            }
+
+            foreach (var tpl in manager.Templates)
+            {
+                var row = new Grid { Margin = new Thickness(0, 0, 0, 8) };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var info = new StackPanel();
+                var nameBlock = new TextBlock
+                {
+                    Text = tpl.Name,
+                    Foreground = (Brush)FindResource("BrushTextMain"),
+                    FontSize = (double)FindResource("FontSizeNormal"),
+                    FontWeight = FontWeights.SemiBold
+                };
+                info.Children.Add(nameBlock);
+
+                var descText = string.IsNullOrEmpty(tpl.Category) ? tpl.Description : $"[{tpl.Category}] {tpl.Description}";
+                info.Children.Add(new TextBlock
+                {
+                    Text = descText,
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
+                    FontSize = (double)FindResource("FontSizeTiny"),
+                    TextTrimming = TextTrimming.CharacterEllipsis
+                });
+                info.Children.Add(new TextBlock
+                {
+                    Text = $"目标: {tpl.TargetUrl}  |  选择器: {tpl.Selector}  |  刷新: {tpl.RefreshIntervalSeconds}s",
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
+                    FontSize = (double)FindResource("FontSizeTiny"),
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    Margin = new Thickness(0, 2, 0, 0)
+                });
+                Grid.SetColumn(info, 0);
+                row.Children.Add(info);
+
+                var delBtn = new Button
+                {
+                    Content = "✕",
+                    Style = (Style)FindResource("GhostButtonStyle"),
+                    Padding = new Thickness(6, 2, 6, 2),
+                    FontSize = 11,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                var tplId = tpl.Id;
+                delBtn.Click += (s, e) => { RemoveTemplate(tplId); };
+                Grid.SetColumn(delBtn, 1);
+                row.Children.Add(delBtn);
+
+                templateListPanel.Children.Add(row);
+            }
+        }
+
+        private void AddTemplate_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new Window
+            {
+                Title = "新建数据模版",
+                Width = 460,
+                SizeToContent = SizeToContent.Height,
+                WindowStartupLocation = WindowStartupLocation.CenterScreen,
+                ResizeMode = ResizeMode.NoResize,
+                Owner = this,
+                Background = (Brush)FindResource("BrushDialogBG"),
+                Foreground = (Brush)FindResource("BrushTextMain")
+            };
+            dialog.SourceInitialized += (s, ev) => App.UpdateWindowDwmTheme(dialog);
+
+            var panel = new StackPanel { Margin = new Thickness(20) };
+
+            panel.Children.Add(new TextBlock
+            {
+                Text = "新建数据模版",
+                FontSize = (double)FindResource("FontSizeSubtitle"),
+                FontWeight = FontWeights.Bold,
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                Margin = new Thickness(0, 0, 0, 16)
+            });
+
+            // 名称
+            panel.Children.Add(new TextBlock { Text = "模版名称", Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
+            var nameBox = new TextBox { Style = (Style)FindResource("GlobalTextBoxStyle"), Margin = new Thickness(0, 0, 0, 12) };
+            panel.Children.Add(nameBox);
+
+            // 描述
+            panel.Children.Add(new TextBlock { Text = "描述", Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
+            var descBox = new TextBox { Style = (Style)FindResource("GlobalTextBoxStyle"), Margin = new Thickness(0, 0, 0, 12) };
+            panel.Children.Add(descBox);
+
+            // 分类
+            panel.Children.Add(new TextBlock { Text = "分类", Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
+            var categoryBox = new TextBox { Style = (Style)FindResource("GlobalTextBoxStyle"), Margin = new Thickness(0, 0, 0, 12) };
+            panel.Children.Add(categoryBox);
+
+            // 目标网址
+            panel.Children.Add(new TextBlock { Text = "目标网址", Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
+            var urlBox = new TextBox { Style = (Style)FindResource("GlobalTextBoxStyle"), Margin = new Thickness(0, 0, 0, 12) };
+            panel.Children.Add(urlBox);
+
+            // 浏览器选择
+            panel.Children.Add(new TextBlock { Text = "浏览器", Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
+            var browserCombo = new ComboBox { Style = (Style)FindResource("GlobalComboBoxStyle"), Margin = new Thickness(0, 0, 0, 12) };
+            browserCombo.Items.Add("默认浏览器");
+            foreach (var b in _registry.Browsers)
+                browserCombo.Items.Add(b.Name);
+            browserCombo.SelectedIndex = 0;
+            panel.Children.Add(browserCombo);
+
+            // 容器(Profile)选择
+            panel.Children.Add(new TextBlock { Text = "容器 (Profile)", Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
+            var profileCombo = new ComboBox { Style = (Style)FindResource("GlobalComboBoxStyle"), Margin = new Thickness(0, 0, 0, 12) };
+            profileCombo.Items.Add("默认");
+            profileCombo.SelectedIndex = 0;
+            panel.Children.Add(profileCombo);
+
+            // 浏览器切换时更新Profile列表
+            browserCombo.SelectionChanged += (s, ev) =>
+            {
+                profileCombo.Items.Clear();
+                profileCombo.Items.Add("默认");
+                if (browserCombo.SelectedIndex > 0)
+                {
+                    var selectedBrowser = _registry.Browsers[browserCombo.SelectedIndex - 1];
+                    foreach (var p in selectedBrowser.Profiles)
+                        profileCombo.Items.Add(p.Name);
+                }
+                profileCombo.SelectedIndex = 0;
+            };
+
+            // 选择器
+            panel.Children.Add(new TextBlock { Text = "选择器 (CSS Selector 或 XPath)", Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
+            var selectorGrid = new Grid { Margin = new Thickness(0, 0, 0, 12) };
+            selectorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            selectorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var selectorBox = new TextBox { Style = (Style)FindResource("GlobalTextBoxStyle") };
+            Grid.SetColumn(selectorBox, 0);
+            selectorGrid.Children.Add(selectorBox);
+            var pickSelectorBtn = new Button
+            {
+                Content = "选择",
+                Style = (Style)FindResource("GhostButtonStyle"),
+                Padding = new Thickness(10, 4, 10, 4),
+                Margin = new Thickness(8, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Grid.SetColumn(pickSelectorBtn, 1);
+            selectorGrid.Children.Add(pickSelectorBtn);
+            panel.Children.Add(selectorGrid);
+
+            // 选择按钮点击逻辑
+            pickSelectorBtn.Click += async (s, ev) =>
+            {
+                // 校验URL
+                if (string.IsNullOrWhiteSpace(urlBox.Text))
+                {
+                    MessageBox.Show("请先输入目标网址", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // 确定浏览器路径
+                string browserPath = "";
+                string profileDir = "";
+                if (browserCombo.SelectedIndex > 0)
+                {
+                    var selectedBrowser = _registry.Browsers[browserCombo.SelectedIndex - 1];
+                    browserPath = selectedBrowser.ExePath;
+                    if (profileCombo.SelectedIndex > 0)
+                        profileDir = selectedBrowser.Profiles[profileCombo.SelectedIndex - 1].Directory;
+                }
+                else
+                {
+                    // 默认浏览器：尝试找 chrome/edge
+                    var defaultPaths = new[]
+                    {
+                        @"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                        @"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+                        @"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+                        @"C:\Program Files\Microsoft\Edge\Application\msedge.exe"
+                    };
+                    browserPath = defaultPaths.FirstOrDefault(System.IO.File.Exists) ?? "";
+                    if (string.IsNullOrEmpty(browserPath))
+                    {
+                        MessageBox.Show("未找到可用浏览器，请在浏览器下拉框中选择一个已注册的浏览器", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        return;
+                    }
+                }
+
+                // 禁用按钮
+                pickSelectorBtn.IsEnabled = false;
+                pickSelectorBtn.Content = "选择中...";
+
+                try
+                {
+                    var (port, process) = await Services.CdpBrowserService.Instance.LaunchVisibleBrowserAsync(browserPath, profileDir, urlBox.Text.Trim());
+                    if (process == null)
+                    {
+                        MessageBox.Show("启动浏览器失败\n\n可能原因：该浏览器已在运行中，请先关闭浏览器后重试", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                        return;
+                    }
+
+                    try
+                    {
+                        var selector = await Services.CdpBrowserService.Instance.PickElementSelectorAsync(port, urlBox.Text.Trim());
+                        if (!string.IsNullOrEmpty(selector))
+                        {
+                            selectorBox.Text = selector;
+                        }
+                        else
+                        {
+                            MessageBox.Show("未选择到元素（超时或取消）", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                        }
+                    }
+                    finally
+                    {
+                        // 关闭浏览器
+                        try
+                        {
+                            if (!process.HasExited)
+                                process.Kill();
+                        }
+                        catch { }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"选择器获取失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                finally
+                {
+                    pickSelectorBtn.IsEnabled = true;
+                    pickSelectorBtn.Content = "选择";
+                }
+            };
+
+            // 刷新间隔
+            panel.Children.Add(new TextBlock { Text = "刷新间隔（秒）", Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
+            var intervalBox = new TextBox { Style = (Style)FindResource("GlobalTextBoxStyle"), Text = "60", Margin = new Thickness(0, 0, 0, 16) };
+            panel.Children.Add(intervalBox);
+
+            // 按钮
+            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            var cancelBtn = new Button { Content = "取消", Style = (Style)FindResource("StandardButtonStyle"), Padding = new Thickness(16, 8, 16, 8), Margin = new Thickness(0, 0, 10, 0) };
+            cancelBtn.Click += (s, ev) => dialog.Close();
+            var okBtn = new Button { Content = "保存", Style = (Style)FindResource("PrimaryButtonStyle"), Padding = new Thickness(16, 8, 16, 8) };
+            okBtn.Click += (s, ev) =>
+            {
+                if (string.IsNullOrWhiteSpace(nameBox.Text) || string.IsNullOrWhiteSpace(urlBox.Text) || string.IsNullOrWhiteSpace(selectorBox.Text))
+                {
+                    MessageBox.Show("请填写名称、目标网址和选择器", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                int interval = 60;
+                int.TryParse(intervalBox.Text, out interval);
+                if (interval < 10) interval = 10;
+
+                var template = new Models.DataTemplate
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    Name = nameBox.Text.Trim(),
+                    Description = descBox.Text.Trim(),
+                    Category = categoryBox.Text.Trim(),
+                    TargetUrl = urlBox.Text.Trim(),
+                    Selector = selectorBox.Text.Trim(),
+                    RefreshIntervalSeconds = interval,
+                    DefaultBrowserId = browserCombo.SelectedIndex > 0 ? _registry.Browsers[browserCombo.SelectedIndex - 1].Id : null,
+                    DefaultProfileId = (browserCombo.SelectedIndex > 0 && profileCombo.SelectedIndex > 0)
+                        ? _registry.Browsers[browserCombo.SelectedIndex - 1].Profiles[profileCombo.SelectedIndex - 1].Id
+                        : null
+                };
+
+                var manager = DataTemplateManager.Load();
+                manager.SaveUserTemplate(template);
+                dialog.Close();
+                RefreshTemplateList();
+            };
+            btnPanel.Children.Add(cancelBtn);
+            btnPanel.Children.Add(okBtn);
+            panel.Children.Add(btnPanel);
+
+            dialog.Content = panel;
+            dialog.ShowDialog();
+        }
+
+        private void RemoveTemplate(string templateId)
+        {
+            if (MessageBox.Show("确定删除该模版？", "确认", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
+                return;
+
+            // 从 user-templates.json 中删除
+            var userFile = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data-templates", "user-templates.json");
+            if (System.IO.File.Exists(userFile))
+            {
+                try
+                {
+                    var json = System.IO.File.ReadAllText(userFile);
+                    var list = Newtonsoft.Json.JsonConvert.DeserializeObject<System.Collections.Generic.List<Models.DataTemplate>>(json) ?? new();
+                    list.RemoveAll(t => t.Id == templateId);
+                    System.IO.File.WriteAllText(userFile, Newtonsoft.Json.JsonConvert.SerializeObject(list, Newtonsoft.Json.Formatting.Indented));
+                }
+                catch { }
+            }
+            RefreshTemplateList();
+        }
+
+        #endregion
+
+        #region 自动更新
+
+        private UpdateInfo? _newVersionUpdateInfo;
+        private bool _isCheckingUpdate;
+        private bool _isDownloadingUpdate;
+        private bool _updateEventsSubscribed;
+
+        private void InitUpdateUI()
+        {
+            // 设置开关状态
+            autoUpdateSwitch.IsChecked = _app.AppSettings.EnableAutoUpdate;
+
+            // 显示当前版本
+            try
+            {
+                var mgr = new UpdateManager(""); // dummy，仅获取版本
+                if (mgr.IsInstalled)
+                    versionText.Text = $"版本 v{mgr.CurrentVersion}";
+            }
+            catch { }
+
+            // 订阅更新事件
+            SubscribeUpdateEvents();
+
+            // 如果已有更新就绪，直接显示
+            if (VelopackUpdateService.Instance.IsUpdateReady)
+            {
+                applyUpdatePanel.Visibility = Visibility.Visible;
+                updateStatusText.Text = "更新包已就绪，重启即可生效！";
+                checkUpdateBtn.IsEnabled = false;
+            }
+        }
+
+        private void SubscribeUpdateEvents()
+        {
+            if (_updateEventsSubscribed) return;
+            _updateEventsSubscribed = true;
+
+            VelopackUpdateService.Instance.UpdateStatusChanged += status =>
+            {
+                Dispatcher.Invoke(() => updateStatusText.Text = status);
+            };
+
+            VelopackUpdateService.Instance.DownloadProgressChanged += progress =>
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    downloadProgressBar.Value = progress;
+                    progressPercentText.Text = $"{progress}%";
+                    if (progress >= 100)
+                    {
+                        downloadProgressPanel.Visibility = Visibility.Collapsed;
+                        applyUpdatePanel.Visibility = Visibility.Visible;
+                        _isDownloadingUpdate = false;
+                    }
+                });
+            };
+
+            VelopackUpdateService.Instance.UpdateReadyChanged += () =>
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    applyUpdatePanel.Visibility = Visibility.Visible;
+                    checkUpdateBtn.IsEnabled = false;
+                });
+            };
+        }
+
+        private void AutoUpdateSwitch_Click(object sender, RoutedEventArgs e)
+        {
+            _app.AppSettings.EnableAutoUpdate = autoUpdateSwitch.IsChecked == true;
+            _app.AppSettings.Save();
+        }
+
+        private async void CheckForUpdates_Click(object sender, RoutedEventArgs e)
+        {
+            if (_isCheckingUpdate || _isDownloadingUpdate) return;
+
+            _isCheckingUpdate = true;
+            checkUpdateBtn.IsEnabled = false;
+            applyUpdatePanel.Visibility = Visibility.Collapsed;
+            downloadProgressPanel.Visibility = Visibility.Collapsed;
+
+            try
+            {
+                var updateInfo = await VelopackUpdateService.Instance.CheckForUpdatesAsync();
+                if (updateInfo != null)
+                {
+                    _newVersionUpdateInfo = updateInfo;
+                    // 自动开始下载
+                    _isDownloadingUpdate = true;
+                    downloadProgressPanel.Visibility = Visibility.Visible;
+                    downloadProgressBar.Value = 0;
+                    progressPercentText.Text = "0%";
+
+                    var success = await VelopackUpdateService.Instance.DownloadUpdatesAsync(updateInfo);
+                    if (!success)
+                    {
+                        downloadProgressPanel.Visibility = Visibility.Collapsed;
+                        checkUpdateBtn.IsEnabled = true;
+                    }
+                }
+                else
+                {
+                    checkUpdateBtn.IsEnabled = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                updateStatusText.Text = $"检查失败: {ex.Message}";
+                checkUpdateBtn.IsEnabled = true;
+            }
+            finally
+            {
+                _isCheckingUpdate = false;
+                if (!_isDownloadingUpdate)
+                    checkUpdateBtn.IsEnabled = true;
+            }
+        }
+
+        private void ApplyUpdateAndRestart_Click(object sender, RoutedEventArgs e)
+        {
+            var updateInfo = VelopackUpdateService.Instance.ReadyUpdateInfo ?? _newVersionUpdateInfo;
+            if (updateInfo == null)
+            {
+                MessageBox.Show("更新信息不存在，请重新检查更新。", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            try
+            {
+                VelopackUpdateService.Instance.ApplyAndRestart(updateInfo);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"应用更新并重启失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         #endregion

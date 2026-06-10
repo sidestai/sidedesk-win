@@ -10,6 +10,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Diagnostics;
+using System.Threading.Tasks;
 using SideDesk.Models;
 using SideDesk.Services;
 using SideDesk.Windows;
@@ -97,6 +98,7 @@ namespace SideDesk.Controls
             InitializeGlobalServices();
 
             RenderPanels();
+            RefreshToolsBar();  // 刷新底部工具栏
         }
 
         /// <summary>
@@ -206,6 +208,7 @@ namespace SideDesk.Controls
                 PanelType.AIChat => BuildAIChatWidget(item),
                 PanelType.FileArea => BuildFileAreaWidget(item),
                 PanelType.ClipboardHistory => BuildClipboardHistoryWidget(item),
+                PanelType.DataDashboard => BuildDataDashboardWidget(item),
                 _ => null
             };
         }
@@ -1156,6 +1159,18 @@ namespace SideDesk.Controls
         private void AddAIChatPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.AIChat);
         private void AddFileAreaPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.FileArea);
         private void AddClipboardHistoryPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.ClipboardHistory);
+        private void AddDataDashboard_Click(object sender, RoutedEventArgs e)
+        {
+            if (_currentWindowConfig == null || _configManager == null) return;
+            _currentWindowConfig.Panels.Add(new PanelItem
+            {
+                Type = PanelType.DataDashboard,
+                Title = "数据看板",
+                DashboardItems = new List<DataDashboardItem>()
+            });
+            _configManager.Save();
+            RenderPanels();
+        }
 
         #endregion
 
@@ -2063,6 +2078,690 @@ namespace SideDesk.Controls
         {
             if (_mainWindow == null) return;
             _mainWindow.SwitchScreen(ScreenType.B);
+        }
+
+        #endregion
+
+        #region 数据看板面板
+
+        private UIElement BuildDataDashboardWidget(PanelItem item)
+        {
+            var container = new StackPanel();
+
+            // 标题
+            var titleBlock = new TextBlock
+            {
+                Text = item.Title ?? "数据看板",
+                FontWeight = FontWeights.Bold,
+                FontSize = 13,
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                Margin = new Thickness(0, 0, 0, 8)
+            };
+            container.Children.Add(titleBlock);
+
+            // 数据项列表
+            if (item.DashboardItems != null && item.DashboardItems.Count > 0)
+            {
+                foreach (var dashItem in item.DashboardItems)
+                {
+                    var card = new StackPanel
+                    {
+                        Margin = new Thickness(0, 4, 0, 4),
+                        Cursor = Cursors.Hand,
+                        Background = Brushes.Transparent // 确保可点击
+                    };
+
+                    var labelBlock = new TextBlock
+                    {
+                        Text = dashItem.Label,
+                        FontSize = 11,
+                        Foreground = (Brush)FindResource("BrushTextSec")
+                    };
+                    card.Children.Add(labelBlock);
+
+                    var valueBlock = new TextBlock
+                    {
+                        Text = dashItem.Value ?? "--",
+                        FontSize = 16,
+                        FontWeight = FontWeights.Bold,
+                        Foreground = (Brush)FindResource("BrushTextMain"),
+                        Tag = dashItem.Id
+                    };
+                    card.Children.Add(valueBlock);
+
+                    // 点击卡片打开目标网址
+                    var targetUrl = dashItem.TargetUrl;
+                    card.MouseLeftButtonUp += (s, e) =>
+                    {
+                        try
+                        {
+                            if (!string.IsNullOrEmpty(targetUrl))
+                                Process.Start(new ProcessStartInfo(targetUrl) { UseShellExecute = true });
+                        }
+                        catch { }
+                    };
+
+                    container.Children.Add(card);
+
+                    // 启动定时刷新
+                    StartDashboardItemRefresh(dashItem, valueBlock);
+                }
+            }
+            else
+            {
+                container.Children.Add(new TextBlock
+                {
+                    Text = "暂无数据项，请编辑添加",
+                    FontSize = 12,
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
+                    Margin = new Thickness(0, 4, 0, 4)
+                });
+            }
+
+            // 编辑模式：添加按钮
+            if (_isEditMode)
+            {
+                var addBtn = new Button
+                {
+                    Content = "+ 添加数据项",
+                    Background = Brushes.Transparent,
+                    Foreground = (Brush)FindResource("BrushAccent"),
+                    BorderThickness = new Thickness(0),
+                    Cursor = Cursors.Hand,
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    Margin = new Thickness(0, 6, 0, 0)
+                };
+                addBtn.Click += (s, e) =>
+                {
+                    var newItem = ShowAddDashboardItemDialog();
+                    if (newItem != null)
+                    {
+                        item.DashboardItems ??= new List<DataDashboardItem>();
+                        item.DashboardItems.Add(newItem);
+                        _configManager?.Save();
+                        RenderPanels();
+                    }
+                };
+                container.Children.Add(addBtn);
+            }
+
+            return container;
+        }
+
+        private void StartDashboardItemRefresh(DataDashboardItem dashItem, TextBlock valueBlock)
+        {
+            var interval = Math.Max(dashItem.RefreshIntervalSeconds, 10);
+            var timer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(interval)
+            };
+
+            timer.Tick += async (s, e) =>
+            {
+                try
+                {
+                    var app = (App)Application.Current;
+                    var browsers = app.ProgramRegistry.Browsers;
+
+                    var browserId = dashItem.BrowserId ?? browsers.FirstOrDefault()?.Id;
+                    var browser = browsers.FirstOrDefault(b => b.Id == browserId);
+                    if (browser == null) return;
+
+                    var profileDir = "";
+                    if (!string.IsNullOrEmpty(dashItem.ProfileId))
+                    {
+                        var profile = browser.Profiles.FirstOrDefault(p => p.Id == dashItem.ProfileId);
+                        profileDir = profile?.Directory ?? "";
+                    }
+
+                    var instanceKey = $"{browserId}_{dashItem.ProfileId ?? "default"}";
+                    var value = await Services.CdpBrowserService.Instance.FetchElementValueAsync(
+                        browser.ExePath, profileDir, instanceKey, dashItem.TargetUrl, dashItem.Selector);
+
+                    valueBlock.Text = value;
+                    dashItem.Value = value;
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DataDashboard] 刷新失败 {dashItem.Label}: {ex.Message}");
+                }
+            };
+
+            timer.Start();
+
+            // 首次延迟3秒获取一次
+            _ = Task.Delay(3000).ContinueWith(_ =>
+            {
+                Dispatcher.Invoke(async () =>
+                {
+                    try
+                    {
+                        var app = (App)Application.Current;
+                        var browsers = app.ProgramRegistry.Browsers;
+                        var browserId = dashItem.BrowserId ?? browsers.FirstOrDefault()?.Id;
+                        var browser = browsers.FirstOrDefault(b => b.Id == browserId);
+                        if (browser == null) return;
+
+                        var profileDir = "";
+                        if (!string.IsNullOrEmpty(dashItem.ProfileId))
+                        {
+                            var profile = browser.Profiles.FirstOrDefault(p => p.Id == dashItem.ProfileId);
+                            profileDir = profile?.Directory ?? "";
+                        }
+
+                        var instanceKey = $"{browserId}_{dashItem.ProfileId ?? "default"}";
+                        var value = await Services.CdpBrowserService.Instance.FetchElementValueAsync(
+                            browser.ExePath, profileDir, instanceKey, dashItem.TargetUrl, dashItem.Selector);
+
+                        valueBlock.Text = value;
+                        dashItem.Value = value;
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[DataDashboard] 首次获取失败 {dashItem.Label}: {ex.Message}");
+                    }
+                });
+            }, TaskScheduler.Default);
+        }
+
+        #endregion
+
+        #region 数据项配置对话框
+
+        private DataDashboardItem? ShowAddDashboardItemDialog()
+        {
+            var dialog = new Window
+            {
+                Title = "添加数据项",
+                Width = 420,
+                SizeToContent = SizeToContent.Height,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = Window.GetWindow(this),
+                Background = (Brush)FindResource("BrushDialogBG"),
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                ResizeMode = ResizeMode.NoResize
+            };
+            dialog.SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(dialog, App.IsCurrentThemeLight());
+
+            var labelBrush = (Brush)FindResource("BrushTextSec");
+            var textBoxStyle = (Style)FindResource("GlobalTextBoxStyle");
+
+            // 加载模板
+            var templateManager = DataTemplateManager.Load();
+            var templates = templateManager.Templates;
+
+            // 加载浏览器列表
+            var browsers = ((App)Application.Current).ProgramRegistry.Browsers;
+
+            // ===== 根布局 =====
+            var rootPanel = new StackPanel { Margin = new Thickness(20) };
+
+            // ===== 模板选择 =====
+            rootPanel.Children.Add(new TextBlock
+            {
+                Text = "模板选择",
+                Foreground = labelBrush,
+                Margin = new Thickness(0, 0, 0, 4)
+            });
+            var templateCombo = new ComboBox
+            {
+                Margin = new Thickness(0, 0, 0, 12),
+                IsEditable = false
+            };
+            templateCombo.Items.Add(new ComboBoxItem { Content = "自定义", Tag = (string?)null });
+            foreach (var t in templates)
+            {
+                templateCombo.Items.Add(new ComboBoxItem { Content = t.Name, Tag = t.Id });
+            }
+            templateCombo.SelectedIndex = 0;
+            rootPanel.Children.Add(templateCombo);
+
+            // ===== 基本信息分隔 =====
+            rootPanel.Children.Add(new TextBlock
+            {
+                Text = "── 基本信息 ──",
+                Foreground = labelBrush,
+                FontWeight = FontWeights.Bold,
+                Margin = new Thickness(0, 4, 0, 8),
+                HorizontalAlignment = HorizontalAlignment.Center
+            });
+
+            // 数据项名称
+            rootPanel.Children.Add(new TextBlock
+            {
+                Text = "数据项名称",
+                Foreground = labelBrush,
+                Margin = new Thickness(0, 0, 0, 4)
+            });
+            var nameBox = new TextBox
+            {
+                Style = textBoxStyle,
+                Margin = new Thickness(0, 0, 0, 12)
+            };
+            rootPanel.Children.Add(nameBox);
+
+            // ===== 数据源配置分隔 =====
+            rootPanel.Children.Add(new TextBlock
+            {
+                Text = "── 数据源配置 ──",
+                Foreground = labelBrush,
+                FontWeight = FontWeights.Bold,
+                Margin = new Thickness(0, 4, 0, 8),
+                HorizontalAlignment = HorizontalAlignment.Center
+            });
+
+            // 目标网址
+            rootPanel.Children.Add(new TextBlock
+            {
+                Text = "目标网址",
+                Foreground = labelBrush,
+                Margin = new Thickness(0, 0, 0, 4)
+            });
+            var urlBox = new TextBox
+            {
+                Style = textBoxStyle,
+                Margin = new Thickness(0, 0, 0, 12)
+            };
+            rootPanel.Children.Add(urlBox);
+
+            // 选择器
+            rootPanel.Children.Add(new TextBlock
+            {
+                Text = "选择器(CSS/XPath)",
+                Foreground = labelBrush,
+                Margin = new Thickness(0, 0, 0, 4)
+            });
+            var selectorBox = new TextBox
+            {
+                Style = textBoxStyle,
+                Margin = new Thickness(0, 0, 0, 12)
+            };
+            rootPanel.Children.Add(selectorBox);
+
+            // 刷新间隔
+            rootPanel.Children.Add(new TextBlock
+            {
+                Text = "刷新间隔(秒)",
+                Foreground = labelBrush,
+                Margin = new Thickness(0, 0, 0, 4)
+            });
+            var intervalBox = new TextBox
+            {
+                Text = "60",
+                Style = textBoxStyle,
+                Margin = new Thickness(0, 0, 0, 12)
+            };
+            rootPanel.Children.Add(intervalBox);
+
+            // ===== 浏览器配置分隔 =====
+            rootPanel.Children.Add(new TextBlock
+            {
+                Text = "── 浏览器配置 ──",
+                Foreground = labelBrush,
+                FontWeight = FontWeights.Bold,
+                Margin = new Thickness(0, 4, 0, 8),
+                HorizontalAlignment = HorizontalAlignment.Center
+            });
+
+            // 浏览器
+            rootPanel.Children.Add(new TextBlock
+            {
+                Text = "浏览器",
+                Foreground = labelBrush,
+                Margin = new Thickness(0, 0, 0, 4)
+            });
+            var browserCombo = new ComboBox
+            {
+                Margin = new Thickness(0, 0, 0, 12),
+                IsEditable = false
+            };
+            browserCombo.Items.Add(new ComboBoxItem { Content = "默认浏览器", Tag = (string?)null });
+            foreach (var b in browsers)
+            {
+                browserCombo.Items.Add(new ComboBoxItem { Content = b.Name, Tag = b.Id });
+            }
+            browserCombo.SelectedIndex = 0;
+            rootPanel.Children.Add(browserCombo);
+
+            // Profile
+            rootPanel.Children.Add(new TextBlock
+            {
+                Text = "Profile",
+                Foreground = labelBrush,
+                Margin = new Thickness(0, 0, 0, 4)
+            });
+            var profileCombo = new ComboBox
+            {
+                Margin = new Thickness(0, 0, 0, 16),
+                IsEditable = false
+            };
+            rootPanel.Children.Add(profileCombo);
+
+            // Profile 联动刷新方法
+            Action refreshProfiles = () =>
+            {
+                profileCombo.Items.Clear();
+                if (browserCombo.SelectedItem is ComboBoxItem selectedBrowserItem && selectedBrowserItem.Tag is string browserId)
+                {
+                    var browser = browsers.FirstOrDefault(b => b.Id == browserId);
+                    if (browser != null)
+                    {
+                        foreach (var p in browser.Profiles)
+                        {
+                            profileCombo.Items.Add(new ComboBoxItem { Content = p.Name, Tag = p.Id });
+                        }
+                        if (profileCombo.Items.Count > 0)
+                            profileCombo.SelectedIndex = 0;
+                    }
+                }
+            };
+
+            // 初始加载 Profile
+            refreshProfiles();
+
+            // 浏览器切换时联动 Profile
+            browserCombo.SelectionChanged += (s, e) => refreshProfiles();
+
+            // ===== 模板选择联动 =====
+            templateCombo.SelectionChanged += (s, e) =>
+            {
+                if (templateCombo.SelectedItem is ComboBoxItem selectedItem)
+                {
+                    var templateId = selectedItem.Tag as string;
+                    if (templateId != null)
+                    {
+                        var tmpl = templates.FirstOrDefault(t => t.Id == templateId);
+                        if (tmpl != null)
+                        {
+                            nameBox.Text = tmpl.Name;
+                            urlBox.Text = tmpl.TargetUrl;
+                            selectorBox.Text = tmpl.Selector;
+                            intervalBox.Text = tmpl.RefreshIntervalSeconds.ToString();
+                        }
+                    }
+                    else
+                    {
+                        // 自定义：清空
+                        nameBox.Text = "";
+                        urlBox.Text = "";
+                        selectorBox.Text = "";
+                        intervalBox.Text = "60";
+                    }
+                }
+            };
+
+            // ===== 按钮区域 =====
+            var buttonPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 8, 0, 0)
+            };
+
+            var cancelBtn = new Button
+            {
+                Content = "取消",
+                Style = (Style)FindResource("StandardButtonStyle"),
+                Padding = new Thickness(20, 8, 20, 8),
+                Margin = new Thickness(0, 0, 10, 0)
+            };
+            cancelBtn.Click += (s, e) =>
+            {
+                dialog.DialogResult = false;
+                dialog.Close();
+            };
+
+            var confirmBtn = new Button
+            {
+                Content = "确定",
+                Style = (Style)FindResource("PrimaryButtonStyle"),
+                Padding = new Thickness(20, 8, 20, 8)
+            };
+            confirmBtn.Click += (s, e) =>
+            {
+                // 验证必填字段
+                if (string.IsNullOrWhiteSpace(nameBox.Text))
+                {
+                    MessageBox.Show("请输入数据项名称", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    nameBox.Focus();
+                    return;
+                }
+                if (string.IsNullOrWhiteSpace(urlBox.Text))
+                {
+                    MessageBox.Show("请输入目标网址", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    urlBox.Focus();
+                    return;
+                }
+                if (string.IsNullOrWhiteSpace(selectorBox.Text))
+                {
+                    MessageBox.Show("请输入选择器", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    selectorBox.Focus();
+                    return;
+                }
+
+                dialog.DialogResult = true;
+                dialog.Close();
+            };
+
+            buttonPanel.Children.Add(cancelBtn);
+            buttonPanel.Children.Add(confirmBtn);
+            rootPanel.Children.Add(buttonPanel);
+
+            dialog.Content = rootPanel;
+
+            // 显示对话框
+            if (dialog.ShowDialog() == true)
+            {
+                var item = new DataDashboardItem
+                {
+                    Label = nameBox.Text.Trim(),
+                    TargetUrl = urlBox.Text.Trim(),
+                    Selector = selectorBox.Text.Trim(),
+                    RefreshIntervalSeconds = int.TryParse(intervalBox.Text.Trim(), out var interval) && interval > 0 ? interval : 60
+                };
+
+                // 记录模板ID
+                if (templateCombo.SelectedItem is ComboBoxItem selItem && selItem.Tag is string tmplId)
+                {
+                    item.TemplateId = tmplId;
+                }
+
+                // 记录浏览器和Profile
+                if (browserCombo.SelectedItem is ComboBoxItem browserItem && browserItem.Tag is string bId)
+                {
+                    item.BrowserId = bId;
+                }
+                if (profileCombo.SelectedItem is ComboBoxItem profileItem && profileItem.Tag is string pId)
+                {
+                    item.ProfileId = pId;
+                }
+
+                return item;
+            }
+
+            return null;
+        }
+
+        #endregion
+
+        #region 窗口级工具栏
+
+        /// <summary>
+        /// "工具"菜单展开时动态填充可切换的工具选项
+        /// </summary>
+        private void ToolsMenu_SubmenuOpened(object sender, RoutedEventArgs e)
+        {
+            var menu = sender as MenuItem;
+            if (menu == null) return;
+
+            menu.Items.Clear();
+
+            if (_currentWindowConfig == null)
+            {
+                menu.Items.Add(new MenuItem { Header = "(未加载窗口配置)", IsEnabled = false });
+                return;
+            }
+
+            // 定义可用工具列表
+            var availableTools = new[]
+            {
+                new { Key = "ClipboardHistory", Header = "📋 剪贴板历史", Action = (Action)ShowClipboardHistoryTool },
+                new { Key = "AIChat", Header = "🤖 AI 助手", Action = (Action)ShowAIChatTool },
+                // 后续可以在这里添加更多工具
+            };
+
+            foreach (var tool in availableTools)
+            {
+                var mi = new MenuItem
+                {
+                    Header = tool.Header,
+                    IsCheckable = true,
+                    IsChecked = _currentWindowConfig.EnabledTools.Contains(tool.Key),
+                    Tag = tool.Key
+                };
+                string key = tool.Key;
+                Action action = tool.Action;
+                mi.Click += (s, ev) => ToggleTool(key, mi.IsChecked, action);
+                menu.Items.Add(mi);
+            }
+        }
+
+        /// <summary>
+        /// 切换工具显示状态
+        /// </summary>
+        private void ToggleTool(string key, bool isChecked, Action showAction)
+        {
+            if (_currentWindowConfig == null || _configManager == null) return;
+
+            if (isChecked)
+            {
+                // 勾选：添加到启用列表
+                if (!_currentWindowConfig.EnabledTools.Contains(key))
+                {
+                    _currentWindowConfig.EnabledTools.Add(key);
+                }
+                // 立即显示工具
+                showAction();
+            }
+            else
+            {
+                // 取消勾选：从启用列表移除
+                _currentWindowConfig.EnabledTools.Remove(key);
+            }
+
+            _configManager.Save();
+            RefreshToolsBar();
+        }
+
+        /// <summary>
+        /// 刷新底部工具栏显示
+        /// </summary>
+        private void RefreshToolsBar()
+        {
+            if (toolsBarContent == null || toolsBar == null) return;
+
+            toolsBarContent.Children.Clear();
+
+            if (_currentWindowConfig == null || _currentWindowConfig.EnabledTools.Count == 0)
+            {
+                toolsBar.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            // 显示启用的工具按钮
+            bool first = true;
+            foreach (var toolKey in _currentWindowConfig.EnabledTools)
+            {
+                if (!first)
+                {
+                    // 添加分隔符
+                    toolsBarContent.Children.Add(new Separator 
+                    { 
+                        Width = 1, 
+                        Margin = new Thickness(5, 0, 5, 0),
+                        Background = (Brush)FindResource("BrushTextMuted")
+                    });
+                }
+
+                var btn = CreateToolButton(toolKey);
+                if (btn != null)
+                {
+                    toolsBarContent.Children.Add(btn);
+                    first = false;
+                }
+            }
+
+            toolsBar.Visibility = Visibility.Visible;
+        }
+
+        /// <summary>
+        /// 创建工具按钮
+        /// </summary>
+        private Button? CreateToolButton(string toolKey)
+        {
+            Button? btn = toolKey switch
+            {
+                "ClipboardHistory" => new Button
+                {
+                    Content = "📋 剪贴板历史",
+                    Padding = new Thickness(8, 3, 8, 3),
+                    Background = Brushes.Transparent,
+                    Foreground = (Brush)FindResource("BrushTextMain"),
+                    BorderThickness = new Thickness(0),
+                    Cursor = Cursors.Hand,
+                    Tag = toolKey
+                },
+                
+                "AIChat" => new Button
+                {
+                    Content = "🤖 AI 助手",
+                    Padding = new Thickness(8, 3, 8, 3),
+                    Background = Brushes.Transparent,
+                    Foreground = (Brush)FindResource("BrushTextMain"),
+                    BorderThickness = new Thickness(0),
+                    Cursor = Cursors.Hand,
+                    Tag = toolKey
+                },
+                
+                _ => null
+            };
+
+            if (btn != null)
+            {
+                btn.Click += (s, e) =>
+                {
+                    if (toolKey == "ClipboardHistory") ShowClipboardHistoryTool();
+                    else if (toolKey == "AIChat") ShowAIChatTool();
+                };
+            }
+
+            return btn;
+        }
+
+        /// <summary>
+        /// 显示剪贴板历史工具
+        /// </summary>
+        private void ShowClipboardHistoryTool()
+        {
+            // 确保剪贴板服务已启动
+            EnsureClipboardServiceStarted();
+            
+            // 如果底部工具栏中没有剪贴板历史容器，则添加
+            if (_clipboardHistoryContainer == null)
+            {
+                _clipboardHistoryContainer = new StackPanel();
+                toolsBarContent.Children.Add(_clipboardHistoryContainer);
+            }
+            
+            RefreshClipboardHistoryUI();
+        }
+
+        /// <summary>
+        /// 显示AI助手工具
+        /// </summary>
+        private void ShowAIChatTool()
+        {
+            AIChatButton_Click(this, new RoutedEventArgs());
         }
 
         #endregion

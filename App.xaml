@@ -276,7 +276,7 @@
             <!-- ===== Window Button (from FlatStyle - blue themed) ===== -->
             <Style x:Key="WindowButton" TargetType="{x:Type Button}">
                 <Setter Property="FontSize" Value="14" />
-                <Setter Property="FontWeight" Value="500" />
+                <Setter Property="FontWeight" Value="Medium" />
                 <Setter Property="Margin" Value="10,0,0,0" />
                 <Setter Property="Padding" Value="20,8" />
                 <Setter Property="Foreground" Value="#FFFFFF" />

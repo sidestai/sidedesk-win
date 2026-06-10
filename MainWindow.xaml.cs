@@ -302,6 +302,16 @@ namespace SideDesk
 
         private void AddWindow_Click(object sender, RoutedEventArgs e)
         {
+            CreateNewWindow();
+        }
+
+        private void NewSideScreen_Click(object sender, RoutedEventArgs e)
+        {
+            CreateNewWindow();
+        }
+
+        private void CreateNewWindow()
+        {
             var dialog = new AddWindowDialog { Owner = this };
             if (dialog.ShowDialog() == true && dialog.Result != null)
             {

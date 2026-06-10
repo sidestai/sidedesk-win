@@ -1,7 +1,10 @@
 ﻿using System;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using SideDesk.Models;
+using SideDesk.Services;
+using Velopack;
 
 namespace SideDesk
 {
@@ -23,6 +26,10 @@ namespace SideDesk
 
         protected override void OnStartup(StartupEventArgs e)
         {
+            // Velopack 必须最先执行，拦截安装/更新/卸载命令行钩子
+            try { System.IO.Directory.SetCurrentDirectory(System.IO.Path.GetTempPath()); } catch { }
+            VelopackApp.Build().Run();
+
             base.OnStartup(e);
 
             // 清理残留 AppBar：杀掉其他 SideDesk 进程
@@ -45,6 +52,19 @@ namespace SideDesk
             ApplyTheme(AppSettings.ThemeMode);
 
             SwitchLayout(AppSettings.Layout, AppSettings.LeftScreen, AppSettings.RightScreen, save: false);
+
+            // 启动 5 秒后静默检查更新
+            _ = Task.Delay(5000).ContinueWith(async _ =>
+            {
+                try
+                {
+                    await VelopackUpdateService.Instance.StartSilentUpdateCheckAndDownloadAsync();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Silent update check error: {ex.Message}");
+                }
+            }, TaskScheduler.Default);
         }
 
         public string GetUrlForScreen(ScreenType screen)
@@ -107,6 +127,12 @@ namespace SideDesk
             CloseWindow(ref _leftWindow);
             CloseWindow(ref _rightWindow);
             Shutdown();
+        }
+
+        protected override void OnExit(ExitEventArgs e)
+        {
+            try { Services.CdpBrowserService.Instance.Dispose(); } catch { }
+            base.OnExit(e);
         }
 
         private MainWindow CreatePanel(DockEdge side, ScreenType screen)

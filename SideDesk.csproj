@@ -14,12 +14,19 @@
     <PackageReference Include="gong-wpf-dragdrop" Version="3.*" />
     <PackageReference Include="System.Drawing.Common" Version="9.*" />
     <PackageReference Include="System.Management" Version="9.*" />
+    <PackageReference Include="Velopack" Version="1.2.0" />
   </ItemGroup>
 
   <ItemGroup>
     <Content Include="resources\themes\*.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="data-templates\**\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

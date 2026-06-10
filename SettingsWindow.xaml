@@ -34,6 +34,7 @@
                     <ListBoxItem Content="程序管理"/>
                     <ListBoxItem Content="扩展管理"/>
                     <ListBoxItem Content="工具"/>
+                    <ListBoxItem Content="模块"/>
                     <ListBoxItem Content="关于"/>
                 </ListBox>
             </DockPanel>
@@ -251,6 +252,41 @@
                     </Border>
                 </StackPanel>
                 
+                <!-- 模块页面 -->
+                <StackPanel x:Name="pageModules" Visibility="Collapsed" Margin="0,0,0,20">
+                    <TextBlock Text="模块" 
+                               FontSize="{DynamicResource FontSizeSubtitle}" 
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource BrushTextMain}"
+                               Margin="0,0,0,8"/>
+                    <TextBlock Text="管理数据看板等模块的配置" 
+                               Foreground="{DynamicResource BrushTextMuted}" 
+                               FontSize="{DynamicResource FontSizeSmall}" 
+                               Margin="0,0,0,20"/>
+                    
+                    <!-- 数据模版 -->
+                    <TextBlock Text="数据模版" 
+                               FontSize="{DynamicResource FontSizeNormal}" 
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource BrushTextMain}"
+                               Margin="0,0,0,8"/>
+                    <TextBlock Text="管理数据看板使用的模版列表，支持内置模版和自定义模版" 
+                               Foreground="{DynamicResource BrushTextMuted}" 
+                               FontSize="{DynamicResource FontSizeSmall}" 
+                               Margin="0,0,0,12"/>
+                    
+                    <Border Background="{DynamicResource BrushInputBG}" 
+                            BorderBrush="{DynamicResource BrushBorder}" 
+                            BorderThickness="1" CornerRadius="6" 
+                            Padding="12" Margin="0,0,0,8">
+                        <StackPanel x:Name="templateListPanel"/>
+                    </Border>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,0">
+                        <Button Content="+ 新建模版" Click="AddTemplate_Click"
+                                Style="{StaticResource GhostButtonStyle}" Padding="12,6"/>
+                    </StackPanel>
+                </StackPanel>
+                
                 <!-- 关于页面 -->
                 <StackPanel x:Name="pageAbout" Visibility="Collapsed">
                     <TextBlock Text="关于" 
@@ -263,14 +299,85 @@
                                FontSize="20" FontWeight="Bold"
                                Foreground="{DynamicResource BrushTextMain}"
                                Margin="0,0,0,8"/>
-                    <TextBlock Text="版本 v1.0.0" 
+                    <TextBlock x:Name="versionText" Text="版本 v1.0.0" 
                                Foreground="{DynamicResource BrushTextSec}"
                                FontSize="{DynamicResource FontSizeNormal}"
                                Margin="0,0,0,16"/>
                     <TextBlock Text="一款轻量级的桌面侧边栏工具，帮助你高效管理窗口和快捷方式。" 
                                Foreground="{DynamicResource BrushTextMuted}"
                                FontSize="{DynamicResource FontSizeNormal}"
-                               TextWrapping="Wrap"/>
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,24"/>
+
+                    <!-- 自动更新区域 -->
+                    <Border Background="{DynamicResource BrushBG}" CornerRadius="8" 
+                            BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1"
+                            Padding="16" Margin="0,0,0,16">
+                        <StackPanel>
+                            <!-- 自动更新开关 -->
+                            <Grid Margin="0,0,0,12">
+                                <TextBlock Text="启动时自动检测和下载更新" 
+                                           Foreground="{DynamicResource BrushTextMain}" 
+                                           FontSize="{DynamicResource FontSizeNormal}" 
+                                           VerticalAlignment="Center"/>
+                                <CheckBox x:Name="autoUpdateSwitch" HorizontalAlignment="Right" 
+                                          Style="{DynamicResource RaycastSwitchStyle}" 
+                                          Click="AutoUpdateSwitch_Click"/>
+                            </Grid>
+                            <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,0,0,12"/>
+
+                            <!-- 检查更新按钮 + 状态文字 -->
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock x:Name="updateStatusText" Text="点击检查是否有新版本" 
+                                           Foreground="{DynamicResource BrushTextSec}" 
+                                           FontSize="{DynamicResource FontSizeNormal}" 
+                                           VerticalAlignment="Center"/>
+                                <Button x:Name="checkUpdateBtn" Grid.Column="1" Content="检查更新" 
+                                        Click="CheckForUpdates_Click"
+                                        Style="{DynamicResource PrimaryButtonStyle}"
+                                        Padding="14,6" Height="30"/>
+                            </Grid>
+
+                            <!-- 下载进度条（初始隐藏） -->
+                            <StackPanel x:Name="downloadProgressPanel" Visibility="Collapsed" Margin="0,8,0,0">
+                                <Grid Margin="0,0,0,6">
+                                    <TextBlock Text="正在下载更新..." 
+                                               Foreground="{DynamicResource BrushTextMain}" 
+                                               FontSize="{DynamicResource FontSizeNormal}"/>
+                                    <TextBlock x:Name="progressPercentText" Text="0%" 
+                                               HorizontalAlignment="Right"
+                                               Foreground="{DynamicResource BrushAccent}" 
+                                               FontSize="{DynamicResource FontSizeNormal}" 
+                                               FontWeight="SemiBold"/>
+                                </Grid>
+                                <ProgressBar x:Name="downloadProgressBar" Value="0" 
+                                             Height="6" Minimum="0" Maximum="100" 
+                                             BorderThickness="0" 
+                                             Background="{DynamicResource BrushInputBG}" 
+                                             Foreground="{DynamicResource BrushAccent}"/>
+                            </StackPanel>
+
+                            <!-- 应用更新并重启按钮（初始隐藏） -->
+                            <Grid x:Name="applyUpdatePanel" Visibility="Collapsed" Margin="0,12,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="新版就绪，重启即可生效！" 
+                                           Foreground="#FF22C55E" 
+                                           FontSize="{DynamicResource FontSizeNormal}" 
+                                           FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                <Button Grid.Column="1" Content="立即重启并应用" 
+                                        Click="ApplyUpdateAndRestart_Click"
+                                        Style="{DynamicResource PrimaryButtonStyle}"
+                                        Padding="14,6" Height="30"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
             </Grid>
         </ScrollViewer>

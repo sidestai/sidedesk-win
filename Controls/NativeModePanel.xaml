@@ -19,7 +19,7 @@
                 <MenuItem Header="使用统计" Click="AddUsageStatsPanel_Click"/>
                 <MenuItem Header="AI 对话" Click="AddAIChatPanel_Click"/>
                 <MenuItem Header="文件区" Click="AddFileAreaPanel_Click"/>
-                <MenuItem Header="剪贴板历史" Click="AddClipboardHistoryPanel_Click"/>
+                <MenuItem Header="数据看板" Click="AddDataDashboard_Click"/>
             </MenuItem>
             <Separator />
             <MenuItem Header="布局" x:Name="LayoutMenu">
@@ -32,6 +32,10 @@
                 <MenuItem Header="切换到 B 屏" Click="SwitchToScreenB_Click" />
             </MenuItem>
             <Separator />
+            <MenuItem Header="工具" x:Name="ToolsMenu" SubmenuOpened="ToolsMenu_SubmenuOpened">
+                <MenuItem Header="(加载中...)" />
+            </MenuItem>
+            <Separator />
             <MenuItem Header="显示设置" x:Name="DisplaySettingsMenu" SubmenuOpened="DisplaySettingsMenu_SubmenuOpened">
                 <MenuItem Header="(加载中...)" />
             </MenuItem>
@@ -41,6 +45,13 @@
         </ContextMenu>
     </UserControl.ContextMenu>
     <DockPanel x:Name="nativeContent" LastChildFill="True">
+        
+        <!-- 底部工具栏（工具按钮区域） -->
+        <Border x:Name="toolsBar" DockPanel.Dock="Bottom" Margin="5,2" Padding="5,3" CornerRadius="3"
+                Background="{Binding GroupBGColor, Source={x:Static framework:AppSettings.Instance}, Converter={StaticResource StringToSolidColorBrushConverter}}"
+                Visibility="Collapsed">
+            <StackPanel x:Name="toolsBarContent" Orientation="Horizontal"/>
+        </Border>
         
         <!-- 底部状态栏 -->
         <Border DockPanel.Dock="Bottom" Margin="5,2" Padding="5,3" CornerRadius="3"

@@ -13,6 +13,7 @@ namespace SideDesk
         public string ThemeName { get; set; } = "";
         public string ThemeMode { get; set; } = "Dark"; // 支持 "Dark", "Light", "System"
         public bool EnableTitleLock { get; set; } = false;
+        public bool EnableAutoUpdate { get; set; } = true;
 
         private static readonly string SettingsPath = Path.Combine(
             AppDomain.CurrentDomain.BaseDirectory, "settings.json");

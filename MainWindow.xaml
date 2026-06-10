@@ -40,7 +40,7 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock x:Name="titleText" Text="SideDesk [A]" Visibility="Collapsed"/>
-                <TextBlock x:Name="singleWindowTitle" Text="元桌左右屏" Visibility="Collapsed"
+                <TextBlock x:Name="singleWindowTitle" Text="元桌屏霸" Visibility="Collapsed"
                            VerticalAlignment="Center" Margin="6,0,0,0"
                            Foreground="{DynamicResource BrushTextMain}" FontSize="12"/>
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" ClipToBounds="True">
@@ -65,6 +65,7 @@
                     <Button.ContextMenu>
                         <ContextMenu x:Name="moreMenu" Opened="MoreMenu_Opened">
                             <Separator x:Name="menuSeparator1"/>
+                            <MenuItem Header="新建侧屏" Click="NewSideScreen_Click"/>
                             <MenuItem Header="设置" Click="Settings_Click"/>
                             <Separator x:Name="closeWindowSeparator"/>
                             <MenuItem x:Name="closeWindowMenu" Header="关闭面板" Click="CloseWindow_Click"/>
