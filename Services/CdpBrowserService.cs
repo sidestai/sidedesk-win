@@ -63,6 +63,11 @@ public class CdpBrowserService : IDisposable
     /// </summary>
     private async Task<CdpBrowserInstance?> GetOrCreateInstanceAsync(string browserExePath, string profileDir, string instanceKey)
     {
+        // 【已禁用】CDP浏览器服务 - 2026-06-09 禁用，解决重复启动问题
+        Debug.WriteLine("[CDP] 服务已禁用，跳过浏览器启动");
+        return null;
+        
+        /*
         lock (_lock)
         {
             if (_instances.TryGetValue(instanceKey, out var existing) && !existing.BrowserProcess.HasExited)
@@ -126,6 +131,7 @@ public class CdpBrowserService : IDisposable
             Debug.WriteLine($"[CDP] 启动浏览器失败: {ex.Message}");
             return null;
         }
+        */
     }
 
     /// <summary>
