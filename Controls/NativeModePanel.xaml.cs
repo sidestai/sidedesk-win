@@ -9,8 +9,10 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using System.Diagnostics;
 using System.Threading.Tasks;
+using System.Runtime.InteropServices;
 using SideDesk.Models;
 using SideDesk.Services;
 using SideDesk.Windows;
@@ -209,6 +211,7 @@ namespace SideDesk.Controls
                 PanelType.FileArea => BuildFileAreaWidget(item),
                 PanelType.ClipboardHistory => BuildClipboardHistoryWidget(item),
                 PanelType.DataDashboard => BuildDataDashboardWidget(item),
+                PanelType.Timer => BuildTimerWidget(item),
                 _ => null
             };
         }
@@ -220,11 +223,12 @@ namespace SideDesk.Controls
         {
             var displayTitle = string.IsNullOrEmpty(item.Title) ? defaultTitle : item.Title;
 
-            var header = new DockPanel { Margin = new Thickness(0, 0, 0, 3) };
+            var header = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
             var titleBlock = new TextBlock
             {
                 Text = displayTitle,
-                FontWeight = FontWeights.Bold,
+                FontWeight = FontWeights.SemiBold,
+                FontSize = 13,
                 VerticalAlignment = VerticalAlignment.Center,
                 Foreground = (Brush)FindResource("BrushTextMain")
             };
@@ -304,11 +308,12 @@ namespace SideDesk.Controls
 
             var border = new Border
             {
-                Margin = new Thickness(0),
-                Padding = new Thickness(0),
-                CornerRadius = new CornerRadius(0),
-                BorderBrush = null,
-                BorderThickness = new Thickness(0),
+                Margin = new Thickness(0, 0, 0, 12),
+                Padding = new Thickness(0, 10, 0, 10),
+                CornerRadius = new CornerRadius(6),
+                Background = (Brush)FindResource("BrushInputBG"),
+                BorderBrush = (Brush)FindResource("BrushBorder"),
+                BorderThickness = new Thickness(1),
                 Child = stack
             };
 
@@ -337,17 +342,20 @@ namespace SideDesk.Controls
         {
             var container = new StackPanel();
 
-            // 添加分组按钮
-            var addBtn = new Button
+            // 若面板未绑定特定分组（兼容旧数据），显示“+ 添加分组”按钮
+            if (string.IsNullOrEmpty(item.GroupId))
             {
-                Content = "+ 添加分组",
-                Height = 28,
-                Margin = new Thickness(0, 0, 0, 5),
-                Cursor = Cursors.Hand,
-                Visibility = _isEditMode ? Visibility.Visible : Visibility.Collapsed
-            };
-            addBtn.Click += (s, e) => _quickGroupUIService?.ShowAddMenu(addBtn);
-            container.Children.Add(addBtn);
+                var addBtn = new Button
+                {
+                    Content = "+ 添加分组",
+                    Height = 28,
+                    Margin = new Thickness(0, 0, 0, 5),
+                    Cursor = Cursors.Hand,
+                    Visibility = _isEditMode ? Visibility.Visible : Visibility.Collapsed
+                };
+                addBtn.Click += (s, e) => _quickGroupUIService?.ShowAddMenu(addBtn);
+                container.Children.Add(addBtn);
+            }
 
             // 分组列表
             _groupPanel = new StackPanel();
@@ -356,9 +364,29 @@ namespace SideDesk.Controls
             // 初始化 QuickGroupUIService
             _quickGroupUIService = new QuickGroupUIService(_groupPanel);
             _quickGroupUIService.OwnerWindow = _mainWindow;
-            _quickGroupUIService.LoadGroups();
 
-            return WrapWidget("📁 快捷分组", container, item);
+            // 1:1 绑定模式：分组删除时同时移除面板
+            if (!string.IsNullOrEmpty(item.GroupId))
+            {
+                _quickGroupUIService.OnGroupDeleted = (gid) =>
+                {
+                    _currentWindowConfig?.Panels.Remove(item);
+                    _configManager?.Save();
+                    RenderPanels();
+                };
+            }
+
+            if (!string.IsNullOrEmpty(item.GroupId))
+                _quickGroupUIService.LoadSingleGroup(item.GroupId);
+            else
+                _quickGroupUIService.LoadGroups();
+
+            // 1:1 绑定时不套 WrapWidget 外框，直接返回内容
+            if (!string.IsNullOrEmpty(item.GroupId))
+                return container;
+
+            // 兼容旧数据：无 GroupId 时用默认标题包裹
+            return WrapWidget("📁 快捷方式", container, item);
         }
 
         private UIElement BuildStickyNotesWidget(PanelItem item)
@@ -612,6 +640,342 @@ namespace SideDesk.Controls
             return WrapWidget("🤖 AI 对话", btn, item);
         }
 
+        private UIElement BuildTimerWidget(PanelItem item)
+        {
+            item.TimerItems ??= new List<TimerItem>();
+
+            var container = new StackPanel();
+
+            // 添加计时器按钮
+            var addBtn = new Button
+            {
+                Content = "+ 添加计时器",
+                Height = 28,
+                Margin = new Thickness(0, 0, 0, 8),
+                Cursor = Cursors.Hand,
+                Visibility = _isEditMode ? Visibility.Visible : Visibility.Collapsed
+            };
+            addBtn.Click += (s, e) =>
+            {
+                item.TimerItems.Add(new TimerItem());
+                _configManager?.Save();
+                RenderPanels();
+            };
+            container.Children.Add(addBtn);
+
+            // 计时器列表
+            foreach (var timer in item.TimerItems)
+            {
+                var timerCard = CreateTimerCard(timer, item);
+                container.Children.Add(timerCard);
+            }
+
+            return WrapWidget("⏱ 计时器", container, item);
+        }
+
+        private Border CreateTimerCard(TimerItem timer, PanelItem panelItem)
+        {
+            var card = new Border
+            {
+                Margin = new Thickness(0, 0, 0, 8),
+                Padding = new Thickness(0, 8, 0, 8),
+                Background = (Brush)FindResource("BrushBG"),
+                BorderBrush = (Brush)FindResource("BrushBorder"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(4)
+            };
+
+            var mainStack = new StackPanel();
+
+            // 顶部：名称 + 操作按钮
+            var headerPanel = new DockPanel();
+            
+            var nameBlock = new TextBlock
+            {
+                Text = timer.Name,
+                FontWeight = FontWeights.Bold,
+                FontSize = 13,
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            // 编辑模式下的操作按钮
+            var actionPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            
+            if (_isEditMode)
+            {
+                // 编辑按钮
+                var editBtn = new Button
+                {
+                    Content = "✏",
+                    Width = 24,
+                    Height = 24,
+                    Margin = new Thickness(0, 0, 4, 0),
+                    FontSize = 12,
+                    Background = Brushes.Transparent,
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
+                    BorderThickness = new Thickness(0),
+                    Cursor = Cursors.Hand
+                };
+                editBtn.Click += (s, e) => ShowTimerEditDialog(timer, panelItem);
+                actionPanel.Children.Add(editBtn);
+
+                // 删除按钮
+                var deleteBtn = new Button
+                {
+                    Content = "✕",
+                    Width = 24,
+                    Height = 24,
+                    FontSize = 12,
+                    Background = Brushes.Transparent,
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
+                    BorderThickness = new Thickness(0),
+                    Cursor = Cursors.Hand,
+                    Tag = timer.Id  // 保存timer ID
+                };
+                deleteBtn.Click += (s, e) =>
+                {
+                    // 通过ID查找并删除，避免闭包问题
+                    var timerId = ((Button)s!).Tag as string;
+                    var timerToRemove = panelItem.TimerItems?.FirstOrDefault(t => t.Id == timerId);
+                    if (timerToRemove != null)
+                    {
+                        panelItem.TimerItems?.Remove(timerToRemove);
+                        _configManager?.Save();
+                        
+                        // 如果删除后没有计时器了，询问是否删除整个模块
+                        if (panelItem.TimerItems?.Count == 0)
+                        {
+                            var result = MessageBox.Show(
+                                "该计时器模块已没有计时项，是否删除整个模块？",
+                                "确认",
+                                MessageBoxButton.YesNo,
+                                MessageBoxImage.Question);
+                            
+                            if (result == MessageBoxResult.Yes)
+                            {
+                                // 删除整个模块
+                                if (_currentWindowConfig != null)
+                                {
+                                    _currentWindowConfig.Panels.Remove(panelItem);
+                                    _configManager?.Save();
+                                }
+                            }
+                        }
+                        
+                        RenderPanels();
+                    }
+                };
+                actionPanel.Children.Add(deleteBtn);
+            }
+
+            DockPanel.SetDock(actionPanel, Dock.Right);
+            headerPanel.Children.Add(actionPanel);
+            headerPanel.Children.Add(nameBlock);
+
+            mainStack.Children.Add(headerPanel);
+
+            // 时间显示
+            var timeDisplay = new TextBlock
+            {
+                Text = FormatTimeSpan(timer.ElapsedTime),
+                FontSize = 24,
+                FontWeight = FontWeights.Bold,
+                FontFamily = new FontFamily("Consolas"),
+                Foreground = timer.IsRunning ? (Brush)FindResource("BrushAccent") : (Brush)FindResource("BrushTextMain"),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 8, 0, 8)
+            };
+            mainStack.Children.Add(timeDisplay);
+
+            // 控制按钮
+            var controlPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
+            
+            // 根据当前运行状态初始化按钮
+            var toggleBtn = new Button
+            {
+                Content = timer.IsRunning ? "⏹ 停止" : "▶ 开始",
+                Width = 80,
+                Height = 28,
+                Background = timer.IsRunning ? Brushes.IndianRed : (Brush)FindResource("BrushAccent"),
+                Foreground = Brushes.White,
+                FontWeight = FontWeights.Bold,
+                Cursor = Cursors.Hand
+            };
+            
+            // 如果计时器正在运行，启动更新
+            if (timer.IsRunning)
+            {
+                StartTimerUpdate(timer, timeDisplay, panelItem, toggleBtn);
+            }
+            
+            toggleBtn.Click += (s, e) =>
+            {
+                if (!timer.IsRunning)
+                {
+                    // 开始计时
+                    timer.IsRunning = true;
+                    timer.StartTime = DateTime.Now;
+                    _configManager?.Save();
+                    StartTimerUpdate(timer, timeDisplay, panelItem, toggleBtn);
+                    toggleBtn.Content = "⏹ 停止";
+                    toggleBtn.Background = Brushes.IndianRed;
+                }
+                else
+                {
+                    // 停止计时（累加到今日总计）
+                    timer.IsRunning = false;
+                    AccumulateToDailyRecord(timer);
+                    _configManager?.Save();
+                    RenderPanels();
+                }
+            };
+            controlPanel.Children.Add(toggleBtn);
+
+            mainStack.Children.Add(controlPanel);
+
+            // 今日统计
+            var today = DateTime.Now.ToString("yyyy-MM-dd");
+            if (timer.DailyRecords.TryGetValue(today, out int todaySeconds) && todaySeconds > 0)
+            {
+                var todayStat = new TextBlock
+                {
+                    Text = $"今日总计：{FormatTimeSpan(TimeSpan.FromSeconds(todaySeconds))}",
+                    FontSize = 11,
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 4, 0, 0)
+                };
+                mainStack.Children.Add(todayStat);
+            }
+
+            card.Child = mainStack;
+            return card;
+        }
+
+        private void StartTimerUpdate(TimerItem timer, TextBlock timeDisplay, PanelItem panelItem, Button toggleBtn)
+        {
+            var dispatcherTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(1)
+            };
+            
+            dispatcherTimer.Tick += (s, e) =>
+            {
+                if (!timer.IsRunning || timer.StartTime == null)
+                {
+                    dispatcherTimer.Stop();
+                    return;
+                }
+
+                timer.ElapsedTime = DateTime.Now - timer.StartTime.Value;
+                timeDisplay.Text = FormatTimeSpan(timer.ElapsedTime);
+
+                // 检查超时
+                if (timer.ElapsedTime.TotalSeconds >= timer.TimeoutSeconds)
+                {
+                    dispatcherTimer.Stop();
+                    timer.IsRunning = false;
+                    AccumulateToDailyRecord(timer);
+                    _configManager?.Save();
+                    RenderPanels();
+                    MessageBox.Show($"计时器“{timer.Name}”已达到设定时长！", "计时完成", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            };
+
+            dispatcherTimer.Start();
+        }
+
+        private void AccumulateToDailyRecord(TimerItem timer)
+        {
+            var today = DateTime.Now.ToString("yyyy-MM-dd");
+            var secondsToAdd = (int)timer.ElapsedTime.TotalSeconds;
+            
+            if (timer.DailyRecords.ContainsKey(today))
+            {
+                timer.DailyRecords[today] += secondsToAdd;
+            }
+            else
+            {
+                timer.DailyRecords[today] = secondsToAdd;
+            }
+
+            // 不清零，保留当前时间显示，方便继续累加
+            // 用户可以选择继续点击开始按钮继续计时
+        }
+
+        private void ShowTimerEditDialog(TimerItem timer, PanelItem panelItem)
+        {
+            var dialog = new Window
+            {
+                Title = "编辑计时器",
+                Width = 350,
+                Height = 250,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = _mainWindow,
+                ResizeMode = ResizeMode.NoResize,
+                Background = (Brush)FindResource("BrushDialogBG")
+            };
+
+            var mainPanel = new StackPanel { Margin = new Thickness(20) };
+
+            // 名称
+            mainPanel.Children.Add(new TextBlock { Text = "名称：", Margin = new Thickness(0, 0, 0, 5), Foreground = (Brush)FindResource("BrushTextMain") });
+            var nameBox = new TextBox { Text = timer.Name, Margin = new Thickness(0, 0, 0, 15) };
+            mainPanel.Children.Add(nameBox);
+
+            // 超时时间
+            mainPanel.Children.Add(new TextBlock { Text = "最大时长（秒）：", Margin = new Thickness(0, 0, 0, 5), Foreground = (Brush)FindResource("BrushTextMain") });
+            var timeoutBox = new TextBox { Text = timer.TimeoutSeconds.ToString(), Margin = new Thickness(0, 0, 0, 15) };
+            mainPanel.Children.Add(timeoutBox);
+
+            // 按钮
+            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            
+            var saveBtn = new Button
+            {
+                Content = "保存",
+                Width = 80,
+                Height = 30,
+                Margin = new Thickness(0, 0, 8, 0),
+                Background = (Brush)FindResource("BrushAccent"),
+                Foreground = Brushes.White
+            };
+            saveBtn.Click += (s, e) =>
+            {
+                timer.Name = string.IsNullOrWhiteSpace(nameBox.Text) ? "计时器" : nameBox.Text;
+                if (int.TryParse(timeoutBox.Text, out int timeout) && timeout > 0)
+                {
+                    timer.TimeoutSeconds = timeout;
+                }
+                _configManager?.Save();
+                RenderPanels();
+                dialog.Close();
+            };
+
+            var cancelBtn = new Button
+            {
+                Content = "取消",
+                Width = 80,
+                Height = 30
+            };
+            cancelBtn.Click += (s, e) => dialog.Close();
+
+            btnPanel.Children.Add(saveBtn);
+            btnPanel.Children.Add(cancelBtn);
+            mainPanel.Children.Add(btnPanel);
+
+            dialog.Content = mainPanel;
+            dialog.ShowDialog();
+        }
+
+        private string FormatTimeSpan(TimeSpan ts)
+        {
+            if (ts.TotalHours >= 1)
+                return $"{ts.Hours:D2}:{ts.Minutes:D2}:{ts.Seconds:D2}";
+            return $"{ts.Minutes:D2}:{ts.Seconds:D2}";
+        }
+
         private UIElement BuildFileAreaWidget(PanelItem item)
         {
             item.FileItems ??= new List<FileAreaItem>();
@@ -716,7 +1080,7 @@ namespace SideDesk.Controls
                     BorderBrush = (Brush)FindResource("BrushBorder"),
                     BorderThickness = new Thickness(1),
                     CornerRadius = new CornerRadius(3),
-                    Padding = new Thickness(4)
+                    Padding = new Thickness(0, 4, 0, 4)
                 };
                 var listContainer = new StackPanel();
                 listBorder.Child = listContainer;
@@ -997,22 +1361,7 @@ namespace SideDesk.Controls
                     System.Windows.Threading.DispatcherPriority.Background);
             };
 
-            // 获取父窗口 HWND 启动监控
-            if (_mainWindow != null)
-            {
-                var hwnd = new WindowInteropHelper(_mainWindow).Handle;
-                if (hwnd != IntPtr.Zero)
-                {
-                    _clipboardService.Start(hwnd);
-                    // 添加消息 Hook
-                    var source = HwndSource.FromHwnd(hwnd);
-                    source?.AddHook((IntPtr h, int msg, IntPtr wParam, IntPtr lParam, ref bool handled) =>
-                    {
-                        _clipboardService.ProcessMessage(msg);
-                        return IntPtr.Zero;
-                    });
-                }
-            }
+            _clipboardService.Start();
         }
 
         private void RefreshClipboardHistoryUI()
@@ -1151,7 +1500,82 @@ namespace SideDesk.Controls
             RenderPanels();
         }
 
-        private void AddQuickGroupPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.QuickGroup);
+        private void AddQuickGroupPanel_Click(object sender, RoutedEventArgs e)
+        {
+            if (_currentWindowConfig == null || _configManager == null) return;
+
+            var menuItem = sender as UIElement ?? this;
+
+            // 直接弹出分组名称对话框（无需临时面板）
+            var groupId = ShowGroupNameDialog();
+            if (string.IsNullOrEmpty(groupId)) return;
+
+            // 若已有快捷方式面板，复用并绑定到新分组；否则新增
+            var existingPanel = _currentWindowConfig.Panels.FirstOrDefault(p => p.Type == PanelType.QuickGroup);
+            if (existingPanel != null)
+                existingPanel.GroupId = groupId;
+            else
+                _currentWindowConfig.Panels.Insert(0, new PanelItem { Type = PanelType.QuickGroup, GroupId = groupId });
+
+            _configManager.Save();
+            RenderPanels();
+
+            // 延迟弹出添加项菜单
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                _quickGroupUIService?.ShowAddShortcutMenuForGroup(menuItem, groupId);
+            }), System.Windows.Threading.DispatcherPriority.Background);
+        }
+
+        /// <summary>轻量级分组名称输入对话框，返回 groupId；取消返回 null</summary>
+        private string ShowGroupNameDialog()
+        {
+            string resultId = null;
+            var dialog = new Window
+            {
+                Title = "新建快捷方式",
+                Width = 340, Height = 170,
+                WindowStartupLocation = WindowStartupLocation.CenterScreen,
+                ResizeMode = ResizeMode.NoResize,
+                Background = (Brush)FindResource("BrushDialogBG"),
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                Owner = _mainWindow
+            };
+            dialog.SourceInitialized += (s, ev) => App.UpdateWindowDwmTheme(dialog);
+
+            var grid = new Grid();
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var namePanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(10, 15, 10, 5) };
+            namePanel.Children.Add(new TextBlock { Text = "分组名:", Foreground = (Brush)FindResource("BrushTextMain"), VerticalAlignment = VerticalAlignment.Center, Width = 60 });
+            var nameBox = new TextBox { Width = 220, Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
+            namePanel.Children.Add(nameBox);
+            Grid.SetRow(namePanel, 0);
+            grid.Children.Add(namePanel);
+
+            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(10, 15, 10, 10) };
+            var okBtn = new Button { Content = "确定", Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)Application.Current.FindResource("PrimaryButtonStyle") };
+            var cancelBtn = new Button { Content = "取消", Width = 70, Style = (Style)Application.Current.FindResource("StandardButtonStyle") };
+            okBtn.Click += (s, ev) =>
+            {
+                string name = nameBox.Text.Trim();
+                if (string.IsNullOrEmpty(name)) { MessageBox.Show("请输入分组名称"); return; }
+                var group = new QuickGroup { Name = name, Columns = 2 };
+                QuickGroupManager.AddGroup(group);
+                QuickGroupManager.Save();
+                resultId = group.Id;
+                dialog.Close();
+            };
+            cancelBtn.Click += (s, ev) => dialog.Close();
+            btnPanel.Children.Add(okBtn); btnPanel.Children.Add(cancelBtn);
+            Grid.SetRow(btnPanel, 1);
+            grid.Children.Add(btnPanel);
+
+            dialog.Content = grid;
+            dialog.ShowDialog();
+            return resultId;
+        }
         private void AddStickyNotesPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.StickyNotes);
         private void AddClipboardPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.Clipboard);
         private void AddSystemMonitorPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.SystemMonitor);
@@ -1167,6 +1591,19 @@ namespace SideDesk.Controls
                 Type = PanelType.DataDashboard,
                 Title = "数据看板",
                 DashboardItems = new List<DataDashboardItem>()
+            });
+            _configManager.Save();
+            RenderPanels();
+        }
+
+        private void AddTimerPanel_Click(object sender, RoutedEventArgs e)
+        {
+            if (_currentWindowConfig == null || _configManager == null) return;
+            _currentWindowConfig.Panels.Add(new PanelItem
+            {
+                Type = PanelType.Timer,
+                Title = "⏱ 计时器",
+                TimerItems = new List<TimerItem>()
             });
             _configManager.Save();
             RenderPanels();
@@ -2603,10 +3040,12 @@ namespace SideDesk.Controls
             }
 
             // 定义可用工具列表
-            var availableTools = new[]
+            var availableTools = new dynamic[]
             {
-                new { Key = "ClipboardHistory", Header = "📋 剪贴板历史", Action = (Action)ShowClipboardHistoryTool },
-                new { Key = "AIChat", Header = "🤖 AI 助手", Action = (Action)ShowAIChatTool },
+                new { Key = "ClipboardHistory", Header = "📋 剪贴板历史", Action = (Action)ShowClipboardHistoryTool, IsCheckable = true },
+                new { Key = "AIChat", Header = "🤖 AI 助手", Action = (Action)ShowAIChatTool, IsCheckable = true },
+                new { Key = "VoiceInput", Header = "🎤 语音输入", Action = (Action)ShowVoiceInputTool, IsCheckable = true },
+                new { Key = "WindowTeleport", Header = "🚀 窗口瞬移", Action = (Action)ShowWindowTeleportTool, IsCheckable = false },
                 // 后续可以在这里添加更多工具
             };
 
@@ -2615,13 +3054,33 @@ namespace SideDesk.Controls
                 var mi = new MenuItem
                 {
                     Header = tool.Header,
-                    IsCheckable = true,
-                    IsChecked = _currentWindowConfig.EnabledTools.Contains(tool.Key),
+                    IsCheckable = tool.IsCheckable,
                     Tag = tool.Key
                 };
+                
+                // 只有可勾选的工具才显示勾选状态
+                if (tool.IsCheckable && _currentWindowConfig != null)
+                {
+                    mi.IsChecked = _currentWindowConfig.EnabledTools.Contains(tool.Key);
+                }
+                
                 string key = tool.Key;
                 Action action = tool.Action;
-                mi.Click += (s, ev) => ToggleTool(key, mi.IsChecked, action);
+                bool isCheckable = tool.IsCheckable;
+                
+                mi.Click += (s, ev) =>
+                {
+                    if (isCheckable)
+                    {
+                        // 可勾选工具：切换状态
+                        ToggleTool(key, mi.IsChecked, action);
+                    }
+                    else
+                    {
+                        // 直接使用的工具：立即执行
+                        action();
+                    }
+                };
                 menu.Items.Add(mi);
             }
         }
@@ -2677,21 +3136,43 @@ namespace SideDesk.Controls
                     // 添加分隔符
                     toolsBarContent.Children.Add(new Separator 
                     { 
-                        Width = 1, 
-                        Margin = new Thickness(5, 0, 5, 0),
-                        Background = (Brush)FindResource("BrushTextMuted")
+                        Height = 1,
+                        Margin = new Thickness(0, 3, 0, 3),
+                        Background = (Brush)FindResource("BrushTextMuted"),
+                        HorizontalAlignment = HorizontalAlignment.Stretch
                     });
                 }
 
-                var btn = CreateToolButton(toolKey);
-                if (btn != null)
+                var toolElement = CreateToolElement(toolKey);
+                if (toolElement != null)
                 {
-                    toolsBarContent.Children.Add(btn);
+                    toolsBarContent.Children.Add(toolElement);
                     first = false;
                 }
             }
 
             toolsBar.Visibility = Visibility.Visible;
+        }
+
+        /// <summary>
+        /// 创建工具元素（按钮或容器）
+        /// </summary>
+        private UIElement? CreateToolElement(string toolKey)
+        {
+            // 语音输入工具返回StackPanel容器
+            if (toolKey == "VoiceInput")
+            {
+                if (_voiceInputContainer == null)
+                {
+                    _voiceInputContainer = CreateVoiceInputContainer();
+                }
+                _voiceInputContainer.Visibility = Visibility.Visible;
+                return _voiceInputContainer;
+            }
+
+            // 其他工具返回Button
+            var btn = CreateToolButton(toolKey);
+            return btn;
         }
 
         /// <summary>
@@ -2704,24 +3185,43 @@ namespace SideDesk.Controls
                 "ClipboardHistory" => new Button
                 {
                     Content = "📋 剪贴板历史",
-                    Padding = new Thickness(8, 3, 8, 3),
+                    Padding = new Thickness(8, 4, 8, 4),
+                    MinHeight = 22,
                     Background = Brushes.Transparent,
                     Foreground = (Brush)FindResource("BrushTextMain"),
                     BorderThickness = new Thickness(0),
                     Cursor = Cursors.Hand,
-                    Tag = toolKey
+                    Tag = toolKey,
+                    VerticalAlignment = VerticalAlignment.Center
                 },
                 
                 "AIChat" => new Button
                 {
                     Content = "🤖 AI 助手",
-                    Padding = new Thickness(8, 3, 8, 3),
+                    Padding = new Thickness(8, 4, 8, 4),
+                    MinHeight = 22,
                     Background = Brushes.Transparent,
                     Foreground = (Brush)FindResource("BrushTextMain"),
                     BorderThickness = new Thickness(0),
                     Cursor = Cursors.Hand,
-                    Tag = toolKey
+                    Tag = toolKey,
+                    VerticalAlignment = VerticalAlignment.Center
                 },
+                
+                "VoiceInput" => new Button
+                {
+                    Content = "🎤 语音输入",
+                    Padding = new Thickness(8, 4, 8, 4),
+                    MinHeight = 22,
+                    Background = Brushes.Transparent,
+                    Foreground = (Brush)FindResource("BrushTextMain"),
+                    BorderThickness = new Thickness(0),
+                    Cursor = Cursors.Hand,
+                    Tag = toolKey,
+                    VerticalAlignment = VerticalAlignment.Center
+                },
+                
+                // 窗口瞬移不需要在底部显示按钮，它是直接使用的工具
                 
                 _ => null
             };
@@ -2732,6 +3232,7 @@ namespace SideDesk.Controls
                 {
                     if (toolKey == "ClipboardHistory") ShowClipboardHistoryTool();
                     else if (toolKey == "AIChat") ShowAIChatTool();
+                    else if (toolKey == "VoiceInput") ShowVoiceInputTool();
                 };
             }
 
@@ -2762,6 +3263,626 @@ namespace SideDesk.Controls
         private void ShowAIChatTool()
         {
             AIChatButton_Click(this, new RoutedEventArgs());
+        }
+
+        /// <summary>
+        /// 显示语音输入工具
+        /// </summary>
+        private void ShowVoiceInputTool()
+        {
+            try
+            {
+                // 创建容器（如果不存在）
+                if (_voiceInputContainer == null)
+                {
+                    _voiceInputContainer = CreateVoiceInputContainer();
+                }
+                
+                // 刷新工具栏，会自动包含语音输入
+                RefreshToolsBar();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"语音输入功能初始化失败：{ex.Message}\n\n{ex.StackTrace}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private StackPanel? _voiceInputContainer;
+        private System.Speech.Recognition.SpeechRecognitionEngine? _speechEngine;
+        private bool _isVoiceRecording = false;
+        
+        // 瞬移窗口管理
+        private List<TaskbarOverlayManager.WindowInfo> _teleportedWindows = new();
+        private Border? _teleportWidget;
+        private ListBox? _teleportListBox;
+
+        private StackPanel CreateVoiceInputContainer()
+        {
+            var container = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(5, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            // 语音输入按钮
+            var voiceBtnBorder = new Border
+            {
+                Background = (Brush)FindResource("BrushAccent"),
+                CornerRadius = new CornerRadius(4),
+                MinHeight = 28,
+                VerticalAlignment = VerticalAlignment.Center,
+                Child = new Button
+                {
+                    Content = "🎤 点击开始",
+                    Padding = new Thickness(12, 5, 12, 5),
+                    Foreground = Brushes.White,
+                    FontWeight = FontWeights.Bold,
+                    BorderThickness = new Thickness(0),
+                    Background = Brushes.Transparent,
+                    Cursor = Cursors.Hand,
+                    Name = "VoiceInputButton"
+                }
+            };
+
+            // 状态文本
+            var statusText = new TextBlock
+            {
+                Text = "就绪",
+                Margin = new Thickness(10, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                FontSize = 12,
+                Name = "VoiceInputStatus"
+            };
+
+            container.Children.Add(voiceBtnBorder);
+            container.Children.Add(statusText);
+
+            // 初始化语音识别
+            var voiceBtn = voiceBtnBorder.Child as Button;
+            if (voiceBtn != null)
+            {
+                InitializeSpeechRecognition(voiceBtn, statusText);
+            }
+
+            return container;
+        }
+
+        private void InitializeSpeechRecognition(Button voiceBtn, TextBlock statusText)
+        {
+            // 需要获取voiceBtnBorder，从父级获取
+            var voiceBtnBorder = voiceBtn.Parent as Border;
+            
+            try
+            {
+                _speechEngine = new System.Speech.Recognition.SpeechRecognitionEngine(
+                    new System.Globalization.CultureInfo("zh-CN"));
+
+                // 创建语法：识别所有语音
+                var dictationGrammar = new System.Speech.Recognition.DictationGrammar();
+                _speechEngine.LoadGrammar(dictationGrammar);
+
+                // 语音识别完成事件
+                _speechEngine.SpeechRecognized += (s, e) =>
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        var recognizedText = e.Result.Text;
+                        statusText.Text = $"识别：{recognizedText}";
+                        
+                        // 可以将识别结果发送到AI对话或其他处理逻辑
+                        HandleVoiceInput(recognizedText);
+                    });
+                };
+
+                // 识别结束事件
+                _speechEngine.RecognizeCompleted += (s, e) =>
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        voiceBtn.Content = "🎤 点击开始";
+                        voiceBtn.Background = Brushes.Transparent;
+                        voiceBtnBorder.Background = (Brush)FindResource("BrushAccent");
+                        statusText.Text = "就绪";
+                        _isVoiceRecording = false;
+                    });
+                };
+
+                // 设置音频输入
+                _speechEngine.SetInputToDefaultAudioDevice();
+
+                // 按钮点击事件
+                voiceBtn.Click += (s, e) =>
+                {
+                    if (!_isVoiceRecording)
+                    {
+                        StartVoiceRecognition(voiceBtn, statusText, voiceBtnBorder);
+                    }
+                    else
+                    {
+                        StopVoiceRecognition(voiceBtn, statusText, voiceBtnBorder);
+                    }
+                };
+            }
+            catch (Exception ex)
+            {
+                statusText.Text = $"语音初始化失败：{ex.Message}";
+            }
+        }
+
+        private void StartVoiceRecognition(Button voiceBtn, TextBlock statusText, Border voiceBtnBorder)
+        {
+            try
+            {
+                _isVoiceRecording = true;
+                voiceBtn.Content = "🎤 正在聆听...";
+                voiceBtnBorder.Background = Brushes.Red;
+                statusText.Text = "正在聆听...";
+                _speechEngine?.RecognizeAsync(System.Speech.Recognition.RecognizeMode.Multiple);
+            }
+            catch (Exception ex)
+            {
+                statusText.Text = $"启动失败：{ex.Message}";
+                _isVoiceRecording = false;
+            }
+        }
+
+        private void StopVoiceRecognition(Button voiceBtn, TextBlock statusText, Border voiceBtnBorder)
+        {
+            try
+            {
+                _speechEngine?.RecognizeAsyncStop();
+                _isVoiceRecording = false;
+            }
+            catch (Exception ex)
+            {
+                statusText.Text = $"停止失败：{ex.Message}";
+            }
+        }
+
+        private void HandleVoiceInput(string recognizedText)
+        {
+            // 这里可以扩展：将语音识别结果发送到AI对话、剪贴板等
+            // 示例：显示消息框
+            // MessageBox.Show($"识别结果：{recognizedText}", "语音输入", MessageBoxButton.OK, MessageBoxImage.Information);
+            
+            // 或者可以将文本复制到剪贴板
+            try
+            {
+                Clipboard.SetText(recognizedText);
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// 显示窗口瞬移工具
+        /// </summary>
+        private void ShowWindowTeleportTool()
+        {
+            try
+            {
+                // 获取任务栏窗口列表
+                var windows = TaskbarOverlayManager.GetTaskbarWindows();
+                if (windows.Count == 0)
+                {
+                    MessageBox.Show("未找到可用的任务栏窗口", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                // 创建窗口选择对话框
+                var pickerDialog = new Window
+                {
+                    Title = "🚀 窗口瞬移 - 选择要移动的窗口",
+                    Width = 600,
+                    Height = 500,
+                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                    Owner = _mainWindow,
+                    ResizeMode = ResizeMode.CanResize,
+                    Background = (Brush)FindResource("BrushDialogBG")
+                };
+
+                var mainPanel = new DockPanel { Margin = new Thickness(20) };
+                
+                // 顶部说明
+                var headerText = new TextBlock
+                {
+                    Text = "选择任务栏中的窗口，点击\"瞬移\"将其移动到左侧Dock区域",
+                    FontSize = 12,
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
+                    Margin = new Thickness(0, 0, 0, 15),
+                    TextWrapping = TextWrapping.Wrap
+                };
+                DockPanel.SetDock(headerText, Dock.Top);
+                mainPanel.Children.Add(headerText);
+
+                // 窗口列表
+                var windowListBox = new ListBox
+                {
+                    Margin = new Thickness(0, 0, 0, 15),
+                    Background = (Brush)FindResource("BrushInputBG"),
+                    BorderThickness = new Thickness(1),
+                    BorderBrush = (Brush)FindResource("BrushBorder")
+                };
+
+                // 填充窗口列表
+                foreach (var win in windows)
+                {
+                    var itemPanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(8) };
+
+                    // 图标
+                    if (win.Icon != null)
+                    {
+                        itemPanel.Children.Add(new Image
+                        {
+                            Source = win.Icon,
+                            Width = 24,
+                            Height = 24,
+                            Margin = new Thickness(0, 0, 12, 0)
+                        });
+                    }
+
+                    // 窗口信息
+                    var infoPanel = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                    infoPanel.Children.Add(new TextBlock
+                    {
+                        Text = win.Title,
+                        FontWeight = FontWeights.Bold,
+                        Foreground = (Brush)FindResource("BrushTextMain"),
+                        TextTrimming = TextTrimming.CharacterEllipsis
+                    });
+                    infoPanel.Children.Add(new TextBlock
+                    {
+                        Text = $"进程: {win.ProcessName}",
+                        FontSize = 11,
+                        Margin = new Thickness(0, 3, 0, 0),
+                        Foreground = (Brush)FindResource("BrushTextMuted")
+                    });
+
+                    itemPanel.Children.Add(infoPanel);
+
+                    var listBoxItem = new ListBoxItem { Content = itemPanel, Tag = win };
+                    windowListBox.Items.Add(listBoxItem);
+                }
+
+                DockPanel.SetDock(windowListBox, Dock.Top);
+                mainPanel.Children.Add(windowListBox);
+
+                // 底部按钮
+                var buttonPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+                DockPanel.SetDock(buttonPanel, Dock.Bottom);
+
+                var teleportBtn = new Button
+                {
+                    Content = "🚀 瞬移到左侧",
+                    Width = 140,
+                    Height = 35,
+                    Margin = new Thickness(0, 0, 10, 0),
+                    Background = (Brush)FindResource("BrushAccent"),
+                    Foreground = Brushes.White,
+                    FontWeight = FontWeights.Bold
+                };
+
+                var cancelBtn = new Button
+                {
+                    Content = "取消",
+                    Width = 80,
+                    Height = 35
+                };
+
+                buttonPanel.Children.Add(teleportBtn);
+                buttonPanel.Children.Add(cancelBtn);
+                mainPanel.Children.Add(buttonPanel);
+
+                pickerDialog.Content = mainPanel;
+
+                // 瞬移按钮点击事件
+                teleportBtn.Click += (s, e) =>
+                {
+                    if (windowListBox.SelectedItem is ListBoxItem selectedItem && selectedItem.Tag is TaskbarOverlayManager.WindowInfo selectedWindow)
+                    {
+                        TeleportWindowToDock(selectedWindow);
+                        pickerDialog.DialogResult = true;
+                        pickerDialog.Close();
+                    }
+                    else
+                    {
+                        MessageBox.Show("请先选择一个窗口", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                };
+
+                // 取消按钮点击事件
+                cancelBtn.Click += (s, e) =>
+                {
+                    pickerDialog.DialogResult = false;
+                    pickerDialog.Close();
+                };
+
+                // 双击瞬移
+                windowListBox.MouseDoubleClick += (s, e) =>
+                {
+                    if (windowListBox.SelectedItem is ListBoxItem selectedItem && selectedItem.Tag is TaskbarOverlayManager.WindowInfo selectedWindow)
+                    {
+                        TeleportWindowToDock(selectedWindow);
+                        pickerDialog.DialogResult = true;
+                        pickerDialog.Close();
+                    }
+                };
+
+                pickerDialog.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"打开窗口瞬移工具失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// 将窗口瞬移到左侧Dock区域
+        /// </summary>
+        private void TeleportWindowToDock(TaskbarOverlayManager.WindowInfo windowInfo)
+        {
+            try
+            {
+                IntPtr hwnd = windowInfo.Handle;
+
+                // 1. 如枟窗口最小化，先恢复
+                if (NativeMethods.IsIconic(hwnd))
+                {
+                    NativeMethods.ShowWindow(hwnd, NativeMethods.SW_RESTORE);
+                }
+
+                // 2. 获取主屏幕工作区
+                var workingArea = SystemParameters.WorkArea;
+
+                // 3. 计算左侧区域位置（左侧 1/3 宽度）
+                int dockWidth = (int)(workingArea.Width / 3);
+                int dockHeight = (int)workingArea.Height;
+                int dockX = (int)workingArea.Left;
+                int dockY = (int)workingArea.Top;
+
+                // 4. 移动窗口到左侧
+                NativeMethods.SetWindowPos(hwnd, IntPtr.Zero,
+                    dockX, dockY, dockWidth, dockHeight,
+                    0); // 无特殊标志
+
+                // 5. 从任务栏隐藏窗口
+                HideWindowFromTaskbar(hwnd);
+
+                // 6. 添加到瞬移窗口列表
+                if (!_teleportedWindows.Any(w => w.Handle == hwnd))
+                {
+                    _teleportedWindows.Add(windowInfo);
+                }
+
+                // 7. 更新UI显示
+                UpdateTeleportWidget();
+
+                MessageBox.Show($"已将窗口“{windowInfo.Title}”移动到左侧Dock区域", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"移动窗口失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// 从任务栏隐藏窗口
+        /// </summary>
+        private void HideWindowFromTaskbar(IntPtr hwnd)
+        {
+            try
+            {
+                // 使用 ITaskbarList COM 接口从任务栏删除窗口
+                var taskbarList = (ITaskbarList)Activator.CreateInstance(
+                    Type.GetTypeFromCLSID(new Guid("56FDF344-FD6D-11d0-958A-006097C9A090")));
+                taskbarList.HrInit();
+                taskbarList.DeleteTab(hwnd);
+                Marshal.ReleaseComObject(taskbarList);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"隐藏任务栏图标失败：{ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 更新瞬移窗口区UI
+        /// </summary>
+        private void UpdateTeleportWidget()
+        {
+            // 如果没有瞬移窗口，隐藏组件
+            if (_teleportedWindows.Count == 0)
+            {
+                if (_teleportWidget != null)
+                {
+                    _teleportWidget.Visibility = Visibility.Collapsed;
+                }
+                return;
+            }
+
+            // 创建或更新组件
+            if (_teleportWidget == null)
+            {
+                _teleportWidget = CreateTeleportWidget();
+                
+                // 插入到动态内容区的最前面
+                if (dynamicContent != null)
+                {
+                    dynamicContent.Children.Insert(0, _teleportWidget);
+                }
+            }
+
+            // 更新窗口列表
+            if (_teleportListBox != null)
+            {
+                _teleportListBox.Items.Clear();
+                
+                foreach (var window in _teleportedWindows)
+                {
+                    var itemPanel = new StackPanel 
+                    { 
+                        Orientation = Orientation.Horizontal, 
+                        Margin = new Thickness(5) 
+                    };
+
+                    // 图标
+                    if (window.Icon != null)
+                    {
+                        itemPanel.Children.Add(new Image
+                        {
+                            Source = window.Icon,
+                            Width = 20,
+                            Height = 20,
+                            Margin = new Thickness(0, 0, 8, 0)
+                        });
+                    }
+
+                    // 窗口标题
+                    var titleText = new TextBlock
+                    {
+                        Text = window.Title,
+                        FontWeight = FontWeights.Bold,
+                        Foreground = (Brush)FindResource("BrushTextMain"),
+                        VerticalAlignment = VerticalAlignment.Center,
+                        TextTrimming = TextTrimming.CharacterEllipsis
+                    };
+                    itemPanel.Children.Add(titleText);
+
+                    // 还原按钮
+                    var restoreBtn = new Button
+                    {
+                        Content = "↺",
+                        Width = 24,
+                        Height = 24,
+                        Margin = new Thickness(5, 0, 0, 0),
+                        ToolTip = "还原到任务栏",
+                        Cursor = Cursors.Hand
+                    };
+                    
+                    var capturedWindow = window;
+                    restoreBtn.Click += (s, e) =>
+                    {
+                        RestoreWindowFromDock(capturedWindow);
+                    };
+                    
+                    itemPanel.Children.Add(restoreBtn);
+
+                    var listBoxItem = new ListBoxItem 
+                    { 
+                        Content = itemPanel,
+                        Tag = window
+                    };
+                    _teleportListBox.Items.Add(listBoxItem);
+                }
+            }
+
+            _teleportWidget.Visibility = Visibility.Visible;
+        }
+
+        /// <summary>
+        /// 创建瞬移窗口区组件
+        /// </summary>
+        private Border CreateTeleportWidget()
+        {
+            var border = new Border
+            {
+                Margin = new Thickness(0, 0, 0, 12),
+                Padding = new Thickness(0, 10, 0, 10),
+                CornerRadius = new CornerRadius(6),
+                Background = (Brush)FindResource("BrushInputBG"),
+                BorderBrush = (Brush)FindResource("BrushBorder"),
+                BorderThickness = new Thickness(1)
+            };
+
+            var stack = new StackPanel();
+
+            // 标题栏
+            var headerPanel = new DockPanel();
+            var titleText = new TextBlock
+            {
+                Text = "🚀 瞬移窗口",
+                FontWeight = FontWeights.Bold,
+                FontSize = 14,
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            var countText = new TextBlock
+            {
+                Text = $"({_teleportedWindows.Count})",
+                FontSize = 12,
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(5, 0, 0, 0)
+            };
+
+            var headerStack = new StackPanel { Orientation = Orientation.Horizontal };
+            headerStack.Children.Add(titleText);
+            headerStack.Children.Add(countText);
+
+            DockPanel.SetDock(headerStack, Dock.Left);
+            headerPanel.Children.Add(headerStack);
+
+            stack.Children.Add(headerPanel);
+            stack.Children.Add(new Separator { Margin = new Thickness(0, 5, 0, 5) });
+
+            // 窗口列表
+            _teleportListBox = new ListBox
+            {
+                BorderThickness = new Thickness(0),
+                Background = Brushes.Transparent,
+                MaxHeight = 300
+            };
+
+            // 隐藏滚动条但保持滚动功能
+            ScrollViewer.SetVerticalScrollBarVisibility(_teleportListBox, ScrollBarVisibility.Hidden);
+            ScrollViewer.SetHorizontalScrollBarVisibility(_teleportListBox, ScrollBarVisibility.Hidden);
+
+            stack.Children.Add(_teleportListBox);
+            border.Child = stack;
+
+            return border;
+        }
+
+        /// <summary>
+        /// 从Dock区域还原窗口
+        /// </summary>
+        private void RestoreWindowFromDock(TaskbarOverlayManager.WindowInfo windowInfo)
+        {
+            try
+            {
+                IntPtr hwnd = windowInfo.Handle;
+
+                // 恢复到任务栏
+                var taskbarList = (ITaskbarList)Activator.CreateInstance(
+                    Type.GetTypeFromCLSID(new Guid("56FDF344-FD6D-11d0-958A-006097C9A090")));
+                taskbarList.HrInit();
+                taskbarList.AddTab(hwnd);
+                Marshal.ReleaseComObject(taskbarList);
+
+                // 从列表中移除
+                _teleportedWindows.RemoveAll(w => w.Handle == hwnd);
+
+                // 更新UI
+                UpdateTeleportWidget();
+
+                MessageBox.Show($"已将窗口“{windowInfo.Title}”还原到任务栏", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"还原窗口失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        [ComImport, Guid("56FDF344-FD6D-11d0-958A-006097C9A090"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        private interface ITaskbarList
+        {
+            [PreserveSig] int HrInit();
+            [PreserveSig] int AddTab(IntPtr hwnd);
+            [PreserveSig] int DeleteTab(IntPtr hwnd);
+            [PreserveSig] int ActivateTab(IntPtr hwnd);
+            [PreserveSig] int SetActiveAlt(IntPtr hwnd);
         }
 
         #endregion

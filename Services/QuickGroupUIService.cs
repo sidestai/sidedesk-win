@@ -44,6 +44,9 @@ namespace SideDesk.Services
         /// <summary>请求主窗口作为对话框的 Owner</summary>
         public Window? OwnerWindow { get; set; }
 
+        /// <summary>分组被删除时触发，参数为 groupId；用于 1:1 面板绑定模式下通知上层移除 PanelItem</summary>
+        public Action<string>? OnGroupDeleted { get; set; }
+
         public QuickGroupUIService(StackPanel container)
         {
             _container = container;
@@ -60,6 +63,35 @@ namespace SideDesk.Services
             _itemButtonRefs.Clear();
             var groups = QuickGroupManager.GetAll();
             foreach (var group in groups)
+            {
+                _container.Children.Add(BuildGroupPanel(group));
+            }
+
+            // 配置容器接受拖放
+            _container.AllowDrop = true;
+            _dragIndicator = new Border
+            {
+                Height = 3,
+                Background = Brushes.DodgerBlue,
+                Margin = new Thickness(0, 2, 0, 2),
+                Visibility = Visibility.Collapsed,
+                Tag = "__indicator__"
+            };
+            _container.DragOver += GroupContainer_DragOver;
+            _container.DragLeave += (s, ev) => HideDragIndicator();
+            _container.Drop += GroupContainer_Drop;
+
+            EnsureForegroundWatcher();
+            EnsureLongTermWatcher();
+        }
+
+        /// <summary>仅加载指定分组到 UI（1:1 面板绑定模式）</summary>
+        public void LoadSingleGroup(string groupId)
+        {
+            _container.Children.Clear();
+            _itemButtonRefs.Clear();
+            var group = QuickGroupManager.GetAll().FirstOrDefault(g => g.Id == groupId);
+            if (group != null)
             {
                 _container.Children.Add(BuildGroupPanel(group));
             }
@@ -165,6 +197,101 @@ namespace SideDesk.Services
             menu.PlacementTarget = target;
             menu.Placement = PlacementMode.Bottom;
             menu.IsOpen = true;
+        }
+
+        /// <summary>弹出快捷添加菜单（网页/程序/窗口），用于右键菜单直接添加</summary>
+        public void ShowAddShortcutMenu(UIElement target)
+        {
+            var menu = new ContextMenu();
+
+            var addUrlItem = new MenuItem { Header = "网页" };
+            addUrlItem.Click += (s, ev) => AddItemToDefaultGroup("url");
+            menu.Items.Add(addUrlItem);
+
+            var addProgItem = new MenuItem { Header = "程序" };
+            addProgItem.Click += (s, ev) => AddItemToDefaultGroup("program");
+            menu.Items.Add(addProgItem);
+
+            var addWinItem = new MenuItem { Header = "窗口" };
+            addWinItem.Click += (s, ev) => ShowPickWindowDialog(null);
+            menu.Items.Add(addWinItem);
+
+            menu.PlacementTarget = target;
+            menu.Placement = PlacementMode.MousePoint;
+            menu.IsOpen = true;
+        }
+
+        /// <summary>弹出快捷添加菜单（网页/程序/窗口），添加到指定分组</summary>
+        public void ShowAddShortcutMenuForGroup(UIElement target, string groupId)
+        {
+            var menu = new ContextMenu();
+
+            var addUrlItem = new MenuItem { Header = "网页" };
+            addUrlItem.Click += (s, ev) => ShowAddItemDialog(groupId, null, "url");
+            menu.Items.Add(addUrlItem);
+
+            var addProgItem = new MenuItem { Header = "程序" };
+            addProgItem.Click += (s, ev) => ShowAddItemDialog(groupId, null, "program");
+            menu.Items.Add(addProgItem);
+
+            var addWinItem = new MenuItem { Header = "窗口" };
+            addWinItem.Click += (s, ev) => ShowPickWindowDialog(groupId);
+            menu.Items.Add(addWinItem);
+
+            menu.PlacementTarget = target;
+            menu.Placement = PlacementMode.MousePoint;
+            menu.IsOpen = true;
+        }
+
+        /// <summary>弹出分组名称输入对话框，创建分组并返回 groupId；取消返回 null</summary>
+        public string ShowCreateGroupDialog()
+        {
+            string? resultId = null;
+
+            var dialog = new Window
+            {
+                Title = "新建快捷方式",
+                Width = 340, Height = 170,
+                WindowStartupLocation = WindowStartupLocation.CenterScreen,
+                ResizeMode = ResizeMode.NoResize,
+                Background = new SolidColorBrush(Color.FromRgb(30, 30, 30)),
+                Foreground = Brushes.White,
+                Owner = OwnerWindow
+            };
+
+            var grid = new Grid();
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var namePanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(10, 15, 10, 5) };
+            namePanel.Children.Add(new TextBlock { Text = "分组名:", Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center, Width = 60 });
+            var nameBox = new TextBox { Width = 220 };
+            namePanel.Children.Add(nameBox);
+            Grid.SetRow(namePanel, 0);
+            grid.Children.Add(namePanel);
+
+            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(10, 15, 10, 10) };
+            var okBtn = new Button { Content = "确定", Width = 70, Margin = new Thickness(0, 0, 10, 0) };
+            var cancelBtn = new Button { Content = "取消", Width = 70 };
+            okBtn.Click += (s, ev) =>
+            {
+                string name = nameBox.Text.Trim();
+                if (string.IsNullOrEmpty(name)) { MessageBox.Show("请输入分组名称"); return; }
+                var group = new QuickGroup { Name = name, Columns = 2 };
+                QuickGroupManager.AddGroup(group);
+                QuickGroupManager.Save();
+                resultId = group.Id;
+                dialog.Close();
+            };
+            cancelBtn.Click += (s, ev) => dialog.Close();
+            btnPanel.Children.Add(okBtn); btnPanel.Children.Add(cancelBtn);
+            Grid.SetRow(btnPanel, 1);
+            grid.Children.Add(btnPanel);
+
+            dialog.Content = grid;
+            dialog.ShowDialog();
+
+            return resultId!;
         }
 
         /// <summary>停止所有定时器和清理资源</summary>
@@ -431,6 +558,7 @@ namespace SideDesk.Services
                         QuickGroupManager.RemoveGroup(group.Id);
                         QuickGroupManager.Save();
                         _container.Children.Remove(border);
+                        OnGroupDeleted?.Invoke(group.Id);
                     }
                 };
                 popup.Items.Add(deleteItem);

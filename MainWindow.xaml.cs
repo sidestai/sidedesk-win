@@ -185,6 +185,13 @@ namespace SideDesk
 
         #region 布局切换菜单
 
+        private void Login_Click(object sender, RoutedEventArgs e)
+        {
+            var loginWindow = new LoginWindow();
+            loginWindow.Owner = this;
+            loginWindow.ShowDialog();
+        }
+
         private void Layout_Left(object sender, RoutedEventArgs e)
         {
             ((App)Application.Current).SwitchLayout(LayoutMode.Left);
@@ -258,6 +265,13 @@ namespace SideDesk
 
                 // 右键菜单
                 var ctx = new ContextMenu();
+                
+                // 登录选项
+                var loginItem = new MenuItem { Header = "登录" };
+                loginItem.Click += (s, e) => Login_Click(s, e);
+                ctx.Items.Add(loginItem);
+                
+                ctx.Items.Add(new Separator());
 
                 var editItem = new MenuItem { Header = "编辑窗口" };
                 int editIdx = index;
@@ -269,6 +283,30 @@ namespace SideDesk
                 if (_dockState.WindowIds.Count <= 1)
                     deleteItem.Visibility = Visibility.Collapsed;
                 ctx.Items.Add(deleteItem);
+                
+                // 添加分隔符
+                ctx.Items.Add(new Separator());
+                
+                // 布局切换选项
+                var layoutLeftItem = new MenuItem { Header = "居左" };
+                layoutLeftItem.Click += (s, e) => Layout_Left(s, e);
+                ctx.Items.Add(layoutLeftItem);
+                
+                var layoutRightItem = new MenuItem { Header = "居右" };
+                layoutRightItem.Click += (s, e) => Layout_Right(s, e);
+                ctx.Items.Add(layoutRightItem);
+                
+                var layoutBothItem = new MenuItem { Header = "双侧" };
+                layoutBothItem.Click += (s, e) => Layout_Both(s, e);
+                ctx.Items.Add(layoutBothItem);
+                
+                // 添加分隔符
+                ctx.Items.Add(new Separator());
+                
+                // 退出选项
+                var exitItem = new MenuItem { Header = "退出" };
+                exitItem.Click += (s, e) => Exit_Click(s, e);
+                ctx.Items.Add(exitItem);
 
                 btn.ContextMenu = ctx;
 

@@ -96,6 +96,10 @@ namespace SideDesk
         // Module handle
         [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
         internal static extern IntPtr GetModuleHandle(string lpModuleName);
+        
+        // Key state
+        [DllImport("user32.dll")]
+        internal static extern short GetKeyState(int nVirtKey);
 
         // Window state
         [DllImport("user32.dll")]

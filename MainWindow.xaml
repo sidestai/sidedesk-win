@@ -24,6 +24,8 @@
         <Border Grid.Row="0" Background="{DynamicResource BrushInputBG}">
             <Border.ContextMenu>
                 <ContextMenu>
+                    <MenuItem Header="登录" Click="Login_Click"/>
+                    <Separator/>
                     <MenuItem Header="切换到 A 屏" Click="SwitchToScreenA"/>
                     <MenuItem Header="切换到 B 屏" Click="SwitchToScreenB"/>
                     <Separator/>
@@ -64,6 +66,8 @@
                         ToolTip="更多">
                     <Button.ContextMenu>
                         <ContextMenu x:Name="moreMenu" Opened="MoreMenu_Opened">
+                            <MenuItem Header="登录" Click="Login_Click"/>
+                            <Separator/>
                             <Separator x:Name="menuSeparator1"/>
                             <MenuItem Header="新建侧屏" Click="NewSideScreen_Click"/>
                             <MenuItem Header="设置" Click="Settings_Click"/>

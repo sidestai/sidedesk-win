@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Interop;
 using System.Windows.Threading;
 
 namespace SideDesk.Services
@@ -25,16 +27,18 @@ namespace SideDesk.Services
     }
 
     /// <summary>
-    /// 剪贴板监控服务：监听系统剪贴板变化，维护历史记录
+    /// 剪贴板监控服务：监听系统剪贴板变化，维护历史记录。
+    /// 使用独立的消息窗口接收 WM_CLIPBOARDUPDATE，不依赖主窗口消息泵。
     /// </summary>
     public class ClipboardService
     {
         private const int WM_CLIPBOARDUPDATE = 0x031D;
         private const int MAX_CLIPBOARD_ITEMS = 10;
+        private static readonly IntPtr HWND_MESSAGE = new IntPtr(-3);
 
         private readonly List<ClipboardEntry> _clipboardHistory = new();
         private string? _lastClipboardText = null;
-        private IntPtr _hwnd = IntPtr.Zero;
+        private HwndSource? _messageWindowSource;
         private bool _isRunning = false;
 
         /// <summary>剪贴板收藏记录（只读访问）</summary>
@@ -43,40 +47,76 @@ namespace SideDesk.Services
         /// <summary>剪贴板内容变化事件</summary>
         public event Action? ClipboardChanged;
 
-        /// <summary>启动剪贴板监控</summary>
-        public void Start(IntPtr hwnd)
+        /// <summary>启动剪贴板监控（创建独立消息窗口）</summary>
+        public void Start()
         {
             if (_isRunning) return;
-            _hwnd = hwnd;
+
             try
             {
-                NativeMethods.AddClipboardFormatListener(hwnd);
+                // 创建隐藏消息窗口，专门接收剪贴板通知
+                var param = new HwndSourceParameters("ClipboardListener")
+                {
+                    Width = 0,
+                    Height = 0,
+                    PositionX = 0,
+                    PositionY = 0,
+                    WindowStyle = 0x800000, // WS_POPUP
+                    ExtendedWindowStyle = 0x00000008, // WS_EX_TOOLWINDOW
+                    ParentWindow = HWND_MESSAGE
+                };
+
+                _messageWindowSource = new HwndSource(param);
+                _messageWindowSource.AddHook(MessageWndProc);
+
+                var hwnd = _messageWindowSource.Handle;
+                bool success = NativeMethods.AddClipboardFormatListener(hwnd);
+                if (!success)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[ClipboardService] AddClipboardFormatListener 失败, 错误码: {Marshal.GetLastWin32Error()}");
+                    _messageWindowSource.Dispose();
+                    _messageWindowSource = null;
+                    return;
+                }
+
                 _isRunning = true;
+                System.Diagnostics.Debug.WriteLine("[ClipboardService] 剪贴板监控已启动");
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ClipboardService] Start 异常: {ex.Message}");
+            }
         }
 
         /// <summary>停止剪贴板监控</summary>
         public void Stop()
         {
             if (!_isRunning) return;
+
             try
             {
-                NativeMethods.RemoveClipboardFormatListener(_hwnd);
+                if (_messageWindowSource != null)
+                {
+                    NativeMethods.RemoveClipboardFormatListener(_messageWindowSource.Handle);
+                    _messageWindowSource.Dispose();
+                    _messageWindowSource = null;
+                }
             }
             catch { }
+
             _isRunning = false;
         }
 
-        /// <summary>处理窗口消息，返回是否已处理</summary>
-        public bool ProcessMessage(int msg)
+        /// <summary>消息窗口的窗口过程</summary>
+        private IntPtr MessageWndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
             if (msg == WM_CLIPBOARDUPDATE)
             {
                 OnClipboardChanged();
-                return true;
+                handled = true;
+                return IntPtr.Zero;
             }
-            return false;
+            return IntPtr.Zero;
         }
 
         /// <summary>清空历史记录</summary>

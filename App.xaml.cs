@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
@@ -26,6 +27,11 @@ namespace SideDesk
 
         protected override void OnStartup(StartupEventArgs e)
         {
+            // 注册全局异常处理
+            AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
+            DispatcherUnhandledException += App_DispatcherUnhandledException;
+            TaskScheduler.UnobservedTaskException += TaskScheduler_UnobservedTaskException;
+            
             // Velopack 必须最先执行，拦截安装/更新/卸载命令行钩子
             try { System.IO.Directory.SetCurrentDirectory(System.IO.Path.GetTempPath()); } catch { }
             VelopackApp.Build().Run();
@@ -53,7 +59,8 @@ namespace SideDesk
 
             SwitchLayout(AppSettings.Layout, AppSettings.LeftScreen, AppSettings.RightScreen, save: false);
 
-            // 启动 5 秒后静默检查更新
+            // 【已禁用】启动 5 秒后静默检查更新 - 2026-06-09 禁用，解决程序自动重启问题
+            // 如果以后需要启用，请取消下面的注释
             _ = Task.Delay(5000).ContinueWith(async _ =>
             {
                 try
@@ -131,7 +138,8 @@ namespace SideDesk
 
         protected override void OnExit(ExitEventArgs e)
         {
-            try { Services.CdpBrowserService.Instance.Dispose(); } catch { }
+            // 【已禁用】CDP浏览器服务 - 2026-06-09 禁用，解决重复启动问题
+            // try { Services.CdpBrowserService.Instance.Dispose(); } catch { }
             base.OnExit(e);
         }
 
@@ -373,6 +381,98 @@ namespace SideDesk
             catch { /* 如果 AppSettings 不存在属性则忽略 */ }
         }
 
+        #endregion
+        
+        #region 全局异常处理
+        
+        /// <summary>
+        /// 未观察到的任务异常
+        /// </summary>
+        private void TaskScheduler_UnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+        {
+            LogCrash("TaskScheduler_UnobservedTaskException", e.Exception);
+            e.SetObserved(); // 阻止程序崩溃
+        }
+        
+        /// <summary>
+        /// UI线程未处理异常
+        /// </summary>
+        private void App_DispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
+        {
+            LogCrash("DispatcherUnhandledException", e.Exception);
+            e.Handled = true; // 阻止程序崩溃
+            
+            MessageBox.Show(
+                $"发生错误：{e.Exception.Message}\n\n{e.Exception.StackTrace}",
+                "程序异常",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+        
+        /// <summary>
+        /// 全局未处理异常（会导致程序退出）
+        /// </summary>
+        private void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
+        {
+            if (e.ExceptionObject is Exception ex)
+            {
+                LogCrash("UnhandledException", ex);
+                
+                // 记录到崩溃日志
+                string crashLog = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "SideDesk",
+                    $"crash-{DateTime.Now:yyyy-MM-dd-HHmmss}.log");
+                
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(crashLog)!);
+                    File.WriteAllText(crashLog, $"""
+                        崩溃时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}
+                        异常类型: {ex.GetType().FullName}
+                        异常消息: {ex.Message}
+                        堆栈跟踪:
+                        {ex.StackTrace}
+                        
+                        InnerException: {ex.InnerException?.ToString() ?? "无"}
+                        
+                        是否终止: {e.IsTerminating}
+                        """);
+                }
+                catch { }
+            }
+        }
+        
+        /// <summary>
+        /// 记录崩溃信息
+        /// </summary>
+        private void LogCrash(string source, Exception ex)
+        {
+            string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
+            string logLine = $"""
+                [{timestamp}] [CRASH] {source}
+                类型: {ex.GetType().FullName}
+                消息: {ex.Message}
+                堆栈: {ex.StackTrace}
+                
+                """;
+            
+            System.Diagnostics.Debug.WriteLine(logLine);
+            
+            // 写入日志文件
+            try
+            {
+                string logDir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "SideDesk");
+                Directory.CreateDirectory(logDir);
+                
+                string crashLog = Path.Combine(logDir, $"crash-{DateTime.Now:yyyy-MM-dd}.log");
+                File.AppendAllText(crashLog, logLine);
+            }
+            catch { }
+        }
+        
         #endregion
     }
 }

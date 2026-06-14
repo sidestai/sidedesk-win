@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>生成 Chrome 扩展图标</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #2196F3;
+        }
+        .instructions {
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        button {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #1976D2;
+        }
+        .icon-preview {
+            display: inline-block;
+            margin: 10px;
+            text-align: center;
+        }
+        .icon-preview img {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .icon-preview p {
+            margin: 5px 0;
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎯 Chrome 扩展图标生成器</h1>
+    
+    <div class="instructions">
+        <h3>使用说明：</h3>
+        <ol>
+            <li>点击"生成并下载图标"按钮</li>
+            <li>会自动下载 3 个 PNG 图标文件</li>
+            <li>将下载的文件保存到 <code>icons/</code> 目录</li>
+            <li>重新加载 Chrome 扩展</li>
+        </ol>
+    </div>
+
+    <button onclick="generateIcons()">🎨 生成并下载图标</button>
+
+    <div id="preview" style="margin-top: 30px;"></div>
+
+    <script>
+        function generateIcons() {
+            const sizes = [
+                { size: 16, name: 'icon16.png' },
+                { size: 48, name: 'icon48.png' },
+                { size: 128, name: 'icon128.png' }
+            ];
+
+            const preview = document.getElementById('preview');
+            preview.innerHTML = '<h3>生成的图标预览：</h3>';
+
+            sizes.forEach(({ size, name }) => {
+                const canvas = document.createElement('canvas');
+                canvas.width = size;
+                canvas.height = size;
+                const ctx = canvas.getContext('2d');
+
+                // 背景渐变
+                const gradient = ctx.createLinearGradient(0, 0, size, size);
+                gradient.addColorStop(0, '#2196F3');
+                gradient.addColorStop(1, '#1976D2');
+                ctx.fillStyle = gradient;
+                
+                // 圆角矩形背景
+                const radius = size * 0.2;
+                ctx.beginPath();
+                ctx.moveTo(radius, 0);
+                ctx.lineTo(size - radius, 0);
+                ctx.quadraticCurveTo(size, 0, size, radius);
+                ctx.lineTo(size, size - radius);
+                ctx.quadraticCurveTo(size, size, size - radius, size);
+                ctx.lineTo(radius, size);
+                ctx.quadraticCurveTo(0, size, 0, size - radius);
+                ctx.lineTo(0, radius);
+                ctx.quadraticCurveTo(0, 0, radius, 0);
+                ctx.closePath();
+                ctx.fill();
+
+                // 绘制瞄准图标
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = size * 0.08;
+                
+                // 外圆
+                ctx.beginPath();
+                ctx.arc(size / 2, size / 2, size * 0.35, 0, 2 * Math.PI);
+                ctx.stroke();
+                
+                // 内圆
+                ctx.beginPath();
+                ctx.arc(size / 2, size / 2, size * 0.15, 0, 2 * Math.PI);
+                ctx.fillStyle = 'white';
+                ctx.fill();
+                
+                // 十字线
+                ctx.beginPath();
+                ctx.moveTo(size / 2 - size * 0.45, size / 2);
+                ctx.lineTo(size / 2 - size * 0.2, size / 2);
+                ctx.moveTo(size / 2 + size * 0.2, size / 2);
+                ctx.lineTo(size / 2 + size * 0.45, size / 2);
+                ctx.moveTo(size / 2, size / 2 - size * 0.45);
+                ctx.lineTo(size / 2, size / 2 - size * 0.2);
+                ctx.moveTo(size / 2, size / 2 + size * 0.2);
+                ctx.lineTo(size / 2, size / 2 + size * 0.45);
+                ctx.stroke();
+
+                // 下载文件
+                canvas.toBlob(blob => {
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = name;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+
+                    // 显示预览
+                    const previewDiv = document.createElement('div');
+                    previewDiv.className = 'icon-preview';
+                    const img = document.createElement('img');
+                    img.src = url;
+                    img.width = size > 64 ? 64 : size;
+                    img.height = size > 64 ? 64 : size;
+                    const p = document.createElement('p');
+                    p.textContent = `${name} (${size}x${size})`;
+                    previewDiv.appendChild(img);
+                    previewDiv.appendChild(p);
+                    preview.appendChild(previewDiv);
+                });
+            });
+
+            alert('图标已生成！请检查下载的文件并保存到 icons/ 目录');
+        }
+    </script>
+</body>
+</html>

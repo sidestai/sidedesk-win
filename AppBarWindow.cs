@@ -66,6 +66,9 @@ namespace SideDesk
             var data = CreateAppBarData(hwnd);
             data.uCallbackMessage = _callbackMessageId;
             NativeMethods.SHAppBarMessage(AppBarMessage.ABM_NEW, ref data);
+            
+            System.Diagnostics.Debug.WriteLine($"[AppBar] ABM_NEW registered - hwnd={hwnd}");
+            LogEvent($"AppBarRegistered - hwnd={hwnd}");
 
             IsAppBarRegistered = true;
 
@@ -86,6 +89,9 @@ namespace SideDesk
         {
             if (!IsAppBarRegistered) return;
 
+            System.Diagnostics.Debug.WriteLine($"[AppBar] UnregisterAppBar called");
+            LogEvent("AppBarUnregister");
+
             UnlockPosition();
 
             _hwndSource?.RemoveHook(AppBarWndProc);
@@ -97,6 +103,7 @@ namespace SideDesk
                 var data = CreateAppBarData(hwnd);
                 NativeMethods.SHAppBarMessage(AppBarMessage.ABM_REMOVE, ref data);
                 System.Diagnostics.Debug.WriteLine($"[AppBar] ABM_REMOVE called with hwnd={hwnd}");
+                LogEvent($"AppBarRemoved - hwnd={hwnd}");
             }
 
             _registeredHwnd = IntPtr.Zero;
@@ -209,16 +216,48 @@ namespace SideDesk
         protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
         {
             // 确保关闭前释放 AppBar
+            System.Diagnostics.Debug.WriteLine($"[AppBarWindow] OnClosing - Reason: {e}");
+            LogEvent("OnClosing");
             UnregisterAppBar();
             base.OnClosing(e);
         }
 
         protected override void OnClosed(EventArgs e)
         {
+            System.Diagnostics.Debug.WriteLine($"[AppBarWindow] OnClosed");
+            LogEvent("OnClosed");
             UnregisterAppBar();
             base.OnClosed(e);
         }
 
+        #endregion
+        
+        #region Logging
+        
+        /// <summary>
+        /// 记录窗口事件到日志
+        /// </summary>
+        private void LogEvent(string eventName)
+        {
+            try
+            {
+                string timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
+                string logLine = $"[{timestamp}] [AppBarWindow] {eventName} - Title={Title}, Handle={new System.Windows.Interop.WindowInteropHelper(this).Handle}";
+                
+                System.Diagnostics.Debug.WriteLine(logLine);
+                
+                // 写入文件日志
+                string logDir = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "SideDesk");
+                System.IO.Directory.CreateDirectory(logDir);
+                
+                string logFile = System.IO.Path.Combine(logDir, $"window-{DateTime.Now:yyyy-MM-dd}.log");
+                System.IO.File.AppendAllText(logFile, logLine + Environment.NewLine);
+            }
+            catch { }
+        }
+        
         #endregion
 
         #region Private Methods

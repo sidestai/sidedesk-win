@@ -7,7 +7,7 @@ public enum WindowType { Native, WebView }
 
 public enum PanelType
 {
-    QuickGroup,      // 快捷分组
+    QuickGroup,      // 快捷方式
     StickyNotes,     // 便签
     Clipboard,       // 剪贴板收藏
     SystemMonitor,   // 系统信息/计数器
@@ -15,7 +15,8 @@ public enum PanelType
     AIChat,          // AI 对话
     FileArea,        // 文件区
     ClipboardHistory,  // 剪贴板历史
-    DataDashboard     // 数据看板
+    DataDashboard,     // 数据看板
+    Timer            // 计时器
 }
 
 public class PanelItem
@@ -27,6 +28,7 @@ public class PanelItem
     public List<ClipboardSavedItem>? ClipboardItems { get; set; } // 剪贴板收藏数据
     public List<FileAreaItem>? FileItems { get; set; } // 文件区数据
     public List<DataDashboardItem>? DashboardItems { get; set; } // 数据看板项
+    public List<TimerItem>? TimerItems { get; set; } // 计时器数据
 }
 
 public class FileAreaItem
@@ -44,6 +46,24 @@ public class ClipboardSavedItem
     public string Content { get; set; } = "";
     public string ContentType { get; set; } = "Text"; // Text, Image, File
     public DateTime SavedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>
+/// 计时器项
+/// </summary>
+public class TimerItem
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string Name { get; set; } = "新计时";
+    public int TimeoutSeconds { get; set; } = 3600; // 默认 1 小时
+    public bool IsRunning { get; set; } = false;
+    public DateTime? StartTime { get; set; }
+    public TimeSpan ElapsedTime { get; set; } = TimeSpan.Zero;
+    
+    /// <summary>
+    /// 历史记录：日期 -> 总秒数
+    /// </summary>
+    public Dictionary<string, int> DailyRecords { get; set; } = new();
 }
 
 public class WindowConfig

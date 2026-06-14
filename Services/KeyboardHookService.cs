@@ -16,10 +16,13 @@ namespace SideDesk.Services
         private NativeMethods.LowLevelKeyboardProc? _keyboardProc;
         private int _todayKeyCount = 0;
         private string _todayKeyCountDate = DateTime.Now.ToString("yyyy-MM-dd");
+        private string _logFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SideDesk", "keyboard.log");
 
         private const int WH_KEYBOARD_LL = 13;
         private const int WM_KEYDOWN = 0x0100;
         private const int WM_SYSKEYDOWN = 0x0104;
+        private const int WM_KEYUP = 0x0101;
+        private const int WM_SYSKEYUP = 0x0105;
 
         [StructLayout(LayoutKind.Sequential)]
         private struct KBDLLHOOKSTRUCT
@@ -110,27 +113,149 @@ namespace SideDesk.Services
 
         private IntPtr KeyboardHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
         {
-            if (nCode >= 0 && (wParam == (IntPtr)WM_KEYDOWN || wParam == (IntPtr)WM_SYSKEYDOWN))
+            if (nCode >= 0)
             {
                 KBDLLHOOKSTRUCT hookStruct = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
-
-                // Check if date changed
-                string currentDate = DateTime.Now.ToString("yyyy-MM-dd");
-                if (currentDate != _todayKeyCountDate)
+                
+                bool isKeyDown = wParam == (IntPtr)WM_KEYDOWN || wParam == (IntPtr)WM_SYSKEYDOWN;
+                bool isKeyUp = wParam == (IntPtr)WM_KEYUP || wParam == (IntPtr)WM_SYSKEYUP;
+                bool isSysKey = wParam == (IntPtr)WM_SYSKEYDOWN || wParam == (IntPtr)WM_SYSKEYUP;
+                
+                if (isKeyDown || isKeyUp)
                 {
-                    SaveKeyCount();
-                    _todayKeyCountDate = currentDate;
-                    _todayKeyCount = 0;
-                }
+                    string keyName = GetKeyName(hookStruct.vkCode);
+                    string action = isKeyDown ? "DOWN" : "UP";
+                    string sysMark = isSysKey ? "[SYS]" : "";
+                    string timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
+                    string logLine = $"[{timestamp}] {sysMark}{keyName} {action} (vkCode=0x{hookStruct.vkCode:X2})";
+                    
+                    // 写入日志
+                    WriteLog(logLine);
+                    
+                    // 特别记录ALT+TAB
+                    if (hookStruct.vkCode == 0x09 && (NativeMethods.GetKeyState(0x12) & 0x8000) != 0)
+                    {
+                        string altTabLog = $"[{timestamp}] *** ALT+TAB DETECTED ***";
+                        WriteLog(altTabLog);
+                        Debug.WriteLine(altTabLog);
+                    }
+                    
+                    // 特别记录可能导致退出的组合键
+                    if (hookStruct.vkCode == 0x73) // F4
+                    {
+                        if ((NativeMethods.GetKeyState(0x12) & 0x8000) != 0) // Alt+F4
+                        {
+                            string altF4Log = $"[{timestamp}] *** ALT+F4 DETECTED (可能关闭窗口) ***";
+                            WriteLog(altF4Log);
+                            Debug.WriteLine(altF4Log);
+                        }
+                    }
 
-                // Count only non-ignored keys
-                if (!_ignoredKeys.Contains(hookStruct.vkCode))
-                {
-                    _todayKeyCount++;
-                    KeyCountChanged?.Invoke(_todayKeyCount);
+                    // Check if date changed
+                    string currentDate = DateTime.Now.ToString("yyyy-MM-dd");
+                    if (currentDate != _todayKeyCountDate)
+                    {
+                        SaveKeyCount();
+                        _todayKeyCountDate = currentDate;
+                        _todayKeyCount = 0;
+                    }
+
+                    // Count only non-ignored keys
+                    if (isKeyDown && !_ignoredKeys.Contains(hookStruct.vkCode))
+                    {
+                        _todayKeyCount++;
+                        KeyCountChanged?.Invoke(_todayKeyCount);
+                    }
                 }
             }
             return NativeMethods.CallNextHookEx(_keyboardHookId, nCode, wParam, lParam);
+        }
+        
+        /// <summary>
+        /// 获取按键名称
+        /// </summary>
+        private string GetKeyName(uint vkCode)
+        {
+            // 数字 0-9
+            if (vkCode >= 0x30 && vkCode <= 0x39)
+                return $"{(char)('0' + (vkCode - 0x30))}";
+            
+            // 字母 A-Z
+            if (vkCode >= 0x41 && vkCode <= 0x5A)
+                return $"{(char)('A' + (vkCode - 0x41))}";
+            
+            // 数字键 0-9
+            if (vkCode >= 0x60 && vkCode <= 0x69)
+                return $"NUMPAD_{(vkCode - 0x60)}";
+            
+            // F1-F24
+            if (vkCode >= 0x70 && vkCode <= 0x87)
+                return $"F{(vkCode - 0x70 + 1)}";
+            
+            return vkCode switch
+            {
+                0x08 => "BACKSPACE",
+                0x09 => "TAB",
+                0x0D => "ENTER",
+                0x10 => "SHIFT",
+                0x11 => "CTRL",
+                0x12 => "ALT",
+                0x13 => "PAUSE",
+                0x14 => "CAPS_LOCK",
+                0x1B => "ESC",
+                0x20 => "SPACE",
+                0x21 => "PAGE_UP",
+                0x22 => "PAGE_DOWN",
+                0x23 => "END",
+                0x24 => "HOME",
+                0x25 => "LEFT",
+                0x26 => "UP",
+                0x27 => "RIGHT",
+                0x28 => "DOWN",
+                0x2D => "INSERT",
+                0x2E => "DELETE",
+                0x5B => "WIN_LEFT",
+                0x5C => "WIN_RIGHT",
+                0x5D => "APPS",
+                0x6A => "NUMPAD_MUL",
+                0x6B => "NUMPAD_ADD",
+                0x6C => "NUMPAD_SEP",
+                0x6D => "NUMPAD_SUB",
+                0x6E => "NUMPAD_DEC",
+                0x6F => "NUMPAD_DIV",
+                0x90 => "NUM_LOCK",
+                0x91 => "SCROLL_LOCK",
+                0xA0 => "SHIFT_LEFT",
+                0xA1 => "SHIFT_RIGHT",
+                0xA2 => "CTRL_LEFT",
+                0xA3 => "CTRL_RIGHT",
+                0xA4 => "ALT_LEFT",
+                0xA5 => "ALT_RIGHT",
+                _ => $"VK_0x{vkCode:X2}"
+            };
+        }
+        
+        /// <summary>
+        /// 写入日志文件
+        /// </summary>
+        private void WriteLog(string message)
+        {
+            try
+            {
+                string logDir = Path.GetDirectoryName(_logFilePath)!;
+                if (!Directory.Exists(logDir))
+                {
+                    Directory.CreateDirectory(logDir);
+                }
+                
+                // 每天一个日志文件
+                string dailyLogFile = _logFilePath.Replace(".log", $"-{DateTime.Now:yyyy-MM-dd}.log");
+                File.AppendAllText(dailyLogFile, message + Environment.NewLine);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[KeyboardHook] 写入日志失败: {ex.Message}");
+            }
         }
 
         private void LoadKeyCount()

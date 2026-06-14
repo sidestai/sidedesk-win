@@ -1,0 +1,12 @@
+/* 选择器高亮样式 */
+.selector-highlight {
+  outline: 2px solid #2196F3 !important;
+  outline-offset: -2px;
+  background: rgba(33, 150, 243, 0.1) !important;
+}
+
+/* 防止页面元素被选中 */
+.selector-picker-active * {
+  cursor: crosshair !important;
+  user-select: none !important;
+}
