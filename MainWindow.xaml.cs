@@ -24,12 +24,23 @@ namespace SideDesk
 
             _currentScreen = screen;
 
+            // 应用背景透明度
+            ApplyBackgroundOpacity();
+
             // 配置 AppBar
             DockSide = side;
             AppBarWidth = 105;
             ScreenIndex = 0;
 
             Loaded += MainWindow_Loaded;
+        }
+
+        private void ApplyBackgroundOpacity()
+        {
+            var app = (App)Application.Current;
+            double opacity = app.AppSettings.BackgroundOpacity / 100.0;
+            Background = new SolidColorBrush(Color.FromArgb(
+                (byte)(opacity * 255), 0, 0, 0));
         }
 
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -138,6 +149,15 @@ namespace SideDesk
             var settingsWin = new SettingsWindow();
             settingsWin.Owner = this;
             settingsWin.ShowDialog();
+        }
+
+        /// <summary>
+        /// 打开窗口标题锁定器管理界面
+        /// </summary>
+        private void TitleLock_Click(object sender, RoutedEventArgs e)
+        {
+            var window = new TitleLockWindow { Owner = this };
+            window.ShowDialog();
         }
 
         private void CloseWindow_Click(object sender, RoutedEventArgs e)

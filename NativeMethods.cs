@@ -21,6 +21,17 @@ namespace SideDesk
         [DllImport("user32.dll")]
         internal static extern long SetWindowLongPtr(IntPtr hwnd, int index, long newStyle);
 
+        // 32位版本（用于x86兼容性）
+        [DllImport("user32.dll", EntryPoint = "GetWindowLong")]
+        internal static extern int GetWindowLong(IntPtr hwnd, int index);
+
+        [DllImport("user32.dll", EntryPoint = "SetWindowLong")]
+        internal static extern int SetWindowLong(IntPtr hwnd, int index, int newStyle);
+
+        // 窗口样式常量
+        public const int GWL_EXSTYLE = -20;
+        public const long WS_EX_TOOLWINDOW = 0x00000080;
+
         // Register window message
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         internal static extern int RegisterWindowMessage(string msg);
@@ -125,6 +136,7 @@ namespace SideDesk
         internal static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
         internal const int SW_RESTORE = 9;
+        internal const int SW_SHOW = 5;
         internal const uint WM_CLOSE = 0x0010;
 
         // ITaskbarList COM interface

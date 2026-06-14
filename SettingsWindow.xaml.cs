@@ -46,6 +46,9 @@ namespace SideDesk
             // 面板宽度
             widthBox.Text = _app.AppSettings.PanelWidth.ToString();
 
+            // 背景透明度
+            bgOpacityBox.Text = _app.AppSettings.BackgroundOpacity.ToString("F0");
+
             // 停靠位置
             dockCombo.Items.Add("左侧");
             dockCombo.Items.Add("右侧");
@@ -145,6 +148,49 @@ namespace SideDesk
                 _app.AppSettings.PanelWidth = width;
                 _app.AppSettings.Save();
                 _app.ApplyPanelWidth(width);
+            }
+        }
+
+        private void BgOpacity_LostFocus(object sender, RoutedEventArgs e)
+        {
+            ApplyBgOpacity();
+        }
+
+        private void BgOpacity_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                ApplyBgOpacity();
+            }
+        }
+
+        private void ApplyBgOpacity()
+        {
+            if (_isLoading) return;
+            if (!double.TryParse(bgOpacityBox.Text, out double opacity) || opacity < 0 || opacity > 100)
+            {
+                bgOpacityBox.Text = _app.AppSettings.BackgroundOpacity.ToString("F0");
+                return;
+            }
+
+            if (opacity != _app.AppSettings.BackgroundOpacity)
+            {
+                _app.AppSettings.BackgroundOpacity = opacity;
+                _app.AppSettings.Save();
+                ApplyPanelBackgroundOpacity();
+            }
+        }
+
+        private void ApplyPanelBackgroundOpacity()
+        {
+            double opacity = _app.AppSettings.BackgroundOpacity / 100.0;
+            foreach (Window window in Application.Current.Windows)
+            {
+                if (window is MainWindow mw)
+                {
+                    mw.Background = new SolidColorBrush(Color.FromArgb(
+                        (byte)(opacity * 255), 0, 0, 0));
+                }
             }
         }
 

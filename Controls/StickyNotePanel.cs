@@ -61,11 +61,15 @@ namespace SideDesk.Controls
                 Title = "便签",
                 Width = 420,
                 Height = height,
-                Left = left + width,
+                Left = left,  // left 已经是 sidebar 右侧边缘的 X 坐标，直接使用
                 Top = top,
                 WindowStartupLocation = WindowStartupLocation.Manual,
-                ResizeMode = ResizeMode.CanResize,
-                Owner = owner
+                ResizeMode = ResizeMode.NoResize,  // 改为不可调整大小
+                WindowStyle = WindowStyle.None,     // 移除标题栏
+                AllowsTransparency = true,          // 允许透明
+                Background = Brushes.Transparent,   // 透明背景
+                Owner = owner,
+                ShowInTaskbar = false               // 不显示在任务栏
             };
             _dialog.Loaded += (s, e) => HideFromTaskbar(_dialog);
             _dialog.SetBinding(Window.BackgroundProperty,
@@ -95,25 +99,79 @@ namespace SideDesk.Controls
 
         private void BuildUI()
         {
-            var grid = new Grid();
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 标题栏
-            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // 编辑区
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 底部按钮
+            // 创建带圆角和阴影的外层容器
+            var outerBorder = new Border
+            {
+                CornerRadius = new CornerRadius(12),
+                Background = new SolidColorBrush(Color.FromArgb(255, 30, 30, 30)), // 深灰色背景
+                Effect = new System.Windows.Media.Effects.DropShadowEffect
+                {
+                    Color = Colors.Black,
+                    Direction = 0,
+                    ShadowDepth = 0,
+                    BlurRadius = 20,
+                    Opacity = 0.5
+                },
+                Margin = new Thickness(10) // 为阴影留出空间
+            };
 
-            // 标题栏：时间信息
-            var headerPanel = new DockPanel { Margin = new Thickness(12, 8, 12, 6) };
+            var mainGrid = new Grid();
+            mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 标题栏
+            mainGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // 内容区
 
-            var titleText = new TextBlock
+            outerBorder.Child = mainGrid;
+
+            // === 标题栏区域 ===
+            var titleBar = new DockPanel();
+            titleBar.Background = new SolidColorBrush(Color.FromArgb(255, 40, 40, 40));
+            titleBar.Margin = new Thickness(0);
+            Grid.SetRow(titleBar, 0);
+
+            // 先添加关闭按钮（DockPanel的顺序很重要，最后添加的元素会占据剩余空间）
+            var closeButton = new Button
+            {
+                Content = "✕",
+                Width = 32,
+                Height = 32,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 8, 0),
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                Foreground = Brushes.White,
+                FontSize = 16,
+                Cursor = Cursors.Hand
+            };
+            closeButton.Style = null;
+            closeButton.Template = null;
+            closeButton.Click += (s, e) => SaveAndClose();
+
+            // 鼠标悬停效果
+            closeButton.MouseEnter += (s, e) => 
+            {
+                closeButton.Background = new SolidColorBrush(Color.FromArgb(255, 255, 50, 50));
+            };
+            closeButton.MouseLeave += (s, e) => 
+            {
+                closeButton.Background = Brushes.Transparent;
+            };
+
+            DockPanel.SetDock(closeButton, Dock.Right); // ✅ 关键：停靠到右侧
+            titleBar.Children.Add(closeButton);
+
+            // 标题文本
+            var titleLabel = new TextBlock
             {
                 Text = "便签",
-                FontSize = 15,
-                FontWeight = FontWeights.Bold,
                 Foreground = Brushes.White,
-                VerticalAlignment = VerticalAlignment.Center
+                FontSize = 14,
+                FontWeight = FontWeights.Bold,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(12, 8, 0, 8)
             };
-            DockPanel.SetDock(titleText, Dock.Left);
-            headerPanel.Children.Add(titleText);
+            titleBar.Children.Add(titleLabel); // 自动填充剩余空间
 
+            // 时间信息
             var timeText = new TextBlock
             {
                 Text = _currentNote.CreatedAt.ToString("MM-dd HH:mm"),
@@ -122,12 +180,24 @@ namespace SideDesk.Controls
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(10, 0, 0, 0)
             };
-            headerPanel.Children.Add(timeText);
+            timeText.VerticalAlignment = VerticalAlignment.Center;
+            titleBar.Children.Add(timeText); // 添加到titleLabel后面
 
-            Grid.SetRow(headerPanel, 0);
-            grid.Children.Add(headerPanel);
+            // 使标题栏可拖动窗口
+            titleBar.MouseLeftButtonDown += (s, e) => 
+            {
+                if (e.ClickCount == 2) return; // 双击不处理
+                _dialog.DragMove();
+            };
 
-            // 编辑区
+            mainGrid.Children.Add(titleBar);
+
+            // === 内容区域 ===
+            var contentPanel = new Grid();
+            contentPanel.Margin = new Thickness(12);
+            Grid.SetRow(contentPanel, 1);
+
+            // 编辑区（TextBox）
             _contentBox = new TextBox
             {
                 Text = _currentNote.Content,
@@ -143,13 +213,12 @@ namespace SideDesk.Controls
                 CaretBrush = Brushes.White,
                 VerticalAlignment = VerticalAlignment.Stretch
             };
-            Grid.SetRow(_contentBox, 1);
-            grid.Children.Add(_contentBox);
+            contentPanel.Children.Add(_contentBox);
 
             // 底部按钮栏
             var footerPanel = new DockPanel
             {
-                Margin = new Thickness(12, 6, 12, 10),
+                Margin = new Thickness(0, 8, 0, 0),
                 LastChildFill = false
             };
 
@@ -181,10 +250,13 @@ namespace SideDesk.Controls
             DockPanel.SetDock(copyBtn, Dock.Left);
             footerPanel.Children.Add(copyBtn);
 
-            Grid.SetRow(footerPanel, 2);
-            grid.Children.Add(footerPanel);
+            contentPanel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            contentPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            Grid.SetRow(footerPanel, 1);
+            contentPanel.Children.Add(footerPanel);
 
-            _dialog.Content = grid;
+            mainGrid.Children.Add(contentPanel);
+            _dialog.Content = outerBorder;
         }
 
         private void SaveIfChanged()
@@ -215,7 +287,7 @@ namespace SideDesk.Controls
         {
             if (IsOpen)
             {
-                _dialog.Left = left + width;
+                _dialog.Left = left;  // left 已经是 sidebar 右侧边缘的 X 坐标，直接使用
                 _dialog.Top = top;
                 _dialog.Height = height;
             }

@@ -451,7 +451,53 @@ namespace SideDesk.Services
             {
                 Columns = group.Columns,
                 Visibility = group.IsExpanded ? Visibility.Visible : Visibility.Collapsed,
-                Tag = "content:" + group.Id
+                Tag = "content:" + group.Id,
+                AllowDrop = true
+            };
+            
+            // 处理项拖放到分组空白区域
+            contentPanel.DragOver += (s, ev) =>
+            {
+                if (ev.Data.GetDataPresent("QuickItemId"))
+                {
+                    ev.Effects = DragDropEffects.Move;
+                    ev.Handled = true;
+                }
+            };
+            
+            contentPanel.Drop += (s, ev) =>
+            {
+                if (!ev.Data.GetDataPresent("QuickItemId")) return;
+                
+                string draggedItemId = (string)ev.Data.GetData("QuickItemId");
+                string sourceGroupId = (string)ev.Data.GetData("QuickItemGroupId");
+                
+                // 如果是同一个分组内的拖拽，不处理（由组内排序逻辑处理）
+                if (sourceGroupId == group.Id)
+                {
+                    ev.Handled = true;
+                    return;
+                }
+                
+                // 从源分组移除
+                QuickGroupManager.RemoveItem(sourceGroupId, draggedItemId);
+                
+                // 获取被拖拽的项
+                var allGroups = QuickGroupManager.GetAll();
+                var sourceGroup = allGroups.FirstOrDefault(g => g.Id == sourceGroupId);
+                var draggedItem = sourceGroup?.Items.FirstOrDefault(i => i.Id == draggedItemId);
+                
+                if (draggedItem != null)
+                {
+                    // 添加到目标分组
+                    QuickGroupManager.AddItem(group.Id, draggedItem);
+                    QuickGroupManager.Save();
+                    
+                    // 刷新 UI
+                    LoadGroups();
+                }
+                
+                ev.Handled = true;
             };
 
             titleText.MouseLeftButtonDown += (s, ev) =>
@@ -485,6 +531,28 @@ namespace SideDesk.Services
                 miWin.Click += (s2, ev2) => ShowPickWindowDialog(group.Id);
                 addSubMenu.Items.Add(miWin);
                 popup.Items.Add(addSubMenu);
+
+                // 添加模块子菜单
+                var moduleSubMenu = new MenuItem { Header = "添加模块" };
+                var moduleTypes = new (string Header, PanelType Type)[]
+                {
+                    ("便签", PanelType.StickyNotes),
+                    ("剪贴板收藏", PanelType.Clipboard),
+                    ("系统信息", PanelType.SystemMonitor),
+                    ("使用统计", PanelType.UsageStats),
+                    ("AI 对话", PanelType.AIChat),
+                    ("文件区", PanelType.FileArea),
+                    ("数据看板", PanelType.DataDashboard),
+                    ("计时器", PanelType.Timer)
+                };
+                foreach (var (header, type) in moduleTypes)
+                {
+                    var mi = new MenuItem { Header = header };
+                    var panelType = type;
+                    mi.Click += (s2, ev2) => AddModuleToGroup(group, panelType);
+                    moduleSubMenu.Items.Add(mi);
+                }
+                popup.Items.Add(moduleSubMenu);
                 popup.Items.Add(new Separator());
 
                 var expandItem = new MenuItem { Header = group.IsExpanded ? "收起" : "展开" };
@@ -553,7 +621,19 @@ namespace SideDesk.Services
                 var deleteItem = new MenuItem { Header = "删除分组" };
                 deleteItem.Click += (s2, ev2) =>
                 {
-                    if (MessageBox.Show($"确定删除分组 \"{group.Name}\"？", "确认", MessageBoxButton.YesNo) == MessageBoxResult.Yes)
+                    bool hasModules = group.ChildPanels != null && group.ChildPanels.Count > 0;
+                    string message;
+                    if (hasModules)
+                    {
+                        int count = group.ChildPanels!.Count;
+                        message = $"分组 \"{group.Name}\" 包含 {count} 个模块，删除后模块也将丢失。确定继续？";
+                    }
+                    else
+                    {
+                        message = $"确定删除分组 \"{group.Name}\"？";
+                    }
+
+                    if (MessageBox.Show(message, "确认", MessageBoxButton.YesNo) == MessageBoxResult.Yes)
                     {
                         QuickGroupManager.RemoveGroup(group.Id);
                         QuickGroupManager.Save();
@@ -591,8 +671,107 @@ namespace SideDesk.Services
                 BorderThickness = new Thickness(2),
                 BorderBrush = Brushes.Transparent,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
-                FontSize = 11
+                FontSize = 11,
+                AllowDrop = true
             };
+            
+            // 拖拽开始：检测鼠标移动距离后启动拖拽
+            Point? dragStartPoint = null;
+            bool isDragging = false;
+            
+            btn.PreviewMouseLeftButtonDown += (s, ev) =>
+            {
+                if (!isDragging)
+                {
+                    dragStartPoint = ev.GetPosition(btn);
+                }
+            };
+            
+            btn.PreviewMouseMove += (s, ev) =>
+            {
+                if (dragStartPoint == null || isDragging) return;
+                
+                Point currentPoint = ev.GetPosition(btn);
+                Vector diff = dragStartPoint.Value - currentPoint;
+                
+                // 鼠标移动超过阈值，启动拖拽
+                if (Math.Abs(diff.X) > SystemParameters.MinimumHorizontalDragDistance ||
+                    Math.Abs(diff.Y) > SystemParameters.MinimumVerticalDragDistance)
+                {
+                    isDragging = true;
+                    try
+                    {
+                        var dragData = new DataObject("QuickItemId", item.Id);
+                        dragData.SetData("QuickItemGroupId", groupId);
+                        DragDrop.DoDragDrop(btn, dragData, DragDropEffects.Move);
+                    }
+                    finally
+                    {
+                        isDragging = false;
+                        dragStartPoint = null;
+                    }
+                }
+            };
+            
+            // 拖拽进入：显示可放置提示
+            btn.DragEnter += (s, ev) =>
+            {
+                if (ev.Data.GetDataPresent("QuickItemId"))
+                {
+                    ev.Effects = DragDropEffects.Move;
+                    btn.BorderBrush = ActiveHighlightBorder;
+                    ev.Handled = true;
+                }
+            };
+            
+            // 拖拽离开：清除提示
+            btn.DragLeave += (s, ev) =>
+            {
+                if (ev.Data.GetDataPresent("QuickItemId"))
+                {
+                    btn.BorderBrush = Brushes.Transparent;
+                    ev.Handled = true;
+                }
+            };
+            
+            // 放下：移动项到目标分组
+            btn.Drop += (s, ev) =>
+            {
+                if (!ev.Data.GetDataPresent("QuickItemId")) return;
+                
+                string draggedItemId = (string)ev.Data.GetData("QuickItemId");
+                string sourceGroupId = (string)ev.Data.GetData("QuickItemGroupId");
+                
+                // 如果是同一个分组，不处理（组内排序由其他逻辑处理）
+                if (sourceGroupId == groupId && draggedItemId == item.Id)
+                {
+                    btn.BorderBrush = Brushes.Transparent;
+                    ev.Handled = true;
+                    return;
+                }
+                
+                // 从源分组移除
+                QuickGroupManager.RemoveItem(sourceGroupId, draggedItemId);
+                
+                // 获取被拖拽的项
+                var allGroups = QuickGroupManager.GetAll();
+                var sourceGroup = allGroups.FirstOrDefault(g => g.Id == sourceGroupId);
+                var draggedItem = sourceGroup?.Items.FirstOrDefault(i => i.Id == draggedItemId);
+                
+                if (draggedItem != null)
+                {
+                    // 添加到目标分组
+                    QuickGroupManager.AddItem(groupId, draggedItem);
+                    QuickGroupManager.Save();
+                    
+                    // 刷新 UI
+                    LoadGroups();
+                }
+                
+                btn.BorderBrush = Brushes.Transparent;
+                ev.Handled = true;
+            };
+            
             btn.Click += (s, ev) => OpenQuickItem(item);
             panel.Children.Add(btn);
 
@@ -1800,46 +1979,20 @@ namespace SideDesk.Services
 
             if (candidates.Count == 0) { MessageBox.Show("未检测到可选的窗口"); return; }
 
-            var dialog = new Window
+            var dialog = new SelectWindowDialog
             {
-                Title = "选择窗口", Width = 500, Height = 450,
-                WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                ResizeMode = ResizeMode.CanResize,
-                Background = new SolidColorBrush(Color.FromRgb(30, 30, 30)),
-                Foreground = Brushes.White,
                 Owner = OwnerWindow
             };
+            dialog.PopulateCandidates(candidates);
 
-            var rootPanel = new DockPanel { Margin = new Thickness(10) };
-            var listBox = new ListBox
+            if (dialog.ShowDialog() == true)
             {
-                Background = new SolidColorBrush(Color.FromRgb(45, 45, 45)),
-                Foreground = Brushes.White,
-                SelectionMode = SelectionMode.Extended
-            };
-            foreach (var c in candidates)
-            {
-                string display = string.IsNullOrEmpty(c.ProcessName) ? c.Title : $"[{c.ProcessName}] {c.Title}";
-                var lbItem = new ListBoxItem { Content = display, Tag = c };
-                listBox.Items.Add(lbItem);
-            }
-
-            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 10, 0, 0) };
-            DockPanel.SetDock(btnPanel, Dock.Bottom);
-            var okBtn = new Button { Content = "确定", Width = 70, Margin = new Thickness(0, 0, 10, 0) };
-            var cancelBtn = new Button { Content = "取消", Width = 70 };
-            okBtn.Click += (s, ev) =>
-            {
-                var selected = listBox.SelectedItems.Cast<ListBoxItem>().ToList();
-                if (selected.Count == 0) { MessageBox.Show("请选择至少一个窗口"); return; }
-
                 string groupId = string.IsNullOrEmpty(targetGroupId)
                     ? QuickGroupManager.GetOrCreateDefaultGroup()
                     : targetGroupId;
 
-                foreach (var lbi in selected)
+                foreach (var info in dialog.SelectedWindows)
                 {
-                    var info = ((IntPtr Hwnd, string Title, string? ExePath, string? ProcessName, string? ClassName))lbi.Tag;
                     if (string.IsNullOrEmpty(info.ExePath)) continue;
                     var newItem = new QuickItem
                     {
@@ -1856,15 +2009,33 @@ namespace SideDesk.Services
                 }
                 QuickGroupManager.Save();
                 LoadGroups();
-                dialog.Close();
-            };
-            cancelBtn.Click += (s, ev) => dialog.Close();
-            btnPanel.Children.Add(okBtn); btnPanel.Children.Add(cancelBtn);
-            rootPanel.Children.Add(btnPanel);
-            rootPanel.Children.Add(listBox);
+            }
+        }
 
-            dialog.Content = rootPanel;
-            dialog.ShowDialog();
+        /// <summary>
+        /// 向分组添加模块（便签、剪贴板等）
+        /// </summary>
+        private void AddModuleToGroup(QuickGroup group, PanelType type)
+        {
+            group.ChildPanels ??= new List<PanelItem>();
+            
+            var newPanel = new PanelItem { Type = type };
+            
+            // ✅ 为Timer类型设置SkipWrapper=true，跳过外层容器包装
+            if (type == PanelType.Timer)
+            {
+                newPanel.SkipWrapper = true;  // 跳过外层容器包装
+                newPanel.TimerItems = new List<TimerItem>();  // 初始化为空列表
+            }
+            // 新面板初始化为空，避免触发全局迁移
+            else if (type == PanelType.StickyNotes)
+            {
+                newPanel.StickyNotes = new List<StickyNote>();
+            }
+            
+            group.ChildPanels.Add(newPanel);
+            QuickGroupManager.Save();
+            LoadGroups(); // 重新加载分组UI
         }
 
         #endregion

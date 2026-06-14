@@ -51,7 +51,7 @@ namespace SideDesk.Controls
                 Title = "使用统计",
                 Width = 420,
                 Height = height,
-                Left = left + width,
+                Left = left,  // left 已经是 sidebar 右侧边缘的 X 坐标，直接使用
                 Top = top,
                 WindowStartupLocation = WindowStartupLocation.Manual,
                 ResizeMode = ResizeMode.CanResize,
@@ -767,7 +767,7 @@ namespace SideDesk.Controls
         {
             if (IsOpen)
             {
-                _dialog.Left = left + width;
+                _dialog.Left = left;  // left 已经是 sidebar 右侧边缘的 X 坐标，直接使用
                 _dialog.Top = top;
                 _dialog.Height = height;
             }

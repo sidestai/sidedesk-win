@@ -24,6 +24,7 @@ namespace SideDesk
 
         private MainWindow? _leftWindow;
         private MainWindow? _rightWindow;
+        private System.Windows.Forms.NotifyIcon? _notifyIcon;
 
         protected override void OnStartup(StartupEventArgs e)
         {
@@ -58,6 +59,9 @@ namespace SideDesk
             ApplyTheme(AppSettings.ThemeMode);
 
             SwitchLayout(AppSettings.Layout, AppSettings.LeftScreen, AppSettings.RightScreen, save: false);
+
+            // 初始化系统托盘图标
+            InitNotifyIcon();
 
             // 【已禁用】启动 5 秒后静默检查更新 - 2026-06-09 禁用，解决程序自动重启问题
             // 如果以后需要启用，请取消下面的注释
@@ -138,6 +142,9 @@ namespace SideDesk
 
         protected override void OnExit(ExitEventArgs e)
         {
+            // 释放托盘图标
+            try { _notifyIcon?.Dispose(); } catch { }
+
             // 【已禁用】CDP浏览器服务 - 2026-06-09 禁用，解决重复启动问题
             // try { Services.CdpBrowserService.Instance.Dispose(); } catch { }
             base.OnExit(e);
@@ -473,6 +480,51 @@ namespace SideDesk
             catch { }
         }
         
+        #endregion
+
+        #region 系统托盘图标
+
+        /// <summary>初始化系统托盘图标（右键菜单含退出选项）</summary>
+        private void InitNotifyIcon()
+        {
+            try
+            {
+                // 获取应用程序图标
+                System.Drawing.Icon? appIcon = null;
+                try
+                {
+                    var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+                    if (!string.IsNullOrEmpty(exePath))
+                        appIcon = System.Drawing.Icon.ExtractAssociatedIcon(exePath);
+                }
+                catch { }
+
+                var contextMenu = new System.Windows.Forms.ContextMenuStrip();
+                contextMenu.Items.Add("退出 SideDesk", null, (s, e) => CloseAll());
+
+                _notifyIcon = new System.Windows.Forms.NotifyIcon
+                {
+                    Icon = appIcon ?? System.Drawing.SystemIcons.Application,
+                    Text = "SideDesk",
+                    Visible = true,
+                    ContextMenuStrip = contextMenu
+                };
+
+                // 双击托盘图标激活主窗口
+                _notifyIcon.DoubleClick += (s, e) =>
+                {
+                    if (_leftWindow != null)
+                        _leftWindow.Activate();
+                    else if (_rightWindow != null)
+                        _rightWindow.Activate();
+                };
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[NotifyIcon] 初始化失败: {ex.Message}");
+            }
+        }
+
         #endregion
     }
 }

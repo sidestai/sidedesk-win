@@ -12,6 +12,8 @@
             <MenuItem x:Name="editModeMenu" Header="编辑模式" IsCheckable="True" IsChecked="False" Click="ToggleEditMode_Click"/>
             <Separator />
             <MenuItem x:Name="addModuleMenu" Header="添加模块">
+                <MenuItem Header="分组" Click="AddGroupPanel_Click"/>
+                <Separator/>
                 <MenuItem Header="快捷方式" Click="AddQuickGroupPanel_Click"/>
                 <MenuItem Header="便签" Click="AddStickyNotesPanel_Click"/>
                 <MenuItem Header="剪贴板收藏" Click="AddClipboardPanel_Click"/>
@@ -28,10 +30,6 @@
                 <MenuItem Header="右侧停靠" Click="Layout_Right_Click" />
                 <MenuItem Header="双侧停靠" Click="Layout_Both_Click" />
             </MenuItem>
-            <MenuItem Header="屏幕" x:Name="ScreenMenu">
-                <MenuItem Header="切换到 A 屏" Click="SwitchToScreenA_Click" />
-                <MenuItem Header="切换到 B 屏" Click="SwitchToScreenB_Click" />
-            </MenuItem>
             <Separator />
             <MenuItem Header="工具" x:Name="ToolsMenu" SubmenuOpened="ToolsMenu_SubmenuOpened">
                 <MenuItem Header="(加载中...)" />
@@ -41,7 +39,6 @@
                 <MenuItem Header="(加载中...)" />
             </MenuItem>
             <Separator />
-            <MenuItem Header="AI 对话" Click="ContextMenu_AIChatClick" />
             <MenuItem Header="使用统计" Click="ContextMenu_UsageStatsClick" />
         </ContextMenu>
     </UserControl.ContextMenu>
@@ -58,8 +55,8 @@
         <Border DockPanel.Dock="Bottom" Margin="5,2" Padding="5,3" CornerRadius="3"
                 Background="{Binding GroupBGColor, Source={x:Static framework:AppSettings.Instance}, Converter={StaticResource StringToSolidColorBrushConverter}}">
             <StackPanel x:Name="statusBar" Orientation="Horizontal">
-                <TextBlock x:Name="keyCountText" Text="⌨ 0" Margin="0,0,10,0" Style="{StaticResource DataText}"/>
-                <TextBlock x:Name="mouseDistText" Text="🖱 0m" Style="{StaticResource DataText}"/>
+                <TextBlock x:Name="keyCountText" Text="⌨ 0" Margin="0,0,10,0" FontSize="11" Style="{StaticResource DataText}"/>
+                <TextBlock x:Name="mouseDistText" Text="🖱 0m" FontSize="11" Style="{StaticResource DataText}"/>
             </StackPanel>
         </Border>
         

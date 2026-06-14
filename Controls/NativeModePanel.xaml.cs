@@ -193,6 +193,12 @@ namespace SideDesk.Controls
                     Opacity = 0.5
                 });
             }
+
+            // 重新渲染后，更新瞬移窗口区（编辑模式切换时需要重建）
+            if (_teleportedWindows.Count > 0)
+            {
+                UpdateTeleportWidget();
+            }
         }
 
         /// <summary>
@@ -212,6 +218,7 @@ namespace SideDesk.Controls
                 PanelType.ClipboardHistory => BuildClipboardHistoryWidget(item),
                 PanelType.DataDashboard => BuildDataDashboardWidget(item),
                 PanelType.Timer => BuildTimerWidget(item),
+                PanelType.Group => BuildGroupWidget(item),
                 _ => null
             };
         }
@@ -219,7 +226,7 @@ namespace SideDesk.Controls
         /// <summary>
         /// 通用面板包裹器：带标题和删除按钮
         /// </summary>
-        private Border WrapWidget(string defaultTitle, UIElement content, PanelItem item)
+        private Border WrapWidget(string defaultTitle, UIElement content, PanelItem item, Action? onAddClick = null)
         {
             var displayTitle = string.IsNullOrEmpty(item.Title) ? defaultTitle : item.Title;
 
@@ -289,17 +296,30 @@ namespace SideDesk.Controls
                 };
             }
 
-            var deleteBtn = new Button
+            var actionBtn = new Button
             {
-                Content = "✕", FontSize = 10, Padding = new Thickness(3, 0, 3, 0),
-                Background = Brushes.Transparent, Foreground = (Brush)FindResource("BrushTextMuted"),
-                BorderThickness = new Thickness(0), Cursor = Cursors.Hand,
-                HorizontalAlignment = HorizontalAlignment.Right
+                Content = _isEditMode ? "✕" : "+",
+                FontSize = _isEditMode ? 10 : 14,
+                Padding = new Thickness(3, 0, 3, 0),
+                Background = Brushes.Transparent,
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Visibility = _isEditMode ? Visibility.Collapsed : Visibility.Visible
             };
-            deleteBtn.Click += (s, e) => RemovePanel(item);
-            deleteBtn.Visibility = Visibility.Collapsed;
-            DockPanel.SetDock(deleteBtn, Dock.Right);
-            header.Children.Add(deleteBtn);
+
+            if (_isEditMode)
+            {
+                actionBtn.Click += (s, e) => RemovePanel(item);
+            }
+            else if (onAddClick != null)
+            {
+                actionBtn.Click += (s, e) => onAddClick();
+            }
+
+            DockPanel.SetDock(actionBtn, Dock.Right);
+            header.Children.Add(actionBtn);
             header.Children.Add(titleBlock);
 
             var stack = new StackPanel();
@@ -319,8 +339,8 @@ namespace SideDesk.Controls
 
             if (_isEditMode)
             {
-                border.MouseEnter += (s, e) => deleteBtn.Visibility = Visibility.Visible;
-                border.MouseLeave += (s, e) => deleteBtn.Visibility = Visibility.Collapsed;
+                border.MouseEnter += (s, e) => actionBtn.Visibility = Visibility.Visible;
+                border.MouseLeave += (s, e) => actionBtn.Visibility = Visibility.Collapsed;
             }
 
             return border;
@@ -329,14 +349,197 @@ namespace SideDesk.Controls
         private void RemovePanel(PanelItem item)
         {
             if (_currentWindowConfig == null || _configManager == null) return;
-            _currentWindowConfig.Panels.Remove(item);
-            _configManager.Save();
-            RenderPanels();
+
+            // 先从顶层面板列表删除
+            if (_currentWindowConfig.Panels.Remove(item))
+            {
+                _configManager.Save();
+                RenderPanels();
+                return;
+            }
+
+            // 再从分组的子面板列表中删除
+            foreach (var group in _currentWindowConfig.Panels.Where(p => p.Type == PanelType.Group && p.ChildPanels != null))
+            {
+                if (group.ChildPanels!.Remove(item))
+                {
+                    _configManager.Save();
+                    RenderPanels();
+                    return;
+                }
+            }
         }
 
         #endregion
 
         #region Panel Builders
+
+        /// <summary>构建分组容器：可展开/收起、右键添加模块</summary>
+        private UIElement BuildGroupWidget(PanelItem item)
+        {
+            item.ChildPanels ??= new List<PanelItem>();
+
+            var container = new StackPanel();
+
+            // 标题栏（展开/收起箭头 + 分组名）
+            var titleBar = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
+            var arrowBtn = new Button
+            {
+                Content = item.IsExpanded ? "▼" : "▶",
+                Width = 22, Height = 22,
+                Background = Brushes.Transparent,
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                BorderThickness = new Thickness(0),
+                FontSize = 10,
+                Padding = new Thickness(0),
+                Cursor = Cursors.Hand
+            };
+            DockPanel.SetDock(arrowBtn, Dock.Left);
+            titleBar.Children.Add(arrowBtn);
+
+            var titleBlock = new TextBlock
+            {
+                Text = string.IsNullOrEmpty(item.Title) ? "分组" : item.Title,
+                FontWeight = FontWeights.SemiBold,
+                FontSize = 13,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(6, 0, 0, 0),
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                Cursor = _isEditMode ? Cursors.Hand : Cursors.Arrow
+            };
+
+            // 双击编辑分组名
+            if (_isEditMode)
+            {
+                titleBlock.ToolTip = "双击编辑名称";
+                titleBlock.MouseLeftButtonDown += (s, e) =>
+                {
+                    if (e.ClickCount == 2)
+                    {
+                        var parent = titleBlock.Parent as Panel;
+                        if (parent == null) return;
+                        var editBox = new TextBox
+                        {
+                            Text = titleBlock.Text,
+                            FontWeight = FontWeights.Bold,
+                            MinWidth = 50,
+                            Background = Brushes.Transparent,
+                            Foreground = (Brush)FindResource("BrushTextMain"),
+                            BorderThickness = new Thickness(0, 0, 0, 1),
+                            BorderBrush = (Brush)FindResource("BrushAccent"),
+                            Padding = new Thickness(0),
+                            VerticalAlignment = VerticalAlignment.Center,
+                            CaretBrush = (Brush)FindResource("BrushTextMain")
+                        };
+                        int index = parent.Children.IndexOf(titleBlock);
+                        parent.Children.Remove(titleBlock);
+                        parent.Children.Insert(index, editBox);
+                        editBox.Focus();
+                        editBox.SelectAll();
+
+                        bool committed = false;
+                        void CommitEdit()
+                        {
+                            if (committed) return;
+                            committed = true;
+                            var newTitle = editBox.Text.Trim();
+                            item.Title = string.IsNullOrEmpty(newTitle) ? null : newTitle;
+                            _configManager?.Save();
+                            RenderPanels();
+                        }
+                        editBox.LostFocus += (s2, e2) => CommitEdit();
+                        editBox.KeyDown += (s2, e2) =>
+                        {
+                            if (e2.Key == System.Windows.Input.Key.Enter) CommitEdit();
+                            else if (e2.Key == System.Windows.Input.Key.Escape) RenderPanels();
+                        };
+                        e.Handled = true;
+                    }
+                };
+            }
+
+            // 标题栏右侧：删除按钮
+            var deleteBtn = new Button
+            {
+                Content = "✕", FontSize = 10, Padding = new Thickness(3, 0, 3, 0),
+                Background = Brushes.Transparent, Foreground = (Brush)FindResource("BrushTextMuted"),
+                BorderThickness = new Thickness(0), Cursor = Cursors.Hand,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Visibility = Visibility.Collapsed
+            };
+            deleteBtn.Click += (s, e) => RemovePanel(item);
+            DockPanel.SetDock(deleteBtn, Dock.Right);
+            titleBar.Children.Insert(0, deleteBtn); // 先加删除按钮（Dock.Right）
+
+            titleBar.Children.Add(titleBlock);
+
+            // 右键菜单：添加模块到分组
+            var groupContextMenu = new ContextMenu();
+            var addSubMenu = new MenuItem { Header = "添加模块" };
+            foreach (var (header, type) in new (string, PanelType)[]
+            {
+                ("快捷方式", PanelType.QuickGroup),
+                ("便签", PanelType.StickyNotes),
+                ("剪贴板收藏", PanelType.Clipboard),
+                ("系统信息", PanelType.SystemMonitor),
+                ("使用统计", PanelType.UsageStats),
+                ("AI 对话", PanelType.AIChat),
+                ("文件区", PanelType.FileArea),
+                ("数据看板", PanelType.DataDashboard),
+                ("计时器", PanelType.Timer)
+            })
+            {
+                var mi = new MenuItem { Header = header };
+                var panelType = type;
+                mi.Click += (s, ev) => AddModuleToGroup(item, panelType);
+                addSubMenu.Items.Add(mi);
+            }
+            groupContextMenu.Items.Add(addSubMenu);
+            titleBar.ContextMenu = groupContextMenu;
+
+            container.Children.Add(titleBar);
+
+            // 内容区（子面板）
+            var contentPanel = new StackPanel
+            {
+                Visibility = item.IsExpanded ? Visibility.Visible : Visibility.Collapsed
+            };
+            foreach (var child in item.ChildPanels)
+            {
+                var widget = CreatePanelWidget(child);
+                if (widget != null) contentPanel.Children.Add(widget);
+            }
+            container.Children.Add(contentPanel);
+
+            // 展开/收起事件
+            arrowBtn.Click += (s, e) =>
+            {
+                item.IsExpanded = !item.IsExpanded;
+                contentPanel.Visibility = item.IsExpanded ? Visibility.Visible : Visibility.Collapsed;
+                arrowBtn.Content = item.IsExpanded ? "▼" : "▶";
+                _configManager?.Save();
+            };
+
+            // 分组外框（轻量 Border，无额外标题栏）
+            var border = new Border
+            {
+                Margin = new Thickness(0, 0, 0, 12),
+                Padding = new Thickness(0, 10, 0, 10),
+                CornerRadius = new CornerRadius(6),
+                Background = (Brush)FindResource("BrushInputBG"),
+                BorderBrush = (Brush)FindResource("BrushBorder"),
+                BorderThickness = new Thickness(1),
+                Child = container
+            };
+
+            if (_isEditMode)
+            {
+                border.MouseEnter += (s, e) => deleteBtn.Visibility = Visibility.Visible;
+                border.MouseLeave += (s, e) => deleteBtn.Visibility = Visibility.Collapsed;
+            }
+
+            return border;
+        }
 
         private UIElement BuildQuickGroupWidget(PanelItem item)
         {
@@ -391,39 +594,36 @@ namespace SideDesk.Controls
 
         private UIElement BuildStickyNotesWidget(PanelItem item)
         {
-            var container = new StackPanel();
-
-            // 顶部操作栏
-            var headerPanel = new DockPanel { Margin = new Thickness(0, 0, 0, 5) };
-            var addNoteBtn = new Button
+            // 便签数据 per-panel 存储（新面板从空开始，旧面板迁移全局数据）
+            if (item.StickyNotes == null)
             {
-                Content = "+", Width = 20, Height = 20, FontSize = 14,
-                Background = Brushes.Transparent, Foreground = (Brush)FindResource("BrushTextMain"),
-                BorderThickness = new Thickness(0), Cursor = Cursors.Hand,
-                HorizontalAlignment = HorizontalAlignment.Right,
-                Visibility = _isEditMode ? Visibility.Visible : Visibility.Collapsed
-            };
-            DockPanel.SetDock(addNoteBtn, Dock.Right);
-            headerPanel.Children.Add(addNoteBtn);
-            container.Children.Add(headerPanel);
+                var globalNotes = StickyNoteManager.GetAll();
+                item.StickyNotes = globalNotes.Count > 0
+                    ? new List<StickyNote>(globalNotes)
+                    : new List<StickyNote>();
+                _configManager?.Save();
+            }
+
+            var container = new StackPanel();
 
             // 便签列表
             var notePanel = new StackPanel();
             container.Children.Add(notePanel);
 
             // 渲染便签
-            RefreshStickyNotesInto(notePanel);
+            RefreshPanelStickyNotes(notePanel, item);
 
-            // 添加便签事件
-            addNoteBtn.Click += (s, e) =>
+            // 添加便签逻辑（用于 WrapWidget 的 onAddClick 回调）
+            void AddNote()
             {
                 var note = new StickyNote();
-                StickyNoteManager.Add(note);
-                RefreshStickyNotesInto(notePanel);
-                OpenStickyNoteEditor(note.Id, notePanel);
-            };
+                item.StickyNotes.Insert(0, note);
+                _configManager?.Save();
+                RefreshPanelStickyNotes(notePanel, item);
+                OpenPanelStickyNoteEditor(note, notePanel, item);
+            }
 
-            return WrapWidget("📝 便签", container, item);
+            return WrapWidget("📝 便签", container, item, _isEditMode ? null : AddNote);
         }
 
         private UIElement BuildClipboardWidget(PanelItem item)
@@ -653,7 +853,7 @@ namespace SideDesk.Controls
                 Height = 28,
                 Margin = new Thickness(0, 0, 0, 8),
                 Cursor = Cursors.Hand,
-                Visibility = _isEditMode ? Visibility.Visible : Visibility.Collapsed
+                Visibility = item.SkipWrapper ? Visibility.Visible : (_isEditMode ? Visibility.Visible : Visibility.Collapsed)
             };
             addBtn.Click += (s, e) =>
             {
@@ -670,7 +870,15 @@ namespace SideDesk.Controls
                 container.Children.Add(timerCard);
             }
 
-            return WrapWidget("⏱ 计时器", container, item);
+            // ✅ 根据SkipWrapper标记决定是否使用外层容器
+            if (item.SkipWrapper)
+            {
+                return container;  // 直接返回内容，不用外层容器
+            }
+            else
+            {
+                return WrapWidget("⏱ 计时器", container, item);  // 用外层容器包裹
+            }
         }
 
         private Border CreateTimerCard(TimerItem timer, PanelItem panelItem)
@@ -1361,7 +1569,14 @@ namespace SideDesk.Controls
                     System.Windows.Threading.DispatcherPriority.Background);
             };
 
-            _clipboardService.Start();
+            // 传入主窗口句柄，确保剪贴板消息可靠送达
+            IntPtr mainHwnd = IntPtr.Zero;
+            if (_mainWindow != null)
+            {
+                var helper = new System.Windows.Interop.WindowInteropHelper(_mainWindow);
+                mainHwnd = helper.Handle;
+            }
+            _clipboardService.Start(mainHwnd);
         }
 
         private void RefreshClipboardHistoryUI()
@@ -1489,7 +1704,11 @@ namespace SideDesk.Controls
         private void AddPanel(PanelType type)
         {
             if (_currentWindowConfig == null || _configManager == null) return;
-            _currentWindowConfig.Panels.Add(new PanelItem { Type = type });
+            var newPanel = new PanelItem { Type = type };
+            // 新面板初始化为空，避免触发全局迁移
+            if (type == PanelType.StickyNotes)
+                newPanel.StickyNotes = new List<StickyNote>();
+            _currentWindowConfig.Panels.Add(newPanel);
 
             // 自动开启编辑模式
             _isEditMode = true;
@@ -1576,6 +1795,49 @@ namespace SideDesk.Controls
             dialog.ShowDialog();
             return resultId;
         }
+        private void AddGroupPanel_Click(object sender, RoutedEventArgs e)
+        {
+            if (_currentWindowConfig == null || _configManager == null) return;
+            _currentWindowConfig.Panels.Add(new PanelItem
+            {
+                Type = PanelType.Group,
+                Title = "新分组",
+                ChildPanels = new List<PanelItem>(),
+                IsExpanded = true
+            });
+            _configManager.Save();
+            RenderPanels();
+        }
+
+        private void AddModuleToGroup(PanelItem groupItem, PanelType type)
+        {
+            groupItem.ChildPanels ??= new List<PanelItem>();
+            
+            if (type == PanelType.Timer)
+            {
+                // 对于计时器，创建空的容器，不添加默认计时器
+                var timerPanel = new PanelItem 
+                { 
+                    Type = PanelType.Timer,
+                    TimerItems = new List<TimerItem>(),  // ✅ 空列表，不添加默认项
+                    SkipWrapper = true  // ✅ 标记跳过外层容器
+                };
+                
+                groupItem.ChildPanels.Add(timerPanel);
+            }
+            else
+            {
+                var newPanel = new PanelItem { Type = type };
+                // 新面板初始化为空，避免触发全局迁移
+                if (type == PanelType.StickyNotes)
+                    newPanel.StickyNotes = new List<StickyNote>();
+                groupItem.ChildPanels.Add(newPanel);
+            }
+            
+            _configManager?.Save();
+            RenderPanels();
+        }
+
         private void AddStickyNotesPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.StickyNotes);
         private void AddClipboardPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.Clipboard);
         private void AddSystemMonitorPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.SystemMonitor);
@@ -1755,6 +2017,106 @@ namespace SideDesk.Controls
             }
         }
 
+        /// <summary>渲染面板级便签（per-panel 存储）</summary>
+        private void RefreshPanelStickyNotes(StackPanel container, PanelItem item)
+        {
+            container.Children.Clear();
+            var notes = item.StickyNotes ?? new List<StickyNote>();
+            foreach (var note in notes.OrderByDescending(n => n.UpdatedAt))
+            {
+                container.Children.Add(BuildPanelStickyNoteItem(note, container, item));
+            }
+            if (notes.Count == 0)
+            {
+                container.Children.Add(new TextBlock
+                {
+                    Text = "（暂无便签）",
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
+                    FontSize = 11,
+                    Margin = new Thickness(4)
+                });
+            }
+        }
+
+        private UIElement BuildPanelStickyNoteItem(StickyNote note, StackPanel container, PanelItem item)
+        {
+            var row = new DockPanel
+            {
+                Margin = new Thickness(2, 1, 2, 1),
+                Cursor = Cursors.Hand,
+                Height = 22
+            };
+
+            var delBtn = new Button
+            {
+                Content = "✕", Width = 18, Height = 18,
+                Background = Brushes.Transparent,
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                BorderThickness = new Thickness(0), FontSize = 10,
+                Padding = new Thickness(0), Cursor = Cursors.Hand,
+                ToolTip = "删除", Visibility = Visibility.Collapsed
+            };
+            DockPanel.SetDock(delBtn, Dock.Right);
+            row.Children.Add(delBtn);
+
+            if (_isEditMode)
+            {
+                row.MouseEnter += (s, e) => delBtn.Visibility = Visibility.Visible;
+                row.MouseLeave += (s, e) => delBtn.Visibility = Visibility.Collapsed;
+            }
+
+            var textBlock = new TextBlock
+            {
+                Text = note.Preview, FontSize = 11,
+                Foreground = (Brush)FindResource("BrushTextMain"), VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                ToolTip = note.Content?.Length > 200 ? note.Content.Substring(0, 200) + "..." : note.Content
+            };
+            row.Children.Add(textBlock);
+
+            row.MouseLeftButtonUp += (s, e) =>
+            {
+                if (e.Handled) return;
+                OpenPanelStickyNoteEditor(note, container, item);
+            };
+
+            delBtn.Click += (s, e) =>
+            {
+                item.StickyNotes?.RemoveAll(n => n.Id == note.Id);
+                _configManager?.Save();
+                RefreshPanelStickyNotes(container, item);
+                e.Handled = true;
+            };
+
+            return row;
+        }
+
+        private void OpenPanelStickyNoteEditor(StickyNote note, StackPanel container, PanelItem item)
+        {
+            if (_stickyNotePanelDialog == null)
+                _stickyNotePanelDialog = new StickyNotePanel();
+
+            if (_mainWindow != null)
+            {
+                // 根据侧边栏停靠位置决定便签弹出方向
+                double noteLeft;
+                if (_mainWindow.DockSide == DockEdge.Left)
+                    noteLeft = _mainWindow.Left + _mainWindow.Width; // 左侧停靠 -> 弹在右边（紧贴）
+                else
+                    noteLeft = _mainWindow.Left - 420;               // 右侧停靠 -> 弹在左边（紧贴，420是弹窗宽度）
+
+                _stickyNotePanelDialog.Show(_mainWindow,
+                    noteLeft,
+                    _mainWindow.Top, 300, _mainWindow.Height,
+                    note, () =>
+                    {
+                        note.UpdatedAt = DateTime.Now;
+                        _configManager?.Save();
+                        RefreshPanelStickyNotes(container, item);
+                    });
+            }
+        }
+
         private UIElement BuildStickyNoteItem(StickyNote note, StackPanel container)
         {
             var row = new DockPanel
@@ -1820,8 +2182,15 @@ namespace SideDesk.Controls
 
             if (_mainWindow != null)
             {
+                // 根据侧边栏停靠位置决定便签弹出方向
+                double noteLeft;
+                if (_mainWindow.DockSide == DockEdge.Left)
+                    noteLeft = _mainWindow.Left + _mainWindow.Width; // 左侧停靠 -> 弹在右边（紧贴）
+                else
+                    noteLeft = _mainWindow.Left - 420;               // 右侧停靠 -> 弹在左边（紧贴，420是弹窗宽度）
+
                 _stickyNotePanelDialog.Show(_mainWindow,
-                    _mainWindow.Left + _mainWindow.Width,
+                    noteLeft,
                     _mainWindow.Top, 300, _mainWindow.Height,
                     note, () => RefreshStickyNotesInto(container));
             }
@@ -2413,11 +2782,6 @@ namespace SideDesk.Controls
 
 
 
-        private void ContextMenu_AIChatClick(object sender, RoutedEventArgs e)
-        {
-            AIChatButton_Click(sender, e);
-        }
-
         private void ContextMenu_UsageStatsClick(object sender, RoutedEventArgs e)
         {
             UsageStatsButton_Click(sender, e);
@@ -2471,23 +2835,7 @@ namespace SideDesk.Controls
                 }
             }
 
-            // 设置屏幕菜单勾选
-            if (ScreenMenu?.Items != null && _mainWindow != null)
-            {
-                var currentScreen = _mainWindow.CurrentScreen;
-                foreach (var item in ScreenMenu.Items)
-                {
-                    if (item is MenuItem mi)
-                    {
-                        mi.IsChecked = mi.Header switch
-                        {
-                            "切换到 A 屏" => currentScreen == ScreenType.A,
-                            "切换到 B 屏" => currentScreen == ScreenType.B,
-                            _ => false
-                        };
-                    }
-                }
-            }
+            // 设置屏幕菜单勾选（已移除）
         }
 
         private void Layout_Left_Click(object sender, RoutedEventArgs e)
@@ -2503,18 +2851,6 @@ namespace SideDesk.Controls
         private void Layout_Both_Click(object sender, RoutedEventArgs e)
         {
             ((App)Application.Current).SwitchLayout(LayoutMode.Both);
-        }
-
-        private void SwitchToScreenA_Click(object sender, RoutedEventArgs e)
-        {
-            if (_mainWindow == null) return;
-            _mainWindow.SwitchScreen(ScreenType.A);
-        }
-
-        private void SwitchToScreenB_Click(object sender, RoutedEventArgs e)
-        {
-            if (_mainWindow == null) return;
-            _mainWindow.SwitchScreen(ScreenType.B);
         }
 
         #endregion
@@ -3046,6 +3382,7 @@ namespace SideDesk.Controls
                 new { Key = "AIChat", Header = "🤖 AI 助手", Action = (Action)ShowAIChatTool, IsCheckable = true },
                 new { Key = "VoiceInput", Header = "🎤 语音输入", Action = (Action)ShowVoiceInputTool, IsCheckable = true },
                 new { Key = "WindowTeleport", Header = "🚀 窗口瞬移", Action = (Action)ShowWindowTeleportTool, IsCheckable = false },
+                new { Key = "TitleLock", Header = "🔒 窗口标题锁定器", Action = (Action)ShowTitleLockTool, IsCheckable = false },
                 // 后续可以在这里添加更多工具
             };
 
@@ -3138,20 +3475,44 @@ namespace SideDesk.Controls
                     { 
                         Height = 1,
                         Margin = new Thickness(0, 3, 0, 3),
-                        Background = (Brush)FindResource("BrushTextMuted"),
-                        HorizontalAlignment = HorizontalAlignment.Stretch
                     });
                 }
+                first = false;
 
-                var toolElement = CreateToolElement(toolKey);
-                if (toolElement != null)
+                // 根据工具类型创建对应的按钮
+                Button? toolButton = null;
+                switch (toolKey)
                 {
-                    toolsBarContent.Children.Add(toolElement);
-                    first = false;
+                    case "ClipboardHistory":
+                    case "AIChat":
+                    case "VoiceInput":
+                        toolButton = CreateToolButton(toolKey);
+                        break;
+                    case "WindowTeleport":
+                    case "TitleLock":
+                        // 这些是直接使用的工具，不需要在底部显示按钮
+                        break;
+                }
+
+                if (toolButton != null)
+                {
+                    toolsBarContent.Children.Add(toolButton);
                 }
             }
 
             toolsBar.Visibility = Visibility.Visible;
+        }
+
+        /// <summary>
+        /// 显示窗口标题锁定器管理界面
+        /// </summary>
+        private void ShowTitleLockTool()
+        {
+            var window = new TitleLockWindow();
+            // 获取主窗口作为Owner
+            if (_mainWindow != null)
+                window.Owner = _mainWindow;
+            window.ShowDialog();
         }
 
         /// <summary>
@@ -3222,6 +3583,7 @@ namespace SideDesk.Controls
                 },
                 
                 // 窗口瞬移不需要在底部显示按钮，它是直接使用的工具
+                // 窗口标题锁定器也不需要显示按钮，它是直接打开窗口的工具
                 
                 _ => null
             };
@@ -3632,22 +3994,22 @@ namespace SideDesk.Controls
                     NativeMethods.ShowWindow(hwnd, NativeMethods.SW_RESTORE);
                 }
 
-                // 2. 获取主屏幕工作区
+                // ✅ 2. 先从任务栏隐藏窗口（在移动之前）
+                HideWindowFromTaskbar(hwnd);
+
+                // 3. 获取主屏幕工作区
                 var workingArea = SystemParameters.WorkArea;
 
-                // 3. 计算左侧区域位置（左侧 1/3 宽度）
+                // 4. 计算左侧区域位置（左侧 1/3 宽度）
                 int dockWidth = (int)(workingArea.Width / 3);
                 int dockHeight = (int)workingArea.Height;
                 int dockX = (int)workingArea.Left;
                 int dockY = (int)workingArea.Top;
 
-                // 4. 移动窗口到左侧
+                // 5. 移动窗口到左侧
                 NativeMethods.SetWindowPos(hwnd, IntPtr.Zero,
                     dockX, dockY, dockWidth, dockHeight,
                     0); // 无特殊标志
-
-                // 5. 从任务栏隐藏窗口
-                HideWindowFromTaskbar(hwnd);
 
                 // 6. 添加到瞬移窗口列表
                 if (!_teleportedWindows.Any(w => w.Handle == hwnd))
@@ -3673,12 +4035,19 @@ namespace SideDesk.Controls
         {
             try
             {
-                // 使用 ITaskbarList COM 接口从任务栏删除窗口
+                // 方法1: 使用 ITaskbarList COM 接口从任务栏删除窗口
                 var taskbarList = (ITaskbarList)Activator.CreateInstance(
                     Type.GetTypeFromCLSID(new Guid("56FDF344-FD6D-11d0-958A-006097C9A090")));
                 taskbarList.HrInit();
                 taskbarList.DeleteTab(hwnd);
                 Marshal.ReleaseComObject(taskbarList);
+                
+                // ✅ 方法2: 设置WS_EX_TOOLWINDOW扩展样式（使窗口不在任务栏显示）
+                int exStyle = NativeMethods.GetWindowLong(hwnd, NativeMethods.GWL_EXSTYLE);
+                exStyle |= (int)NativeMethods.WS_EX_TOOLWINDOW;
+                NativeMethods.SetWindowLong(hwnd, NativeMethods.GWL_EXSTYLE, exStyle);
+                
+                Debug.WriteLine($"已从任务栏隐藏窗口: {hwnd}");
             }
             catch (Exception ex)
             {
@@ -3723,7 +4092,7 @@ namespace SideDesk.Controls
                     var itemPanel = new StackPanel 
                     { 
                         Orientation = Orientation.Horizontal, 
-                        Margin = new Thickness(5) 
+                        Margin = new Thickness(3, 2, 3, 2) 
                     };
 
                     // 图标
@@ -3732,9 +4101,9 @@ namespace SideDesk.Controls
                         itemPanel.Children.Add(new Image
                         {
                             Source = window.Icon,
-                            Width = 20,
-                            Height = 20,
-                            Margin = new Thickness(0, 0, 8, 0)
+                            Width = 16,
+                            Height = 16,
+                            Margin = new Thickness(0, 0, 5, 0)
                         });
                     }
 
@@ -3742,28 +4111,39 @@ namespace SideDesk.Controls
                     var titleText = new TextBlock
                     {
                         Text = window.Title,
-                        FontWeight = FontWeights.Bold,
+                        FontWeight = FontWeights.Normal,
+                        FontSize = 12,
                         Foreground = (Brush)FindResource("BrushTextMain"),
                         VerticalAlignment = VerticalAlignment.Center,
                         TextTrimming = TextTrimming.CharacterEllipsis
                     };
                     itemPanel.Children.Add(titleText);
 
+                    // ✅ 使整个项可点击并带到前台
+                    itemPanel.MouseLeftButtonUp += (s, e) =>
+                    {
+                        BringWindowToFront(window.Handle);
+                        e.Handled = true;
+                    };
+
                     // 还原按钮
                     var restoreBtn = new Button
                     {
                         Content = "↺",
-                        Width = 24,
-                        Height = 24,
-                        Margin = new Thickness(5, 0, 0, 0),
+                        Width = 20,
+                        Height = 20,
+                        Margin = new Thickness(4, 0, 0, 0),
                         ToolTip = "还原到任务栏",
-                        Cursor = Cursors.Hand
+                        Cursor = Cursors.Hand,
+                        Padding = new Thickness(0),
+                        FontSize = 12
                     };
                     
                     var capturedWindow = window;
                     restoreBtn.Click += (s, e) =>
                     {
                         RestoreWindowFromDock(capturedWindow);
+                        e.Handled = true; // 防止触发itemPanel的点击事件
                     };
                     
                     itemPanel.Children.Add(restoreBtn);
@@ -3808,24 +4188,13 @@ namespace SideDesk.Controls
                 VerticalAlignment = VerticalAlignment.Center
             };
 
-            var countText = new TextBlock
-            {
-                Text = $"({_teleportedWindows.Count})",
-                FontSize = 12,
-                Foreground = (Brush)FindResource("BrushTextMuted"),
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(5, 0, 0, 0)
-            };
-
             var headerStack = new StackPanel { Orientation = Orientation.Horizontal };
             headerStack.Children.Add(titleText);
-            headerStack.Children.Add(countText);
 
             DockPanel.SetDock(headerStack, Dock.Left);
             headerPanel.Children.Add(headerStack);
 
             stack.Children.Add(headerPanel);
-            stack.Children.Add(new Separator { Margin = new Thickness(0, 5, 0, 5) });
 
             // 窗口列表
             _teleportListBox = new ListBox
@@ -3846,32 +4215,56 @@ namespace SideDesk.Controls
         }
 
         /// <summary>
-        /// 从Dock区域还原窗口
+        /// 从 Dock区域还原窗口（保持工具窗口样式，不在任务栏显示）
         /// </summary>
         private void RestoreWindowFromDock(TaskbarOverlayManager.WindowInfo windowInfo)
         {
             try
             {
                 IntPtr hwnd = windowInfo.Handle;
-
-                // 恢复到任务栏
-                var taskbarList = (ITaskbarList)Activator.CreateInstance(
-                    Type.GetTypeFromCLSID(new Guid("56FDF344-FD6D-11d0-958A-006097C9A090")));
-                taskbarList.HrInit();
-                taskbarList.AddTab(hwnd);
-                Marshal.ReleaseComObject(taskbarList);
-
-                // 从列表中移除
+                
+                // ✅ 只从瞬移列表中移除，不改变窗口的工具窗口样式
+                // 窗口将保持 WS_EX_TOOLWINDOW 样式，不会在任务栏显示
                 _teleportedWindows.RemoveAll(w => w.Handle == hwnd);
-
+                
                 // 更新UI
                 UpdateTeleportWidget();
-
-                MessageBox.Show($"已将窗口“{windowInfo.Title}”还原到任务栏", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                
+                MessageBox.Show($"已将窗口“{windowInfo.Title}”从瞬移列表中移除\n窗口仍保持工具窗口样式，不会在任务栏显示", "已移除", MessageBoxButton.OK, MessageBoxImage.Information);
+                Debug.WriteLine($"已从瞬移列表移除窗口: {hwnd}");
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"还原窗口失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"移除窗口失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// 将窗口带到前台
+        /// </summary>
+        private void BringWindowToFront(IntPtr hwnd)
+        {
+            try
+            {
+                if (hwnd == IntPtr.Zero) return;
+
+                // 如果窗口最小化，先恢复
+                if (NativeMethods.IsIconic(hwnd))
+                {
+                    NativeMethods.ShowWindow(hwnd, NativeMethods.SW_RESTORE);
+                }
+
+                // 将窗口带到前台
+                NativeMethods.SetForegroundWindow(hwnd);
+                
+                // 确保窗口显示
+                NativeMethods.ShowWindow(hwnd, NativeMethods.SW_SHOW);
+                
+                Debug.WriteLine($"已将窗口带到前台: {hwnd}");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"带窗口到前台失败：{ex.Message}");
             }
         }
 

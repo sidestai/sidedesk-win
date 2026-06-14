@@ -116,6 +116,29 @@
                                   Style="{StaticResource GlobalComboBoxStyle}"
                                   SelectionChanged="ThemeMode_Changed"/>
                     </Grid>
+
+                    <!-- 背景透明度 -->
+                    <Grid Margin="0,0,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="背景透明度" Foreground="{DynamicResource BrushTextMain}" 
+                                       FontSize="{DynamicResource FontSizeNormal}"/>
+                            <TextBlock Text="侧边面板背景的透明度（0-100%）" Foreground="{DynamicResource BrushTextMuted}" 
+                                       FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBox x:Name="bgOpacityBox" Width="70"
+                                     Style="{StaticResource GlobalTextBoxStyle}"
+                                     TextAlignment="Center"
+                                     LostFocus="BgOpacity_LostFocus"
+                                     KeyDown="BgOpacity_KeyDown"/>
+                            <TextBlock Text="%" Foreground="{DynamicResource BrushTextMuted}"
+                                       VerticalAlignment="Center" Margin="6,0,0,0"/>
+                        </StackPanel>
+                    </Grid>
                 </StackPanel>
                 
                 <!-- 程序管理页面 -->

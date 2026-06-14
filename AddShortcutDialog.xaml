@@ -2,22 +2,24 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="添加快捷项" SizeToContent="Height" Width="400"
-        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False"
         Background="{DynamicResource BrushDialogBG}" Foreground="{DynamicResource BrushTextMain}">
-    <DockPanel Margin="15">
+    <DockPanel Margin="20">
         <!-- 顶部切换按钮 -->
-        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,14">
             <Button x:Name="toggleBatchBtn" Content="批量模式" Click="ToggleBatch_Click"
-                    DockPanel.Dock="Right" Padding="8,3"
+                    DockPanel.Dock="Right" Padding="10,4"
+                    FontSize="{DynamicResource FontSizeSmall}"
                     Style="{StaticResource GhostButtonStyle}"/>
-            <TextBlock Text="添加快捷项" FontWeight="Bold" VerticalAlignment="Center"/>
+            <TextBlock Text="添加快捷项" FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
+                       Foreground="{DynamicResource BrushTextMain}" VerticalAlignment="Center"/>
         </DockPanel>
 
         <!-- 底部按钮 -->
-        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
-            <Button Content="确定" Width="70" Margin="0,0,10,0" Click="Ok_Click"
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+            <Button Content="确定" Width="75" Margin="0,0,10,0" Click="Ok_Click"
                     Style="{StaticResource PrimaryButtonStyle}"/>
-            <Button Content="取消" Width="70" Click="Cancel_Click"
+            <Button Content="取消" Width="75" Click="Cancel_Click"
                     Style="{StaticResource StandardButtonStyle}"/>
         </StackPanel>
 
@@ -25,31 +27,34 @@
         <Grid>
             <!-- 单个模式 -->
             <StackPanel x:Name="singlePanel">
-                <DockPanel Margin="0,0,0,8" LastChildFill="True">
-                    <TextBlock DockPanel.Dock="Left" Text="名称：" Width="60" VerticalAlignment="Center"/>
+                <DockPanel Margin="0,0,0,10" LastChildFill="True">
+                    <TextBlock DockPanel.Dock="Left" Text="名称：" Width="60" VerticalAlignment="Center"
+                               FontSize="{DynamicResource FontSizeNormal}" Foreground="{DynamicResource BrushTextMain}"/>
                     <TextBox x:Name="nameBox" Style="{StaticResource GlobalTextBoxStyle}"/>
                 </DockPanel>
-                <DockPanel Margin="0,0,0,8" LastChildFill="True">
-                    <TextBlock DockPanel.Dock="Left" Text="网址：" Width="60" VerticalAlignment="Center"/>
+                <DockPanel Margin="0,0,0,10" LastChildFill="True">
+                    <TextBlock DockPanel.Dock="Left" Text="网址：" Width="60" VerticalAlignment="Center"
+                               FontSize="{DynamicResource FontSizeNormal}" Foreground="{DynamicResource BrushTextMain}"/>
                     <TextBox x:Name="urlBox" Text="https://" Style="{StaticResource GlobalTextBoxStyle}"/>
                 </DockPanel>
                 <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                     <CheckBox x:Name="appModeCheck" Style="{StaticResource RaycastSwitchStyle}" IsChecked="True"/>
-                    <TextBlock Text="App模式（无地址栏）" Foreground="{DynamicResource BrushTextMain}" 
+                    <TextBlock Text="App模式（无地址栏）" FontSize="{DynamicResource FontSizeNormal}"
+                               Foreground="{DynamicResource BrushTextSec}" 
                                VerticalAlignment="Center" Margin="10,0,0,0"/>
                 </StackPanel>
                 <!-- 浏览器选择 -->
-                <DockPanel Margin="0,8,0,0">
+                <DockPanel Margin="0,10,0,0">
                     <TextBlock DockPanel.Dock="Left" Text="浏览器：" Width="60" VerticalAlignment="Center"
-                               Foreground="{DynamicResource BrushTextMain}"/>
+                               FontSize="{DynamicResource FontSizeNormal}" Foreground="{DynamicResource BrushTextMain}"/>
                     <ComboBox x:Name="browserCombo" 
                               Style="{StaticResource GlobalComboBoxStyle}"
                               SelectionChanged="BrowserCombo_Changed"/>
                 </DockPanel>
                 <!-- UserData 选择（浏览器选中后才显示） -->
-                <DockPanel x:Name="profilePanel" Margin="0,8,0,0" Visibility="Collapsed">
+                <DockPanel x:Name="profilePanel" Margin="0,10,0,0" Visibility="Collapsed">
                     <TextBlock DockPanel.Dock="Left" Text="Profile：" Width="60" VerticalAlignment="Center"
-                               Foreground="{DynamicResource BrushTextMain}"/>
+                               FontSize="{DynamicResource FontSizeNormal}" Foreground="{DynamicResource BrushTextMain}"/>
                     <ComboBox x:Name="profileCombo"
                               Style="{StaticResource GlobalComboBoxStyle}"/>
                 </DockPanel>
@@ -62,18 +67,18 @@
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
                 <!-- 表头 -->
-                <Grid Grid.Row="0" Margin="0,0,0,5">
+                <Grid Grid.Row="0" Margin="0,0,0,6">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="100"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="45"/>
                     </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="名称" FontSize="11" Foreground="{DynamicResource BrushTextSec}"/>
-                    <TextBlock Grid.Column="1" Text="网址/路径" FontSize="11" Foreground="{DynamicResource BrushTextSec}" Margin="5,0,0,0"/>
-                    <TextBlock Grid.Column="2" Text="App" FontSize="11" Foreground="{DynamicResource BrushTextSec}" HorizontalAlignment="Center"/>
+                    <TextBlock Grid.Column="0" Text="名称" FontSize="{DynamicResource FontSizeSmall}" Foreground="{DynamicResource BrushTextSec}"/>
+                    <TextBlock Grid.Column="1" Text="网址/路径" FontSize="{DynamicResource FontSizeSmall}" Foreground="{DynamicResource BrushTextSec}" Margin="5,0,0,0"/>
+                    <TextBlock Grid.Column="2" Text="App" FontSize="{DynamicResource FontSizeSmall}" Foreground="{DynamicResource BrushTextSec}" HorizontalAlignment="Center"/>
                 </Grid>
                 <!-- 行列表 -->
-                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" MaxHeight="200">
                     <StackPanel x:Name="batchRows"/>
                 </ScrollViewer>
             </Grid>

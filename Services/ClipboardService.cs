@@ -28,7 +28,7 @@ namespace SideDesk.Services
 
     /// <summary>
     /// 剪贴板监控服务：监听系统剪贴板变化，维护历史记录。
-    /// 使用独立的消息窗口接收 WM_CLIPBOARDUPDATE，不依赖主窗口消息泵。
+    /// 优先通过主窗口 WndProc 接收 WM_CLIPBOARDUPDATE，确保消息可靠送达。
     /// </summary>
     public class ClipboardService
     {
@@ -38,7 +38,9 @@ namespace SideDesk.Services
 
         private readonly List<ClipboardEntry> _clipboardHistory = new();
         private string? _lastClipboardText = null;
+        private HwndSource? _mainWindowHwndSource;
         private HwndSource? _messageWindowSource;
+        private IntPtr _listenerHwnd;
         private bool _isRunning = false;
 
         /// <summary>剪贴板收藏记录（只读访问）</summary>
@@ -47,14 +49,36 @@ namespace SideDesk.Services
         /// <summary>剪贴板内容变化事件</summary>
         public event Action? ClipboardChanged;
 
-        /// <summary>启动剪贴板监控（创建独立消息窗口）</summary>
-        public void Start()
+        /// <summary>启动剪贴板监控（优先使用主窗口 WndProc）</summary>
+        public void Start(IntPtr mainWindowHandle = default)
         {
             if (_isRunning) return;
 
             try
             {
-                // 创建隐藏消息窗口，专门接收剪贴板通知
+                // 方案一：通过主窗口 HwndSource 接收消息（可靠）
+                if (mainWindowHandle != default && mainWindowHandle != IntPtr.Zero)
+                {
+                    _mainWindowHwndSource = HwndSource.FromHwnd(mainWindowHandle);
+                    if (_mainWindowHwndSource != null)
+                    {
+                        _mainWindowHwndSource.AddHook(MessageWndProc);
+                        bool success = NativeMethods.AddClipboardFormatListener(mainWindowHandle);
+                        if (success)
+                        {
+                            _listenerHwnd = mainWindowHandle;
+                            _isRunning = true;
+                            System.Diagnostics.Debug.WriteLine("[ClipboardService] 剪贴板监控已启动（主窗口 WndProc）");
+                            return;
+                        }
+                        // 失败时清理 hook
+                        _mainWindowHwndSource.RemoveHook(MessageWndProc);
+                        _mainWindowHwndSource = null;
+                        System.Diagnostics.Debug.WriteLine($"[ClipboardService] 主窗口 AddClipboardFormatListener 失败, 错误码: {Marshal.GetLastWin32Error()}");
+                    }
+                }
+
+                // 方案二：创建独立消息窗口（fallback）
                 var param = new HwndSourceParameters("ClipboardListener")
                 {
                     Width = 0,
@@ -70,17 +94,18 @@ namespace SideDesk.Services
                 _messageWindowSource.AddHook(MessageWndProc);
 
                 var hwnd = _messageWindowSource.Handle;
-                bool success = NativeMethods.AddClipboardFormatListener(hwnd);
-                if (!success)
+                bool success2 = NativeMethods.AddClipboardFormatListener(hwnd);
+                if (!success2)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[ClipboardService] AddClipboardFormatListener 失败, 错误码: {Marshal.GetLastWin32Error()}");
+                    System.Diagnostics.Debug.WriteLine($"[ClipboardService] Fallback AddClipboardFormatListener 失败, 错误码: {Marshal.GetLastWin32Error()}");
                     _messageWindowSource.Dispose();
                     _messageWindowSource = null;
                     return;
                 }
 
+                _listenerHwnd = hwnd;
                 _isRunning = true;
-                System.Diagnostics.Debug.WriteLine("[ClipboardService] 剪贴板监控已启动");
+                System.Diagnostics.Debug.WriteLine("[ClipboardService] 剪贴板监控已启动（独立消息窗口 fallback）");
             }
             catch (Exception ex)
             {
@@ -95,9 +120,16 @@ namespace SideDesk.Services
 
             try
             {
+                NativeMethods.RemoveClipboardFormatListener(_listenerHwnd);
+
+                if (_mainWindowHwndSource != null)
+                {
+                    _mainWindowHwndSource.RemoveHook(MessageWndProc);
+                    _mainWindowHwndSource = null;
+                }
+
                 if (_messageWindowSource != null)
                 {
-                    NativeMethods.RemoveClipboardFormatListener(_messageWindowSource.Handle);
                     _messageWindowSource.Dispose();
                     _messageWindowSource = null;
                 }

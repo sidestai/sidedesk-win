@@ -71,6 +71,9 @@
                             <Separator x:Name="menuSeparator1"/>
                             <MenuItem Header="新建侧屏" Click="NewSideScreen_Click"/>
                             <MenuItem Header="设置" Click="Settings_Click"/>
+                            <MenuItem Header="工具">
+                                <MenuItem Header="窗口标题锁定器" Click="TitleLock_Click"/>
+                            </MenuItem>
                             <Separator x:Name="closeWindowSeparator"/>
                             <MenuItem x:Name="closeWindowMenu" Header="关闭面板" Click="CloseWindow_Click"/>
                             <MenuItem Header="退出" Click="Exit_Click"/>

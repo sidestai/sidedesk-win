@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
 
 namespace SideDesk;
 
@@ -72,29 +71,29 @@ public partial class AddShortcutDialog : Window
 
     private void AddBatchRow()
     {
-        var row = new Grid { Margin = new Thickness(0, 2, 0, 2) };
+        var row = new Grid { Margin = new Thickness(0, 3, 0, 3) };
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(95) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(45) });
 
+        var textBoxStyle = (Style)FindResource("GlobalTextBoxStyle");
+
         var nameBox = new TextBox
         {
             Margin = new Thickness(0, 0, 5, 0),
-            Background = (Brush)FindResource("BrushInputBG"),
-            Foreground = (Brush)FindResource("BrushTextMain"),
-            BorderBrush = (Brush)FindResource("BrushBorder"),
-            Padding = new Thickness(2)
+            Style = textBoxStyle,
+            Height = 30,
+            FontSize = (double)FindResource("FontSizeSmallPlus")
         };
         Grid.SetColumn(nameBox, 0);
 
         var urlBox = new TextBox
         {
             Margin = new Thickness(0, 0, 5, 0),
-            Background = (Brush)FindResource("BrushInputBG"),
-            Foreground = (Brush)FindResource("BrushTextMain"),
-            BorderBrush = (Brush)FindResource("BrushBorder"),
+            Style = textBoxStyle,
             Text = "https://",
-            Padding = new Thickness(2)
+            Height = 30,
+            FontSize = (double)FindResource("FontSizeSmallPlus")
         };
         Grid.SetColumn(urlBox, 1);
 

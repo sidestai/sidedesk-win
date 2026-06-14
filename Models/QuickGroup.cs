@@ -72,6 +72,8 @@ namespace SideDesk.Models
         public bool IsExpanded { get; set; } = true;
         public int Order { get; set; }
         public List<QuickItem> Items { get; set; }
+        /// <summary>分组内子模块列表（用于添加便签、剪贴板等模块）</summary>
+        public List<PanelItem>? ChildPanels { get; set; }
 
         public QuickGroup()
         {

@@ -16,7 +16,8 @@ public enum PanelType
     FileArea,        // 文件区
     ClipboardHistory,  // 剪贴板历史
     DataDashboard,     // 数据看板
-    Timer            // 计时器
+    Timer,           // 计时器
+    Group            // 分组
 }
 
 public class PanelItem
@@ -29,6 +30,10 @@ public class PanelItem
     public List<FileAreaItem>? FileItems { get; set; } // 文件区数据
     public List<DataDashboardItem>? DashboardItems { get; set; } // 数据看板项
     public List<TimerItem>? TimerItems { get; set; } // 计时器数据
+    public List<PanelItem>? ChildPanels { get; set; } // 分组子面板
+    public bool IsExpanded { get; set; } = true;      // 分组是否展开
+    public List<StickyNote>? StickyNotes { get; set; } // 便签数据（per-panel）
+    public bool SkipWrapper { get; set; } = false;     // 是否跳过外层容器包装
 }
 
 public class FileAreaItem

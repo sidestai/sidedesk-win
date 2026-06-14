@@ -12,6 +12,7 @@ namespace SideDesk
         public int PanelWidth { get; set; } = 105;
         public string ThemeName { get; set; } = "";
         public string ThemeMode { get; set; } = "Dark"; // 支持 "Dark", "Light", "System"
+        public double BackgroundOpacity { get; set; } = 50; // 背景透明度 0-100%
         public bool EnableTitleLock { get; set; } = false;
         public bool EnableAutoUpdate { get; set; } = true;
 
