@@ -123,6 +123,7 @@ namespace SideDesk.Controls
 
             // === 标题栏区域 ===
             var titleBar = new DockPanel();
+            titleBar.LastChildFill = false; // 关闭填充：让关闭按钮的 Dock.Right 生效，停靠到右上角
             titleBar.Background = new SolidColorBrush(Color.FromArgb(255, 40, 40, 40));
             titleBar.Margin = new Thickness(0);
             Grid.SetRow(titleBar, 0);
