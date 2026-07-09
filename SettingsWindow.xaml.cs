@@ -382,13 +382,13 @@ namespace SideDesk
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
                 var info = new StackPanel();
-                var nameBlock = new TextBlock
+                var nameBlock = new Emoji.Wpf.TextBlock
                 {
                     Text = prog.Name,
                     Foreground = (Brush)FindResource("BrushTextMain"),
                     FontSize = (double)FindResource("FontSizeNormal")
                 };
-                var pathBlock = new TextBlock
+                var pathBlock = new Emoji.Wpf.TextBlock
                 {
                     Text = prog.ExePath,
                     Foreground = (Brush)FindResource("BrushTextMuted"),
@@ -418,7 +418,7 @@ namespace SideDesk
 
             if (_registry.Programs.Count == 0)
             {
-                programListPanel.Children.Add(new TextBlock
+                programListPanel.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = "暂无已注册程序",
                     Foreground = (Brush)FindResource("BrushTextMuted"),
@@ -477,14 +477,14 @@ namespace SideDesk
                 header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
                 var browserInfo = new StackPanel();
-                browserInfo.Children.Add(new TextBlock
+                browserInfo.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = browser.Name,
                     FontWeight = FontWeights.SemiBold,
                     Foreground = (Brush)FindResource("BrushTextMain"),
                     FontSize = (double)FindResource("FontSizeNormal")
                 });
-                browserInfo.Children.Add(new TextBlock
+                browserInfo.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = browser.ExePath,
                     Foreground = (Brush)FindResource("BrushTextMuted"),
@@ -512,7 +512,7 @@ namespace SideDesk
                 // UserData 列表
                 if (browser.Profiles.Count > 0)
                 {
-                    var profilesTitle = new TextBlock
+                    var profilesTitle = new Emoji.Wpf.TextBlock
                     {
                         Text = "UserData 配置",
                         Foreground = (Brush)FindResource("BrushTextSec"),
@@ -528,13 +528,13 @@ namespace SideDesk
                         profileRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
                         var profileInfo = new StackPanel();
-                        profileInfo.Children.Add(new TextBlock
+                        profileInfo.Children.Add(new Emoji.Wpf.TextBlock
                         {
                             Text = profile.Name,
                             Foreground = (Brush)FindResource("BrushTextMain"),
                             FontSize = (double)FindResource("FontSizeSmall")
                         });
-                        profileInfo.Children.Add(new TextBlock
+                        profileInfo.Children.Add(new Emoji.Wpf.TextBlock
                         {
                             Text = profile.Directory,
                             Foreground = (Brush)FindResource("BrushTextMuted"),
@@ -655,7 +655,7 @@ namespace SideDesk
 
             if (app.Extensions.Extensions.Count == 0)
             {
-                extensionListPanel.Children.Add(new TextBlock
+                extensionListPanel.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = "暂无扩展",
                     Foreground = (Brush)FindResource("BrushTextMuted"),
@@ -681,7 +681,7 @@ namespace SideDesk
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
                 var info = new StackPanel();
-                info.Children.Add(new TextBlock
+                info.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = ext.Name,
                     Foreground = (Brush)FindResource("BrushTextMain"),
@@ -697,7 +697,7 @@ namespace SideDesk
                     "csharp" => "C# 脚本",
                     _ => ext.Type
                 };
-                info.Children.Add(new TextBlock
+                info.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = typeLabel + (string.IsNullOrEmpty(ext.Description) ? "" : " — " + ext.Description),
                     Foreground = (Brush)FindResource("BrushTextMuted"),
@@ -780,7 +780,7 @@ namespace SideDesk
 
             if (manager.Templates.Count == 0)
             {
-                templateListPanel.Children.Add(new TextBlock
+                templateListPanel.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = "暂无数据模版",
                     Foreground = (Brush)FindResource("BrushTextMuted"),
@@ -796,7 +796,7 @@ namespace SideDesk
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
                 var info = new StackPanel();
-                var nameBlock = new TextBlock
+                var nameBlock = new Emoji.Wpf.TextBlock
                 {
                     Text = tpl.Name,
                     Foreground = (Brush)FindResource("BrushTextMain"),
@@ -806,14 +806,14 @@ namespace SideDesk
                 info.Children.Add(nameBlock);
 
                 var descText = string.IsNullOrEmpty(tpl.Category) ? tpl.Description : $"[{tpl.Category}] {tpl.Description}";
-                info.Children.Add(new TextBlock
+                info.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = descText,
                     Foreground = (Brush)FindResource("BrushTextMuted"),
                     FontSize = (double)FindResource("FontSizeTiny"),
                     TextTrimming = TextTrimming.CharacterEllipsis
                 });
-                info.Children.Add(new TextBlock
+                info.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = $"目标: {tpl.TargetUrl}  |  选择器: {tpl.Selector}  |  刷新: {tpl.RefreshIntervalSeconds}s",
                     Foreground = (Brush)FindResource("BrushTextMuted"),
@@ -858,7 +858,7 @@ namespace SideDesk
 
             var panel = new StackPanel { Margin = new Thickness(20) };
 
-            panel.Children.Add(new TextBlock
+            panel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "新建数据模版",
                 FontSize = (double)FindResource("FontSizeSubtitle"),
@@ -868,27 +868,27 @@ namespace SideDesk
             });
 
             // 名称
-            panel.Children.Add(new TextBlock { Text = "模版名称", Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
+            panel.Children.Add(new Emoji.Wpf.TextBlock { Text = "模版名称", Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
             var nameBox = new TextBox { Style = (Style)FindResource("GlobalTextBoxStyle"), Margin = new Thickness(0, 0, 0, 12) };
             panel.Children.Add(nameBox);
 
             // 描述
-            panel.Children.Add(new TextBlock { Text = "描述", Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
+            panel.Children.Add(new Emoji.Wpf.TextBlock { Text = "描述", Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
             var descBox = new TextBox { Style = (Style)FindResource("GlobalTextBoxStyle"), Margin = new Thickness(0, 0, 0, 12) };
             panel.Children.Add(descBox);
 
             // 分类
-            panel.Children.Add(new TextBlock { Text = "分类", Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
+            panel.Children.Add(new Emoji.Wpf.TextBlock { Text = "分类", Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
             var categoryBox = new TextBox { Style = (Style)FindResource("GlobalTextBoxStyle"), Margin = new Thickness(0, 0, 0, 12) };
             panel.Children.Add(categoryBox);
 
             // 目标网址
-            panel.Children.Add(new TextBlock { Text = "目标网址", Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
+            panel.Children.Add(new Emoji.Wpf.TextBlock { Text = "目标网址", Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
             var urlBox = new TextBox { Style = (Style)FindResource("GlobalTextBoxStyle"), Margin = new Thickness(0, 0, 0, 12) };
             panel.Children.Add(urlBox);
 
             // 浏览器选择
-            panel.Children.Add(new TextBlock { Text = "浏览器", Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
+            panel.Children.Add(new Emoji.Wpf.TextBlock { Text = "浏览器", Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
             var browserCombo = new ComboBox { Style = (Style)FindResource("GlobalComboBoxStyle"), Margin = new Thickness(0, 0, 0, 12) };
             browserCombo.Items.Add("默认浏览器");
             foreach (var b in _registry.Browsers)
@@ -897,7 +897,7 @@ namespace SideDesk
             panel.Children.Add(browserCombo);
 
             // 容器(Profile)选择
-            panel.Children.Add(new TextBlock { Text = "容器 (Profile)", Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
+            panel.Children.Add(new Emoji.Wpf.TextBlock { Text = "容器 (Profile)", Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
             var profileCombo = new ComboBox { Style = (Style)FindResource("GlobalComboBoxStyle"), Margin = new Thickness(0, 0, 0, 12) };
             profileCombo.Items.Add("默认");
             profileCombo.SelectedIndex = 0;
@@ -918,7 +918,7 @@ namespace SideDesk
             };
 
             // 选择器
-            panel.Children.Add(new TextBlock { Text = "选择器 (CSS Selector 或 XPath)", Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
+            panel.Children.Add(new Emoji.Wpf.TextBlock { Text = "选择器 (CSS Selector 或 XPath)", Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
             var selectorGrid = new Grid { Margin = new Thickness(0, 0, 0, 12) };
             selectorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             selectorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -1023,7 +1023,7 @@ namespace SideDesk
             };
 
             // 刷新间隔
-            panel.Children.Add(new TextBlock { Text = "刷新间隔（秒）", Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
+            panel.Children.Add(new Emoji.Wpf.TextBlock { Text = "刷新间隔（秒）", Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
             var intervalBox = new TextBox { Style = (Style)FindResource("GlobalTextBoxStyle"), Text = "60", Margin = new Thickness(0, 0, 0, 16) };
             panel.Children.Add(intervalBox);
 

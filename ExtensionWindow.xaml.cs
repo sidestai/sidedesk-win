@@ -70,7 +70,7 @@ public partial class ExtensionWindow : Window
 
     private void BuildOpenForm()
     {
-        formArea.Children.Add(new TextBlock
+        formArea.Children.Add(new Emoji.Wpf.TextBlock
         {
             Text = "⊙ 打开网址 / 程序",
             FontWeight = FontWeights.SemiBold,
@@ -79,7 +79,7 @@ public partial class ExtensionWindow : Window
             Margin = new Thickness(0, 0, 0, 12)
         });
 
-        formArea.Children.Add(new TextBlock
+        formArea.Children.Add(new Emoji.Wpf.TextBlock
         {
             Text = "目标地址",
             Foreground = (Brush)FindResource("BrushTextMuted"),
@@ -105,7 +105,7 @@ public partial class ExtensionWindow : Window
         targetDock.Children.Add(targetBox);
         formArea.Children.Add(targetDock);
 
-        formArea.Children.Add(new TextBlock
+        formArea.Children.Add(new Emoji.Wpf.TextBlock
         {
             Text = "支持网址（https://）、可执行文件、文件夹路径或系统协议",
             Foreground = (Brush)FindResource("BrushTextMuted"),
@@ -113,7 +113,7 @@ public partial class ExtensionWindow : Window
             Margin = new Thickness(0, 0, 0, 12)
         });
 
-        formArea.Children.Add(new TextBlock
+        formArea.Children.Add(new Emoji.Wpf.TextBlock
         {
             Text = "启动参数（可选）",
             Foreground = (Brush)FindResource("BrushTextMuted"),
@@ -143,7 +143,7 @@ public partial class ExtensionWindow : Window
 
     private void BuildPasteForm()
     {
-        formArea.Children.Add(new TextBlock
+        formArea.Children.Add(new Emoji.Wpf.TextBlock
         {
             Text = "📋 粘贴文本",
             FontWeight = FontWeights.SemiBold,
@@ -152,7 +152,7 @@ public partial class ExtensionWindow : Window
             Margin = new Thickness(0, 0, 0, 12)
         });
 
-        formArea.Children.Add(new TextBlock
+        formArea.Children.Add(new Emoji.Wpf.TextBlock
         {
             Text = "粘贴内容",
             Foreground = (Brush)FindResource("BrushTextMuted"),
@@ -174,7 +174,7 @@ public partial class ExtensionWindow : Window
 
     private void BuildScriptForm(string title, string placeholder)
     {
-        formArea.Children.Add(new TextBlock
+        formArea.Children.Add(new Emoji.Wpf.TextBlock
         {
             Text = title,
             FontWeight = FontWeights.SemiBold,
@@ -183,7 +183,7 @@ public partial class ExtensionWindow : Window
             Margin = new Thickness(0, 0, 0, 12)
         });
 
-        formArea.Children.Add(new TextBlock
+        formArea.Children.Add(new Emoji.Wpf.TextBlock
         {
             Text = "脚本代码",
             Foreground = (Brush)FindResource("BrushTextMuted"),

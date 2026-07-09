@@ -108,7 +108,7 @@ namespace SideDesk
             DockPanel.SetDock(settingsBtn, Dock.Right);
             headerPanel.Children.Add(settingsBtn);
 
-            _statusText = new TextBlock
+            _statusText = new Emoji.Wpf.TextBlock
             {
                 Text = "就绪",
                 VerticalAlignment = VerticalAlignment.Center,
@@ -320,7 +320,7 @@ namespace SideDesk
                 MaxWidth = 380
             };
 
-            var msgText = new TextBlock
+            var msgText = new Emoji.Wpf.TextBlock
             {
                 Text = string.IsNullOrEmpty(message) ? "" : (prefix + message),
                 Foreground = System.Windows.Media.Brushes.White,
@@ -408,7 +408,7 @@ namespace SideDesk
 
             var cfg = AIConfigManager.GetConfig();
 
-            mainPanel.Children.Add(new TextBlock
+            mainPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "AI 对话配置",
                 FontSize = 18,
@@ -418,14 +418,14 @@ namespace SideDesk
             });
 
             // Model Selection
-            mainPanel.Children.Add(new TextBlock
+            mainPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "1. 选择模型服务商",
                 FontWeight = FontWeights.Bold,
                 Foreground = System.Windows.Media.Brushes.White,
                 Margin = new Thickness(0, 10, 0, 5)
             });
-            mainPanel.Children.Add(new TextBlock
+            mainPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "选择你要使用的 AI 服务商，DeepSeek 和 OpenAI 使用官方接口。",
                 Foreground = System.Windows.Media.Brushes.LightGray,
@@ -450,14 +450,14 @@ namespace SideDesk
             mainPanel.Children.Add(modelCombo);
 
             // API Key
-            mainPanel.Children.Add(new TextBlock
+            mainPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "2. 填写 API Key",
                 FontWeight = FontWeights.Bold,
                 Foreground = System.Windows.Media.Brushes.White,
                 Margin = new Thickness(0, 10, 0, 5)
             });
-            mainPanel.Children.Add(new TextBlock
+            mainPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "从对应服务商官网获取 API Key 并粘贴到下方：\n  DeepSeek: https://platform.deepseek.com/api_keys\n  OpenAI: https://platform.openai.com/api-keys",
                 Foreground = System.Windows.Media.Brushes.LightGray,
@@ -476,14 +476,14 @@ namespace SideDesk
             mainPanel.Children.Add(keyBox);
 
             // Custom Model ID
-            mainPanel.Children.Add(new TextBlock
+            mainPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "3. 自定义模型 ID（可选）",
                 FontWeight = FontWeights.Bold,
                 Foreground = System.Windows.Media.Brushes.White,
                 Margin = new Thickness(0, 10, 0, 5)
             });
-            mainPanel.Children.Add(new TextBlock
+            mainPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "只有选择【自定义】模型时才需要填写。例如：gpt-4、deepseek-chat、claude-3-opus 等。",
                 Foreground = System.Windows.Media.Brushes.LightGray,

@@ -89,7 +89,7 @@ namespace SideDesk.Controls
             // Header: 标题 + 刷新按钮
             var headerPanel = new DockPanel { Margin = new Thickness(12, 6, 12, 6) };
 
-            var titleText = new TextBlock
+            var titleText = new Emoji.Wpf.TextBlock
             {
                 Text = "今日使用统计",
                 FontSize = 16,
@@ -111,7 +111,7 @@ namespace SideDesk.Controls
             DockPanel.SetDock(refreshBtn, Dock.Right);
             headerPanel.Children.Add(refreshBtn);
 
-            _totalTimeText = new TextBlock
+            _totalTimeText = new Emoji.Wpf.TextBlock
             {
                 Text = "",
                 FontSize = 13,
@@ -134,7 +134,7 @@ namespace SideDesk.Controls
             var contentPanel = new StackPanel();
 
             // 使用时长排行区
-            var summaryHeader = new TextBlock
+            var summaryHeader = new Emoji.Wpf.TextBlock
             {
                 Text = "应用使用时长",
                 FontSize = 14,
@@ -157,7 +157,7 @@ namespace SideDesk.Controls
             contentPanel.Children.Add(separator);
 
             // 最近窗口记录区
-            var recentHeader = new TextBlock
+            var recentHeader = new Emoji.Wpf.TextBlock
             {
                 Text = "最近窗口记录",
                 FontSize = 14,
@@ -227,7 +227,7 @@ namespace SideDesk.Controls
 
             if (summary.Count == 0)
             {
-                _summaryStack.Children.Add(new TextBlock
+                _summaryStack.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = "暂无数据",
                     Foreground = new SolidColorBrush(Color.FromRgb(140, 140, 140)),
@@ -246,7 +246,7 @@ namespace SideDesk.Controls
 
             if (recent.Count == 0)
             {
-                _recentStack.Children.Add(new TextBlock
+                _recentStack.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = "暂无记录",
                     Foreground = new SolidColorBrush(Color.FromRgb(140, 140, 140)),
@@ -397,7 +397,7 @@ namespace SideDesk.Controls
                 _pieCanvas.Children.Add(rect);
 
                 // 文字
-                var text = new TextBlock
+                var text = new Emoji.Wpf.TextBlock
                 {
                     Text = label,
                     FontSize = 11,
@@ -465,7 +465,7 @@ namespace SideDesk.Controls
             bool showMainActions = !hasSub;
 
             // 右侧：时长（始终显示，方便对比汇总）
-            var durationText = new TextBlock
+            var durationText = new Emoji.Wpf.TextBlock
             {
                 Text = WindowUsageStats.FormatDuration(item.TotalDuration),
                 FontSize = 12,
@@ -514,7 +514,7 @@ namespace SideDesk.Controls
                 panel.Children.Add(expandBtn);
 
                 // 进程名（有子项时加粗显示）
-                var nameTextSub = new TextBlock
+                var nameTextSub = new Emoji.Wpf.TextBlock
                 {
                     Text = item.ProcessName,
                     FontSize = 12,
@@ -553,7 +553,7 @@ namespace SideDesk.Controls
             }
 
             // 左侧：进程名
-            var nameText = new TextBlock
+            var nameText = new Emoji.Wpf.TextBlock
             {
                 Text = item.ProcessName,
                 FontSize = 12,
@@ -573,7 +573,7 @@ namespace SideDesk.Controls
             var panel = new DockPanel { Margin = new Thickness(0, 2, 0, 2) };
 
             // 右侧：时长
-            var durText = new TextBlock
+            var durText = new Emoji.Wpf.TextBlock
             {
                 Text = WindowUsageStats.FormatDuration(sub.TotalDuration),
                 FontSize = 11,
@@ -604,7 +604,7 @@ namespace SideDesk.Controls
             panel.Children.Add(catBtn);
 
             // 子项名称（域名/标题）
-            var nameText = new TextBlock
+            var nameText = new Emoji.Wpf.TextBlock
             {
                 Text = sub.Name,
                 FontSize = 11,
@@ -707,7 +707,7 @@ namespace SideDesk.Controls
             // 第一行：时间 + 进程名 + 时长
             var topRow = new DockPanel();
 
-            var timeText = new TextBlock
+            var timeText = new Emoji.Wpf.TextBlock
             {
                 Text = record.Timestamp.ToString("HH:mm:ss"),
                 FontSize = 11,
@@ -718,7 +718,7 @@ namespace SideDesk.Controls
             DockPanel.SetDock(timeText, Dock.Left);
             topRow.Children.Add(timeText);
 
-            var durText = new TextBlock
+            var durText = new Emoji.Wpf.TextBlock
             {
                 Text = WindowUsageStats.FormatDuration(record.Duration),
                 FontSize = 11,
@@ -730,7 +730,7 @@ namespace SideDesk.Controls
             DockPanel.SetDock(durText, Dock.Right);
             topRow.Children.Add(durText);
 
-            var procText = new TextBlock
+            var procText = new Emoji.Wpf.TextBlock
             {
                 Text = record.ProcessName,
                 FontSize = 12,
@@ -747,7 +747,7 @@ namespace SideDesk.Controls
             string secondLine = !string.IsNullOrEmpty(record.Url) ? record.Url : record.Title;
             if (!string.IsNullOrEmpty(secondLine))
             {
-                var titleText = new TextBlock
+                var titleText = new Emoji.Wpf.TextBlock
                 {
                     Text = secondLine,
                     FontSize = 11,

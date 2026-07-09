@@ -216,7 +216,7 @@ namespace SideDesk.Controls
             // 空窗口提示
             if (_currentWindowConfig.Panels.Count == 0)
             {
-                dynamicContent.Children.Add(new TextBlock
+                dynamicContent.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = "右键添加模块",
                     Foreground = (Brush)FindResource("BrushTextMuted"),
@@ -350,7 +350,7 @@ namespace SideDesk.Controls
             var displayTitle = string.IsNullOrEmpty(item.Title) ? defaultTitle : item.Title;
 
             var header = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
-            var titleBlock = new TextBlock
+            var titleBlock = new Emoji.Wpf.TextBlock
             {
                 Text = displayTitle,
                 FontWeight = FontWeights.SemiBold,
@@ -498,7 +498,7 @@ namespace SideDesk.Controls
             DockPanel.SetDock(arrowBtn, Dock.Left);
             titleBar.Children.Add(arrowBtn);
 
-            var titleBlock = new TextBlock
+            var titleBlock = new Emoji.Wpf.TextBlock
             {
                 Text = string.IsNullOrEmpty(item.Title) ? "分组" : item.Title,
                 FontWeight = FontWeights.SemiBold,
@@ -753,7 +753,7 @@ namespace SideDesk.Controls
             // 已收藏列表
             if (item.ClipboardItems.Count == 0)
             {
-                container.Children.Add(new TextBlock
+                container.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = "（暂无收藏）",
                     Foreground = (Brush)FindResource("BrushTextMuted"),
@@ -816,7 +816,7 @@ namespace SideDesk.Controls
                     if (newline >= 0) displayText = displayText.Substring(0, newline) + "…";
                     if (displayText.Length > 40) displayText = displayText.Substring(0, 40) + "…";
 
-                    var preview = new TextBlock
+                    var preview = new Emoji.Wpf.TextBlock
                     {
                         Text = displayText,
                         FontSize = 11,
@@ -940,7 +940,7 @@ namespace SideDesk.Controls
             // 空列表提示
             if (item.TodoItems.Count == 0)
             {
-                container.Children.Add(new TextBlock
+                container.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = "暂无待办，点击标题栏 + 添加",
                     Foreground = (Brush)FindResource("BrushTextMuted"),
@@ -994,7 +994,7 @@ namespace SideDesk.Controls
             // 文本（填充剩余空间；完成后加删除线并变灰）
             var textStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Cursor = Cursors.Hand };
 
-            var textBlock = new TextBlock
+            var textBlock = new Emoji.Wpf.TextBlock
             {
                 Text = todo.Text,
                 TextWrapping = TextWrapping.Wrap,
@@ -1152,7 +1152,7 @@ namespace SideDesk.Controls
             // 顶部：名称 + 操作按钮
             var headerPanel = new DockPanel();
             
-            var nameBlock = new TextBlock
+            var nameBlock = new Emoji.Wpf.TextBlock
             {
                 Text = timer.Name,
                 FontWeight = FontWeights.Bold,
@@ -1213,7 +1213,7 @@ namespace SideDesk.Controls
             mainStack.Children.Add(headerPanel);
 
             // 时间显示
-            var timeDisplay = new TextBlock
+            var timeDisplay = new Emoji.Wpf.TextBlock
             {
                 Text = FormatTimeSpan(timer.ElapsedTime),
                 FontSize = 24,
@@ -1275,7 +1275,7 @@ namespace SideDesk.Controls
             var today = DateTime.Now.ToString("yyyy-MM-dd");
             if (timer.DailyRecords.TryGetValue(today, out int todaySeconds) && todaySeconds > 0)
             {
-                var todayStat = new TextBlock
+                var todayStat = new Emoji.Wpf.TextBlock
                 {
                     Text = $"今日总计：{FormatTimeSpan(TimeSpan.FromSeconds(todaySeconds))}",
                     FontSize = 11,
@@ -1386,12 +1386,12 @@ namespace SideDesk.Controls
             var mainPanel = new StackPanel { Margin = new Thickness(20) };
 
             // 名称
-            mainPanel.Children.Add(new TextBlock { Text = "名称：", Margin = new Thickness(0, 0, 0, 5), Foreground = (Brush)FindResource("BrushTextMain") });
+            mainPanel.Children.Add(new Emoji.Wpf.TextBlock { Text = "名称：", Margin = new Thickness(0, 0, 0, 5), Foreground = (Brush)FindResource("BrushTextMain") });
             var nameBox = new TextBox { Text = timer.Name, Margin = new Thickness(0, 0, 0, 15) };
             mainPanel.Children.Add(nameBox);
 
             // 超时时间
-            mainPanel.Children.Add(new TextBlock { Text = "最大时长（秒）：", Margin = new Thickness(0, 0, 0, 5), Foreground = (Brush)FindResource("BrushTextMain") });
+            mainPanel.Children.Add(new Emoji.Wpf.TextBlock { Text = "最大时长（秒）：", Margin = new Thickness(0, 0, 0, 5), Foreground = (Brush)FindResource("BrushTextMain") });
             var timeoutBox = new TextBox { Text = timer.TimeoutSeconds.ToString(), Margin = new Thickness(0, 0, 0, 15) };
             mainPanel.Children.Add(timeoutBox);
 
@@ -1527,7 +1527,7 @@ namespace SideDesk.Controls
 
             if (item.FileItems.Count == 0)
             {
-                dropZone.Child = new TextBlock
+                dropZone.Child = new Emoji.Wpf.TextBlock
                 {
                     Text = "拖拽文件到此处",
                     Foreground = (Brush)FindResource("BrushTextMuted"),
@@ -1600,7 +1600,7 @@ namespace SideDesk.Controls
 
                     // 图标 + 名称
                     var icon = fileItem.IsFolder ? "📁" : "📄";
-                    var nameBlock = new TextBlock
+                    var nameBlock = new Emoji.Wpf.TextBlock
                     {
                         Text = $"{icon} {fileItem.Name}",
                         VerticalAlignment = VerticalAlignment.Center,
@@ -1859,7 +1859,7 @@ namespace SideDesk.Controls
 
             if (_clipboardService.ClipboardHistory.Count == 0)
             {
-                _clipboardHistoryContainer.Children.Add(new TextBlock
+                _clipboardHistoryContainer.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = "暂无记录，复制内容后自动显示",
                     Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
@@ -1894,7 +1894,7 @@ namespace SideDesk.Controls
             // 内容类型图标
             string icon = ClipboardService.GetContentTypeIcon(entry.ContentType);
             string timeStr = entry.Time.ToString("HH:mm:ss");
-            var iconText = new TextBlock
+            var iconText = new Emoji.Wpf.TextBlock
             {
                 Text = icon,
                 FontSize = 12,
@@ -1935,7 +1935,7 @@ namespace SideDesk.Controls
             }
             if (displayText.Length > 30) displayText = displayText.Substring(0, 30) + "…";
 
-            var textBlock = new TextBlock
+            var textBlock = new Emoji.Wpf.TextBlock
             {
                 Text = displayText,
                 FontSize = 11,
@@ -2049,7 +2049,7 @@ namespace SideDesk.Controls
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
             var namePanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(10, 15, 10, 5) };
-            namePanel.Children.Add(new TextBlock { Text = "分组名:", Foreground = (Brush)FindResource("BrushTextMain"), VerticalAlignment = VerticalAlignment.Center, Width = 60 });
+            namePanel.Children.Add(new Emoji.Wpf.TextBlock { Text = "分组名:", Foreground = (Brush)FindResource("BrushTextMain"), VerticalAlignment = VerticalAlignment.Center, Width = 60 });
             var nameBox = new TextBox { Width = 220, Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
             namePanel.Children.Add(nameBox);
             Grid.SetRow(namePanel, 0);
@@ -2229,7 +2229,7 @@ namespace SideDesk.Controls
             DockPanel.SetDock(_keyCountValueButton, Dock.Right);
             panel.Children.Add(_keyCountValueButton);
 
-            var nameText = new TextBlock
+            var nameText = new Emoji.Wpf.TextBlock
             {
                 Text = "今日按键",
                 Padding = new Thickness(8, 5, 0, 5),
@@ -2263,7 +2263,7 @@ namespace SideDesk.Controls
             DockPanel.SetDock(_mouseDistanceValueButton, Dock.Right);
             panel.Children.Add(_mouseDistanceValueButton);
 
-            var nameText = new TextBlock
+            var nameText = new Emoji.Wpf.TextBlock
             {
                 Text = "鼠标移动",
                 Padding = new Thickness(8, 5, 0, 5),
@@ -2292,7 +2292,7 @@ namespace SideDesk.Controls
             }
             if (notes.Count == 0)
             {
-                container.Children.Add(new TextBlock
+                container.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = "（暂无便签）",
                     Foreground = (Brush)FindResource("BrushTextMuted"),
@@ -2313,7 +2313,7 @@ namespace SideDesk.Controls
             }
             if (notes.Count == 0)
             {
-                container.Children.Add(new TextBlock
+                container.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = "（暂无便签）",
                     Foreground = (Brush)FindResource("BrushTextMuted"),
@@ -2362,7 +2362,7 @@ namespace SideDesk.Controls
                 row.MouseLeave += (s, e) => delBtn.Visibility = Visibility.Collapsed;
             }
 
-            var textBlock = new TextBlock
+            var textBlock = new Emoji.Wpf.TextBlock
             {
                 Text = note.Preview, FontSize = 11,
                 Foreground = (Brush)FindResource("BrushTextMain"), VerticalAlignment = VerticalAlignment.Center,
@@ -2442,7 +2442,7 @@ namespace SideDesk.Controls
                 row.MouseLeave += (s, e) => delBtn.Visibility = Visibility.Collapsed;
             }
 
-            var textBlock = new TextBlock
+            var textBlock = new Emoji.Wpf.TextBlock
             {
                 Text = note.Preview, FontSize = 11,
                 Foreground = (Brush)FindResource("BrushTextMain"), VerticalAlignment = VerticalAlignment.Center,
@@ -2700,7 +2700,7 @@ namespace SideDesk.Controls
                 // ===== 左侧：已锁定窗口列表 =====
                 var leftPanel = new DockPanel();
                 Grid.SetColumn(leftPanel, 0);
-                var leftHeader = new TextBlock
+                var leftHeader = new Emoji.Wpf.TextBlock
                 {
                     Text = "已锁定窗口列表",
                     FontSize = 14,
@@ -2764,7 +2764,7 @@ namespace SideDesk.Controls
 
                         var sp = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
                         string head = $"[{r.LockText}]  {r.ProcessName}";
-                        sp.Children.Add(new TextBlock
+                        sp.Children.Add(new Emoji.Wpf.TextBlock
                         {
                             Text = head,
                             FontWeight = FontWeights.Bold,
@@ -2773,7 +2773,7 @@ namespace SideDesk.Controls
                         string detail = !string.IsNullOrEmpty(r.MatchPattern)
                             ? $"匹配（{(r.MatchMode == TitleMatchMode.Equals ? "等于" : "包含")}）：{r.MatchPattern}"
                             : $"原标题：{r.OriginalTitle}";
-                        sp.Children.Add(new TextBlock
+                        sp.Children.Add(new Emoji.Wpf.TextBlock
                         {
                             Text = detail,
                             Foreground = (Brush)FindResource("BrushTextSec"),
@@ -2788,7 +2788,7 @@ namespace SideDesk.Controls
                     {
                         lockedListBox.Items.Add(new ListBoxItem
                         {
-                            Content = new TextBlock
+                            Content = new Emoji.Wpf.TextBlock
                             {
                                 Text = "（暂无锁定规则）",
                                 Foreground = (Brush)FindResource("BrushTextMuted"),
@@ -2823,7 +2823,7 @@ namespace SideDesk.Controls
                 // ===== 右侧：可选窗口 =====
                 var rightPanel = new DockPanel();
                 Grid.SetColumn(rightPanel, 2);
-                var rightHeader = new TextBlock
+                var rightHeader = new Emoji.Wpf.TextBlock
                 {
                     Text = "选择一个窗口来锁定任务栏标题",
                     FontSize = 14,
@@ -2857,14 +2857,14 @@ namespace SideDesk.Controls
                         });
                     }
                     var textPanel = new StackPanel();
-                    textPanel.Children.Add(new TextBlock
+                    textPanel.Children.Add(new Emoji.Wpf.TextBlock
                     {
                         Text = w.Title,
                         FontWeight = FontWeights.Bold,
                         TextTrimming = TextTrimming.CharacterEllipsis,
                         MaxWidth = 420
                     });
-                    textPanel.Children.Add(new TextBlock
+                    textPanel.Children.Add(new Emoji.Wpf.TextBlock
                     {
                         Text = w.ProcessName,
                         Foreground = (Brush)FindResource("BrushTextSec"),
@@ -3063,7 +3063,7 @@ namespace SideDesk.Controls
             var container = new StackPanel();
 
             // 标题
-            var titleBlock = new TextBlock
+            var titleBlock = new Emoji.Wpf.TextBlock
             {
                 Text = item.Title ?? "数据看板",
                 FontWeight = FontWeights.Bold,
@@ -3098,7 +3098,7 @@ namespace SideDesk.Controls
                     dashItemMenu.Items.Add(dashItemDel);
                     card.ContextMenu = dashItemMenu;
 
-                    var labelBlock = new TextBlock
+                    var labelBlock = new Emoji.Wpf.TextBlock
                     {
                         Text = dashItem.Label,
                         FontSize = 11,
@@ -3106,7 +3106,7 @@ namespace SideDesk.Controls
                     };
                     card.Children.Add(labelBlock);
 
-                    var valueBlock = new TextBlock
+                    var valueBlock = new Emoji.Wpf.TextBlock
                     {
                         Text = dashItem.Value ?? "--",
                         FontSize = 16,
@@ -3136,7 +3136,7 @@ namespace SideDesk.Controls
             }
             else
             {
-                container.Children.Add(new TextBlock
+                container.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = "暂无数据项，请编辑添加",
                     FontSize = 12,
@@ -3291,7 +3291,7 @@ namespace SideDesk.Controls
             var rootPanel = new StackPanel { Margin = new Thickness(20) };
 
             // ===== 模板选择 =====
-            rootPanel.Children.Add(new TextBlock
+            rootPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "模板选择",
                 Foreground = labelBrush,
@@ -3311,7 +3311,7 @@ namespace SideDesk.Controls
             rootPanel.Children.Add(templateCombo);
 
             // ===== 基本信息分隔 =====
-            rootPanel.Children.Add(new TextBlock
+            rootPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "── 基本信息 ──",
                 Foreground = labelBrush,
@@ -3321,7 +3321,7 @@ namespace SideDesk.Controls
             });
 
             // 数据项名称
-            rootPanel.Children.Add(new TextBlock
+            rootPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "数据项名称",
                 Foreground = labelBrush,
@@ -3335,7 +3335,7 @@ namespace SideDesk.Controls
             rootPanel.Children.Add(nameBox);
 
             // ===== 数据源配置分隔 =====
-            rootPanel.Children.Add(new TextBlock
+            rootPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "── 数据源配置 ──",
                 Foreground = labelBrush,
@@ -3345,7 +3345,7 @@ namespace SideDesk.Controls
             });
 
             // 目标网址
-            rootPanel.Children.Add(new TextBlock
+            rootPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "目标网址",
                 Foreground = labelBrush,
@@ -3359,7 +3359,7 @@ namespace SideDesk.Controls
             rootPanel.Children.Add(urlBox);
 
             // 选择器
-            rootPanel.Children.Add(new TextBlock
+            rootPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "选择器(CSS/XPath)",
                 Foreground = labelBrush,
@@ -3373,7 +3373,7 @@ namespace SideDesk.Controls
             rootPanel.Children.Add(selectorBox);
 
             // 刷新间隔
-            rootPanel.Children.Add(new TextBlock
+            rootPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "刷新间隔(秒)",
                 Foreground = labelBrush,
@@ -3388,7 +3388,7 @@ namespace SideDesk.Controls
             rootPanel.Children.Add(intervalBox);
 
             // ===== 浏览器配置分隔 =====
-            rootPanel.Children.Add(new TextBlock
+            rootPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "── 浏览器配置 ──",
                 Foreground = labelBrush,
@@ -3398,7 +3398,7 @@ namespace SideDesk.Controls
             });
 
             // 浏览器
-            rootPanel.Children.Add(new TextBlock
+            rootPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "浏览器",
                 Foreground = labelBrush,
@@ -3418,7 +3418,7 @@ namespace SideDesk.Controls
             rootPanel.Children.Add(browserCombo);
 
             // Profile
-            rootPanel.Children.Add(new TextBlock
+            rootPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "Profile",
                 Foreground = labelBrush,
@@ -3909,7 +3909,7 @@ namespace SideDesk.Controls
             };
 
             // 状态文本
-            var statusText = new TextBlock
+            var statusText = new Emoji.Wpf.TextBlock
             {
                 Text = "就绪",
                 Margin = new Thickness(10, 0, 0, 0),
@@ -4068,7 +4068,7 @@ namespace SideDesk.Controls
                 var mainPanel = new DockPanel { Margin = new Thickness(20) };
                 
                 // 顶部说明
-                var headerText = new TextBlock
+                var headerText = new Emoji.Wpf.TextBlock
                 {
                     Text = "选择任务栏中的窗口，点击\"瞬移\"将其移动到左侧Dock区域",
                     FontSize = 12,
@@ -4107,14 +4107,14 @@ namespace SideDesk.Controls
 
                     // 窗口信息
                     var infoPanel = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-                    infoPanel.Children.Add(new TextBlock
+                    infoPanel.Children.Add(new Emoji.Wpf.TextBlock
                     {
                         Text = win.Title,
                         FontWeight = FontWeights.Bold,
                         Foreground = (Brush)FindResource("BrushTextMain"),
                         TextTrimming = TextTrimming.CharacterEllipsis
                     });
-                    infoPanel.Children.Add(new TextBlock
+                    infoPanel.Children.Add(new Emoji.Wpf.TextBlock
                     {
                         Text = $"进程: {win.ProcessName}",
                         FontSize = 11,
@@ -4329,7 +4329,7 @@ namespace SideDesk.Controls
                     }
 
                     // 窗口标题
-                    var titleText = new TextBlock
+                    var titleText = new Emoji.Wpf.TextBlock
                     {
                         Text = window.Title,
                         FontWeight = FontWeights.Normal,
@@ -4400,7 +4400,7 @@ namespace SideDesk.Controls
 
             // 标题栏
             var headerPanel = new DockPanel();
-            var titleText = new TextBlock
+            var titleText = new Emoji.Wpf.TextBlock
             {
                 Text = "🚀 瞬移窗口",
                 FontWeight = FontWeights.Bold,

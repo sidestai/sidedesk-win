@@ -38,7 +38,7 @@ namespace SideDesk
             {
                 windowListBox.Items.Add(new ListBoxItem
                 {
-                    Content = new TextBlock
+                    Content = new Emoji.Wpf.TextBlock
                     {
                         Text = "（未找到可用的任务栏窗口）",
                         Foreground = (Brush)FindResource("BrushTextMuted"),
@@ -63,7 +63,7 @@ namespace SideDesk
                     });
                 }
                 var textPanel = new StackPanel();
-                textPanel.Children.Add(new TextBlock
+                textPanel.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = w.Title,
                     FontWeight = FontWeights.Bold,
@@ -71,7 +71,7 @@ namespace SideDesk
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     MaxWidth = 420
                 });
-                textPanel.Children.Add(new TextBlock
+                textPanel.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = w.ProcessName,
                     Foreground = (Brush)FindResource("BrushTextMuted"),
@@ -90,7 +90,7 @@ namespace SideDesk
             foreach (var r in rules)
             {
                 var sp = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2) };
-                sp.Children.Add(new TextBlock
+                sp.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = $"[{r.LockText}]  {r.ProcessName}",
                     FontWeight = FontWeights.Bold,
@@ -100,7 +100,7 @@ namespace SideDesk
                 string detail = !string.IsNullOrEmpty(r.MatchPattern)
                     ? $"匹配（{(r.MatchMode == TitleMatchMode.Equals ? "等于" : "包含")}）：{r.MatchPattern}"
                     : $"原标题：{r.OriginalTitle}";
-                sp.Children.Add(new TextBlock
+                sp.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = detail,
                     Foreground = (Brush)FindResource("BrushTextMuted"),
@@ -114,7 +114,7 @@ namespace SideDesk
             {
                 lockedListBox.Items.Add(new ListBoxItem
                 {
-                    Content = new TextBlock
+                    Content = new Emoji.Wpf.TextBlock
                     {
                         Text = "（暂无锁定规则）",
                         Foreground = (Brush)FindResource("BrushTextMuted"),

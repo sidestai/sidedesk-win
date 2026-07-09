@@ -129,7 +129,7 @@ namespace SideDesk.Controls
             Grid.SetRow(titleBar, 0);
 
             // 先添加时间信息（左侧）
-            var timeText = new TextBlock
+            var timeText = new Emoji.Wpf.TextBlock
             {
                 Text = _currentNote.CreatedAt.ToString("MM-dd HH:mm"),
                 FontSize = 11,
@@ -141,7 +141,7 @@ namespace SideDesk.Controls
             titleBar.Children.Add(timeText);
 
             // 标题文本（中间，自动填充）
-            var titleLabel = new TextBlock
+            var titleLabel = new Emoji.Wpf.TextBlock
             {
                 Text = "便签",
                 Foreground = Brushes.White,

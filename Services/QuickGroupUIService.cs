@@ -143,14 +143,14 @@ namespace SideDesk.Services
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
             var namePanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(10, 15, 10, 5) };
-            namePanel.Children.Add(new TextBlock { Text = "名称:", Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center, Width = 50 });
+            namePanel.Children.Add(new Emoji.Wpf.TextBlock { Text = "名称:", Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center, Width = 50 });
             var nameBox = new TextBox { Width = 220, Text = "新分组" };
             namePanel.Children.Add(nameBox);
             Grid.SetRow(namePanel, 0);
             grid.Children.Add(namePanel);
 
             var colPanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(10, 5, 10, 5) };
-            colPanel.Children.Add(new TextBlock { Text = "列数:", Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center, Width = 50 });
+            colPanel.Children.Add(new Emoji.Wpf.TextBlock { Text = "列数:", Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center, Width = 50 });
             var colCombo = new ComboBox { Width = 100 };
             colCombo.Items.Add("1 列"); colCombo.Items.Add("2 列");
             colCombo.Items.Add("3 列"); colCombo.Items.Add("4 列");
@@ -273,7 +273,7 @@ namespace SideDesk.Services
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
             var namePanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(10, 15, 10, 5) };
-            namePanel.Children.Add(new TextBlock { Text = "分组名:", Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center, Width = 60 });
+            namePanel.Children.Add(new Emoji.Wpf.TextBlock { Text = "分组名:", Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center, Width = 60 });
             var nameBox = new TextBox { Width = 220 };
             namePanel.Children.Add(nameBox);
             Grid.SetRow(namePanel, 0);
@@ -498,7 +498,7 @@ namespace SideDesk.Services
 
 
             // 分组名
-            var titleText = new TextBlock
+            var titleText = new Emoji.Wpf.TextBlock
             {
                 Text = group.Name, Foreground = Brushes.White, FontSize = 12,
                 FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center,
@@ -634,7 +634,7 @@ namespace SideDesk.Services
                     };
                     dlg.SourceInitialized += (s3, ev3) => App.UpdateWindowDwmTheme(dlg);
                     var sp = new StackPanel { Margin = new Thickness(20) };
-                    sp.Children.Add(new TextBlock
+                    sp.Children.Add(new Emoji.Wpf.TextBlock
                     {
                         Text = "重命名分组",
                         FontWeight = FontWeights.Bold,
@@ -796,7 +796,7 @@ namespace SideDesk.Services
             row.Children.Add(delBtn);
 
             // 文本预览
-            var textBlock = new TextBlock
+            var textBlock = new Emoji.Wpf.TextBlock
             {
                 Text = string.IsNullOrEmpty(note.Content) ? "空便签" : note.Content,
                 Foreground = (Brush)new BrushConverter().ConvertFrom("#CCCCCC"),
@@ -869,7 +869,7 @@ namespace SideDesk.Services
 
             // 标题行
             var titleRow = new DockPanel();
-            var titleLabel = new TextBlock
+            var titleLabel = new Emoji.Wpf.TextBlock
             {
                 Text = string.IsNullOrEmpty(timer.Name) ? "新计时" : timer.Name,
                 Foreground = Brushes.White,
@@ -898,7 +898,7 @@ namespace SideDesk.Services
             mainStack.Children.Add(titleRow);
 
             // 时间显示
-            var timeDisplay = new TextBlock
+            var timeDisplay = new Emoji.Wpf.TextBlock
             {
                 Text = FormatTimeSpan(timer.GetElapsed()),
                 Foreground = Brushes.White,
@@ -953,7 +953,7 @@ namespace SideDesk.Services
             var today = DateTime.Now.ToString("yyyy-MM-dd");
             if (timer.DailyRecords.TryGetValue(today, out int todaySeconds) && todaySeconds > 0)
             {
-                var todayText = new TextBlock
+                var todayText = new Emoji.Wpf.TextBlock
                 {
                     Text = $"今日: {FormatTimeSpan(TimeSpan.FromSeconds(todaySeconds))}",
                     Foreground = (Brush)new BrushConverter().ConvertFrom("#9CA3AF"),
@@ -1003,7 +1003,7 @@ namespace SideDesk.Services
             var rootPanel = new StackPanel { Margin = new Thickness(16) };
 
             // 标题
-            var titleText = new TextBlock
+            var titleText = new Emoji.Wpf.TextBlock
             {
                 Text = "编辑计时器",
                 FontSize = (double)Application.Current.FindResource("FontSizeSubtitle"),
@@ -1014,7 +1014,7 @@ namespace SideDesk.Services
             rootPanel.Children.Add(titleText);
 
             // 名称标签
-            var nameLabel = new TextBlock
+            var nameLabel = new Emoji.Wpf.TextBlock
             {
                 Text = "名称",
                 FontSize = (double)Application.Current.FindResource("FontSizeSmallPlus"),
@@ -1033,7 +1033,7 @@ namespace SideDesk.Services
             rootPanel.Children.Add(nameBox);
 
             // 超时标签
-            var timeoutLabel = new TextBlock
+            var timeoutLabel = new Emoji.Wpf.TextBlock
             {
                 Text = "超时（秒）",
                 FontSize = (double)Application.Current.FindResource("FontSizeSmallPlus"),
@@ -1110,12 +1110,12 @@ namespace SideDesk.Services
         }
 
         // 其他模块的占位实现
-        private FrameworkElement BuildClipboardModule(PanelItem panel, string groupId) => new TextBlock { Text = "📋 剪贴板收藏", Foreground = Brushes.White };
-        private FrameworkElement BuildUsageStatsModule(PanelItem panel, string groupId) => new TextBlock { Text = "📊 使用统计", Foreground = Brushes.White };
-        private FrameworkElement BuildAIChatModule(PanelItem panel, string groupId) => new TextBlock { Text = "🤖 AI 对话", Foreground = Brushes.White };
-        private FrameworkElement BuildSystemMonitorModule(PanelItem panel, string groupId) => new TextBlock { Text = "💻 系统信息", Foreground = Brushes.White };
-        private FrameworkElement BuildFileAreaModule(PanelItem panel, string groupId) => new TextBlock { Text = "📁 文件区", Foreground = Brushes.White };
-        private FrameworkElement BuildDataDashboardModule(PanelItem panel, string groupId) => new TextBlock { Text = "📈 数据看板", Foreground = Brushes.White };
+        private FrameworkElement BuildClipboardModule(PanelItem panel, string groupId) => new Emoji.Wpf.TextBlock { Text = "📋 剪贴板收藏", Foreground = Brushes.White };
+        private FrameworkElement BuildUsageStatsModule(PanelItem panel, string groupId) => new Emoji.Wpf.TextBlock { Text = "📊 使用统计", Foreground = Brushes.White };
+        private FrameworkElement BuildAIChatModule(PanelItem panel, string groupId) => new Emoji.Wpf.TextBlock { Text = "🤖 AI 对话", Foreground = Brushes.White };
+        private FrameworkElement BuildSystemMonitorModule(PanelItem panel, string groupId) => new Emoji.Wpf.TextBlock { Text = "💻 系统信息", Foreground = Brushes.White };
+        private FrameworkElement BuildFileAreaModule(PanelItem panel, string groupId) => new Emoji.Wpf.TextBlock { Text = "📁 文件区", Foreground = Brushes.White };
+        private FrameworkElement BuildDataDashboardModule(PanelItem panel, string groupId) => new Emoji.Wpf.TextBlock { Text = "📈 数据看板", Foreground = Brushes.White };
 
         private FrameworkElement BuildItemButton(QuickItem item, string groupId)
         {
@@ -1138,6 +1138,10 @@ namespace SideDesk.Services
                 FontSize = 11,
                 AllowDrop = true
             };
+
+            // 圆角样式（保留每项自定义背景色与拖拽高亮边框）
+            var roundedStyle = Application.Current.TryFindResource("QuickItemButtonStyle") as Style;
+            if (roundedStyle != null) btn.Style = roundedStyle;
             
             // 拖拽开始：检测鼠标移动距离后启动拖拽
             Point? dragStartPoint = null;
@@ -1982,7 +1986,7 @@ namespace SideDesk.Services
             var rootPanel = new StackPanel { Margin = new Thickness(20) };
 
             // 标题
-            rootPanel.Children.Add(new TextBlock
+            rootPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "添加程序",
                 FontWeight = FontWeights.Bold,
@@ -2023,7 +2027,7 @@ namespace SideDesk.Services
                 HorizontalAlignment = HorizontalAlignment.Left,
                 Padding = new Thickness(12, 6, 12, 6)
             };
-            manualPanel.Children.Add(new TextBlock
+            manualPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "点击下方按钮选择可执行文件，或在下方直接输入路径",
                 Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
@@ -2037,7 +2041,7 @@ namespace SideDesk.Services
             var listPanel = new StackPanel();
             if (app.ProgramRegistry.Programs.Count == 0)
             {
-                listPanel.Children.Add(new TextBlock
+                listPanel.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = "暂无已注册程序，请先在设置→程序管理中添加",
                     Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
@@ -2059,13 +2063,13 @@ namespace SideDesk.Services
                 foreach (var prog in app.ProgramRegistry.Programs)
                 {
                     var itemPanel = new StackPanel();
-                    itemPanel.Children.Add(new TextBlock
+                    itemPanel.Children.Add(new Emoji.Wpf.TextBlock
                     {
                         Text = prog.Name,
                         Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                         FontSize = (double)Application.Current.FindResource("FontSizeNormal")
                     });
-                    itemPanel.Children.Add(new TextBlock
+                    itemPanel.Children.Add(new Emoji.Wpf.TextBlock
                     {
                         Text = prog.ExePath,
                         Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
@@ -2082,7 +2086,7 @@ namespace SideDesk.Services
             ComboBox? profileCombo = null;
             if (app.ProgramRegistry.Browsers.Count == 0)
             {
-                browserPanel.Children.Add(new TextBlock
+                browserPanel.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = "暂无已配置浏览器，请先在设置→程序管理中添加",
                     Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
@@ -2104,13 +2108,13 @@ namespace SideDesk.Services
                 foreach (var browser in app.ProgramRegistry.Browsers)
                 {
                     var itemPanel = new StackPanel();
-                    itemPanel.Children.Add(new TextBlock
+                    itemPanel.Children.Add(new Emoji.Wpf.TextBlock
                     {
                         Text = browser.Name,
                         Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                         FontSize = (double)Application.Current.FindResource("FontSizeNormal")
                     });
-                    itemPanel.Children.Add(new TextBlock
+                    itemPanel.Children.Add(new Emoji.Wpf.TextBlock
                     {
                         Text = browser.ExePath,
                         Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
@@ -2137,7 +2141,7 @@ namespace SideDesk.Services
             // === 通用区域 ===
             // 名称
             var nameDock = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
-            var nameLabel = new TextBlock { Text = "名称：", Width = 60, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)Application.Current.FindResource("BrushTextMain") };
+            var nameLabel = new Emoji.Wpf.TextBlock { Text = "名称：", Width = 60, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)Application.Current.FindResource("BrushTextMain") };
             DockPanel.SetDock(nameLabel, Dock.Left);
             nameDock.Children.Add(nameLabel);
             var nameBox = new TextBox { Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
@@ -2146,7 +2150,7 @@ namespace SideDesk.Services
 
             // 路径
             var targetDock = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
-            var targetLabel = new TextBlock { Text = "路径：", Width = 60, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)Application.Current.FindResource("BrushTextMain") };
+            var targetLabel = new Emoji.Wpf.TextBlock { Text = "路径：", Width = 60, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)Application.Current.FindResource("BrushTextMain") };
             DockPanel.SetDock(targetLabel, Dock.Left);
             targetDock.Children.Add(targetLabel);
             var targetBox = new TextBox { Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
@@ -2155,7 +2159,7 @@ namespace SideDesk.Services
 
             // 启动命令行
             var argsDock = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
-            var argsLabel = new TextBlock { Text = "命令行：", Width = 60, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)Application.Current.FindResource("BrushTextMain") };
+            var argsLabel = new Emoji.Wpf.TextBlock { Text = "命令行：", Width = 60, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)Application.Current.FindResource("BrushTextMain") };
             DockPanel.SetDock(argsLabel, Dock.Left);
             argsDock.Children.Add(argsLabel);
             var argsBox = new TextBox { Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
@@ -2321,7 +2325,7 @@ namespace SideDesk.Services
             var rootPanel = new StackPanel { Margin = new Thickness(20) };
 
             // 名称
-            rootPanel.Children.Add(new TextBlock
+            rootPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "名称",
                 Foreground = (Brush)Application.Current.FindResource("BrushTextSec"),
@@ -2336,7 +2340,7 @@ namespace SideDesk.Services
             rootPanel.Children.Add(nameBox);
 
             // 目标
-            rootPanel.Children.Add(new TextBlock
+            rootPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "目标",
                 Foreground = (Brush)Application.Current.FindResource("BrushTextSec"),
@@ -2362,7 +2366,7 @@ namespace SideDesk.Services
                 Style = (Style)Application.Current.FindResource("RaycastSwitchStyle"),
                 VerticalAlignment = VerticalAlignment.Center
             };
-            var appModeLabel = new TextBlock
+            var appModeLabel = new Emoji.Wpf.TextBlock
             {
                 Text = "App 模式",
                 Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),

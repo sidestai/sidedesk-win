@@ -18,7 +18,7 @@ public partial class FileDropDialog : Window
         {
             foreach (var file in files)
             {
-                filesPanel.Children.Add(new TextBlock
+                filesPanel.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = file,
                     Margin = new Thickness(0, 2, 0, 2),
