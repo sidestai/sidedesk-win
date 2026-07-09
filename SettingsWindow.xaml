@@ -68,28 +68,161 @@
                                   SelectionChanged="Dock_Changed"/>
                     </Grid>
                     
-                    <!-- 面板宽度 -->
-                    <Grid Margin="0,0,0,16">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0">
-                            <TextBlock Text="面板宽度" Foreground="{DynamicResource BrushTextMain}" 
-                                       FontSize="{DynamicResource FontSizeNormal}"/>
-                            <TextBlock Text="侧边面板的像素宽度（50-500）" Foreground="{DynamicResource BrushTextMuted}" 
-                                       FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0"/>
+                    <!-- 左侧面板设置区块（停靠位置含左侧时显示） -->
+                    <Border x:Name="leftSideSection"
+                            Background="{DynamicResource BrushInputBG}"
+                            BorderBrush="{DynamicResource BrushBorder}"
+                            BorderThickness="1" CornerRadius="6"
+                            Padding="12" Margin="0,0,0,16">
+                        <StackPanel>
+                            <!-- 区块标题 -->
+                            <TextBlock Text="左侧面板" Foreground="{DynamicResource BrushTextMain}"
+                                       FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"
+                                       Margin="0,0,0,12"/>
+
+                            <!-- 侧边栏宽度 -->
+                            <Grid Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                    <TextBlock Text="侧边栏宽度" Foreground="{DynamicResource BrushTextMain}"
+                                               FontSize="{DynamicResource FontSizeNormal}"/>
+                                    <TextBlock Text="侧边栏停靠宽度（50-500）" Foreground="{DynamicResource BrushTextMuted}"
+                                               FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBox x:Name="leftWidthBox" Width="70"
+                                             Style="{StaticResource GlobalTextBoxStyle}"
+                                             TextAlignment="Center"
+                                             LostFocus="LeftWidth_LostFocus"
+                                             KeyDown="LeftWidth_KeyDown"/>
+                                    <TextBlock Text="px" Foreground="{DynamicResource BrushTextMuted}"
+                                               VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- 开启浮动 -->
+                            <Grid Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                    <TextBlock Text="开启浮动" Foreground="{DynamicResource BrushTextMain}"
+                                               FontSize="{DynamicResource FontSizeNormal}"/>
+                                    <TextBlock Text="开启浮动（鼠标悬停展开）" Foreground="{DynamicResource BrushTextMuted}"
+                                               FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0"/>
+                                </StackPanel>
+                                <CheckBox x:Name="leftHoverCheck" Grid.Column="1" VerticalAlignment="Center"
+                                          Style="{StaticResource RaycastSwitchStyle}"
+                                          Checked="LeftHover_Changed"
+                                          Unchecked="LeftHover_Changed"/>
+                            </Grid>
+
+                            <!-- 浮动宽度 -->
+                            <Grid x:Name="leftHoverWidthRow">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                    <TextBlock Text="浮动宽度" Foreground="{DynamicResource BrushTextMain}"
+                                               FontSize="{DynamicResource FontSizeNormal}"/>
+                                    <TextBlock Text="悬停展开宽度（100-500）" Foreground="{DynamicResource BrushTextMuted}"
+                                               FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBox x:Name="leftHoverWidthBox" Width="70"
+                                             Style="{StaticResource GlobalTextBoxStyle}"
+                                             TextAlignment="Center"
+                                             LostFocus="LeftHoverWidth_LostFocus"
+                                             KeyDown="LeftHoverWidth_KeyDown"/>
+                                    <TextBlock Text="px" Foreground="{DynamicResource BrushTextMuted}"
+                                               VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                </StackPanel>
+                            </Grid>
                         </StackPanel>
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBox x:Name="widthBox" Width="70"
-                                     Style="{StaticResource GlobalTextBoxStyle}"
-                                     TextAlignment="Center"
-                                     LostFocus="Width_LostFocus"
-                                     KeyDown="Width_KeyDown"/>
-                            <TextBlock Text="px" Foreground="{DynamicResource BrushTextMuted}"
-                                       VerticalAlignment="Center" Margin="6,0,0,0"/>
+                    </Border>
+
+                    <!-- 右侧面板设置区块（停靠位置含右侧时显示） -->
+                    <Border x:Name="rightSideSection"
+                            Background="{DynamicResource BrushInputBG}"
+                            BorderBrush="{DynamicResource BrushBorder}"
+                            BorderThickness="1" CornerRadius="6"
+                            Padding="12" Margin="0,0,0,16">
+                        <StackPanel>
+                            <!-- 区块标题 -->
+                            <TextBlock Text="右侧面板" Foreground="{DynamicResource BrushTextMain}"
+                                       FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"
+                                       Margin="0,0,0,12"/>
+
+                            <!-- 侧边栏宽度 -->
+                            <Grid Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                    <TextBlock Text="侧边栏宽度" Foreground="{DynamicResource BrushTextMain}"
+                                               FontSize="{DynamicResource FontSizeNormal}"/>
+                                    <TextBlock Text="侧边栏停靠宽度（50-500）" Foreground="{DynamicResource BrushTextMuted}"
+                                               FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBox x:Name="rightWidthBox" Width="70"
+                                             Style="{StaticResource GlobalTextBoxStyle}"
+                                             TextAlignment="Center"
+                                             LostFocus="RightWidth_LostFocus"
+                                             KeyDown="RightWidth_KeyDown"/>
+                                    <TextBlock Text="px" Foreground="{DynamicResource BrushTextMuted}"
+                                               VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- 开启浮动 -->
+                            <Grid Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                    <TextBlock Text="开启浮动" Foreground="{DynamicResource BrushTextMain}"
+                                               FontSize="{DynamicResource FontSizeNormal}"/>
+                                    <TextBlock Text="开启浮动（鼠标悬停展开）" Foreground="{DynamicResource BrushTextMuted}"
+                                               FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0"/>
+                                </StackPanel>
+                                <CheckBox x:Name="rightHoverCheck" Grid.Column="1" VerticalAlignment="Center"
+                                          Style="{StaticResource RaycastSwitchStyle}"
+                                          Checked="RightHover_Changed"
+                                          Unchecked="RightHover_Changed"/>
+                            </Grid>
+
+                            <!-- 浮动宽度 -->
+                            <Grid x:Name="rightHoverWidthRow">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                    <TextBlock Text="浮动宽度" Foreground="{DynamicResource BrushTextMain}"
+                                               FontSize="{DynamicResource FontSizeNormal}"/>
+                                    <TextBlock Text="悬停展开宽度（100-500）" Foreground="{DynamicResource BrushTextMuted}"
+                                               FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBox x:Name="rightHoverWidthBox" Width="70"
+                                             Style="{StaticResource GlobalTextBoxStyle}"
+                                             TextAlignment="Center"
+                                             LostFocus="RightHoverWidth_LostFocus"
+                                             KeyDown="RightHoverWidth_KeyDown"/>
+                                    <TextBlock Text="px" Foreground="{DynamicResource BrushTextMuted}"
+                                               VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                </StackPanel>
+                            </Grid>
                         </StackPanel>
-                    </Grid>
+                    </Border>
                 </StackPanel>
                 
                 <!-- 外观页面 -->

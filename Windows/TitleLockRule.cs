@@ -158,8 +158,15 @@ namespace SideDesk.Windows
             }
         }
 
-        private static bool IsSameKey(TitleLockRule a, TitleLockRule b)
+        /// <summary>
+        /// 判断两条规则是否为同一唯一键：
+        /// - 有 MatchPattern：ProcessName + MatchPattern + MatchMode
+        /// - 无 MatchPattern：ProcessName + OriginalTitle + ExecutableDir
+        /// 与 Upsert / RemoveExact 的键语义完全一致。
+        /// </summary>
+        public static bool IsSameKey(TitleLockRule a, TitleLockRule b)
         {
+            if (a == null || b == null) return false;
             bool aHasPattern = !string.IsNullOrEmpty(a.MatchPattern);
             bool bHasPattern = !string.IsNullOrEmpty(b.MatchPattern);
             if (aHasPattern || bHasPattern)

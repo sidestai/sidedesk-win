@@ -63,6 +63,20 @@ namespace SideDesk
             // 初始化系统托盘图标
             InitNotifyIcon();
 
+            // 启动时恢复上次保存的标题锁定规则（仅在功能开启时）
+            try
+            {
+                if (AppSettings.EnableTitleLock)
+                {
+                    int restored = TaskbarOverlayManager.RestoreLocksFromRules();
+                    System.Diagnostics.Debug.WriteLine($"[TitleLock] 启动恢复锁定规则，命中 {restored} 个窗口");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[TitleLock] 启动恢复锁定规则失败: {ex.Message}");
+            }
+
             // 【已禁用】启动 5 秒后静默检查更新 - 2026-06-09 禁用，解决程序自动重启问题
             // 如果以后需要启用，请取消下面的注释
             _ = Task.Delay(5000).ContinueWith(async _ =>
@@ -153,7 +167,10 @@ namespace SideDesk
         private MainWindow CreatePanel(DockEdge side, ScreenType screen)
         {
             var window = new MainWindow(side, screen);
-            window.AppBarWidth = AppSettings.PanelWidth;
+            // 按停靠边取各自的停靠宽度：左侧用 LeftPanelWidth，右侧用 RightPanelWidth
+            window.AppBarWidth = side == DockEdge.Left
+                ? AppSettings.LeftPanelWidth
+                : AppSettings.RightPanelWidth;
             window.SetWindowConfigManager(WindowConfigs);
             window.Show();
             return window;
@@ -244,6 +261,34 @@ namespace SideDesk
                 _leftWindow?.CurrentScreen ?? ScreenType.A, 
                 _rightWindow?.CurrentScreen ?? ScreenType.B, 
                 save: true);
+        }
+
+        /// <summary>
+        /// 应用左右两侧各自的停靠宽度。
+        /// 直接更新现有窗口的 AppBarWidth 并重新定位，避免销毁重建窗口（
+        /// 重建会连带关闭作为设置窗口 Owner 的主窗口，导致宽度不生效）。
+        /// </summary>
+        public void ApplyPanelWidths()
+        {
+            if (_leftWindow != null)
+            {
+                _leftWindow.AppBarWidth = AppSettings.LeftPanelWidth;
+                _leftWindow.PositionAppBar();
+            }
+            if (_rightWindow != null)
+            {
+                _rightWindow.AppBarWidth = AppSettings.RightPanelWidth;
+                _rightWindow.PositionAppBar();
+            }
+        }
+
+        /// <summary>
+        /// 热重载悬浮配置：遍历现存左右窗口，各自重新读取悬浮设置
+        /// </summary>
+        public void ReloadHoverSettings()
+        {
+            _leftWindow?.ReloadHoverConfig();
+            _rightWindow?.ReloadHoverConfig();
         }
 
         #region 主题切换

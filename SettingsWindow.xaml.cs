@@ -43,8 +43,13 @@ namespace SideDesk
                 default: themeModeCombo.SelectedIndex = 0; break;
             }
 
-            // 面板宽度
-            widthBox.Text = _app.AppSettings.PanelWidth.ToString();
+            // 每侧面板宽度与浮动配置
+            leftWidthBox.Text = _app.AppSettings.LeftPanelWidth.ToString();
+            leftHoverCheck.IsChecked = _app.AppSettings.LeftHoverEnabled;
+            leftHoverWidthBox.Text = _app.AppSettings.LeftHoverWidth.ToString();
+            rightWidthBox.Text = _app.AppSettings.RightPanelWidth.ToString();
+            rightHoverCheck.IsChecked = _app.AppSettings.RightHoverEnabled;
+            rightHoverWidthBox.Text = _app.AppSettings.RightHoverWidth.ToString();
 
             // 背景透明度
             bgOpacityBox.Text = _app.AppSettings.BackgroundOpacity.ToString("F0");
@@ -74,6 +79,10 @@ namespace SideDesk
             RefreshExtensionList();
 
             titleLockSwitch.IsChecked = _app.AppSettings.EnableTitleLock;
+
+            // 按当前停靠位置显隐左右区块，并同步浮动宽度框可用性
+            UpdateSideSectionsVisibility();
+            UpdateHoverWidthEnabled();
 
             InitUpdateUI();
         }
@@ -121,34 +130,180 @@ namespace SideDesk
             App.ApplyTheme(mode);
         }
 
-        private void Width_LostFocus(object sender, RoutedEventArgs e)
+        // ===== 左侧侧边栏宽度 =====
+        private void LeftWidth_LostFocus(object sender, RoutedEventArgs e)
         {
-            ApplyWidth();
+            ApplyLeftWidth();
         }
 
-        private void Width_KeyDown(object sender, KeyEventArgs e)
+        private void LeftWidth_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Enter)
             {
-                ApplyWidth();
+                ApplyLeftWidth();
             }
         }
 
-        private void ApplyWidth()
+        private void ApplyLeftWidth()
         {
             if (_isLoading) return;
-            if (!int.TryParse(widthBox.Text, out int width) || width < 50 || width > 500)
+            if (!int.TryParse(leftWidthBox.Text, out int width) || width < 50 || width > 500)
             {
-                widthBox.Text = _app.AppSettings.PanelWidth.ToString();
+                // 非法输入还原为当前设置值
+                leftWidthBox.Text = _app.AppSettings.LeftPanelWidth.ToString();
                 return;
             }
 
-            if (width != _app.AppSettings.PanelWidth)
+            if (width != _app.AppSettings.LeftPanelWidth)
             {
-                _app.AppSettings.PanelWidth = width;
+                _app.AppSettings.LeftPanelWidth = width;
                 _app.AppSettings.Save();
-                _app.ApplyPanelWidth(width);
+                _app.ApplyPanelWidths();
             }
+        }
+
+        // ===== 右侧侧边栏宽度 =====
+        private void RightWidth_LostFocus(object sender, RoutedEventArgs e)
+        {
+            ApplyRightWidth();
+        }
+
+        private void RightWidth_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                ApplyRightWidth();
+            }
+        }
+
+        private void ApplyRightWidth()
+        {
+            if (_isLoading) return;
+            if (!int.TryParse(rightWidthBox.Text, out int width) || width < 50 || width > 500)
+            {
+                // 非法输入还原为当前设置值
+                rightWidthBox.Text = _app.AppSettings.RightPanelWidth.ToString();
+                return;
+            }
+
+            if (width != _app.AppSettings.RightPanelWidth)
+            {
+                _app.AppSettings.RightPanelWidth = width;
+                _app.AppSettings.Save();
+                _app.ApplyPanelWidths();
+            }
+        }
+
+        // ===== 左侧开启浮动 =====
+        private void LeftHover_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_isLoading) return;
+            _app.AppSettings.LeftHoverEnabled = leftHoverCheck.IsChecked == true;
+            _app.AppSettings.Save();
+            UpdateHoverWidthEnabled();
+            _app.ReloadHoverSettings();
+        }
+
+        // ===== 右侧开启浮动 =====
+        private void RightHover_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_isLoading) return;
+            _app.AppSettings.RightHoverEnabled = rightHoverCheck.IsChecked == true;
+            _app.AppSettings.Save();
+            UpdateHoverWidthEnabled();
+            _app.ReloadHoverSettings();
+        }
+
+        // ===== 左侧浮动宽度 =====
+        private void LeftHoverWidth_LostFocus(object sender, RoutedEventArgs e)
+        {
+            ApplyLeftHoverWidth();
+        }
+
+        private void LeftHoverWidth_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                ApplyLeftHoverWidth();
+            }
+        }
+
+        private void ApplyLeftHoverWidth()
+        {
+            if (_isLoading) return;
+            if (!int.TryParse(leftHoverWidthBox.Text, out int width) || width < 100 || width > 500)
+            {
+                // 非法输入还原为当前设置值
+                leftHoverWidthBox.Text = _app.AppSettings.LeftHoverWidth.ToString();
+                return;
+            }
+
+            if (width != _app.AppSettings.LeftHoverWidth)
+            {
+                _app.AppSettings.LeftHoverWidth = width;
+                _app.AppSettings.Save();
+                _app.ReloadHoverSettings();
+            }
+        }
+
+        // ===== 右侧浮动宽度 =====
+        private void RightHoverWidth_LostFocus(object sender, RoutedEventArgs e)
+        {
+            ApplyRightHoverWidth();
+        }
+
+        private void RightHoverWidth_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                ApplyRightHoverWidth();
+            }
+        }
+
+        private void ApplyRightHoverWidth()
+        {
+            if (_isLoading) return;
+            if (!int.TryParse(rightHoverWidthBox.Text, out int width) || width < 100 || width > 500)
+            {
+                // 非法输入还原为当前设置值
+                rightHoverWidthBox.Text = _app.AppSettings.RightHoverWidth.ToString();
+                return;
+            }
+
+            if (width != _app.AppSettings.RightHoverWidth)
+            {
+                _app.AppSettings.RightHoverWidth = width;
+                _app.AppSettings.Save();
+                _app.ReloadHoverSettings();
+            }
+        }
+
+        // 按当前停靠布局显隐左右面板区块
+        private void UpdateSideSectionsVisibility()
+        {
+            if (leftSideSection == null || rightSideSection == null) return;
+            switch (_app.CurrentLayout)
+            {
+                case LayoutMode.Right:
+                    leftSideSection.Visibility = Visibility.Collapsed;
+                    rightSideSection.Visibility = Visibility.Visible;
+                    break;
+                case LayoutMode.Both:
+                    leftSideSection.Visibility = Visibility.Visible;
+                    rightSideSection.Visibility = Visibility.Visible;
+                    break;
+                default: // Left
+                    leftSideSection.Visibility = Visibility.Visible;
+                    rightSideSection.Visibility = Visibility.Collapsed;
+                    break;
+            }
+        }
+
+        // 浮动宽度行仅在勾选浮动时显示
+        private void UpdateHoverWidthEnabled()
+        {
+            leftHoverWidthRow.Visibility = leftHoverCheck.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+            rightHoverWidthRow.Visibility = rightHoverCheck.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private void BgOpacity_LostFocus(object sender, RoutedEventArgs e)
@@ -210,6 +365,8 @@ namespace SideDesk
                 _app.AppSettings.Layout = newLayout;
                 _app.AppSettings.Save();
                 _app.SwitchLayout(newLayout);
+                // 切换布局后同步左右区块显隐
+                UpdateSideSectionsVisibility();
             }
         }
 
@@ -591,376 +748,25 @@ namespace SideDesk
             if (_isLoading) return;
             _app.AppSettings.EnableTitleLock = titleLockSwitch.IsChecked == true;
             _app.AppSettings.Save();
+
+            // 接通后台重扫定时器的启停：开启则启动重扫（自动捕捉重开的目标窗口），关闭则停止。
+            try
+            {
+                if (_app.AppSettings.EnableTitleLock)
+                    TaskbarOverlayManager.EnsureRescanStarted();
+                else
+                    TaskbarOverlayManager.StopRescan();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[TitleLock] 切换启停失败: {ex.Message}");
+            }
         }
 
         private void TaskbarOverlayButton_Click(object sender, RoutedEventArgs e)
         {
-            var windows = TaskbarOverlayManager.GetTaskbarWindows();
-            if (windows.Count == 0)
-            {
-                MessageBox.Show("未找到可用的任务栏窗口", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
-                return;
-            }
-
-            var pickerDialog = new Window
-            {
-                Title = "选择窗口",
-                Width = 800,
-                Height = 540,
-                WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                ResizeMode = ResizeMode.CanResize,
-                Owner = this,
-                Background = (Brush)FindResource("BrushDialogBG"),
-                Foreground = (Brush)FindResource("BrushTextMain")
-            };
-            pickerDialog.SourceInitialized += (s2, e2) => App.UpdateWindowDwmTheme(pickerDialog);
-
-            var grid = new Grid { Margin = new Thickness(15) };
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(290) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-            // ===== 左侧：已锁定窗口列表 =====
-            var leftPanel = new DockPanel();
-            Grid.SetColumn(leftPanel, 0);
-            var leftHeader = new TextBlock
-            {
-                Text = "已锁定窗口列表",
-                FontSize = (double)FindResource("FontSizeNormal"),
-                FontWeight = FontWeights.Bold,
-                Foreground = (Brush)FindResource("BrushTextMain"),
-                Margin = new Thickness(0, 0, 0, 8)
-            };
-            DockPanel.SetDock(leftHeader, Dock.Top);
-            leftPanel.Children.Add(leftHeader);
-
-            var lockedListBox = new ListBox
-            {
-                Background = (Brush)FindResource("BrushInputBG"),
-                Foreground = (Brush)FindResource("BrushTextMain"),
-                BorderBrush = (Brush)FindResource("BrushBorder"),
-                Margin = new Thickness(0, 0, 0, 8)
-            };
-            DockPanel.SetDock(lockedListBox, Dock.Top);
-
-            var lockedBtnPanel = new StackPanel { Orientation = Orientation.Horizontal };
-            DockPanel.SetDock(lockedBtnPanel, Dock.Bottom);
-            var deleteRuleBtn = new Button
-            {
-                Content = "删除规则",
-                Style = (Style)FindResource("GhostButtonStyle"),
-                Padding = new Thickness(10, 6, 10, 6),
-                Margin = new Thickness(0, 0, 8, 0)
-            };
-            var refreshLockedBtn = new Button
-            {
-                Content = "刷新",
-                Style = (Style)FindResource("GhostButtonStyle"),
-                Padding = new Thickness(10, 6, 10, 6)
-            };
-            lockedBtnPanel.Children.Add(deleteRuleBtn);
-            lockedBtnPanel.Children.Add(refreshLockedBtn);
-            leftPanel.Children.Add(lockedBtnPanel);
-            leftPanel.Children.Add(lockedListBox);
-
-            Action reloadLocked = () =>
-            {
-                lockedListBox.Items.Clear();
-                var rules = TitleLockRuleManager.GetAll();
-                foreach (var r in rules)
-                {
-                    var rowPanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(2) };
-                    rowPanel.Children.Add(new System.Windows.Shapes.Rectangle
-                    {
-                        Width = 20, Height = 20,
-                        Margin = new Thickness(0, 0, 8, 0),
-                        Fill = Brushes.Transparent
-                    });
-
-                    var sp = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-                    string head = $"[{r.LockText}]  {r.ProcessName}";
-                    sp.Children.Add(new TextBlock
-                    {
-                        Text = head,
-                        FontWeight = FontWeights.Bold,
-                        Foreground = (Brush)FindResource("BrushTextMain"),
-                        TextTrimming = TextTrimming.CharacterEllipsis
-                    });
-                    string detail = !string.IsNullOrEmpty(r.MatchPattern)
-                        ? $"匹配（{(r.MatchMode == TitleMatchMode.Equals ? "等于" : "包含")}）：{r.MatchPattern}"
-                        : $"原标题：{r.OriginalTitle}";
-                    sp.Children.Add(new TextBlock
-                    {
-                        Text = detail,
-                        Foreground = (Brush)FindResource("BrushTextMuted"),
-                        FontSize = 11,
-                        TextTrimming = TextTrimming.CharacterEllipsis
-                    });
-                    rowPanel.Children.Add(sp);
-                    lockedListBox.Items.Add(new ListBoxItem { Content = rowPanel, Tag = r });
-                }
-                if (lockedListBox.Items.Count == 0)
-                {
-                    lockedListBox.Items.Add(new ListBoxItem
-                    {
-                        Content = new TextBlock
-                        {
-                            Text = "（暂无锁定规则）",
-                            Foreground = (Brush)FindResource("BrushTextMuted"),
-                            FontStyle = FontStyles.Italic
-                        },
-                        IsHitTestVisible = false
-                    });
-                }
-            };
-            reloadLocked();
-
-            deleteRuleBtn.Click += (s, ev) =>
-            {
-                if (lockedListBox.SelectedItem is ListBoxItem li && li.Tag is TitleLockRule selRule)
-                {
-                    if (MessageBox.Show($"确定删除规则：[{selRule.LockText}] {selRule.ProcessName}？",
-                        "确认删除", MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK)
-                    {
-                        TitleLockRuleManager.RemoveExact(selRule);
-                        reloadLocked();
-                    }
-                }
-                else
-                {
-                    MessageBox.Show("请选中要删除的规则", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
-                }
-            };
-            refreshLockedBtn.Click += (s, ev) => reloadLocked();
-
-            grid.Children.Add(leftPanel);
-
-            // ===== 右侧：可选窗口 =====
-            var rightPanel = new DockPanel();
-            Grid.SetColumn(rightPanel, 2);
-            var rightHeader = new TextBlock
-            {
-                Text = "选择一个窗口来锁定标题",
-                FontSize = (double)FindResource("FontSizeNormal"),
-                FontWeight = FontWeights.Bold,
-                Foreground = (Brush)FindResource("BrushTextMain"),
-                Margin = new Thickness(0, 0, 0, 8)
-            };
-            DockPanel.SetDock(rightHeader, Dock.Top);
-            rightPanel.Children.Add(rightHeader);
-
-            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-            DockPanel.SetDock(btnPanel, Dock.Bottom);
-            var cancelBtn = new Button
-            {
-                Content = "取消",
-                Style = (Style)FindResource("StandardButtonStyle"),
-                Padding = new Thickness(16, 8, 16, 8),
-                Margin = new Thickness(0, 0, 10, 0)
-            };
-            cancelBtn.Click += (s, ev) => pickerDialog.Close();
-            var okBtn = new Button
-            {
-                Content = "下一步",
-                Style = (Style)FindResource("PrimaryButtonStyle"),
-                Padding = new Thickness(16, 8, 16, 8)
-            };
-            btnPanel.Children.Add(cancelBtn);
-            btnPanel.Children.Add(okBtn);
-            rightPanel.Children.Add(btnPanel);
-
-            var listBox = new ListBox
-            {
-                Background = (Brush)FindResource("BrushInputBG"),
-                Foreground = (Brush)FindResource("BrushTextMain"),
-                BorderBrush = (Brush)FindResource("BrushBorder"),
-                Margin = new Thickness(0, 0, 0, 8)
-            };
-            foreach (var w in windows)
-            {
-                var itemPanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(2) };
-                if (w.Icon != null)
-                {
-                    itemPanel.Children.Add(new System.Windows.Controls.Image
-                    {
-                        Source = w.Icon,
-                        Width = 20, Height = 20,
-                        Margin = new Thickness(0, 0, 8, 0)
-                    });
-                }
-                var textPanel = new StackPanel();
-                textPanel.Children.Add(new TextBlock
-                {
-                    Text = w.Title,
-                    FontWeight = FontWeights.Bold,
-                    Foreground = (Brush)FindResource("BrushTextMain"),
-                    TextTrimming = TextTrimming.CharacterEllipsis,
-                    MaxWidth = 420
-                });
-                textPanel.Children.Add(new TextBlock
-                {
-                    Text = w.ProcessName,
-                    Foreground = (Brush)FindResource("BrushTextMuted"),
-                    FontSize = 11
-                });
-                itemPanel.Children.Add(textPanel);
-                listBox.Items.Add(new ListBoxItem { Content = itemPanel, Tag = w });
-            }
-            rightPanel.Children.Add(listBox);
-
-            okBtn.Click += (s, ev) =>
-            {
-                if (listBox.SelectedItem == null)
-                {
-                    MessageBox.Show("请选择一个窗口", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return;
-                }
-                var selected = (TaskbarOverlayManager.WindowInfo)((ListBoxItem)listBox.SelectedItem).Tag;
-                pickerDialog.Close();
-                ShowOverlayEditor(selected);
-            };
-
-            grid.Children.Add(rightPanel);
-            pickerDialog.Content = grid;
-            pickerDialog.ShowDialog();
-        }
-
-        private void ShowOverlayEditor(TaskbarOverlayManager.WindowInfo window)
-        {
-            var editorDialog = new Window
-            {
-                Title = $"锁定标题: {window.Title}",
-                Width = 460,
-                SizeToContent = SizeToContent.Height,
-                WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                ResizeMode = ResizeMode.NoResize,
-                Owner = this,
-                Background = (Brush)FindResource("BrushDialogBG"),
-                Foreground = (Brush)FindResource("BrushTextMain")
-            };
-            editorDialog.SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(editorDialog);
-
-            var rootPanel = new StackPanel { Margin = new Thickness(20) };
-
-            rootPanel.Children.Add(new TextBlock
-            {
-                Text = "锁定任务栏标题",
-                FontSize = (double)FindResource("FontSizeSubtitle"),
-                FontWeight = FontWeights.Bold,
-                Foreground = (Brush)FindResource("BrushTextMain"),
-                Margin = new Thickness(0, 0, 0, 16)
-            });
-
-            rootPanel.Children.Add(new TextBlock
-            {
-                Text = $"窗口：{window.Title}",
-                Foreground = (Brush)FindResource("BrushTextMuted"),
-                FontSize = (double)FindResource("FontSizeSmall"),
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                Margin = new Thickness(0, 0, 0, 4)
-            });
-            rootPanel.Children.Add(new TextBlock
-            {
-                Text = $"进程：{window.ProcessName}",
-                Foreground = (Brush)FindResource("BrushTextMuted"),
-                FontSize = (double)FindResource("FontSizeSmall"),
-                Margin = new Thickness(0, 0, 0, 16)
-            });
-
-            rootPanel.Children.Add(new TextBlock
-            {
-                Text = "锁定后显示的标题文字：",
-                Foreground = (Brush)FindResource("BrushTextSec"),
-                FontSize = (double)FindResource("FontSizeSmall"),
-                Margin = new Thickness(0, 0, 0, 6)
-            });
-
-            // 初始值：已锁定文字或窗口标题前2字符
-            string initialText = "";
-            var locked = TaskbarOverlayManager.GetLockedWindows();
-            if (locked != null && locked.TryGetValue(window.Handle, out string lockedText) && !string.IsNullOrEmpty(lockedText))
-            {
-                initialText = lockedText;
-            }
-            else if (!string.IsNullOrEmpty(window.Title) && window.Title.Length >= 2)
-            {
-                initialText = window.Title.Substring(0, 2);
-            }
-            else if (!string.IsNullOrEmpty(window.Title))
-            {
-                initialText = window.Title;
-            }
-
-            var lockTextBox = new TextBox
-            {
-                Text = initialText,
-                Style = (Style)FindResource("GlobalTextBoxStyle"),
-                MaxLength = 10
-            };
-            rootPanel.Children.Add(lockTextBox);
-
-            // 匹配模式（可选）
-            rootPanel.Children.Add(new TextBlock
-            {
-                Text = "匹配模式（用于自动恢复匹配）：",
-                Foreground = (Brush)FindResource("BrushTextSec"),
-                FontSize = (double)FindResource("FontSizeSmall"),
-                Margin = new Thickness(0, 16, 0, 6)
-            });
-            var matchPatternBox = new TextBox
-            {
-                Style = (Style)FindResource("GlobalTextBoxStyle"),
-                Text = window.Title
-            };
-            rootPanel.Children.Add(matchPatternBox);
-            rootPanel.Children.Add(new TextBlock
-            {
-                Text = "留空则精确匹配当前标题",
-                Foreground = (Brush)FindResource("BrushTextMuted"),
-                FontSize = (double)FindResource("FontSizeTiny"),
-                Margin = new Thickness(0, 4, 0, 0)
-            });
-
-            // 按钮
-            var editorBtnPanel = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                HorizontalAlignment = HorizontalAlignment.Right,
-                Margin = new Thickness(0, 20, 0, 0)
-            };
-            var editorCancelBtn = new Button
-            {
-                Content = "取消",
-                Style = (Style)FindResource("StandardButtonStyle"),
-                Padding = new Thickness(16, 8, 16, 8),
-                Margin = new Thickness(0, 0, 10, 0)
-            };
-            editorCancelBtn.Click += (s, ev) => editorDialog.Close();
-            var editorOkBtn = new Button
-            {
-                Content = "锁定",
-                Style = (Style)FindResource("PrimaryButtonStyle"),
-                Padding = new Thickness(16, 8, 16, 8)
-            };
-            editorOkBtn.Click += (s, ev) =>
-            {
-                string text = lockTextBox.Text.Trim();
-                if (string.IsNullOrEmpty(text))
-                {
-                    MessageBox.Show("请输入锁定文字", "提示");
-                    return;
-                }
-                string pattern = matchPatternBox.Text.Trim();
-                TaskbarOverlayManager.LockWindowTitle(window.Handle, text, pattern, TitleMatchMode.Contains);
-                editorDialog.Close();
-                MessageBox.Show($"已锁定: [{text}]", "完成", MessageBoxButton.OK, MessageBoxImage.Information);
-            };
-            editorBtnPanel.Children.Add(editorCancelBtn);
-            editorBtnPanel.Children.Add(editorOkBtn);
-            rootPanel.Children.Add(editorBtnPanel);
-
-            editorDialog.Content = rootPanel;
-            editorDialog.ShowDialog();
+            var picker = new TitleLockPickerWindow { Owner = this };
+            picker.ShowDialog();
         }
 
         #endregion

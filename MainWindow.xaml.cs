@@ -51,13 +51,8 @@ namespace SideDesk
             RegisterAppBar();
             UpdateTitle();
 
-            if (Framework.AppSettings.Instance.MouseHoverExpand)
-            {
-                ExpandedWidth = 200;
-                _hoverTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
-                _hoverTimer.Tick += HoverTimer_Tick;
-                _hoverTimer.Start();
-            }
+            // 按当前停靠侧读取各自的悬停浮动配置并启动/停止计时器
+            ReloadHoverConfig();
 
             // 设置主窗口引用
             sidebarPanel.SetMainWindow(this);
@@ -77,6 +72,48 @@ namespace SideDesk
             var app = (App)Application.Current;
             string url = app.GetUrlForScreen(_currentScreen);
             sidebarPanel.NavigateToUrl(url);
+        }
+
+        /// <summary>
+        /// 重新加载悬停浮动配置：按当前 DockSide 从设置读取该侧的开关与宽度，
+        /// 动态启动或停止悬停计时器。可在设置变更后热重载调用。
+        /// </summary>
+        public void ReloadHoverConfig()
+        {
+            var app = (App)Application.Current;
+            // 按停靠侧读取对应的开关与展开宽度
+            bool enabled = DockSide == DockEdge.Left
+                ? app.AppSettings.LeftHoverEnabled
+                : app.AppSettings.RightHoverEnabled;
+            int width = DockSide == DockEdge.Left
+                ? app.AppSettings.LeftHoverWidth
+                : app.AppSettings.RightHoverWidth;
+
+            if (enabled)
+            {
+                ExpandedWidth = width;
+                if (_hoverTimer == null)
+                {
+                    _hoverTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
+                    _hoverTimer.Tick += HoverTimer_Tick;
+                    _hoverTimer.Start();
+                }
+            }
+            else
+            {
+                // 禁用：若正处于展开态先收回，再停止计时器
+                // 收回宽度仅在 AppBar 已注册时安全，保持与 HoverTimer_Tick 一致的守护
+                if (IsAppBarRegistered)
+                {
+                    SetHoverExpanded(false);
+                }
+                if (_hoverTimer != null)
+                {
+                    _hoverTimer.Stop();
+                    _hoverTimer.Tick -= HoverTimer_Tick;
+                    _hoverTimer = null;
+                }
+            }
         }
 
         private void HoverTimer_Tick(object? sender, EventArgs e)
@@ -153,6 +190,11 @@ namespace SideDesk
             var showClose = isBothSide ? Visibility.Visible : Visibility.Collapsed;
             closeWindowMenu.Visibility = showClose;
             closeWindowSeparator.Visibility = showClose;
+
+            // 未在设置中开启标题锁定时，隐藏"工具-窗口标题锁定器"（工具子菜单为空则一并隐藏）
+            bool titleLockEnabled = app.AppSettings.EnableTitleLock;
+            titleLockMenuItem.Visibility = titleLockEnabled ? Visibility.Visible : Visibility.Collapsed;
+            toolsMenu.Visibility = titleLockEnabled ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private void EditWindowAtIndex(int index)
@@ -182,11 +224,11 @@ namespace SideDesk
         }
 
         /// <summary>
-        /// 打开窗口标题锁定器管理界面
+        /// 打开窗口标题锁定器（选择窗口界面，与设置-工具入口一致）
         /// </summary>
         private void TitleLock_Click(object sender, RoutedEventArgs e)
         {
-            var window = new TitleLockWindow { Owner = this };
+            var window = new TitleLockPickerWindow { Owner = this };
             window.ShowDialog();
         }
 
