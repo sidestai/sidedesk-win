@@ -127,7 +127,32 @@ namespace SideDesk.Controls
             titleBar.Margin = new Thickness(0);
             Grid.SetRow(titleBar, 0);
 
-            // 先添加关闭按钮（DockPanel的顺序很重要，最后添加的元素会占据剩余空间）
+            // 先添加时间信息（左侧）
+            var timeText = new TextBlock
+            {
+                Text = _currentNote.CreatedAt.ToString("MM-dd HH:mm"),
+                FontSize = 11,
+                Foreground = new SolidColorBrush(Color.FromRgb(160, 160, 160)),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(10, 0, 0, 0)
+            };
+            DockPanel.SetDock(timeText, Dock.Left);
+            titleBar.Children.Add(timeText);
+
+            // 标题文本（中间，自动填充）
+            var titleLabel = new TextBlock
+            {
+                Text = "便签",
+                Foreground = Brushes.White,
+                FontSize = 14,
+                FontWeight = FontWeights.Bold,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(12, 8, 0, 8)
+            };
+            DockPanel.SetDock(titleLabel, Dock.Left);
+            titleBar.Children.Add(titleLabel);
+
+            // ✅ 最后添加关闭按钮（右侧停靠）
             var closeButton = new Button
             {
                 Content = "✕",
@@ -140,10 +165,22 @@ namespace SideDesk.Controls
                 BorderThickness = new Thickness(0),
                 Foreground = Brushes.White,
                 FontSize = 16,
-                Cursor = Cursors.Hand
+                Cursor = Cursors.Hand,
+                Padding = new Thickness(0)
             };
+            // 自定义模板：去掉默认按钮外观，但保证 Content(✕) 正常渲染，
+            // 并让 Background 绑定生效以支持悬停变色（Template=null 会导致按钮完全不显示）
+            var closeTemplate = new ControlTemplate(typeof(Button));
+            var borderFactory = new FrameworkElementFactory(typeof(Border));
+            borderFactory.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(Control.BackgroundProperty));
+            borderFactory.SetValue(Border.CornerRadiusProperty, new CornerRadius(6));
+            var presenterFactory = new FrameworkElementFactory(typeof(ContentPresenter));
+            presenterFactory.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+            presenterFactory.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
+            borderFactory.AppendChild(presenterFactory);
+            closeTemplate.VisualTree = borderFactory;
             closeButton.Style = null;
-            closeButton.Template = null;
+            closeButton.Template = closeTemplate;
             closeButton.Click += (s, e) => SaveAndClose();
 
             // 鼠标悬停效果
@@ -158,30 +195,6 @@ namespace SideDesk.Controls
 
             DockPanel.SetDock(closeButton, Dock.Right); // ✅ 关键：停靠到右侧
             titleBar.Children.Add(closeButton);
-
-            // 标题文本
-            var titleLabel = new TextBlock
-            {
-                Text = "便签",
-                Foreground = Brushes.White,
-                FontSize = 14,
-                FontWeight = FontWeights.Bold,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(12, 8, 0, 8)
-            };
-            titleBar.Children.Add(titleLabel); // 自动填充剩余空间
-
-            // 时间信息
-            var timeText = new TextBlock
-            {
-                Text = _currentNote.CreatedAt.ToString("MM-dd HH:mm"),
-                FontSize = 11,
-                Foreground = new SolidColorBrush(Color.FromRgb(160, 160, 160)),
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(10, 0, 0, 0)
-            };
-            timeText.VerticalAlignment = VerticalAlignment.Center;
-            titleBar.Children.Add(timeText); // 添加到titleLabel后面
 
             // 使标题栏可拖动窗口
             titleBar.MouseLeftButtonDown += (s, e) => 

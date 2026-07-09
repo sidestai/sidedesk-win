@@ -69,6 +69,16 @@ public class TimerItem
     /// 历史记录：日期 -> 总秒数
     /// </summary>
     public Dictionary<string, int> DailyRecords { get; set; } = new();
+
+    /// <summary>
+    /// 获取总经过时间（含当前运行时段）
+    /// </summary>
+    public TimeSpan GetElapsed()
+    {
+        if (IsRunning && StartTime.HasValue)
+            return ElapsedTime + (DateTime.Now - StartTime.Value);
+        return ElapsedTime;
+    }
 }
 
 public class WindowConfig

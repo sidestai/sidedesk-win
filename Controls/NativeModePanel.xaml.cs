@@ -92,7 +92,7 @@ namespace SideDesk.Controls
         {
             _currentWindowConfig = config;
             _configManager = manager;
-            _isEditMode = config.IsEditMode;  // 从窗口配置读取
+            _isEditMode = false;  // 每次启动/加载都强制非编辑模式，编辑状态不持久化
 
 
 

@@ -511,6 +511,22 @@ namespace SideDesk.Services
             {
                 contentPanel.Children.Add(BuildItemButton(item, group.Id));
             }
+            
+            // 渲染子模块（便签、计时器等）
+            if (group.ChildPanels != null && group.ChildPanels.Count > 0)
+            {
+                foreach (var childPanel in group.ChildPanels)
+                {
+                    var widget = BuildModuleWidget(childPanel, group.Id);
+                    if (widget != null)
+                    {
+                        // 如果是Timer且SkipWrapper=true，直接添加到contentPanel
+                        // 否则需要Wrap一下
+                        contentPanel.Children.Add(widget);
+                    }
+                }
+            }
+            
             outerPanel.Children.Add(contentPanel);
             border.Child = outerPanel;
 
@@ -531,28 +547,6 @@ namespace SideDesk.Services
                 miWin.Click += (s2, ev2) => ShowPickWindowDialog(group.Id);
                 addSubMenu.Items.Add(miWin);
                 popup.Items.Add(addSubMenu);
-
-                // 添加模块子菜单
-                var moduleSubMenu = new MenuItem { Header = "添加模块" };
-                var moduleTypes = new (string Header, PanelType Type)[]
-                {
-                    ("便签", PanelType.StickyNotes),
-                    ("剪贴板收藏", PanelType.Clipboard),
-                    ("系统信息", PanelType.SystemMonitor),
-                    ("使用统计", PanelType.UsageStats),
-                    ("AI 对话", PanelType.AIChat),
-                    ("文件区", PanelType.FileArea),
-                    ("数据看板", PanelType.DataDashboard),
-                    ("计时器", PanelType.Timer)
-                };
-                foreach (var (header, type) in moduleTypes)
-                {
-                    var mi = new MenuItem { Header = header };
-                    var panelType = type;
-                    mi.Click += (s2, ev2) => AddModuleToGroup(group, panelType);
-                    moduleSubMenu.Items.Add(mi);
-                }
-                popup.Items.Add(moduleSubMenu);
                 popup.Items.Add(new Separator());
 
                 var expandItem = new MenuItem { Header = group.IsExpanded ? "收起" : "展开" };
@@ -618,7 +612,7 @@ namespace SideDesk.Services
                 popup.Items.Add(tileItem);
                 popup.Items.Add(new Separator());
 
-                var deleteItem = new MenuItem { Header = "删除分组" };
+                var deleteItem = new MenuItem { Header = "删除快捷组" };
                 deleteItem.Click += (s2, ev2) =>
                 {
                     bool hasModules = group.ChildPanels != null && group.ChildPanels.Count > 0;
@@ -652,6 +646,415 @@ namespace SideDesk.Services
 
             return border;
         }
+
+        #endregion
+
+        #region Module Widget Building
+
+        /// <summary>
+        /// 构建模块widget（便签、计时器等）
+        /// </summary>
+        private FrameworkElement BuildModuleWidget(PanelItem panel, string groupId)
+        {
+            switch (panel.Type)
+            {
+                case PanelType.StickyNotes:
+                    return BuildStickyNotesModule(panel, groupId);
+                case PanelType.Timer:
+                    return BuildTimerModule(panel, groupId);
+                case PanelType.Clipboard:
+                    return BuildClipboardModule(panel, groupId);
+                case PanelType.UsageStats:
+                    return BuildUsageStatsModule(panel, groupId);
+                case PanelType.AIChat:
+                    return BuildAIChatModule(panel, groupId);
+                case PanelType.SystemMonitor:
+                    return BuildSystemMonitorModule(panel, groupId);
+                case PanelType.FileArea:
+                    return BuildFileAreaModule(panel, groupId);
+                case PanelType.DataDashboard:
+                    return BuildDataDashboardModule(panel, groupId);
+                default:
+                    return null;
+            }
+        }
+
+        private FrameworkElement BuildStickyNotesModule(PanelItem panel, string groupId)
+        {
+            // 初始化便签列表
+            if (panel.StickyNotes == null)
+            {
+                panel.StickyNotes = new List<StickyNote>();
+            }
+
+            var container = new StackPanel();
+
+            // 添加便签按钮
+            var addBtn = new Button
+            {
+                Content = "+ 添加便签",
+                Height = 28,
+                Margin = new Thickness(0, 0, 0, 8),
+                Cursor = Cursors.Hand
+            };
+            addBtn.Click += (s, e) =>
+            {
+                var note = new StickyNote();
+                panel.StickyNotes.Insert(0, note);
+                QuickGroupManager.Save();
+                LoadGroups();
+            };
+            container.Children.Add(addBtn);
+
+            // 便签列表
+            foreach (var note in panel.StickyNotes)
+            {
+                container.Children.Add(BuildStickyNoteItem(note, panel));
+            }
+
+            return container;
+        }
+
+        private FrameworkElement BuildStickyNoteItem(StickyNote note, PanelItem panel)
+        {
+            var row = new DockPanel { Margin = new Thickness(0, 2, 0, 2) };
+
+            // 删除按钮
+            var delBtn = new Button
+            {
+                Content = "×",
+                Width = 20,
+                Height = 20,
+                FontSize = 14,
+                Background = Brushes.Transparent,
+                Foreground = (Brush)new BrushConverter().ConvertFrom("#FF6B6B"),
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand
+            };
+            DockPanel.SetDock(delBtn, Dock.Right);
+            row.Children.Add(delBtn);
+
+            // 文本预览
+            var textBlock = new TextBlock
+            {
+                Text = string.IsNullOrEmpty(note.Content) ? "空便签" : note.Content,
+                Foreground = (Brush)new BrushConverter().ConvertFrom("#CCCCCC"),
+                FontSize = 11,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                MaxWidth = 200,
+                ToolTip = note.Content?.Length > 200 ? note.Content.Substring(0, 200) + "..." : note.Content
+            };
+            row.Children.Add(textBlock);
+
+            delBtn.Click += (s, e) =>
+            {
+                panel.StickyNotes.RemoveAll(n => n.Id == note.Id);
+                QuickGroupManager.Save();
+                LoadGroups();
+                e.Handled = true;
+            };
+
+            return row;
+        }
+
+        private FrameworkElement BuildTimerModule(PanelItem panel, string groupId)
+        {
+            // 初始化计时器列表
+            panel.TimerItems ??= new List<TimerItem>();
+
+            var container = new StackPanel();
+
+            // ✅ SkipWrapper=true 时不显示外层容器（标题+添加按钮），直接返回计时器卡片
+            if (!panel.SkipWrapper)
+            {
+                // 添加计时器按钮
+                var addBtn = new Button
+                {
+                    Content = "+ 添加计时器",
+                    Height = 28,
+                    Margin = new Thickness(0, 0, 0, 8),
+                    Cursor = Cursors.Hand
+                };
+                addBtn.Click += (s, e) =>
+                {
+                    panel.TimerItems.Add(new TimerItem());
+                    QuickGroupManager.Save();
+                    LoadGroups();
+                };
+                container.Children.Add(addBtn);
+            }
+
+            // 渲染每个计时器
+            foreach (var timer in panel.TimerItems)
+            {
+                container.Children.Add(BuildTimerCard(timer, panel));
+            }
+
+            return container;
+        }
+
+        private FrameworkElement BuildTimerCard(TimerItem timer, PanelItem panel)
+        {
+            var card = new Border
+            {
+                Background = new SolidColorBrush(Color.FromRgb(30, 30, 30)),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(12),
+                Margin = new Thickness(0, 0, 0, 8)
+            };
+
+            var mainStack = new StackPanel();
+
+            // 标题行
+            var titleRow = new DockPanel();
+            var titleLabel = new TextBlock
+            {
+                Text = string.IsNullOrEmpty(timer.Name) ? "新计时" : timer.Name,
+                Foreground = Brushes.White,
+                FontSize = 13,
+                FontWeight = FontWeights.Bold,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            titleRow.Children.Add(titleLabel);
+
+            // 编辑按钮
+            var editBtn = new Button
+            {
+                Content = "",
+                Width = 24,
+                Height = 24,
+                FontSize = 12,
+                Background = Brushes.Transparent,
+                Foreground = (Brush)new BrushConverter().ConvertFrom("#9CA3AF"),
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand
+            };
+            DockPanel.SetDock(editBtn, Dock.Right);
+            editBtn.Click += (s, e) => ShowEditTimerDialog(timer, panel);
+            titleRow.Children.Add(editBtn);
+
+            mainStack.Children.Add(titleRow);
+
+            // 时间显示
+            var timeDisplay = new TextBlock
+            {
+                Text = FormatTimeSpan(timer.GetElapsed()),
+                Foreground = Brushes.White,
+                FontSize = 24,
+                FontWeight = FontWeights.Bold,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 8, 0, 8)
+            };
+            mainStack.Children.Add(timeDisplay);
+
+            // 控制按钮
+            var controlPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
+
+            var toggleBtn = new Button
+            {
+                Content = timer.IsRunning ? "⏹ 停止" : "▶ 开始",
+                Width = 80,
+                Height = 28,
+                Background = timer.IsRunning ? Brushes.IndianRed : new SolidColorBrush(Color.FromRgb(52, 152, 219)),
+                Foreground = Brushes.White,
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand
+            };
+            toggleBtn.Click += (s, e) =>
+            {
+                if (!timer.IsRunning)
+                {
+                    timer.IsRunning = true;
+                    timer.StartTime = DateTime.Now;
+                    QuickGroupManager.Save();
+                    StartTimerUpdate(timer, timeDisplay, panel, toggleBtn);
+                    toggleBtn.Content = "⏹ 停止";
+                    toggleBtn.Background = Brushes.IndianRed;
+                }
+                else
+                {
+                    // 累加当前运行时段到 ElapsedTime
+                    if (timer.StartTime.HasValue)
+                        timer.ElapsedTime += (DateTime.Now - timer.StartTime.Value);
+                    timer.IsRunning = false;
+                    timer.StartTime = null;
+                    AccumulateToDailyRecord(timer);
+                    QuickGroupManager.Save();
+                    LoadGroups();
+                }
+            };
+            controlPanel.Children.Add(toggleBtn);
+
+            mainStack.Children.Add(controlPanel);
+
+            // 今日统计
+            var today = DateTime.Now.ToString("yyyy-MM-dd");
+            if (timer.DailyRecords.TryGetValue(today, out int todaySeconds) && todaySeconds > 0)
+            {
+                var todayText = new TextBlock
+                {
+                    Text = $"今日: {FormatTimeSpan(TimeSpan.FromSeconds(todaySeconds))}",
+                    Foreground = (Brush)new BrushConverter().ConvertFrom("#9CA3AF"),
+                    FontSize = 11,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 4, 0, 0)
+                };
+                mainStack.Children.Add(todayText);
+            }
+
+            card.Child = mainStack;
+            return card;
+        }
+
+        private void StartTimerUpdate(TimerItem timer, TextBlock display, PanelItem panel, Button toggleBtn)
+        {
+            var timerObj = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(100)
+            };
+            timerObj.Tick += (s, e) =>
+            {
+                if (!timer.IsRunning)
+                {
+                    timerObj.Stop();
+                    return;
+                }
+                display.Text = FormatTimeSpan(timer.GetElapsed());
+            };
+            timerObj.Start();
+        }
+
+        private void ShowEditTimerDialog(TimerItem timer, PanelItem panel)
+        {
+            var dialog = new Window
+            {
+                Title = "编辑计时器",
+                Width = 380,
+                Height = 240,
+                WindowStartupLocation = WindowStartupLocation.CenterScreen,
+                ResizeMode = ResizeMode.NoResize,
+                ShowInTaskbar = false,
+                Background = (Brush)Application.Current.FindResource("BrushDialogBG"),
+                Foreground = (Brush)Application.Current.FindResource("BrushTextMain")
+            };
+
+            var rootPanel = new StackPanel { Margin = new Thickness(16) };
+
+            // 标题
+            var titleText = new TextBlock
+            {
+                Text = "编辑计时器",
+                FontSize = (double)Application.Current.FindResource("FontSizeSubtitle"),
+                FontWeight = FontWeights.Bold,
+                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
+                Margin = new Thickness(0, 0, 0, 16)
+            };
+            rootPanel.Children.Add(titleText);
+
+            // 名称标签
+            var nameLabel = new TextBlock
+            {
+                Text = "名称",
+                FontSize = (double)Application.Current.FindResource("FontSizeSmallPlus"),
+                Foreground = (Brush)Application.Current.FindResource("BrushTextSec"),
+                Margin = new Thickness(0, 0, 0, 6)
+            };
+            rootPanel.Children.Add(nameLabel);
+
+            // 名称输入框
+            var nameBox = new TextBox
+            {
+                Text = timer.Name,
+                Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle"),
+                Margin = new Thickness(0, 0, 0, 16)
+            };
+            rootPanel.Children.Add(nameBox);
+
+            // 超时标签
+            var timeoutLabel = new TextBlock
+            {
+                Text = "超时（秒）",
+                FontSize = (double)Application.Current.FindResource("FontSizeSmallPlus"),
+                Foreground = (Brush)Application.Current.FindResource("BrushTextSec"),
+                Margin = new Thickness(0, 0, 0, 6)
+            };
+            rootPanel.Children.Add(timeoutLabel);
+
+            // 超时输入框
+            var timeoutBox = new TextBox
+            {
+                Text = timer.TimeoutSeconds > 0 ? timer.TimeoutSeconds.ToString() : "",
+                Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle"),
+                Margin = new Thickness(0, 0, 0, 20)
+            };
+            rootPanel.Children.Add(timeoutBox);
+
+            // 按钮区域
+            var btnPanel = new StackPanel 
+            { 
+                Orientation = Orientation.Horizontal, 
+                HorizontalAlignment = HorizontalAlignment.Right 
+            };
+
+            var cancelBtn = new Button
+            {
+                Content = "取消",
+                Style = (Style)Application.Current.FindResource("StandardButtonStyle"),
+                Width = 75,
+                Margin = new Thickness(0, 0, 10, 0)
+            };
+            cancelBtn.Click += (s, e) => dialog.Close();
+
+            var saveBtn = new Button
+            {
+                Content = "保存",
+                Style = (Style)Application.Current.FindResource("PrimaryButtonStyle"),
+                Width = 75
+            };
+            saveBtn.Click += (s, e) =>
+            {
+                timer.Name = string.IsNullOrWhiteSpace(nameBox.Text) ? "计时器" : nameBox.Text.Trim();
+                if (int.TryParse(timeoutBox.Text, out int timeout) && timeout > 0)
+                {
+                    timer.TimeoutSeconds = timeout;
+                }
+                QuickGroupManager.Save();
+                LoadGroups();
+                dialog.Close();
+            };
+
+            btnPanel.Children.Add(cancelBtn);
+            btnPanel.Children.Add(saveBtn);
+            rootPanel.Children.Add(btnPanel);
+
+            dialog.Content = rootPanel;
+            dialog.ShowDialog();
+        }
+
+        private string FormatTimeSpan(TimeSpan ts)
+        {
+            if (ts.TotalHours >= 1)
+                return $"{(int)ts.TotalHours:D2}:{ts.Minutes:D2}:{ts.Seconds:D2}";
+            return $"{ts.Minutes:D2}:{ts.Seconds:D2}";
+        }
+
+        private void AccumulateToDailyRecord(TimerItem timer)
+        {
+            var elapsed = timer.GetElapsed();
+            var today = DateTime.Now.ToString("yyyy-MM-dd");
+            if (!timer.DailyRecords.ContainsKey(today))
+                timer.DailyRecords[today] = 0;
+            timer.DailyRecords[today] += (int)elapsed.TotalSeconds;
+        }
+
+        // 其他模块的占位实现
+        private FrameworkElement BuildClipboardModule(PanelItem panel, string groupId) => new TextBlock { Text = "📋 剪贴板收藏", Foreground = Brushes.White };
+        private FrameworkElement BuildUsageStatsModule(PanelItem panel, string groupId) => new TextBlock { Text = "📊 使用统计", Foreground = Brushes.White };
+        private FrameworkElement BuildAIChatModule(PanelItem panel, string groupId) => new TextBlock { Text = "🤖 AI 对话", Foreground = Brushes.White };
+        private FrameworkElement BuildSystemMonitorModule(PanelItem panel, string groupId) => new TextBlock { Text = "💻 系统信息", Foreground = Brushes.White };
+        private FrameworkElement BuildFileAreaModule(PanelItem panel, string groupId) => new TextBlock { Text = "📁 文件区", Foreground = Brushes.White };
+        private FrameworkElement BuildDataDashboardModule(PanelItem panel, string groupId) => new TextBlock { Text = "📈 数据看板", Foreground = Brushes.White };
 
         private FrameworkElement BuildItemButton(QuickItem item, string groupId)
         {
@@ -2010,32 +2413,6 @@ namespace SideDesk.Services
                 QuickGroupManager.Save();
                 LoadGroups();
             }
-        }
-
-        /// <summary>
-        /// 向分组添加模块（便签、剪贴板等）
-        /// </summary>
-        private void AddModuleToGroup(QuickGroup group, PanelType type)
-        {
-            group.ChildPanels ??= new List<PanelItem>();
-            
-            var newPanel = new PanelItem { Type = type };
-            
-            // ✅ 为Timer类型设置SkipWrapper=true，跳过外层容器包装
-            if (type == PanelType.Timer)
-            {
-                newPanel.SkipWrapper = true;  // 跳过外层容器包装
-                newPanel.TimerItems = new List<TimerItem>();  // 初始化为空列表
-            }
-            // 新面板初始化为空，避免触发全局迁移
-            else if (type == PanelType.StickyNotes)
-            {
-                newPanel.StickyNotes = new List<StickyNote>();
-            }
-            
-            group.ChildPanels.Add(newPanel);
-            QuickGroupManager.Save();
-            LoadGroups(); // 重新加载分组UI
         }
 
         #endregion
