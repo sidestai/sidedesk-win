@@ -57,6 +57,13 @@ namespace SideDesk.Controls
         // 编辑模式（持久化到 AppSettings）
         private bool _isEditMode = false;
 
+        // 顶层面板拖拽排序指示器（编辑模式下上下拖动模块/分组调换位置）
+        private Border? _panelDragIndicator;
+
+        // 今日待办到点提醒
+        private DispatcherTimer? _todoReminderTimer;
+        private static readonly HashSet<string> _remindedTodoIds = new();
+
         // 剪贴板历史
         private ClipboardService? _clipboardService;
         private StackPanel? _clipboardHistoryContainer;
@@ -131,6 +138,17 @@ namespace SideDesk.Controls
             Drop += NativeModePanel_Drop;
             PreviewDragOver += NativeModePanel_PreviewDragOver;
 
+            // 顶层面板拖拽排序（编辑模式下上下拖动模块/分组调换位置），只订阅一次
+            dynamicContent.AllowDrop = true;
+            dynamicContent.DragOver += DynamicContent_DragOver;
+            dynamicContent.DragLeave += DynamicContent_DragLeave;
+            dynamicContent.Drop += DynamicContent_Drop;
+
+            // 今日待办到点提醒（每 30 秒检查一次）
+            _todoReminderTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
+            _todoReminderTimer.Tick += TodoReminderTick;
+            _todoReminderTimer.Start();
+
             Debug.WriteLine("[NativeModePanel] 全局服务已初始化");
         }
 
@@ -186,7 +204,13 @@ namespace SideDesk.Controls
             foreach (var panel in _currentWindowConfig.Panels)
             {
                 var widget = CreatePanelWidget(panel);
-                if (widget != null) dynamicContent.Children.Add(widget);
+                if (widget != null)
+                {
+                    // 编辑模式下，为每个顶层面板挂载拖拽排序手柄
+                    if (_isEditMode && widget is FrameworkElement fe)
+                        AttachPanelDragHandlers(fe, panel);
+                    dynamicContent.Children.Add(widget);
+                }
             }
 
             // 空窗口提示
@@ -312,6 +336,7 @@ namespace SideDesk.Controls
                 PanelType.ClipboardHistory => BuildClipboardHistoryWidget(item),
                 PanelType.DataDashboard => BuildDataDashboardWidget(item),
                 PanelType.Timer => BuildTimerWidget(item),
+                PanelType.TodoList => BuildTodoWidget(item),
                 PanelType.Group => BuildGroupWidget(item),
                 _ => null
             };
@@ -342,49 +367,7 @@ namespace SideDesk.Controls
                 {
                     if (e.ClickCount == 2)
                     {
-                        var parent = titleBlock.Parent as Panel;
-                        if (parent == null) return;
-
-                        var editBox = new TextBox
-                        {
-                            Text = titleBlock.Text,
-                            FontWeight = FontWeights.Bold,
-                            MinWidth = 50,
-                            Background = Brushes.Transparent,
-                            Foreground = (Brush)FindResource("BrushTextMain"),
-                            BorderThickness = new Thickness(0, 0, 0, 1),
-                            BorderBrush = (Brush)FindResource("BrushAccent"),
-                            Padding = new Thickness(0),
-                            VerticalAlignment = VerticalAlignment.Center,
-                            CaretBrush = (Brush)FindResource("BrushTextMain")
-                        };
-
-                        int index = parent.Children.IndexOf(titleBlock);
-                        parent.Children.Remove(titleBlock);
-                        parent.Children.Insert(index, editBox);
-                        editBox.Focus();
-                        editBox.SelectAll();
-
-                        bool committed = false;
-                        void CommitEdit()
-                        {
-                            if (committed) return;
-                            committed = true;
-                            var newTitle = editBox.Text.Trim();
-                            item.Title = string.IsNullOrEmpty(newTitle) ? null : newTitle;
-                            _configManager?.Save();
-                            RenderPanels();
-                        }
-
-                        editBox.LostFocus += (s2, e2) => CommitEdit();
-                        editBox.KeyDown += (s2, e2) =>
-                        {
-                            if (e2.Key == System.Windows.Input.Key.Enter)
-                                CommitEdit();
-                            else if (e2.Key == System.Windows.Input.Key.Escape)
-                                RenderPanels();
-                        };
-
+                        PromptRenamePanel(item, defaultTitle);
                         e.Handled = true;
                     }
                 };
@@ -471,6 +454,23 @@ namespace SideDesk.Controls
             }
         }
 
+        /// <summary>弹出对话框修改面板/分组标题</summary>
+        private void PromptRenamePanel(PanelItem item, string defaultTitle)
+        {
+            var current = string.IsNullOrEmpty(item.Title) ? defaultTitle : item.Title;
+            var dialog = new RenameDialog("修改名称", current)
+            {
+                Owner = Window.GetWindow(this)
+            };
+            if (dialog.ShowDialog() == true)
+            {
+                var newTitle = dialog.NewName;
+                item.Title = string.IsNullOrEmpty(newTitle) ? null : newTitle;
+                _configManager?.Save();
+                RenderPanels();
+            }
+        }
+
         #endregion
 
         #region Panel Builders
@@ -517,43 +517,7 @@ namespace SideDesk.Controls
                 {
                     if (e.ClickCount == 2)
                     {
-                        var parent = titleBlock.Parent as Panel;
-                        if (parent == null) return;
-                        var editBox = new TextBox
-                        {
-                            Text = titleBlock.Text,
-                            FontWeight = FontWeights.Bold,
-                            MinWidth = 50,
-                            Background = Brushes.Transparent,
-                            Foreground = (Brush)FindResource("BrushTextMain"),
-                            BorderThickness = new Thickness(0, 0, 0, 1),
-                            BorderBrush = (Brush)FindResource("BrushAccent"),
-                            Padding = new Thickness(0),
-                            VerticalAlignment = VerticalAlignment.Center,
-                            CaretBrush = (Brush)FindResource("BrushTextMain")
-                        };
-                        int index = parent.Children.IndexOf(titleBlock);
-                        parent.Children.Remove(titleBlock);
-                        parent.Children.Insert(index, editBox);
-                        editBox.Focus();
-                        editBox.SelectAll();
-
-                        bool committed = false;
-                        void CommitEdit()
-                        {
-                            if (committed) return;
-                            committed = true;
-                            var newTitle = editBox.Text.Trim();
-                            item.Title = string.IsNullOrEmpty(newTitle) ? null : newTitle;
-                            _configManager?.Save();
-                            RenderPanels();
-                        }
-                        editBox.LostFocus += (s2, e2) => CommitEdit();
-                        editBox.KeyDown += (s2, e2) =>
-                        {
-                            if (e2.Key == System.Windows.Input.Key.Enter) CommitEdit();
-                            else if (e2.Key == System.Windows.Input.Key.Escape) RenderPanels();
-                        };
+                        PromptRenamePanel(item, "分组");
                         e.Handled = true;
                     }
                 };
@@ -581,6 +545,7 @@ namespace SideDesk.Controls
             {
                 ("快捷方式", PanelType.QuickGroup),
                 ("便签", PanelType.StickyNotes),
+                ("今日待办", PanelType.TodoList),
                 ("剪贴板收藏", PanelType.Clipboard),
                 ("系统信息", PanelType.SystemMonitor),
                 ("使用统计", PanelType.UsageStats),
@@ -958,6 +923,162 @@ namespace SideDesk.Controls
             };
             btn.Click += (s, e) => AIChatButton_Click(s, e);
             return WrapWidget("🤖 AI 对话", btn, item);
+        }
+
+        private UIElement BuildTodoWidget(PanelItem item)
+        {
+            item.TodoItems ??= new List<TodoItem>();
+
+            var container = new StackPanel();
+
+            // 待办列表：未完成在前，已完成在后
+            foreach (var todo in item.TodoItems.OrderBy(t => t.IsDone))
+            {
+                container.Children.Add(CreateTodoRow(todo, item));
+            }
+
+            // 空列表提示
+            if (item.TodoItems.Count == 0)
+            {
+                container.Children.Add(new TextBlock
+                {
+                    Text = "暂无待办，点击标题栏 + 添加",
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
+                    FontSize = 12,
+                    Opacity = 0.7,
+                    Margin = new Thickness(2, 2, 0, 2)
+                });
+            }
+
+            if (item.SkipWrapper)
+                return container;
+
+            // 标题栏「+」弹出添加待办对话框
+            return WrapWidget("今日待办", container, item, () => ShowTodoDialog(item));
+        }
+
+        private UIElement CreateTodoRow(TodoItem todo, PanelItem panelItem)
+        {
+            var row = new DockPanel { Margin = new Thickness(0, 0, 0, 4) };
+
+            // 勾选框（左侧）
+            var check = new CheckBox
+            {
+                IsChecked = todo.IsDone,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 6, 0)
+            };
+            DockPanel.SetDock(check, Dock.Left);
+            row.Children.Add(check);
+
+            // 闹钟图标（右侧；有任务时间时显示，鼠标悬停显示具体日期）
+            if (todo.DueTime != null)
+            {
+                var remindText = todo.RemindBeforeMinutes < 0
+                    ? ""
+                    : (todo.RemindBeforeMinutes == 0 ? "，准时提醒" : $"，提前{todo.RemindBeforeMinutes}分钟");
+                var clock = new Emoji.Wpf.TextBlock
+                {
+                    Text = "\u23F0\uFE0F",
+                    FontSize = 13,
+                    FontFamily = new FontFamily("Segoe UI Emoji"),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(6, 0, 0, 0),
+                    Cursor = Cursors.Hand,
+                    ToolTip = $"{todo.DueTime.Value:yyyy-MM-dd HH:mm}{remindText}"
+                };
+                DockPanel.SetDock(clock, Dock.Right);
+                row.Children.Add(clock);
+            }
+
+            // 文本（填充剩余空间；完成后加删除线并变灰）
+            var textStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Cursor = Cursors.Hand };
+
+            var textBlock = new TextBlock
+            {
+                Text = todo.Text,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = (Brush)FindResource(todo.IsDone ? "BrushTextMuted" : "BrushTextMain"),
+                TextDecorations = todo.IsDone ? TextDecorations.Strikethrough : null
+            };
+            textStack.Children.Add(textBlock);
+
+            // 双击编辑该待办
+            textStack.MouseLeftButtonDown += (s, e) =>
+            {
+                if (e.ClickCount == 2) EditTodo(todo, panelItem);
+            };
+            textStack.ToolTip = "双击编辑";
+            row.Children.Add(textStack);
+
+            check.Checked += (s, e) => { todo.IsDone = true; _configManager?.Save(); RenderPanels(); };
+            check.Unchecked += (s, e) => { todo.IsDone = false; _configManager?.Save(); RenderPanels(); };
+
+            // 右键菜单：删除
+            var menu = new ContextMenu();
+            var del = new MenuItem { Header = "删除" };
+            del.Click += (s, e) => { panelItem.TodoItems?.Remove(todo); _configManager?.Save(); RenderPanels(); };
+            menu.Items.Add(del);
+            row.ContextMenu = menu;
+
+            return row;
+        }
+
+        /// <summary>弹出对话框添加新待办</summary>
+        private void ShowTodoDialog(PanelItem panelItem)
+        {
+            panelItem.TodoItems ??= new List<TodoItem>();
+            var dialog = new TodoDialog { Owner = Window.GetWindow(this) };
+            if (dialog.ShowDialog() == true)
+            {
+                panelItem.TodoItems.Add(dialog.Result);
+                _configManager?.Save();
+                RenderPanels();
+            }
+        }
+
+        /// <summary>弹出对话框编辑已有待办</summary>
+        private void EditTodo(TodoItem todo, PanelItem panelItem)
+        {
+            var dialog = new TodoDialog(todo) { Owner = Window.GetWindow(this) };
+            if (dialog.ShowDialog() == true)
+            {
+                _configManager?.Save();
+                RenderPanels();
+            }
+        }
+
+        /// <summary>定时检查当前窗口的待办，到点（含提前量）时弹窗提醒</summary>
+        private void TodoReminderTick(object? sender, EventArgs e)
+        {
+            if (_currentWindowConfig == null) return;
+            var now = DateTime.Now;
+
+            void Check(List<PanelItem> panels)
+            {
+                foreach (var p in panels)
+                {
+                    if (p.Type == PanelType.TodoList && p.TodoItems != null)
+                    {
+                        foreach (var todo in p.TodoItems)
+                        {
+                            if (todo.IsDone || todo.DueTime == null || todo.RemindBeforeMinutes < 0) continue;
+                            if (todo.Reminded || _remindedTodoIds.Contains(todo.Id)) continue;
+                            var remindAt = todo.DueTime.Value.AddMinutes(-todo.RemindBeforeMinutes);
+                            if (now >= remindAt)
+                            {
+                                todo.Reminded = true;
+                                _remindedTodoIds.Add(todo.Id);
+                                _configManager?.Save();
+                                MessageBox.Show($"待办提醒：{todo.Text}\n任务时间：{todo.DueTime.Value:MM-dd HH:mm}",
+                                    "今日待办", MessageBoxButton.OK, MessageBoxImage.Information);
+                            }
+                        }
+                    }
+                    if (p.ChildPanels != null) Check(p.ChildPanels);
+                }
+            }
+            Check(_currentWindowConfig.Panels);
         }
 
         private UIElement BuildTimerWidget(PanelItem item)
@@ -1867,6 +1988,8 @@ namespace SideDesk.Controls
             // 新面板初始化为空，避免触发全局迁移
             if (type == PanelType.StickyNotes)
                 newPanel.StickyNotes = new List<StickyNote>();
+            else if (type == PanelType.TodoList)
+                newPanel.TodoItems = new List<TodoItem>();
             _currentWindowConfig.Panels.Add(newPanel);
 
             // 自动开启编辑模式
@@ -1990,6 +2113,8 @@ namespace SideDesk.Controls
                 // 新面板初始化为空，避免触发全局迁移
                 if (type == PanelType.StickyNotes)
                     newPanel.StickyNotes = new List<StickyNote>();
+                else if (type == PanelType.TodoList)
+                    newPanel.TodoItems = new List<TodoItem>();
                 groupItem.ChildPanels.Add(newPanel);
             }
             
@@ -1998,6 +2123,7 @@ namespace SideDesk.Controls
         }
 
         private void AddStickyNotesPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.StickyNotes);
+        private void AddTodoPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.TodoList);
         private void AddClipboardPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.Clipboard);
         private void AddSystemMonitorPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.SystemMonitor);
         private void AddUsageStatsPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.UsageStats);
@@ -2375,6 +2501,8 @@ namespace SideDesk.Controls
         {
             // 内部分组拖拽排序不拦截
             if (e.Data.GetDataPresent("QuickGroupId")) return;
+            // 顶层面板排序：交由 dynamicContent 的冒泡事件处理，此处不拦截
+            if (e.Data.GetDataPresent("PanelItemId")) return;
             _quickGroupUIService?.HandleDragOver(e);
         }
 
@@ -2397,6 +2525,113 @@ namespace SideDesk.Controls
             Point p = e.GetPosition(element);
             return p.X >= 0 && p.Y >= 0 && p.X <= element.ActualWidth && p.Y <= element.ActualHeight;
         }
+
+        #region 顶层面板拖拽排序（编辑模式）
+
+        /// <summary>为编辑模式下的顶层面板挂载拖拽排序手柄（整卡片拖拽）</summary>
+        private void AttachPanelDragHandlers(FrameworkElement fe, PanelItem item)
+        {
+            fe.Tag = item.Id;
+            Point start = default;
+            bool ready = false;
+            fe.PreviewMouseLeftButtonDown += (s, e) => { start = e.GetPosition(fe); ready = true; };
+            fe.PreviewMouseMove += (s, e) =>
+            {
+                if (!ready || e.LeftButton != MouseButtonState.Pressed) return;
+                Point pos = e.GetPosition(fe);
+                if (Math.Abs(pos.X - start.X) > SystemParameters.MinimumHorizontalDragDistance ||
+                    Math.Abs(pos.Y - start.Y) > SystemParameters.MinimumVerticalDragDistance)
+                {
+                    ready = false;
+                    var data = new DataObject("PanelItemId", item.Id);
+                    try { DragDrop.DoDragDrop(fe, data, DragDropEffects.Move); }
+                    finally { HidePanelDragIndicator(); }
+                }
+            };
+            fe.PreviewMouseLeftButtonUp += (s, e) => { ready = false; };
+        }
+
+        private void DynamicContent_DragOver(object sender, DragEventArgs e)
+        {
+            if (!_isEditMode || !e.Data.GetDataPresent("PanelItemId")) { HidePanelDragIndicator(); return; }
+            e.Effects = DragDropEffects.Move;
+            e.Handled = true;
+            ShowPanelDragIndicator(GetPanelDropIndex(e));
+        }
+
+        private void DynamicContent_DragLeave(object sender, DragEventArgs e) => HidePanelDragIndicator();
+
+        private void DynamicContent_Drop(object sender, DragEventArgs e)
+        {
+            HidePanelDragIndicator();
+            if (!_isEditMode || !e.Data.GetDataPresent("PanelItemId")) return;
+            string draggedId = (string)e.Data.GetData("PanelItemId");
+            MovePanelToIndex(draggedId, GetPanelDropIndex(e));
+            e.Handled = true;
+        }
+
+        /// <summary>根据拖放的 Y 坐标计算目标插入位置（数据层面板索引，忽略指示器）</summary>
+        private int GetPanelDropIndex(DragEventArgs e)
+        {
+            Point pos = e.GetPosition(dynamicContent);
+            double y = 0; int panelIdx = 0;
+            foreach (UIElement uie in dynamicContent.Children)
+            {
+                if (uie is not FrameworkElement fe || ReferenceEquals(fe, _panelDragIndicator) || fe.Tag is not string) continue;
+                double h = fe.ActualHeight + fe.Margin.Top + fe.Margin.Bottom;
+                if (pos.Y < y + h / 2) return panelIdx;
+                y += h; panelIdx++;
+            }
+            return panelIdx;
+        }
+
+        private void ShowPanelDragIndicator(int insertPanelIdx)
+        {
+            if (_panelDragIndicator == null)
+                _panelDragIndicator = new Border { Height = 3, Background = Brushes.DodgerBlue, Margin = new Thickness(0, 2, 0, 2) };
+            if (dynamicContent.Children.Contains(_panelDragIndicator))
+                dynamicContent.Children.Remove(_panelDragIndicator);
+            _panelDragIndicator.Visibility = Visibility.Visible;
+
+            // 将「数据层面板索引」换算为 dynamicContent.Children 的实际插入位置
+            int childInsert = 0, seen = 0;
+            for (int i = 0; i < dynamicContent.Children.Count; i++)
+            {
+                if (seen >= insertPanelIdx) { childInsert = i; break; }
+                if (dynamicContent.Children[i] is FrameworkElement fe && fe.Tag is string) seen++;
+                childInsert = i + 1;
+            }
+            if (childInsert >= dynamicContent.Children.Count) dynamicContent.Children.Add(_panelDragIndicator);
+            else dynamicContent.Children.Insert(childInsert, _panelDragIndicator);
+        }
+
+        private void HidePanelDragIndicator()
+        {
+            if (_panelDragIndicator == null) return;
+            _panelDragIndicator.Visibility = Visibility.Collapsed;
+            if (dynamicContent.Children.Contains(_panelDragIndicator))
+                dynamicContent.Children.Remove(_panelDragIndicator);
+        }
+
+        /// <summary>将指定面板移动到目标位置并持久化</summary>
+        private void MovePanelToIndex(string draggedId, int insertIdx)
+        {
+            if (_currentWindowConfig == null || _configManager == null) return;
+            var panels = _currentWindowConfig.Panels;
+            int oldIdx = panels.FindIndex(p => p.Id == draggedId);
+            if (oldIdx < 0) return;
+            var item = panels[oldIdx];
+            panels.RemoveAt(oldIdx);
+            int newIdx = insertIdx > oldIdx ? insertIdx - 1 : insertIdx;
+            if (newIdx < 0) newIdx = 0;
+            if (newIdx > panels.Count) newIdx = panels.Count;
+            if (newIdx == oldIdx) { panels.Insert(oldIdx, item); return; }
+            panels.Insert(newIdx, item);
+            _configManager.Save();
+            RenderPanels();
+        }
+
+        #endregion
 
         #endregion
 

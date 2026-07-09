@@ -1860,6 +1860,16 @@ namespace SideDesk.Services
                     return;
                 }
 
+                // 步骤1：先将所有需要平铺的窗口恢复为「正常状态」（既非最大化也非最小化），
+                // 否则处于最大化状态的窗口 SetWindowPos 无法生效（会保持最大化），无法调整位置和尺寸。
+                foreach (var hwnd in windowHandles)
+                {
+                    if (NativeMethods.IsIconic(hwnd) || NativeMethods.IsZoomed(hwnd))
+                        NativeMethods.ShowWindow(hwnd, NativeMethods.SW_RESTORE);
+                }
+                // 给窗口从最大化/最小化恢复到正常状态留出短暂时间，确保后续尺寸调整可靠生效。
+                await Task.Delay(200);
+
                 // 获取主屏幕工作区
                 var workingArea = SystemParameters.WorkArea;
                 int windowCount = windowHandles.Count;
@@ -1868,6 +1878,7 @@ namespace SideDesk.Services
                 int windowWidth = (int)(workingArea.Width / cols);
                 int windowHeight = (int)(workingArea.Height / rows);
 
+                // 步骤2：逐个调整窗口位置和尺寸
                 for (int i = 0; i < windowHandles.Count; i++)
                 {
                     IntPtr hwnd = windowHandles[i];
@@ -1876,7 +1887,8 @@ namespace SideDesk.Services
                     int x = (int)workingArea.Left + col * windowWidth;
                     int y = (int)workingArea.Top + row * windowHeight;
 
-                    if (NativeMethods.IsIconic(hwnd))
+                    // 双保险：若窗口仍处于最大化/最小化状态，再次恢复为正常状态
+                    if (NativeMethods.IsIconic(hwnd) || NativeMethods.IsZoomed(hwnd))
                         NativeMethods.ShowWindow(hwnd, NativeMethods.SW_RESTORE);
                     NativeMethods.SetWindowPos(hwnd, IntPtr.Zero, x, y, windowWidth, windowHeight, SWP_NOACTIVATE);
                 }

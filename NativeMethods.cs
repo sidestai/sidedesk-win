@@ -133,6 +133,10 @@ namespace SideDesk
 
         [DllImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool IsZoomed(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
         [DllImport("user32.dll")]
@@ -144,6 +148,7 @@ namespace SideDesk
 
         internal const int SW_RESTORE = 9;
         internal const int SW_SHOW = 5;
+        internal const int SW_SHOWNORMAL = 1;
         internal const uint WM_CLOSE = 0x0010;
 
         // ITaskbarList COM interface

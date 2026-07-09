@@ -17,7 +17,8 @@ public enum PanelType
     ClipboardHistory,  // 剪贴板历史
     DataDashboard,     // 数据看板
     Timer,           // 计时器
-    Group            // 分组
+    Group,           // 分组
+    TodoList         // 今日待办
 }
 
 public class PanelItem
@@ -33,6 +34,7 @@ public class PanelItem
     public List<PanelItem>? ChildPanels { get; set; } // 分组子面板
     public bool IsExpanded { get; set; } = true;      // 分组是否展开
     public List<StickyNote>? StickyNotes { get; set; } // 便签数据（per-panel）
+    public List<TodoItem>? TodoItems { get; set; } // 今日待办数据（per-panel）
     public bool SkipWrapper { get; set; } = false;     // 是否跳过外层容器包装
 }
 
@@ -79,6 +81,20 @@ public class TimerItem
             return ElapsedTime + (DateTime.Now - StartTime.Value);
         return ElapsedTime;
     }
+}
+
+/// <summary>
+/// 今日待办项
+/// </summary>
+public class TodoItem
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string Text { get; set; } = "";
+    public bool IsDone { get; set; } = false;
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime? DueTime { get; set; }               // 任务时间（可选）
+    public int RemindBeforeMinutes { get; set; } = -1;   // 提前多少分钟提醒；-1=不提醒，0=准时
+    public bool Reminded { get; set; } = false;          // 是否已提醒（防重复）
 }
 
 public class WindowConfig

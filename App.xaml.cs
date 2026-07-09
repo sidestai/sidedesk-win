@@ -79,17 +79,17 @@ namespace SideDesk
 
             // 【已禁用】启动 5 秒后静默检查更新 - 2026-06-09 禁用，解决程序自动重启问题
             // 如果以后需要启用，请取消下面的注释
-            _ = Task.Delay(5000).ContinueWith(async _ =>
-            {
-                try
-                {
-                    await VelopackUpdateService.Instance.StartSilentUpdateCheckAndDownloadAsync();
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Silent update check error: {ex.Message}");
-                }
-            }, TaskScheduler.Default);
+            //_ = Task.Delay(5000).ContinueWith(async _ =>
+            //{
+            //    try
+            //    {
+            //        await VelopackUpdateService.Instance.StartSilentUpdateCheckAndDownloadAsync();
+            //    }
+            //    catch (Exception ex)
+            //    {
+            //        System.Diagnostics.Debug.WriteLine($"Silent update check error: {ex.Message}");
+            //    }
+            //}, TaskScheduler.Default);
         }
 
         public string GetUrlForScreen(ScreenType screen)
