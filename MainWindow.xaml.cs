@@ -40,7 +40,26 @@ namespace SideDesk
 
         private void ApplyBackgroundOpacity()
         {
+            // 默认按本地模式（半透明）应用；切换窗口时会根据类型修正
+            ApplyBackgroundForConfig(null);
+        }
+
+        /// <summary>
+        /// 根据窗口类型应用背景：本地模式使用配置的半透明度，网页模式使用不透明背景。
+        /// AllowsTransparency 为窗口级属性无法运行时切换，故通过动态背景实现“仅本地模式半透明”。
+        /// </summary>
+        private void ApplyBackgroundForConfig(WindowConfig? config)
+        {
             var app = (App)Application.Current;
+
+            // 网页模式：使用不透明背景，避免半透明窗口与 WebView2 叠加导致异常显示
+            if (config != null && config.Type == WindowType.WebView)
+            {
+                Background = new SolidColorBrush(Color.FromRgb(0, 0, 0));
+                return;
+            }
+
+            // 本地模式：按设置的背景透明度应用半透明黑
             double opacity = app.AppSettings.BackgroundOpacity / 100.0;
             Background = new SolidColorBrush(Color.FromArgb(
                 (byte)(opacity * 255), 0, 0, 0));
@@ -414,6 +433,7 @@ namespace SideDesk
             _dockState.ActiveIndex = index;
             var config = _configManager.GetById(_dockState.WindowIds[index]);
             sidebarPanel.SwitchToWindow(config, _configManager);
+            ApplyBackgroundForConfig(config);
             RefreshWindowTabs();
             _configManager.Save();
         }
@@ -427,6 +447,7 @@ namespace SideDesk
             _dockState.ActiveIndex = index;
             var config = _configManager.GetById(_dockState.WindowIds[index]);
             sidebarPanel.SwitchToWindow(config, _configManager);
+            ApplyBackgroundForConfig(config);
             RefreshWindowTabs();
         }
 

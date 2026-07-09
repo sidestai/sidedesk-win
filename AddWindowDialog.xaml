@@ -28,10 +28,10 @@
             <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                 <TextBlock Text="模式：" Width="60" VerticalAlignment="Center"
                            FontSize="{DynamicResource FontSizeNormal}" Foreground="{DynamicResource BrushTextMain}"/>
-                <RadioButton x:Name="nativeRadio" Content="Native" IsChecked="True" 
+                <RadioButton x:Name="nativeRadio" Content="本地模式" IsChecked="True"
                              FontSize="{DynamicResource FontSizeNormal}"
                              Foreground="{DynamicResource BrushTextSec}" Margin="0,0,15,0" Checked="ModeChanged"/>
-                <RadioButton x:Name="webviewRadio" Content="WebView" 
+                <RadioButton x:Name="webviewRadio" Content="网页模式"
                              FontSize="{DynamicResource FontSizeNormal}"
                              Foreground="{DynamicResource BrushTextSec}" Checked="ModeChanged"/>
             </StackPanel>

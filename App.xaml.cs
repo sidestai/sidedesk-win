@@ -63,6 +63,16 @@ namespace SideDesk
             // 初始化系统托盘图标
             InitNotifyIcon();
 
+            // 启动本地 WebSocket 服务端 (127.0.0.1:19191)
+            try
+            {
+                WebSocketServerService.Instance.Start();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[WebSocketServer] 启动异常: {ex.Message}");
+            }
+
             // 启动时恢复上次保存的标题锁定规则（仅在功能开启时）
             try
             {
@@ -158,6 +168,9 @@ namespace SideDesk
         {
             // 释放托盘图标
             try { _notifyIcon?.Dispose(); } catch { }
+
+            // 停止本地 WebSocket 服务端
+            try { WebSocketServerService.Instance.Stop(); } catch { }
 
             // 【已禁用】CDP浏览器服务 - 2026-06-09 禁用，解决重复启动问题
             // try { Services.CdpBrowserService.Instance.Dispose(); } catch { }

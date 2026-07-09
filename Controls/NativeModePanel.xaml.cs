@@ -705,51 +705,6 @@ namespace SideDesk.Controls
 
             var container = new StackPanel();
 
-            // 添加按钮
-            var addBtn = new Button
-            {
-                Content = "+ 收藏当前剪贴板",
-                Height = 28,
-                Margin = new Thickness(0, 0, 0, 5),
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                Cursor = Cursors.Hand,
-                Visibility = _isEditMode ? Visibility.Visible : Visibility.Collapsed
-            };
-            addBtn.Click += (s, e) =>
-            {
-                string content = "";
-                string type = "Text";
-                if (Clipboard.ContainsText())
-                {
-                    content = Clipboard.GetText();
-                    type = "Text";
-                }
-                else if (Clipboard.ContainsImage())
-                {
-                    var image = Clipboard.GetImage();
-                    content = $"[图片 {image.PixelWidth}x{image.PixelHeight}]";
-                    type = "Image";
-                }
-                else if (Clipboard.ContainsFileDropList())
-                {
-                    var files = Clipboard.GetFileDropList();
-                    content = string.Join("\n", files.Cast<string>());
-                    type = "File";
-                }
-
-                if (!string.IsNullOrEmpty(content))
-                {
-                    item.ClipboardItems.Add(new ClipboardSavedItem
-                    {
-                        Content = content,
-                        ContentType = type
-                    });
-                    _configManager?.Save();
-                    RenderPanels();
-                }
-            };
-            container.Children.Add(addBtn);
-
             // 已收藏列表
             if (item.ClipboardItems.Count == 0)
             {
@@ -875,7 +830,78 @@ namespace SideDesk.Controls
                 }
             }
 
-            return WrapWidget("📋 剪贴板收藏", container, item);
+            return WrapWidget("📋 剪贴板收藏", container, item, () => ShowClipboardPickDialog(item));
+        }
+
+        /// <summary>弹出对话框列出当前剪贴板内容与历史记录，支持多选后批量收藏</summary>
+        private void ShowClipboardPickDialog(PanelItem item)
+        {
+            item.ClipboardItems ??= new List<ClipboardSavedItem>();
+
+            var candidates = new List<ClipboardSavedItem>();
+            var seen = new HashSet<string>();
+
+            void AddCandidate(string content, string type)
+            {
+                if (string.IsNullOrWhiteSpace(content)) return;
+                if (!seen.Add(type + "|" + content)) return;
+                candidates.Add(new ClipboardSavedItem { Content = content, ContentType = type });
+            }
+
+            // 1. 当前系统剪贴板
+            try
+            {
+                if (Clipboard.ContainsText())
+                {
+                    AddCandidate(Clipboard.GetText(), "Text");
+                }
+                else if (Clipboard.ContainsImage())
+                {
+                    var image = Clipboard.GetImage();
+                    if (image != null)
+                        AddCandidate($"[图片 {image.PixelWidth}x{image.PixelHeight}]", "Image");
+                }
+                else if (Clipboard.ContainsFileDropList())
+                {
+                    var files = Clipboard.GetFileDropList();
+                    AddCandidate(string.Join("\n", files.Cast<string>()), "File");
+                }
+            }
+            catch { }
+
+            // 2. 剪贴板历史记录
+            EnsureClipboardServiceStarted();
+            if (_clipboardService != null)
+            {
+                foreach (var entry in _clipboardService.ClipboardHistory)
+                {
+                    string type = entry.ContentType switch
+                    {
+                        ClipboardContentType.Image => "Image",
+                        ClipboardContentType.File => "File",
+                        _ => "Text"
+                    };
+                    string content = entry.Text;
+                    if (type == "File" && entry.FilePaths != null && entry.FilePaths.Count > 0)
+                        content = string.Join("\n", entry.FilePaths);
+                    AddCandidate(content, type);
+                }
+            }
+
+            var dialog = new ClipboardPickDialog(candidates) { Owner = Window.GetWindow(this) };
+            if (dialog.ShowDialog() == true)
+            {
+                foreach (var sel in dialog.SelectedItems)
+                {
+                    item.ClipboardItems.Add(new ClipboardSavedItem
+                    {
+                        Content = sel.Content,
+                        ContentType = sel.ContentType
+                    });
+                }
+                _configManager?.Save();
+                RenderPanels();
+            }
         }
 
         private UIElement BuildSystemMonitorWidget(PanelItem item)
@@ -3060,18 +3086,9 @@ namespace SideDesk.Controls
 
         private UIElement BuildDataDashboardWidget(PanelItem item)
         {
-            var container = new StackPanel();
+            item.DashboardItems ??= new List<DataDashboardItem>();
 
-            // 标题
-            var titleBlock = new Emoji.Wpf.TextBlock
-            {
-                Text = item.Title ?? "数据看板",
-                FontWeight = FontWeights.Bold,
-                FontSize = 13,
-                Foreground = (Brush)FindResource("BrushTextMain"),
-                Margin = new Thickness(0, 0, 0, 8)
-            };
-            container.Children.Add(titleBlock);
+            var container = new StackPanel();
 
             // 数据项列表
             if (item.DashboardItems != null && item.DashboardItems.Count > 0)
@@ -3145,41 +3162,42 @@ namespace SideDesk.Controls
                 });
             }
 
-            // 编辑模式：添加按钮
-            if (_isEditMode)
+            // 添加数据项回调（供标题栏「+」及 SkipWrapper 场景使用）
+            void AddDashItem()
             {
-                var addBtn = new Button
+                var newItem = ShowAddDashboardItemDialog();
+                if (newItem != null)
                 {
-                    Content = "+ 添加数据项",
-                    Background = Brushes.Transparent,
-                    Foreground = (Brush)FindResource("BrushAccent"),
-                    BorderThickness = new Thickness(0),
-                    Cursor = Cursors.Hand,
-                    HorizontalAlignment = HorizontalAlignment.Left,
-                    Margin = new Thickness(0, 6, 0, 0)
-                };
-                addBtn.Click += (s, e) =>
-                {
-                    var newItem = ShowAddDashboardItemDialog();
-                    if (newItem != null)
-                    {
-                        item.DashboardItems ??= new List<DataDashboardItem>();
-                        item.DashboardItems.Add(newItem);
-                        _configManager?.Save();
-                        RenderPanels();
-                    }
-                };
-                container.Children.Add(addBtn);
+                    item.DashboardItems ??= new List<DataDashboardItem>();
+                    item.DashboardItems.Add(newItem);
+                    _configManager?.Save();
+                    RenderPanels();
+                }
             }
 
-            // 右键菜单：删除模块（无需进入编辑模式）
-            var dashModuleMenu = new ContextMenu();
-            var dashModuleDel = new MenuItem { Header = "删除模块" };
-            dashModuleDel.Click += (s, e) => RemovePanel(item);
-            dashModuleMenu.Items.Add(dashModuleDel);
-            container.ContextMenu = dashModuleMenu;
+            // SkipWrapper：分组内直接返回内容，编辑模式提供内联添加按钮
+            if (item.SkipWrapper)
+            {
+                if (_isEditMode)
+                {
+                    var addBtn = new Button
+                    {
+                        Content = "+ 添加数据项",
+                        Background = Brushes.Transparent,
+                        Foreground = (Brush)FindResource("BrushAccent"),
+                        BorderThickness = new Thickness(0),
+                        Cursor = Cursors.Hand,
+                        HorizontalAlignment = HorizontalAlignment.Left,
+                        Margin = new Thickness(0, 6, 0, 0)
+                    };
+                    addBtn.Click += (s, e) => AddDashItem();
+                    container.Children.Add(addBtn);
+                }
+                return container;
+            }
 
-            return container;
+            // 外层容器：非编辑模式下标题栏的「+」用于添加数据项
+            return WrapWidget("📊 数据看板", container, item, _isEditMode ? null : AddDashItem);
         }
 
         private void StartDashboardItemRefresh(DataDashboardItem dashItem, TextBlock valueBlock)
