@@ -30,6 +30,11 @@ namespace SideDesk
         /// </summary>
         public int ScreenIndex { get; set; } = 0;
 
+        /// <summary>
+        /// 鼠标悬停时的展开宽度（物理像素）
+        /// </summary>
+        public int ExpandedWidth { get; set; } = 200;
+
         #endregion
 
         #region State
@@ -41,6 +46,7 @@ namespace SideDesk
         private bool _isPositioning = false;
         private HwndSource? _hwndSource;
         private IntPtr _registeredHwnd = IntPtr.Zero; // 保存注册时的窗口句柄
+        private bool _isHoverExpanded = false;
 
         #endregion
 
@@ -192,6 +198,36 @@ namespace SideDesk
             {
                 _isPositioning = false;
             }
+        }
+
+        /// <summary>
+        /// 鼠标悬停展开/收回视觉宽度。仅调整窗口 Left/Width，不重新注册 AppBar。
+        /// 右屏保持外侧边缘固定、向屏幕内侧延伸；左屏 Left 不变。
+        /// </summary>
+        public void SetHoverExpanded(bool expanded)
+        {
+            if (!IsAppBarRegistered || expanded == _isHoverExpanded) return;
+
+            GetMonitorDpi(out double dpiX, out _);
+            double scaleX = dpiX / 96.0;
+
+            var monitor = GetTargetMonitor();
+            var monitorRect = monitor.rcMonitor;
+
+            int targetPhysical = expanded ? ExpandedWidth : AppBarWidth;
+            double targetWidthLogical = targetPhysical / scaleX;
+
+            UnlockPosition();
+
+            // 右屏：外侧固定，向内延伸（重新计算 Left，非增量累加）
+            if (DockSide == DockEdge.Right)
+                this.Left = (monitorRect.Right - targetPhysical) / scaleX;
+
+            this.Width = targetWidthLogical;
+
+            LockPosition();
+
+            _isHoverExpanded = expanded;
         }
 
         #endregion

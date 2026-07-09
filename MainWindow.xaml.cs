@@ -2,6 +2,8 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
+using System.Windows.Interop;
 using System.Diagnostics;
 using Microsoft.Web.WebView2.Core;
 using SideDesk.Controls;
@@ -14,6 +16,7 @@ namespace SideDesk
         private ScreenType _currentScreen;
         private WindowConfigManager? _configManager;
         private DockWindowState? _dockState;
+        private DispatcherTimer? _hoverTimer;
 
         public ScreenType CurrentScreen => _currentScreen;
 
@@ -48,6 +51,14 @@ namespace SideDesk
             RegisterAppBar();
             UpdateTitle();
 
+            if (Framework.AppSettings.Instance.MouseHoverExpand)
+            {
+                ExpandedWidth = 200;
+                _hoverTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
+                _hoverTimer.Tick += HoverTimer_Tick;
+                _hoverTimer.Start();
+            }
+
             // 设置主窗口引用
             sidebarPanel.SetMainWindow(this);
 
@@ -66,6 +77,25 @@ namespace SideDesk
             var app = (App)Application.Current;
             string url = app.GetUrlForScreen(_currentScreen);
             sidebarPanel.NavigateToUrl(url);
+        }
+
+        private void HoverTimer_Tick(object? sender, EventArgs e)
+        {
+            if (!IsAppBarRegistered) return;
+            var hwnd = new WindowInteropHelper(this).Handle;
+            if (hwnd == IntPtr.Zero) return;
+            if (!NativeMethods.GetCursorPos(out var p)) return;
+            if (!NativeMethods.GetWindowRect(hwnd, out var r)) return;
+            bool inside = p.X >= r.Left && p.X < r.Right && p.Y >= r.Top && p.Y < r.Bottom;
+            SetHoverExpanded(inside);
+        }
+
+        protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+        {
+            _hoverTimer?.Stop();
+            if (_hoverTimer != null) _hoverTimer.Tick -= HoverTimer_Tick;
+            _hoverTimer = null;
+            base.OnClosing(e);
         }
 
         private void UpdateTitle()

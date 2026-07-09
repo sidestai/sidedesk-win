@@ -43,6 +43,13 @@ namespace SideDesk
         [DllImport("user32.dll")]
         internal static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
 
+        // Cursor / window rect (for hover-expand hit-testing)
+        [DllImport("user32.dll")]
+        internal static extern bool GetCursorPos(out POINT lpPoint);
+
+        [DllImport("user32.dll")]
+        internal static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
         // SystemParametersInfo
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -197,6 +204,13 @@ namespace SideDesk
 
         public int Width => Right - Left;
         public int Height => Bottom - Top;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct POINT
+    {
+        public int X;
+        public int Y;
     }
 
     [StructLayout(LayoutKind.Sequential)]
