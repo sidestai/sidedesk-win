@@ -171,7 +171,17 @@ namespace SideDesk.Controls
         {
             dynamicContent.Children.Clear();
 
+            // 重置快捷分组服务引用：避免切换到「无快捷分组面板」的窗口时，
+            // 面板级拖放仍使用上一个窗口遗留的服务，导致文件被拖到其他窗口的分组。
+            // 同时停掉旧服务的后台计时器，避免定时器泄漏（不关闭已打开的窗口）。
+            _quickGroupUIService?.StopWatchers();
+            _quickGroupUIService = null;
+            _groupPanel = null;
+
             if (_currentWindowConfig == null) return;
+
+            // 确保每个「快捷方式」面板 1:1 绑定到唯一分组，避免多个面板渲染同一份数据
+            EnsureQuickGroupBindings();
 
             foreach (var panel in _currentWindowConfig.Panels)
             {
@@ -202,12 +212,96 @@ namespace SideDesk.Controls
         }
 
         /// <summary>
+        /// 确保当前窗口配置内每个「快捷方式」面板都 1:1 绑定到唯一且存在的分组。
+        /// 迁移策略：未绑定/绑定失效/重复绑定的面板，按声明顺序依次绑定到尚未被占用的现有分组；
+        /// 现有分组用完后，为每个多出的面板新建一个空分组。数据不丢失，各面板数据独立隔离。
+        /// </summary>
+        private void EnsureQuickGroupBindings()
+        {
+            if (_currentWindowConfig == null) return;
+
+            // 递归收集所有快捷方式面板（含嵌套分组的子面板），保持声明顺序
+            var quickPanels = new List<PanelItem>();
+            void Collect(List<PanelItem> panels)
+            {
+                foreach (var p in panels)
+                {
+                    if (p.Type == PanelType.QuickGroup) quickPanels.Add(p);
+                    if (p.ChildPanels != null) Collect(p.ChildPanels);
+                }
+            }
+            Collect(_currentWindowConfig.Panels);
+            if (quickPanels.Count == 0) return;
+
+            var allGroups = QuickGroupManager.GetAll();
+            var existingIds = new HashSet<string>(allGroups.Select(g => g.Id));
+            var usedIds = new HashSet<string>();
+            bool changed = false;
+
+            // 预占：其他窗口配置中已绑定的分组，保证跨窗口也不共享同一分组
+            if (_configManager != null)
+            {
+                void CollectUsed(List<PanelItem> panels)
+                {
+                    foreach (var p in panels)
+                    {
+                        if (p.Type == PanelType.QuickGroup && !string.IsNullOrEmpty(p.GroupId) && existingIds.Contains(p.GroupId!))
+                            usedIds.Add(p.GroupId!);
+                        if (p.ChildPanels != null) CollectUsed(p.ChildPanels);
+                    }
+                }
+                foreach (var win in _configManager.Windows)
+                {
+                    if (win == _currentWindowConfig) continue; // 当前窗口由下方两轮处理
+                    CollectUsed(win.Panels);
+                }
+            }
+
+            // Pass 1：保留已有效且唯一的绑定
+            var pending = new List<PanelItem>();
+            foreach (var p in quickPanels)
+            {
+                if (!string.IsNullOrEmpty(p.GroupId) && existingIds.Contains(p.GroupId!) && usedIds.Add(p.GroupId!))
+                    continue; // 有效绑定，保留
+                pending.Add(p);
+            }
+
+            // Pass 2：为未解析面板分配分组——先用现有未占用分组，用完再新建空分组
+            var available = allGroups.Where(g => !usedIds.Contains(g.Id)).ToList();
+            int idx = 0;
+            foreach (var p in pending)
+            {
+                string gid;
+                if (idx < available.Count)
+                {
+                    gid = available[idx].Id;
+                    idx++;
+                }
+                else
+                {
+                    var ng = new QuickGroup { Name = "快捷分组", Columns = 2 };
+                    QuickGroupManager.AddGroup(ng);
+                    gid = ng.Id;
+                }
+                p.GroupId = gid;
+                usedIds.Add(gid);
+                changed = true;
+            }
+
+            if (changed)
+            {
+                QuickGroupManager.Save();
+                _configManager?.Save();
+            }
+        }
+
+        /// <summary>
         /// 根据 PanelType 创建对应的 UI 组件
         /// </summary>
         private UIElement? CreatePanelWidget(PanelItem item)
-        {
-            return item.Type switch
             {
+                return item.Type switch
+                {
                 PanelType.QuickGroup => BuildQuickGroupWidget(item),
                 PanelType.StickyNotes => BuildStickyNotesWidget(item),
                 PanelType.Clipboard => BuildClipboardWidget(item),
@@ -342,6 +436,13 @@ namespace SideDesk.Controls
                 border.MouseEnter += (s, e) => actionBtn.Visibility = Visibility.Visible;
                 border.MouseLeave += (s, e) => actionBtn.Visibility = Visibility.Collapsed;
             }
+
+            // 右键菜单：删除模块（无需进入编辑模式）
+            var moduleMenu = new ContextMenu();
+            var deleteModuleItem = new MenuItem { Header = "删除模块" };
+            deleteModuleItem.Click += (s, e) => RemovePanel(item);
+            moduleMenu.Items.Add(deleteModuleItem);
+            border.ContextMenu = moduleMenu;
 
             return border;
         }
@@ -495,6 +596,10 @@ namespace SideDesk.Controls
                 addSubMenu.Items.Add(mi);
             }
             groupContextMenu.Items.Add(addSubMenu);
+            groupContextMenu.Items.Add(new Separator());
+            var deleteGroupItem = new MenuItem { Header = "删除分组" };
+            deleteGroupItem.Click += (s, ev) => RemovePanel(item);
+            groupContextMenu.Items.Add(deleteGroupItem);
             titleBar.ContextMenu = groupContextMenu;
 
             container.Children.Add(titleBar);
@@ -564,7 +669,9 @@ namespace SideDesk.Controls
             _groupPanel = new StackPanel();
             container.Children.Add(_groupPanel);
 
-            // 初始化 QuickGroupUIService
+            // 初始化 QuickGroupUIService（同窗口存在多个快捷分组面板时，
+            // 释放上一个面板服务的计时器，避免泄漏）
+            _quickGroupUIService?.StopWatchers();
             _quickGroupUIService = new QuickGroupUIService(_groupPanel);
             _quickGroupUIService.OwnerWindow = _mainWindow;
 
@@ -698,6 +805,19 @@ namespace SideDesk.Controls
                         Margin = new Thickness(0, 2, 0, 2),
                         Height = 24
                     };
+
+                    // 右键菜单：删除收藏项（无需进入编辑模式）
+                    var clipMenu = new ContextMenu();
+                    var clipDelItem = new MenuItem { Header = "删除" };
+                    var capturedClip = clip;
+                    clipDelItem.Click += (s, ev) =>
+                    {
+                        item.ClipboardItems.RemoveAll(c => c.Id == capturedClip.Id);
+                        _configManager?.Save();
+                        RenderPanels();
+                    };
+                    clipMenu.Items.Add(clipDelItem);
+                    itemPanel.ContextMenu = clipMenu;
 
                     // 删除按钮
                     var delBtn = new Button
@@ -877,7 +997,13 @@ namespace SideDesk.Controls
             }
             else
             {
-                return WrapWidget("⏱ 计时器", container, item);  // 用外层容器包裹
+                // 非编辑模式下标题栏的「+」用于添加计时器（与“+ 添加计时器”按钮等效）
+                return WrapWidget("⏱ 计时器", container, item, _isEditMode ? null : () =>
+                {
+                    item.TimerItems.Add(new TimerItem());
+                    _configManager?.Save();
+                    RenderPanels();
+                });
             }
         }
 
@@ -892,6 +1018,13 @@ namespace SideDesk.Controls
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(4)
             };
+
+            // 右键菜单：删除计时器（无需进入编辑模式）
+            var cardMenu = new ContextMenu();
+            var deleteMenuItem = new MenuItem { Header = "删除计时器" };
+            deleteMenuItem.Click += (s, e) => DeleteTimer(timer, panelItem);
+            cardMenu.Items.Add(deleteMenuItem);
+            card.ContextMenu = cardMenu;
 
             var mainStack = new StackPanel();
 
@@ -947,32 +1080,7 @@ namespace SideDesk.Controls
                     var timerId = ((Button)s!).Tag as string;
                     var timerToRemove = panelItem.TimerItems?.FirstOrDefault(t => t.Id == timerId);
                     if (timerToRemove != null)
-                    {
-                        panelItem.TimerItems?.Remove(timerToRemove);
-                        _configManager?.Save();
-                        
-                        // 如果删除后没有计时器了，询问是否删除整个模块
-                        if (panelItem.TimerItems?.Count == 0)
-                        {
-                            var result = MessageBox.Show(
-                                "该计时器模块已没有计时项，是否删除整个模块？",
-                                "确认",
-                                MessageBoxButton.YesNo,
-                                MessageBoxImage.Question);
-                            
-                            if (result == MessageBoxResult.Yes)
-                            {
-                                // 删除整个模块
-                                if (_currentWindowConfig != null)
-                                {
-                                    _currentWindowConfig.Panels.Remove(panelItem);
-                                    _configManager?.Save();
-                                }
-                            }
-                        }
-                        
-                        RenderPanels();
-                    }
+                        DeleteTimer(timerToRemove, panelItem);
                 };
                 actionPanel.Children.Add(deleteBtn);
             }
@@ -1059,6 +1167,35 @@ namespace SideDesk.Controls
 
             card.Child = mainStack;
             return card;
+        }
+
+        /// <summary>
+        /// 删除指定计时器；若删除后模块为空，询问是否删除整个计时器模块。
+        /// 供编辑模式的✕按钮与右键菜单共用。
+        /// </summary>
+        private void DeleteTimer(TimerItem timer, PanelItem panelItem)
+        {
+            if (panelItem.TimerItems == null) return;
+            if (!panelItem.TimerItems.Remove(timer)) return;
+            _configManager?.Save();
+
+            // 如果删除后没有计时器了，询问是否删除整个模块
+            if (panelItem.TimerItems.Count == 0)
+            {
+                var result = MessageBox.Show(
+                    "该计时器模块已没有计时项，是否删除整个模块？",
+                    "确认",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+
+                if (result == MessageBoxResult.Yes && _currentWindowConfig != null)
+                {
+                    _currentWindowConfig.Panels.Remove(panelItem);
+                    _configManager?.Save();
+                }
+            }
+
+            RenderPanels();
         }
 
         private void StartTimerUpdate(TimerItem timer, TextBlock timeDisplay, PanelItem panelItem, Button toggleBtn)
@@ -1245,6 +1382,9 @@ namespace SideDesk.Controls
                     }
                     _configManager?.Save();
                     RenderPanels();
+                    // 截止事件冒泡：文件已落入文件区，阻止继续传递到底层窗口（MainWindow.Window_Drop），
+                    // 避免重复弹出 FileDropDialog。仅当文件未被文件区接收时，底层窗口才会弹窗提示用户。
+                    e.Handled = true;
                 }
             }
 
@@ -1470,6 +1610,18 @@ namespace SideDesk.Controls
                         };
                         ctx.Items.Add(menuProps2);
                     }
+
+                    // 从列表移除（不删除磁盘文件）
+                    ctx.Items.Add(new Separator());
+                    var menuRemoveFromList = new MenuItem { Header = "从列表移除" };
+                    menuRemoveFromList.Click += (s, e) =>
+                    {
+                        item.FileItems.Remove(capturedFileItem);
+                        _configManager?.Save();
+                        RenderPanels();
+                    };
+                    ctx.Items.Add(menuRemoveFromList);
+
                     row.ContextMenu = ctx;
 
                     // 右键时高亮选中项
@@ -1610,6 +1762,13 @@ namespace SideDesk.Controls
                 Cursor = Cursors.Hand,
                 Height = 22
             };
+
+            // 右键菜单：从历史删除该条记录
+            var histMenu = new ContextMenu();
+            var histDelItem = new MenuItem { Header = "从历史删除" };
+            histDelItem.Click += (s, e) => _clipboardService?.RemoveEntry(entry);
+            histMenu.Items.Add(histDelItem);
+            row.ContextMenu = histMenu;
 
             // 内容类型图标
             string icon = ClipboardService.GetContentTypeIcon(entry.ContentType);
@@ -2047,6 +2206,18 @@ namespace SideDesk.Controls
                 Height = 22
             };
 
+            // 右键菜单：删除便签（无需进入编辑模式）
+            var noteMenu = new ContextMenu();
+            var deleteNoteItem = new MenuItem { Header = "删除便签" };
+            deleteNoteItem.Click += (s, e) =>
+            {
+                item.StickyNotes?.RemoveAll(n => n.Id == note.Id);
+                _configManager?.Save();
+                RefreshPanelStickyNotes(container, item);
+            };
+            noteMenu.Items.Add(deleteNoteItem);
+            row.ContextMenu = noteMenu;
+
             var delBtn = new Button
             {
                 Content = "✕", Width = 18, Height = 18,
@@ -2209,7 +2380,22 @@ namespace SideDesk.Controls
 
         private void NativeModePanel_Drop(object sender, DragEventArgs e)
         {
-            _quickGroupUIService?.HandleDrop(e);
+            // 仅当拖放落在快捷分组容器区域内时，才交给快捷分组服务处理（加入分组）。
+            // 否则不拦截 e.Handled，交由底层窗口 (MainWindow.Window_Drop) 弹出 FileDropDialog 兜底，
+            // 避免拖到面板空白处时文件被静默加入分组而无任何提示。
+            if (_quickGroupUIService != null && IsDropOverElement(e, _groupPanel))
+            {
+                _quickGroupUIService.HandleDrop(e);
+            }
+        }
+
+        /// <summary>判断当前拖放位置是否落在指定元素的可视范围内</summary>
+        private bool IsDropOverElement(DragEventArgs e, FrameworkElement? element)
+        {
+            if (element == null || !element.IsVisible) return false;
+            if (element.ActualWidth <= 0 || element.ActualHeight <= 0) return false;
+            Point p = e.GetPosition(element);
+            return p.X >= 0 && p.Y >= 0 && p.X <= element.ActualWidth && p.Y <= element.ActualHeight;
         }
 
         #endregion
@@ -2664,6 +2850,19 @@ namespace SideDesk.Controls
                         Background = Brushes.Transparent // 确保可点击
                     };
 
+                    // 右键菜单：删除数据项
+                    var dashItemMenu = new ContextMenu();
+                    var dashItemDel = new MenuItem { Header = "删除数据项" };
+                    var capturedDash = dashItem;
+                    dashItemDel.Click += (s, e) =>
+                    {
+                        item.DashboardItems?.Remove(capturedDash);
+                        _configManager?.Save();
+                        RenderPanels();
+                    };
+                    dashItemMenu.Items.Add(dashItemDel);
+                    card.ContextMenu = dashItemMenu;
+
                     var labelBlock = new TextBlock
                     {
                         Text = dashItem.Label,
@@ -2737,6 +2936,13 @@ namespace SideDesk.Controls
                 };
                 container.Children.Add(addBtn);
             }
+
+            // 右键菜单：删除模块（无需进入编辑模式）
+            var dashModuleMenu = new ContextMenu();
+            var dashModuleDel = new MenuItem { Header = "删除模块" };
+            dashModuleDel.Click += (s, e) => RemovePanel(item);
+            dashModuleMenu.Items.Add(dashModuleDel);
+            container.ContextMenu = dashModuleMenu;
 
             return container;
         }

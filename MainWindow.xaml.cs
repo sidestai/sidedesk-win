@@ -493,8 +493,14 @@ namespace SideDesk
                 {
                     Debug.WriteLine($"[Drop] 文件: {file}");
                 }
-                MessageBox.Show($"拖入了 {files.Length} 个文件:\n{string.Join("\n", files)}",
-                    "SideDesk", MessageBoxButton.OK, MessageBoxImage.Information);
+                // 无目标接收处理（如文件区），弹出窗口让用户选择
+                // 注意：不能在 Drop 处理器内同步 ShowDialog，否则会阻塞 OLE 拖放的返回，
+                // 导致后续拖拽不再触发。因此延迟到 Drop 返回后再弹窗。
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    var dialog = new FileDropDialog(files) { Owner = this };
+                    dialog.ShowDialog();
+                }), DispatcherPriority.Background);
             }
             else if (e.Data.GetDataPresent(DataFormats.Text))
             {

@@ -31,6 +31,13 @@ namespace SideDesk.Services
         private DispatcherTimer? _foregroundWatcher;
         private DispatcherTimer? _longTermWatcher;
 
+        /// <summary>
+        /// 本服务实例绑定的分组 Id（1:1 面板绑定模式）。
+        /// 为 null 表示未绑定特定分组（显示全部分组，拖入落到默认分组）。
+        /// 用于让拖入的文件落到当前窗口/面板对应的分组，而不是永远落到默认分组。
+        /// </summary>
+        private string? _boundGroupId;
+
         private static readonly Brush ActiveHighlightBorder =
             new SolidColorBrush(Color.FromRgb(0xFF, 0xD7, 0x00));
         private static readonly Brush InactiveForeground = Brushes.Black;
@@ -58,6 +65,7 @@ namespace SideDesk.Services
         /// <summary>加载所有分组到 UI</summary>
         public void LoadGroups()
         {
+            _boundGroupId = null;
             QuickGroupManager.MigrateFromLegacy();
             _container.Children.Clear();
             _itemButtonRefs.Clear();
@@ -88,6 +96,7 @@ namespace SideDesk.Services
         /// <summary>仅加载指定分组到 UI（1:1 面板绑定模式）</summary>
         public void LoadSingleGroup(string groupId)
         {
+            _boundGroupId = groupId;
             _container.Children.Clear();
             _itemButtonRefs.Clear();
             var group = QuickGroupManager.GetAll().FirstOrDefault(g => g.Id == groupId);
@@ -331,6 +340,19 @@ namespace SideDesk.Services
             _quickItemHandles.Clear();
         }
 
+        /// <summary>
+        /// 仅停止后台监视计时器（不关闭任何窗口）。
+        /// 用于面板重新渲染/窗口切换时释放旧服务实例的计时器，避免定时器泄漏，
+        /// 也避免旧实例继续被拖放路由引用。
+        /// </summary>
+        public void StopWatchers()
+        {
+            _foregroundWatcher?.Stop();
+            _foregroundWatcher = null;
+            _longTermWatcher?.Stop();
+            _longTermWatcher = null;
+        }
+
         /// <summary>处理文件/URL 拖入</summary>
         public void HandleDrop(DragEventArgs e)
         {
@@ -339,7 +361,8 @@ namespace SideDesk.Services
             if (e.Data.GetDataPresent(DataFormats.FileDrop))
             {
                 string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
-                string groupId = QuickGroupManager.GetOrCreateDefaultGroup();
+                // 优先写入本面板绑定的分组；未绑定时才落到默认分组
+                string groupId = _boundGroupId ?? QuickGroupManager.GetOrCreateDefaultGroup();
                 foreach (string file in files)
                 {
                     var item = new QuickItem
@@ -352,14 +375,14 @@ namespace SideDesk.Services
                     QuickGroupManager.AddItem(groupId, item);
                 }
                 QuickGroupManager.Save();
-                LoadGroups();
+                RefreshAfterDrop();
             }
             else if (e.Data.GetDataPresent(DataFormats.UnicodeText))
             {
                 string text = (string)e.Data.GetData(DataFormats.UnicodeText);
                 if (text.StartsWith("http://") || text.StartsWith("https://"))
                 {
-                    string groupId = QuickGroupManager.GetOrCreateDefaultGroup();
+                    string groupId = _boundGroupId ?? QuickGroupManager.GetOrCreateDefaultGroup();
                     var item = new QuickItem
                     {
                         Name = text.Length > 30 ? text.Substring(0, 30) + "..." : text,
@@ -369,7 +392,7 @@ namespace SideDesk.Services
                     };
                     QuickGroupManager.AddItem(groupId, item);
                     QuickGroupManager.Save();
-                    LoadGroups();
+                    RefreshAfterDrop();
                 }
             }
             e.Handled = true;
@@ -381,6 +404,18 @@ namespace SideDesk.Services
             if (e.Data.GetDataPresent("QuickGroupId")) return;
             e.Effects = DragDropEffects.Copy;
             e.Handled = true;
+        }
+
+        /// <summary>
+        /// 拖入完成后刷新 UI：保持与当前绑定模式一致，
+        /// 避免 1:1 绑定面板调用 LoadGroups 后错误地显示全部分组。
+        /// </summary>
+        private void RefreshAfterDrop()
+        {
+            if (_boundGroupId != null)
+                LoadSingleGroup(_boundGroupId);
+            else
+                LoadGroups();
         }
 
         #endregion
@@ -423,6 +458,32 @@ namespace SideDesk.Services
                 }
             };
             titleBar.MouseLeftButtonUp += (s, ev) => { dragReady = false; };
+
+            // 右键菜单：删除整个快捷组
+            titleBar.MouseRightButtonUp += (s, ev) =>
+            {
+                var rmenu = new ContextMenu();
+                var delItem = new MenuItem { Header = "删除快捷组" };
+                delItem.Click += (s2, ev2) =>
+                {
+                    bool hasModules = group.ChildPanels != null && group.ChildPanels.Count > 0;
+                    string message = hasModules
+                        ? $"分组 \"{group.Name}\" 包含 {group.ChildPanels!.Count} 个模块，删除后模块也将丢失。确定继续？"
+                        : $"确定删除分组 \"{group.Name}\"？";
+                    if (MessageBox.Show(message, "确认", MessageBoxButton.YesNo) == MessageBoxResult.Yes)
+                    {
+                        QuickGroupManager.RemoveGroup(group.Id);
+                        QuickGroupManager.Save();
+                        _container.Children.Remove(border);
+                        OnGroupDeleted?.Invoke(group.Id);
+                    }
+                };
+                rmenu.Items.Add(delItem);
+                rmenu.PlacementTarget = titleBar;
+                rmenu.Placement = PlacementMode.MousePoint;
+                rmenu.IsOpen = true;
+                ev.Handled = true;
+            };
 
             // ▼ 菜单按钮
             var toggleBtn = new Button

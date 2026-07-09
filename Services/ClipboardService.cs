@@ -46,6 +46,13 @@ namespace SideDesk.Services
         /// <summary>剪贴板收藏记录（只读访问）</summary>
         public IReadOnlyList<ClipboardEntry> ClipboardHistory => _clipboardHistory;
 
+        /// <summary>从历史记录中移除指定条目，并触发刷新</summary>
+        public void RemoveEntry(ClipboardEntry entry)
+        {
+            if (_clipboardHistory.Remove(entry))
+                ClipboardChanged?.Invoke();
+        }
+
         /// <summary>剪贴板内容变化事件</summary>
         public event Action? ClipboardChanged;
 
