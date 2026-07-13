@@ -71,6 +71,8 @@ namespace SideDesk.Models
         public int Columns { get; set; } = 1;
         public bool IsExpanded { get; set; } = true;
         public int Order { get; set; }
+        /// <summary>是否隐藏该快捷组外框（背景/边框/标题栏/内边距），仅用于视觉裸露显示</summary>
+        public bool HideFrame { get; set; } = false;
         public List<QuickItem> Items { get; set; }
         /// <summary>分组内子模块列表（用于添加便签、剪贴板等模块）</summary>
         public List<PanelItem>? ChildPanels { get; set; }

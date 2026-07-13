@@ -424,12 +424,22 @@ namespace SideDesk.Services
 
         private Border BuildGroupPanel(QuickGroup group)
         {
+            // 切换「隐藏模块外框」并重建当前视图（隐藏后去掉背景/边框/标题栏/内边距，不占位）
+            void ToggleHideFrame()
+            {
+                group.HideFrame = !group.HideFrame;
+                QuickGroupManager.UpdateGroup(group);
+                QuickGroupManager.Save();
+                if (!string.IsNullOrEmpty(_boundGroupId)) LoadSingleGroup(_boundGroupId);
+                else LoadGroups();
+            }
+
             var border = new Border
             {
-                Background = new SolidColorBrush(Color.FromRgb(45, 45, 48)),
-                CornerRadius = new CornerRadius(4),
-                Margin = new Thickness(0, 0, 0, 5),
-                Padding = new Thickness(2),
+                Background = group.HideFrame ? Brushes.Transparent : new SolidColorBrush(Color.FromRgb(45, 45, 48)),
+                CornerRadius = new CornerRadius(group.HideFrame ? 0 : 4),
+                Margin = new Thickness(0, 0, 0, group.HideFrame ? 8 : 5),
+                Padding = new Thickness(group.HideFrame ? 0 : 2),
                 Tag = group.Id
             };
 
@@ -438,6 +448,9 @@ namespace SideDesk.Services
             // 标题栏
             var titleBar = new DockPanel { Margin = new Thickness(5, 3, 5, 3) };
             titleBar.Tag = group.Id;
+            // 隐藏模块外框时一并隐藏标题栏（不占位）
+            if (group.HideFrame)
+                titleBar.Visibility = Visibility.Collapsed;
 
             // 拖拽排序
             Point dragStartPoint = default;
@@ -479,6 +492,9 @@ namespace SideDesk.Services
                     }
                 };
                 rmenu.Items.Add(delItem);
+                var hideItem = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = group.HideFrame };
+                hideItem.Click += (s2, ev2) => ToggleHideFrame();
+                rmenu.Items.Add(hideItem);
                 rmenu.PlacementTarget = titleBar;
                 rmenu.Placement = PlacementMode.MousePoint;
                 rmenu.IsOpen = true;
@@ -591,6 +607,16 @@ namespace SideDesk.Services
             outerPanel.Children.Add(contentPanel);
             border.Child = outerPanel;
 
+            // 隐藏外框后标题栏与 ▼ 菜单不可见，为容器挂右键菜单，确保右键内容区仍可恢复外框
+            if (group.HideFrame)
+            {
+                var bareMenu = new ContextMenu();
+                var bareHide = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = true };
+                bareHide.Click += (s, ev) => ToggleHideFrame();
+                bareMenu.Items.Add(bareHide);
+                border.ContextMenu = bareMenu;
+            }
+
             // ▼ 菜单
             toggleBtn.Click += (s, ev) =>
             {
@@ -671,6 +697,11 @@ namespace SideDesk.Services
                 var tileItem = new MenuItem { Header = "平铺窗口" };
                 tileItem.Click += (s2, ev2) => TileGroupWindows(group);
                 popup.Items.Add(tileItem);
+                popup.Items.Add(new Separator());
+
+                var hideFrameItem = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = group.HideFrame };
+                hideFrameItem.Click += (s2, ev2) => ToggleHideFrame();
+                popup.Items.Add(hideFrameItem);
                 popup.Items.Add(new Separator());
 
                 var deleteItem = new MenuItem { Header = "删除快捷组" };

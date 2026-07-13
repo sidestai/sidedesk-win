@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -25,6 +26,18 @@ namespace SideDesk
         private MainWindow? _leftWindow;
         private MainWindow? _rightWindow;
         private System.Windows.Forms.NotifyIcon? _notifyIcon;
+
+        /// <summary>fetchResult 回调注册表：requestId → 回调委托</summary>
+        private readonly ConcurrentDictionary<string, Action<bool, string, string>> _fetchCallbacks = new();
+
+        /// <summary>
+        /// 注册一个一次性 fetchResult 回调，匹配指定 requestId。
+        /// 回调参数：(success, value, error)
+        /// </summary>
+        public void RegisterFetchCallback(string requestId, Action<bool, string, string> callback)
+        {
+            _fetchCallbacks[requestId] = callback;
+        }
 
         protected override void OnStartup(StartupEventArgs e)
         {
@@ -66,11 +79,23 @@ namespace SideDesk
             // 启动本地 WebSocket 服务端 (127.0.0.1:19191)
             try
             {
+                WebSocketServerService.Instance.MessageReceived += OnWebSocketMessageReceived;
                 WebSocketServerService.Instance.Start();
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[WebSocketServer] 启动异常: {ex.Message}");
+            }
+
+            // 启动全局窗口切换热键（Ctrl+1~9），仅在开启时
+            try
+            {
+                if (AppSettings.EnableWindowSwitchHotkey)
+                    GlobalHotkeyService.Instance.Start();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[GlobalHotkey] 启动异常: {ex.Message}");
             }
 
             // 启动时恢复上次保存的标题锁定规则（仅在功能开启时）
@@ -170,11 +195,82 @@ namespace SideDesk
             try { _notifyIcon?.Dispose(); } catch { }
 
             // 停止本地 WebSocket 服务端
-            try { WebSocketServerService.Instance.Stop(); } catch { }
+            try
+            {
+                WebSocketServerService.Instance.MessageReceived -= OnWebSocketMessageReceived;
+                WebSocketServerService.Instance.Stop();
+            }
+            catch { }
+
+            // 停止全局窗口切换热键
+            try { GlobalHotkeyService.Instance.Stop(); } catch { }
 
             // 【已禁用】CDP浏览器服务 - 2026-06-09 禁用，解决重复启动问题
             // try { Services.CdpBrowserService.Instance.Dispose(); } catch { }
             base.OnExit(e);
+        }
+
+        /// <summary>
+        /// 收到浏览器扩展通过 WebSocket 回传的消息。
+        /// fetchResult 类型通过回调更新数据看板 UI，其他类型弹窗提示。
+        /// </summary>
+        private void OnWebSocketMessageReceived(Guid clientId, string message)
+        {
+            System.Diagnostics.Debug.WriteLine($"[App] ★★★ 收到WS消息[{clientId}]: {message}");
+            Dispatcher.Invoke(() =>
+            {
+                try
+                {
+                    var obj = Newtonsoft.Json.Linq.JObject.Parse(message);
+                    if ((string?)obj["type"] == "fetchResult")
+                    {
+                        var success = (bool?)obj["success"] ?? false;
+                        var label = (string?)obj["label"] ?? "";
+                        var value = (string?)obj["value"] ?? "";
+                        var url = (string?)obj["url"] ?? "";
+                        var requestId = (string?)obj["requestId"] ?? "";
+                        var error = (string?)obj["error"] ?? "";
+
+                        System.Diagnostics.Debug.WriteLine($"[App] fetchResult: success={success}, label={label}, value={value}, requestId={requestId}");
+
+                        // 回调给注册的 UI 组件（更新数据看板值）
+                        if (!string.IsNullOrEmpty(requestId) && _fetchCallbacks.TryRemove(requestId, out var cb))
+                        {
+                            try { cb(success, value, error); } catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[App] fetchCallback异常: {ex.Message}"); }
+                        }
+                        else
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[App] 未找到requestId对应的回调: {requestId}");
+                        }
+
+                        return; // fetchResult 不弹窗，由回调更新UI
+                    }
+                }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[App] WS消息解析异常: {ex.Message}"); }
+
+                // 非 fetchResult 消息弹窗提示
+                MessageBox.Show(message, "收到扩展消息", MessageBoxButton.OK, MessageBoxImage.Information);
+            });
+        }
+
+        /// <summary>
+        /// 全局热键触发：切换当前活动 MainWindow 的窗口标签到指定序号。
+        /// 优先前台的 MainWindow，其次左侧，其次右侧。
+        /// </summary>
+        public void SwitchWindowTabByHotkey(int index)
+        {
+            MainWindow? target = null;
+            IntPtr fg = NativeMethods.GetForegroundWindow();
+            foreach (Window w in Windows)
+            {
+                if (w is MainWindow mw)
+                {
+                    var h = new System.Windows.Interop.WindowInteropHelper(mw).Handle;
+                    if (h == fg) { target = mw; break; }
+                }
+            }
+            target ??= _leftWindow ?? _rightWindow;
+            target?.SwitchTabByHotkey(index);
         }
 
         private MainWindow CreatePanel(DockEdge side, ScreenType screen)

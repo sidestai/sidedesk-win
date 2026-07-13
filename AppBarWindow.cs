@@ -160,6 +160,10 @@ namespace SideDesk
 
                 System.Diagnostics.Debug.WriteLine($"[AppBar] Before QUERYPOS: L={data.rc.Left} T={data.rc.Top} R={data.rc.Right} B={data.rc.Bottom}");
 
+                // 保存期望矩形：当系统 AppBar 协调失败返回无效矩形时用于回退，
+                // 避免窗口停留在初始的居中大尺寸位置
+                RECT expectedRc = data.rc;
+
                 // 查询并设置位置
                 NativeMethods.SHAppBarMessage(AppBarMessage.ABM_QUERYPOS, ref data);
                 System.Diagnostics.Debug.WriteLine($"[AppBar] After QUERYPOS: L={data.rc.Left} T={data.rc.Top} R={data.rc.Right} B={data.rc.Bottom}");
@@ -167,11 +171,12 @@ namespace SideDesk
                 NativeMethods.SHAppBarMessage(AppBarMessage.ABM_SETPOS, ref data);
                 System.Diagnostics.Debug.WriteLine($"[AppBar] After SETPOS: L={data.rc.Left} T={data.rc.Top} R={data.rc.Right} B={data.rc.Bottom}");
 
-                // 检查返回的 RECT 是否有效
+                // 系统返回无效矩形时回退到期望矩形，确保窗口仍停靠到屏幕边缘
                 if (data.rc.Width <= 0 || data.rc.Height <= 0)
                 {
-                    System.Diagnostics.Debug.WriteLine("[AppBar] ERROR: Invalid rect from SETPOS, skipping window move");
-                    return;
+                    System.Diagnostics.Debug.WriteLine("[AppBar] SETPOS returned invalid rect, falling back to expected rect");
+                    LogEvent($"PositionAppBar fallback - expected L={expectedRc.Left} T={expectedRc.Top} R={expectedRc.Right} B={expectedRc.Bottom}");
+                    data.rc = expectedRc;
                 }
 
                 // 获取 DPI 缩放

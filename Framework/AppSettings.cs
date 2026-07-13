@@ -309,6 +309,15 @@ namespace SideDesk.Framework
             set { _clock24HR = value; NotifyPropertyChanged("Clock24HR"); }
         }
 
+        private bool _hideModuleFrame { get; set; } = false;
+
+        [JsonProperty]
+        public bool HideModuleFrame
+        {
+            get { return _hideModuleFrame; }
+            set { _hideModuleFrame = value; NotifyPropertyChanged("HideModuleFrame"); }
+        }
+
         #endregion
 
         #region 主题/外观属性

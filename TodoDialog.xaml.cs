@@ -31,6 +31,7 @@ public partial class TodoDialog : Window
             Title = "编辑待办";
             Result = existing;
             titleBox.Text = existing.Text;
+            descBox.Text = existing.Description;
             if (existing.DueTime.HasValue)
             {
                 enableTimeCheck.IsChecked = true;
@@ -68,6 +69,7 @@ public partial class TodoDialog : Window
             return;
         }
         Result.Text = title;
+        Result.Description = descBox.Text.Trim();
 
         if (enableTimeCheck.IsChecked == true && datePicker.SelectedDate.HasValue)
         {

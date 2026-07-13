@@ -35,6 +35,7 @@
                     <ListBoxItem Content="扩展管理"/>
                     <ListBoxItem Content="工具"/>
                     <ListBoxItem Content="模块"/>
+                    <ListBoxItem Content="快捷键"/>
                     <ListBoxItem Content="关于"/>
                 </ListBox>
             </DockPanel>
@@ -443,6 +444,47 @@
                     </StackPanel>
                 </StackPanel>
                 
+                <!-- 快捷键页面 -->
+                <StackPanel x:Name="pageShortcuts" Visibility="Collapsed" Margin="0,0,0,20">
+                    <TextBlock Text="快捷键" 
+                               FontSize="{DynamicResource FontSizeSubtitle}" 
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource BrushTextMain}"
+                               Margin="0,0,0,8"/>
+                    <TextBlock Text="全局快捷键配置" 
+                               Foreground="{DynamicResource BrushTextMuted}" 
+                               FontSize="{DynamicResource FontSizeSmall}" 
+                               Margin="0,0,0,20"/>
+
+                    <!-- Ctrl + 数字 切换窗口 -->
+                    <Border Background="{DynamicResource BrushInputBG}" 
+                            BorderBrush="{DynamicResource BrushBorder}" 
+                            BorderThickness="1" CornerRadius="8" 
+                            Padding="16" Margin="0,0,0,12">
+                        <DockPanel>
+                            <CheckBox x:Name="windowSwitchHotkeySwitch" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                      Style="{StaticResource RaycastSwitchStyle}"
+                                      Checked="WindowSwitchHotkeySwitch_Changed" 
+                                      Unchecked="WindowSwitchHotkeySwitch_Changed"/>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="Ctrl + 数字 切换窗口" 
+                                           Foreground="{DynamicResource BrushTextMain}"
+                                           FontSize="{DynamicResource FontSizeNormal}"
+                                           FontWeight="SemiBold"/>
+                                <TextBlock Text="全局按 Ctrl+1~9（含小键盘）快速切换到对应序号的窗口标签" 
+                                           Foreground="{DynamicResource BrushTextMuted}"
+                                           FontSize="{DynamicResource FontSizeTiny}"
+                                           Margin="0,2,0,0"/>
+                                <TextBlock Text="注：开启后会拦截该快捷键，可能与浏览器/编辑器的 Ctrl+数字切标签冲突" 
+                                           Foreground="{DynamicResource BrushTextMuted}"
+                                           FontSize="{DynamicResource FontSizeTiny}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,4,0,0"/>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+                </StackPanel>
+
                 <!-- 关于页面 -->
                 <StackPanel x:Name="pageAbout" Visibility="Collapsed">
                     <TextBlock Text="关于" 

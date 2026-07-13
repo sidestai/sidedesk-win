@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
 using System.Windows.Interop;
+using System.Windows.Input;
 using System.Diagnostics;
 using Microsoft.Web.WebView2.Core;
 using SideDesk.Controls;
@@ -36,6 +37,9 @@ namespace SideDesk
             ScreenIndex = 0;
 
             Loaded += MainWindow_Loaded;
+
+            // Ctrl+1~9 快速切换窗口标签
+            PreviewKeyDown += MainWindow_PreviewKeyDown;
         }
 
         private void ApplyBackgroundOpacity()
@@ -449,6 +453,32 @@ namespace SideDesk
             sidebarPanel.SwitchToWindow(config, _configManager);
             ApplyBackgroundForConfig(config);
             RefreshWindowTabs();
+        }
+
+        /// <summary>
+        /// Ctrl+1~9 / Ctrl+小键盘1~9 快速切换到对应序号的窗口标签。
+        /// 注：焦点在 WebView2 内时因 airspace 限制可能无法捕获，焦点在 WPF 侧时生效。
+        /// </summary>
+        private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (Keyboard.Modifiers != ModifierKeys.Control) return;
+
+            int index = -1;
+            if (e.Key >= Key.D1 && e.Key <= Key.D9) index = e.Key - Key.D1;
+            else if (e.Key >= Key.NumPad1 && e.Key <= Key.NumPad9) index = e.Key - Key.NumPad1;
+            if (index < 0) return;
+
+            if (_dockState == null || index >= _dockState.WindowIds.Count) return;
+
+            WindowTab_Click(index);
+            e.Handled = true;
+        }
+
+        /// <summary>供全局热键调用：切换到指定序号的窗口标签（越界则忽略）。</summary>
+        public void SwitchTabByHotkey(int index)
+        {
+            if (_dockState == null || index < 0 || index >= _dockState.WindowIds.Count) return;
+            WindowTab_Click(index);
         }
 
         private void AddWindow_Click(object sender, RoutedEventArgs e)

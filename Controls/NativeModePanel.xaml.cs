@@ -347,6 +347,56 @@ namespace SideDesk.Controls
         /// </summary>
         private Border WrapWidget(string defaultTitle, UIElement content, PanelItem item, Action? onAddClick = null)
         {
+            // 该模块「隐藏模块外框」可勾选菜单项（独立控制单个模块的外框样式）
+            MenuItem BuildHideFrameMenuItem()
+            {
+                var mi = new MenuItem
+                {
+                    Header = "隐藏模块外框",
+                    IsCheckable = true,
+                    IsChecked = item.HideFrame
+                };
+                mi.Click += (s, e) =>
+                {
+                    item.HideFrame = mi.IsChecked;
+                    _configManager?.Save();
+                    RenderPanels();
+                };
+                return mi;
+            }
+
+            // 隐藏模块外框（仅非编辑模式生效）：模块独立开关 或 全局开关，任一为真即隐藏
+            if ((item.HideFrame || AppSettings.Instance.HideModuleFrame) && !_isEditMode)
+            {
+                var bareBorder = new Border
+                {
+                    Margin = new Thickness(0, 0, 0, 8),
+                    Padding = new Thickness(0),
+                    Background = Brushes.Transparent,
+                    BorderThickness = new Thickness(0),
+                    Child = content
+                };
+
+                // 右键菜单：隐藏模块外框（可勾选） + 删除模块
+                // 外框隐藏后内容会填满容器，右键内容区可能落在子元素上导致弹不出容器菜单，
+                // 因此为容器和内容顶层各挂一份独立菜单，确保右键模块主要区域都能恢复外框
+                ContextMenu BuildBareMenu()
+                {
+                    var m = new ContextMenu();
+                    m.Items.Add(BuildHideFrameMenuItem());
+                    var del = new MenuItem { Header = "删除模块" };
+                    del.Click += (s, e) => RemovePanel(item);
+                    m.Items.Add(del);
+                    return m;
+                }
+
+                bareBorder.ContextMenu = BuildBareMenu();
+                if (content is FrameworkElement contentFe && contentFe.ContextMenu == null)
+                    contentFe.ContextMenu = BuildBareMenu();
+
+                return bareBorder;
+            }
+
             var displayTitle = string.IsNullOrEmpty(item.Title) ? defaultTitle : item.Title;
 
             var header = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
@@ -420,8 +470,9 @@ namespace SideDesk.Controls
                 border.MouseLeave += (s, e) => actionBtn.Visibility = Visibility.Collapsed;
             }
 
-            // 右键菜单：删除模块（无需进入编辑模式）
+            // 右键菜单：隐藏模块外框（可勾选） + 删除模块（无需进入编辑模式）
             var moduleMenu = new ContextMenu();
+            moduleMenu.Items.Add(BuildHideFrameMenuItem());
             var deleteModuleItem = new MenuItem { Header = "删除模块" };
             deleteModuleItem.Click += (s, e) => RemovePanel(item);
             moduleMenu.Items.Add(deleteModuleItem);
@@ -560,6 +611,27 @@ namespace SideDesk.Controls
                 mi.Click += (s, ev) => AddModuleToGroup(item, panelType);
                 addSubMenu.Items.Add(mi);
             }
+            // 添加数据块：子菜单展开时加载设置中的数据项（模版）
+            var groupDataBlockSub = new MenuItem { Header = "添加数据块" };
+            groupDataBlockSub.Items.Add(new MenuItem { Header = "(加载中...)", IsEnabled = false });
+            var capturedGroup = item;
+            groupDataBlockSub.SubmenuOpened += (s, ev) =>
+                PopulateDataBlockMenu(groupDataBlockSub, tpl => AddDataBlockToGroup(capturedGroup, tpl), () =>
+                {
+                    var customItem = ShowAddDashboardItemDialog();
+                    if (customItem != null)
+                    {
+                        capturedGroup.ChildPanels ??= new List<PanelItem>();
+                        capturedGroup.ChildPanels.Add(new PanelItem
+                        {
+                            Type = PanelType.DataDashboard,
+                            DashboardItems = new List<DataDashboardItem> { customItem }
+                        });
+                        _configManager?.Save();
+                        RenderPanels();
+                    }
+                });
+            addSubMenu.Items.Add(groupDataBlockSub);
             groupContextMenu.Items.Add(addSubMenu);
             groupContextMenu.Items.Add(new Separator());
             var deleteGroupItem = new MenuItem { Header = "删除分组" };
@@ -991,13 +1063,14 @@ namespace SideDesk.Controls
             var check = new CheckBox
             {
                 IsChecked = todo.IsDone,
+                Style = (Style)FindResource("TodoCheckBoxStyle"),
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 6, 0)
+                Margin = new Thickness(0, 0, 4, 0)
             };
             DockPanel.SetDock(check, Dock.Left);
             row.Children.Add(check);
 
-            // 闹钟图标（右侧；有任务时间时显示，鼠标悬停显示具体日期）
+            // 闹钟图标（紧贴文字左侧；有任务时间时显示，鼠标悬停显示具体日期）
             if (todo.DueTime != null)
             {
                 var remindText = todo.RemindBeforeMinutes < 0
@@ -1005,15 +1078,16 @@ namespace SideDesk.Controls
                     : (todo.RemindBeforeMinutes == 0 ? "，准时提醒" : $"，提前{todo.RemindBeforeMinutes}分钟");
                 var clock = new Emoji.Wpf.TextBlock
                 {
-                    Text = "\u23F0\uFE0F",
+                    Text = "\u23F0",
                     FontSize = 13,
-                    FontFamily = new FontFamily("Segoe UI Emoji"),
+                    Width = 18,
                     VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(6, 0, 0, 0),
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    Margin = new Thickness(0, 0, 4, 0),
                     Cursor = Cursors.Hand,
                     ToolTip = $"{todo.DueTime.Value:yyyy-MM-dd HH:mm}{remindText}"
                 };
-                DockPanel.SetDock(clock, Dock.Right);
+                DockPanel.SetDock(clock, Dock.Left);
                 row.Children.Add(clock);
             }
 
@@ -1023,18 +1097,16 @@ namespace SideDesk.Controls
             var textBlock = new Emoji.Wpf.TextBlock
             {
                 Text = todo.Text,
-                TextWrapping = TextWrapping.Wrap,
+                TextWrapping = TextWrapping.NoWrap,
+                TextTrimming = TextTrimming.CharacterEllipsis,
                 Foreground = (Brush)FindResource(todo.IsDone ? "BrushTextMuted" : "BrushTextMain"),
                 TextDecorations = todo.IsDone ? TextDecorations.Strikethrough : null
             };
             textStack.Children.Add(textBlock);
 
-            // 双击编辑该待办
-            textStack.MouseLeftButtonDown += (s, e) =>
-            {
-                if (e.ClickCount == 2) EditTodo(todo, panelItem);
-            };
-            textStack.ToolTip = "双击编辑";
+            // 单击查看详情
+            textStack.MouseLeftButtonUp += (s, e) => ShowTodoDetail(todo, panelItem);
+            textStack.ToolTip = $"{todo.Text}\n（点击查看详情）";
             row.Children.Add(textStack);
 
             check.Checked += (s, e) => { todo.IsDone = true; _configManager?.Save(); RenderPanels(); };
@@ -1072,6 +1144,115 @@ namespace SideDesk.Controls
                 _configManager?.Save();
                 RenderPanels();
             }
+        }
+
+        /// <summary>点击待办项时弹出详情窗口，展示完整内容；支持编辑和删除</summary>
+        private void ShowTodoDetail(TodoItem todo, PanelItem panelItem)
+        {
+            var owner = Window.GetWindow(this);
+            var detailWin = new Window
+            {
+                Title = "待办详情",
+                Width = 380,
+                Height = 380,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                ResizeMode = ResizeMode.NoResize,
+                Owner = owner,
+                Background = (Brush)FindResource("BrushDialogBG"),
+                Foreground = (Brush)FindResource("BrushTextMain")
+            };
+            detailWin.SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(detailWin);
+
+            var root = new StackPanel { Margin = new Thickness(20) };
+
+            // 状态行
+            var statusText = todo.IsDone ? "✅ 已完成" : "⏳ 未完成";
+            var statusBlock = new Emoji.Wpf.TextBlock
+            {
+                Text = statusText,
+                FontSize = 13,
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                Margin = new Thickness(0, 0, 0, 10)
+            };
+            root.Children.Add(statusBlock);
+
+            // 标题
+            var titleHeader = new TextBlock { Text = "标题", FontSize = 12, Foreground = (Brush)FindResource("BrushTextMuted"), Margin = new Thickness(0, 0, 0, 4) };
+            root.Children.Add(titleHeader);
+            var titleBlock = new Emoji.Wpf.TextBlock
+            {
+                Text = todo.Text,
+                FontSize = 15,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                Margin = new Thickness(0, 0, 0, 14)
+            };
+            root.Children.Add(titleBlock);
+
+            // 详细内容
+            var descHeader = new TextBlock { Text = "详细内容", FontSize = 12, Foreground = (Brush)FindResource("BrushTextMuted"), Margin = new Thickness(0, 0, 0, 4) };
+            root.Children.Add(descHeader);
+            var descScroll = new ScrollViewer
+            {
+                MaxHeight = 120,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Content = new Emoji.Wpf.TextBlock
+                {
+                    Text = string.IsNullOrEmpty(todo.Description) ? "（无详细内容）" : todo.Description,
+                    FontSize = 13,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = string.IsNullOrEmpty(todo.Description)
+                        ? (Brush)FindResource("BrushTextMuted")
+                        : (Brush)FindResource("BrushTextMain"),
+                    Opacity = string.IsNullOrEmpty(todo.Description) ? 0.6 : 1.0
+                }
+            };
+            root.Children.Add(descScroll);
+
+            // 时间信息
+            if (todo.DueTime.HasValue)
+            {
+                var remindText = todo.RemindBeforeMinutes < 0
+                    ? ""
+                    : (todo.RemindBeforeMinutes == 0 ? "，准时提醒" : $"，提前{todo.RemindBeforeMinutes}分钟提醒");
+                var timeBlock = new Emoji.Wpf.TextBlock
+                {
+                    Text = $"\u23F0 任务时间：{todo.DueTime.Value:yyyy-MM-dd HH:mm}{remindText}",
+                    FontSize = 12,
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
+                    Margin = new Thickness(0, 14, 0, 0)
+                };
+                root.Children.Add(timeBlock);
+            }
+
+            // 创建时间
+            var createdBlock = new TextBlock
+            {
+                Text = $"创建时间：{todo.CreatedAt:yyyy-MM-dd HH:mm}",
+                FontSize = 12,
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                Margin = new Thickness(0, 6, 0, 0)
+            };
+            root.Children.Add(createdBlock);
+
+            // 按钮区
+            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 24, 0, 0) };
+
+            var editBtn = new Button { Content = "编辑", Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)FindResource("StandardButtonStyle") };
+            editBtn.Click += (s, e) =>
+            {
+                detailWin.Close();
+                EditTodo(todo, panelItem);
+            };
+            btnPanel.Children.Add(editBtn);
+
+            var closeBtn = new Button { Content = "关闭", Width = 70, IsCancel = true, Style = (Style)FindResource("StandardButtonStyle") };
+            closeBtn.Click += (s, e) => detailWin.Close();
+            btnPanel.Children.Add(closeBtn);
+
+            root.Children.Add(btnPanel);
+            detailWin.Content = root;
+            detailWin.ShowDialog();
         }
 
         /// <summary>定时检查当前窗口的待办，到点（含提前量）时弹窗提醒</summary>
@@ -2169,6 +2350,102 @@ namespace SideDesk.Controls
             RenderPanels();
         }
 
+        /// <summary>添加数据块子菜单展开时，加载设置中的数据项（模版）列表</summary>
+        private void AddDataBlockMenu_SubmenuOpened(object sender, RoutedEventArgs e)
+        {
+            if (sender is not MenuItem menu) return;
+            PopulateDataBlockMenu(menu, tpl => AddDataBlockPanel(tpl), () =>
+            {
+                var customItem = ShowAddDashboardItemDialog();
+                if (customItem != null)
+                {
+                    if (_currentWindowConfig == null || _configManager == null) return;
+                    _currentWindowConfig.Panels.Add(new PanelItem
+                    {
+                        Type = PanelType.DataDashboard,
+                        Title = "数据看板",
+                        DashboardItems = new List<DataDashboardItem> { customItem }
+                    });
+                    _configManager.Save();
+                    RenderPanels();
+                }
+            });
+        }
+
+        /// <summary>用设置中的数据模版填充指定子菜单；点击项时回调 onClick；onCustomClick 为「定制数据块」回调</summary>
+        private void PopulateDataBlockMenu(MenuItem menu, Action<Models.DataTemplate> onClick, Action? onCustomClick = null)
+        {
+            menu.Items.Clear();
+            var templates = DataTemplateManager.Load().Templates;
+            if (templates.Count == 0)
+            {
+                menu.Items.Add(new MenuItem { Header = "(无数据项，请在设置中添加)", IsEnabled = false });
+                if (onCustomClick != null)
+                {
+                    menu.Items.Add(new Separator());
+                    var customMi = new MenuItem { Header = "定制数据块" };
+                    customMi.Click += (s, ev) => onCustomClick();
+                    menu.Items.Add(customMi);
+                }
+                return;
+            }
+            foreach (var tpl in templates)
+            {
+                var header = string.IsNullOrEmpty(tpl.Category) ? tpl.Name : $"{tpl.Name}  [{tpl.Category}]";
+                var mi = new MenuItem { Header = header, ToolTip = tpl.Description };
+                var captured = tpl;
+                mi.Click += (s, ev) => onClick(captured);
+                menu.Items.Add(mi);
+            }
+            if (onCustomClick != null)
+            {
+                menu.Items.Add(new Separator());
+                var customMi = new MenuItem { Header = "定制数据块" };
+                customMi.Click += (s, ev) => onCustomClick();
+                menu.Items.Add(customMi);
+            }
+        }
+
+        /// <summary>基于数据模版创建一个数据看板项</summary>
+        private static DataDashboardItem BuildDashboardItemFromTemplate(Models.DataTemplate tpl) => new DataDashboardItem
+        {
+            Label = tpl.Name,
+            TemplateId = tpl.Id,
+            TargetUrl = tpl.TargetUrl,
+            Selector = tpl.Selector,
+            RefreshIntervalSeconds = tpl.RefreshIntervalSeconds,
+            BrowserId = tpl.DefaultBrowserId,
+            ProfileId = tpl.DefaultProfileId,
+            Value = "--"
+        };
+
+        /// <summary>根据模版新建一个包含单个数据项的数据看板模块</summary>
+        private void AddDataBlockPanel(Models.DataTemplate tpl)
+        {
+            if (_currentWindowConfig == null || _configManager == null) return;
+            _currentWindowConfig.Panels.Add(new PanelItem
+            {
+                Type = PanelType.DataDashboard,
+                Title = "数据看板",
+                DashboardItems = new List<DataDashboardItem> { BuildDashboardItemFromTemplate(tpl) }
+            });
+            _configManager.Save();
+            RenderPanels();
+        }
+
+        /// <summary>根据模版向分组内添加一个数据看板模块</summary>
+        private void AddDataBlockToGroup(PanelItem groupItem, Models.DataTemplate tpl)
+        {
+            groupItem.ChildPanels ??= new List<PanelItem>();
+            groupItem.ChildPanels.Add(new PanelItem
+            {
+                Type = PanelType.DataDashboard,
+                DashboardItems = new List<DataDashboardItem> { BuildDashboardItemFromTemplate(tpl) }
+            });
+            _configManager?.Save();
+            RenderPanels();
+        }
+
         private void AddTimerPanel_Click(object sender, RoutedEventArgs e)
         {
             if (_currentWindowConfig == null || _configManager == null) return;
@@ -3007,6 +3284,14 @@ namespace SideDesk.Controls
             settings.Save();
         }
 
+        private void ToggleHideModuleFrame_Click(object sender, RoutedEventArgs e)
+        {
+            var menuItem = sender as MenuItem;
+            AppSettings.Instance.HideModuleFrame = menuItem?.IsChecked ?? false;
+            AppSettings.Instance.Save();
+            RenderPanels();
+        }
+
 
 
         private void ContextMenu_UsageStatsClick(object sender, RoutedEventArgs e)
@@ -3040,6 +3325,9 @@ namespace SideDesk.Controls
         {
             // 同步编辑模式 checkbox 状态
             editModeMenu.IsChecked = _isEditMode;
+
+            // 同步“隐藏模块外框”勾选状态
+            hideModuleFrameMenu.IsChecked = AppSettings.Instance.HideModuleFrame;
 
             var app = (App)Application.Current;
             var currentLayout = app.CurrentLayout;
@@ -3133,6 +3421,29 @@ namespace SideDesk.Controls
                     };
                     card.Children.Add(valueBlock);
 
+                    // 「抓取」按钮：向浏览器扩展广播 WebSocket 请求，命中 URL 的页面执行选择器抓取
+                    var capturedItem = dashItem;
+                    var fetchBtn = new Button
+                    {
+                        Content = "抓取",
+                        FontSize = 11,
+                        Padding = new Thickness(10, 2, 10, 2),
+                        Margin = new Thickness(0, 4, 0, 0),
+                        HorizontalAlignment = HorizontalAlignment.Left,
+                        Cursor = Cursors.Hand,
+                        Background = (Brush)FindResource("BrushAccent"),
+                        Foreground = Brushes.White,
+                        BorderThickness = new Thickness(0),
+                        ToolTip = "通知浏览器扩展抓取该数据项"
+                    };
+                    fetchBtn.Click += async (s, e) =>
+                    {
+                        fetchBtn.Content = "抓取中...";
+                        fetchBtn.IsEnabled = false;
+                        await SendDataBlockFetchRequest(capturedItem, valueBlock, fetchBtn);
+                    };
+                    card.Children.Add(fetchBtn);
+
                     // 点击卡片打开目标网址
                     var targetUrl = dashItem.TargetUrl;
                     card.MouseLeftButtonUp += (s, e) =>
@@ -3200,7 +3511,78 @@ namespace SideDesk.Controls
             return WrapWidget("📊 数据看板", container, item, _isEditMode ? null : AddDashItem);
         }
 
-        private void StartDashboardItemRefresh(DataDashboardItem dashItem, TextBlock valueBlock)
+        /// <summary>
+        /// 向所有已连接的浏览器扩展广播抓取请求，并注册回调更新 UI。
+        /// </summary>
+        private async Task SendDataBlockFetchRequest(DataDashboardItem dashItem, Emoji.Wpf.TextBlock valueBlock, Button fetchBtn)
+        {
+            var server = Services.WebSocketServerService.Instance;
+            System.Diagnostics.Debug.WriteLine($"[DataDashboard] 抓取按钮点击: Label={dashItem.Label}, URL={dashItem.TargetUrl}, Selector={dashItem.Selector}");
+            System.Diagnostics.Debug.WriteLine($"[DataDashboard] WS运行状态={server.IsRunning}, 客户端数量={server.ClientCount}");
+
+            if (!server.IsRunning || server.ClientCount == 0)
+            {
+                System.Diagnostics.Debug.WriteLine("[DataDashboard] 没有已连接的浏览器扩展，中止发送");
+                fetchBtn.Content = "无连接";
+                fetchBtn.IsEnabled = true;
+                MessageBox.Show("没有已连接的浏览器扩展。\n请确认扩展已启用，并已打开目标页面。",
+                    "抓取", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var requestId = Guid.NewGuid().ToString();
+
+            // 注册回调：当 fetchResult 返回时更新 valueBlock 和按钮状态
+            var app = (App)Application.Current;
+            app.RegisterFetchCallback(requestId, (success, value, error) =>
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    fetchBtn.IsEnabled = true;
+                    if (success)
+                    {
+                        valueBlock.Text = value;
+                        dashItem.Value = value;
+                        fetchBtn.Content = "✓ 成功";
+                        System.Diagnostics.Debug.WriteLine($"[DataDashboard] 回调更新UI: {dashItem.Label} = {value}");
+                    }
+                    else
+                    {
+                        valueBlock.Text = "错误";
+                        fetchBtn.Content = "✗ 失败";
+                        System.Diagnostics.Debug.WriteLine($"[DataDashboard] 回调抓取失败: {dashItem.Label} - {error}");
+                    }
+                    // 3秒后恢复按钮
+                    _ = Task.Delay(3000).ContinueWith(_ => Dispatcher.Invoke(() => fetchBtn.Content = "抓取"));
+                });
+            });
+
+            var payload = new
+            {
+                type = "fetch",
+                requestId,
+                label = dashItem.Label,
+                url = dashItem.TargetUrl,
+                selector = dashItem.Selector
+            };
+            var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
+            System.Diagnostics.Debug.WriteLine($"[DataDashboard] 广播WS消息: {json}");
+            await server.BroadcastAsync(json);
+            System.Diagnostics.Debug.WriteLine("[DataDashboard] 广播完成");
+
+            // 15秒超时恢复
+            _ = Task.Delay(15000).ContinueWith(_ => Dispatcher.Invoke(() =>
+            {
+                if (fetchBtn.Content.ToString() == "抓取中...")
+                {
+                    fetchBtn.Content = "超时";
+                    fetchBtn.IsEnabled = true;
+                    _ = Task.Delay(3000).ContinueWith(__ => Dispatcher.Invoke(() => fetchBtn.Content = "抓取"));
+                }
+            }));
+        }
+
+        private void StartDashboardItemRefresh(DataDashboardItem dashItem, Emoji.Wpf.TextBlock valueBlock)
         {
             var interval = Math.Max(dashItem.RefreshIntervalSeconds, 10);
             var timer = new System.Windows.Threading.DispatcherTimer
@@ -3210,33 +3592,8 @@ namespace SideDesk.Controls
 
             timer.Tick += async (s, e) =>
             {
-                try
-                {
-                    var app = (App)Application.Current;
-                    var browsers = app.ProgramRegistry.Browsers;
-
-                    var browserId = dashItem.BrowserId ?? browsers.FirstOrDefault()?.Id;
-                    var browser = browsers.FirstOrDefault(b => b.Id == browserId);
-                    if (browser == null) return;
-
-                    var profileDir = "";
-                    if (!string.IsNullOrEmpty(dashItem.ProfileId))
-                    {
-                        var profile = browser.Profiles.FirstOrDefault(p => p.Id == dashItem.ProfileId);
-                        profileDir = profile?.Directory ?? "";
-                    }
-
-                    var instanceKey = $"{browserId}_{dashItem.ProfileId ?? "default"}";
-                    var value = await Services.CdpBrowserService.Instance.FetchElementValueAsync(
-                        browser.ExePath, profileDir, instanceKey, dashItem.TargetUrl, dashItem.Selector);
-
-                    valueBlock.Text = value;
-                    dashItem.Value = value;
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"[DataDashboard] 刷新失败 {dashItem.Label}: {ex.Message}");
-                }
+                try { await BroadcastWsFetch(dashItem, valueBlock); }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[DataDashboard] 定时刷新失败 {dashItem.Label}: {ex.Message}"); }
             };
 
             timer.Start();
@@ -3246,34 +3603,45 @@ namespace SideDesk.Controls
             {
                 Dispatcher.Invoke(async () =>
                 {
-                    try
+                    try { await BroadcastWsFetch(dashItem, valueBlock); }
+                    catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[DataDashboard] 首次获取失败 {dashItem.Label}: {ex.Message}"); }
+                });
+            }, TaskScheduler.Default);
+        }
+
+        /// <summary>
+        /// 通过 WebSocket 广播抓取请求并注册回调更新 UI（定时刷新和手动抓取共用）
+        /// </summary>
+        private async Task BroadcastWsFetch(DataDashboardItem dashItem, Emoji.Wpf.TextBlock valueBlock)
+        {
+            var server = Services.WebSocketServerService.Instance;
+            if (!server.IsRunning || server.ClientCount == 0)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DataDashboard] WS无客户端，跳过: {dashItem.Label}");
+                return;
+            }
+
+            var requestId = Guid.NewGuid().ToString();
+            var app = (App)Application.Current;
+            app.RegisterFetchCallback(requestId, (success, value, error) =>
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    if (success)
                     {
-                        var app = (App)Application.Current;
-                        var browsers = app.ProgramRegistry.Browsers;
-                        var browserId = dashItem.BrowserId ?? browsers.FirstOrDefault()?.Id;
-                        var browser = browsers.FirstOrDefault(b => b.Id == browserId);
-                        if (browser == null) return;
-
-                        var profileDir = "";
-                        if (!string.IsNullOrEmpty(dashItem.ProfileId))
-                        {
-                            var profile = browser.Profiles.FirstOrDefault(p => p.Id == dashItem.ProfileId);
-                            profileDir = profile?.Directory ?? "";
-                        }
-
-                        var instanceKey = $"{browserId}_{dashItem.ProfileId ?? "default"}";
-                        var value = await Services.CdpBrowserService.Instance.FetchElementValueAsync(
-                            browser.ExePath, profileDir, instanceKey, dashItem.TargetUrl, dashItem.Selector);
-
                         valueBlock.Text = value;
                         dashItem.Value = value;
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        System.Diagnostics.Debug.WriteLine($"[DataDashboard] 首次获取失败 {dashItem.Label}: {ex.Message}");
+                        valueBlock.Text = "--";
                     }
+                    System.Diagnostics.Debug.WriteLine($"[DataDashboard] 回调更新: {dashItem.Label} = {(success ? value : error)}");
                 });
-            }, TaskScheduler.Default);
+            });
+
+            var payload = new { type = "fetch", requestId, label = dashItem.Label, url = dashItem.TargetUrl, selector = dashItem.Selector };
+            await server.BroadcastAsync(Newtonsoft.Json.JsonConvert.SerializeObject(payload));
         }
 
         #endregion
@@ -3317,6 +3685,7 @@ namespace SideDesk.Controls
             });
             var templateCombo = new ComboBox
             {
+                Style = (Style)FindResource("GlobalComboBoxStyle"),
                 Margin = new Thickness(0, 0, 0, 12),
                 IsEditable = false
             };
@@ -3424,6 +3793,7 @@ namespace SideDesk.Controls
             });
             var browserCombo = new ComboBox
             {
+                Style = (Style)FindResource("GlobalComboBoxStyle"),
                 Margin = new Thickness(0, 0, 0, 12),
                 IsEditable = false
             };
@@ -3444,6 +3814,7 @@ namespace SideDesk.Controls
             });
             var profileCombo = new ComboBox
             {
+                Style = (Style)FindResource("GlobalComboBoxStyle"),
                 Margin = new Thickness(0, 0, 0, 16),
                 IsEditable = false
             };

@@ -210,6 +210,7 @@ namespace SideDesk.Services
             {
                 try
                 {
+                    Debug.WriteLine($"[WebSocketServer] 发送消息[{clientId}]: {message}");
                     var bytes = Encoding.UTF8.GetBytes(message);
                     await socket.SendAsync(new ArraySegment<byte>(bytes),
                         WebSocketMessageType.Text, true, CancellationToken.None).ConfigureAwait(false);
@@ -219,6 +220,10 @@ namespace SideDesk.Services
                     Debug.WriteLine($"[WebSocketServer] 发送失败[{clientId}]: {ex.Message}");
                 }
             }
+            else
+            {
+                Debug.WriteLine($"[WebSocketServer] 发送跳过[{clientId}]: socket不存在或状态不是Open(当前={socket?.State})");
+            }
         }
 
         /// <summary>
@@ -226,12 +231,18 @@ namespace SideDesk.Services
         /// </summary>
         public async Task BroadcastAsync(string message)
         {
+            Debug.WriteLine($"[WebSocketServer] 开始广播，当前客户端数={_clients.Count}");
             var bytes = Encoding.UTF8.GetBytes(message);
             foreach (var kv in _clients)
             {
-                if (kv.Value.State != WebSocketState.Open) continue;
+                if (kv.Value.State != WebSocketState.Open)
+                {
+                    Debug.WriteLine($"[WebSocketServer] 广播跳过客户端[{kv.Key}]: 状态={kv.Value.State}");
+                    continue;
+                }
                 try
                 {
+                    Debug.WriteLine($"[WebSocketServer] 广播到客户端[{kv.Key}]: {message}");
                     await kv.Value.SendAsync(new ArraySegment<byte>(bytes),
                         WebSocketMessageType.Text, true, CancellationToken.None).ConfigureAwait(false);
                 }

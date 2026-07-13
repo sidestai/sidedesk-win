@@ -26,6 +26,8 @@ namespace SideDesk
         public double BackgroundOpacity { get; set; } = 50; // 背景透明度 0-100%
         public bool EnableTitleLock { get; set; } = false;
         public bool EnableAutoUpdate { get; set; } = true;
+        // 全局窗口切换热键（Ctrl+1~9），默认关闭以避免与浏览器等应用的 Ctrl+数字切标签冲突
+        public bool EnableWindowSwitchHotkey { get; set; } = false;
 
         private static readonly string SettingsPath = Path.Combine(
             AppDomain.CurrentDomain.BaseDirectory, "settings.json");

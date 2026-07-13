@@ -79,6 +79,7 @@ namespace SideDesk
             RefreshExtensionList();
 
             titleLockSwitch.IsChecked = _app.AppSettings.EnableTitleLock;
+            windowSwitchHotkeySwitch.IsChecked = _app.AppSettings.EnableWindowSwitchHotkey;
 
             // 按当前停靠位置显隐左右区块，并同步浮动宽度框可用性
             UpdateSideSectionsVisibility();
@@ -90,7 +91,7 @@ namespace SideDesk
         private void Nav_Changed(object sender, SelectionChangedEventArgs e)
         {
             if (_isLoading) return;
-            if (pageGeneral == null || pageAppearance == null || pageProgramManager == null || pageExtensions == null || pageTools == null || pageModules == null || pageAbout == null) return;
+            if (pageGeneral == null || pageAppearance == null || pageProgramManager == null || pageExtensions == null || pageTools == null || pageModules == null || pageShortcuts == null || pageAbout == null) return;
         
             // 隱藏所有页面
             pageGeneral.Visibility = Visibility.Collapsed;
@@ -99,6 +100,7 @@ namespace SideDesk
             pageExtensions.Visibility = Visibility.Collapsed;
             pageTools.Visibility = Visibility.Collapsed;
             pageModules.Visibility = Visibility.Collapsed;
+            pageShortcuts.Visibility = Visibility.Collapsed;
             pageAbout.Visibility = Visibility.Collapsed;
         
             // 显示选中页面
@@ -110,7 +112,8 @@ namespace SideDesk
                 case 3: pageExtensions.Visibility = Visibility.Visible; break;
                 case 4: pageTools.Visibility = Visibility.Visible; break;
                 case 5: pageModules.Visibility = Visibility.Visible; RefreshTemplateList(); break;
-                case 6: pageAbout.Visibility = Visibility.Visible; break;
+                case 6: pageShortcuts.Visibility = Visibility.Visible; break;
+                case 7: pageAbout.Visibility = Visibility.Visible; break;
             }
         }
 
@@ -767,6 +770,26 @@ namespace SideDesk
         {
             var picker = new TitleLockPickerWindow { Owner = this };
             picker.ShowDialog();
+        }
+
+        private void WindowSwitchHotkeySwitch_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_isLoading) return;
+            _app.AppSettings.EnableWindowSwitchHotkey = windowSwitchHotkeySwitch.IsChecked == true;
+            _app.AppSettings.Save();
+
+            // 实时启停全局键盘钩子
+            try
+            {
+                if (_app.AppSettings.EnableWindowSwitchHotkey)
+                    Services.GlobalHotkeyService.Instance.Start();
+                else
+                    Services.GlobalHotkeyService.Instance.Stop();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[GlobalHotkey] 切换启停失败: {ex.Message}");
+            }
         }
 
         #endregion

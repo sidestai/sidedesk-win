@@ -36,6 +36,7 @@ public class PanelItem
     public List<StickyNote>? StickyNotes { get; set; } // 便签数据（per-panel）
     public List<TodoItem>? TodoItems { get; set; } // 今日待办数据（per-panel）
     public bool SkipWrapper { get; set; } = false;     // 是否跳过外层容器包装
+    public bool HideFrame { get; set; } = false;       // 单个模块独立隐藏外框（边框/标题/背景/内边距）
 }
 
 public class FileAreaItem
@@ -90,6 +91,7 @@ public class TodoItem
 {
     public string Id { get; set; } = Guid.NewGuid().ToString();
     public string Text { get; set; } = "";
+    public string Description { get; set; } = "";  // 详细内容/备注
     public bool IsDone { get; set; } = false;
     public DateTime CreatedAt { get; set; } = DateTime.Now;
     public DateTime? DueTime { get; set; }               // 任务时间（可选）
