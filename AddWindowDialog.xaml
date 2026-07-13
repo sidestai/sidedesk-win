@@ -1,13 +1,13 @@
 <Window x:Class="SideDesk.AddWindowDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="添加窗口" Height="240" Width="380"
+        Title="添加窗口" SizeToContent="Height" MinHeight="200" Width="380"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False"
         Background="{DynamicResource BrushDialogBG}" Foreground="{DynamicResource BrushTextMain}">
     <Grid Margin="20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
@@ -31,16 +31,16 @@
                 <RadioButton x:Name="nativeRadio" Content="本地模式" IsChecked="True"
                              FontSize="{DynamicResource FontSizeNormal}"
                              Foreground="{DynamicResource BrushTextSec}" Margin="0,0,15,0" Checked="ModeChanged"/>
-                <RadioButton x:Name="webviewRadio" Content="网页模式"
+                <RadioButton x:Name="webviewRadio" Content="网页模式1"
                              FontSize="{DynamicResource FontSizeNormal}"
                              Foreground="{DynamicResource BrushTextSec}" Checked="ModeChanged"/>
             </StackPanel>
 
             <!-- URL -->
-            <DockPanel Margin="0,0,0,0">
+            <DockPanel x:Name="urlPanel" Margin="0,0,0,0">
                 <TextBlock DockPanel.Dock="Left" Text="URL：" Width="60" VerticalAlignment="Center"
                            FontSize="{DynamicResource FontSizeNormal}" Foreground="{DynamicResource BrushTextMain}"/>
-                <TextBox x:Name="urlBox" IsEnabled="False" Text="https://" Style="{StaticResource GlobalTextBoxStyle}"/>
+                <TextBox x:Name="urlBox" Text="https://" Style="{StaticResource GlobalTextBoxStyle}"/>
             </DockPanel>
         </StackPanel>
 
