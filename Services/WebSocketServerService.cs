@@ -15,6 +15,19 @@ namespace SideDesk.Services
     /// 供浏览器扩展 / 外部程序与 SideDesk 双向通信。
     /// 基于 HttpListener + System.Net.WebSockets 实现，无需额外依赖。
     /// </summary>
+    /// <summary>
+    /// WebSocket 客户端元数据
+    /// </summary>
+    public class WsClientInfo
+    {
+        public Guid Id { get; set; }
+        public string UniqId { get; set; } = "";     // 扩展端生成的唯一标识
+        public string Title { get; set; } = "";
+        public string Url { get; set; } = "";
+        public int? TabId { get; set; }
+        public DateTime ConnectedAt { get; set; } = DateTime.Now;
+    }
+
     public sealed class WebSocketServerService
     {
         private static readonly Lazy<WebSocketServerService> _instance =
@@ -31,6 +44,7 @@ namespace SideDesk.Services
         private HttpListener? _listener;
         private CancellationTokenSource? _cts;
         private readonly ConcurrentDictionary<Guid, WebSocket> _clients = new();
+        private readonly ConcurrentDictionary<Guid, WsClientInfo> _clientInfo = new();
         private volatile bool _running;
 
         /// <summary>收到文本消息时触发（参数：客户端Id, 消息文本）</summary>
@@ -154,6 +168,7 @@ namespace SideDesk.Services
             }
 
             _clients[id] = socket;
+            _clientInfo[id] = new WsClientInfo { Id = id };
             ClientConnected?.Invoke(id);
             Debug.WriteLine($"[WebSocketServer] 客户端接入: {id} (当前 {_clients.Count})");
 
@@ -195,6 +210,7 @@ namespace SideDesk.Services
             finally
             {
                 _clients.TryRemove(id, out _);
+                _clientInfo.TryRemove(id, out _);
                 try { socket.Dispose(); } catch { }
                 ClientDisconnected?.Invoke(id);
                 Debug.WriteLine($"[WebSocketServer] 客户端断开: {id} (当前 {_clients.Count})");
@@ -224,6 +240,32 @@ namespace SideDesk.Services
             {
                 Debug.WriteLine($"[WebSocketServer] 发送跳过[{clientId}]: socket不存在或状态不是Open(当前={socket?.State})");
             }
+        }
+
+        /// <summary>客户端元数据更新时触发</summary>
+        public event Action? ClientInfoUpdated;
+
+        /// <summary>
+        /// 更新客户端元数据（由 register 消息触发）
+        /// </summary>
+        public void UpdateClientInfo(Guid clientId, string uniqId, string title, string url, int? tabId)
+        {
+            if (_clientInfo.TryGetValue(clientId, out var info))
+            {
+                info.UniqId = uniqId;
+                info.Title = title;
+                info.Url = url;
+                info.TabId = tabId;
+                ClientInfoUpdated?.Invoke();
+            }
+        }
+
+        /// <summary>
+        /// 获取所有已连接客户端的元数据列表
+        /// </summary>
+        public List<WsClientInfo> GetConnectedClients()
+        {
+            return _clientInfo.Values.ToList();
         }
 
         /// <summary>

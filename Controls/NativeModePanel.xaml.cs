@@ -671,7 +671,8 @@ namespace SideDesk.Controls
                 Background = (Brush)FindResource("BrushInputBG"),
                 BorderBrush = (Brush)FindResource("BrushBorder"),
                 BorderThickness = new Thickness(1),
-                Child = container
+                Child = container,
+                ContextMenu = groupContextMenu  // 整个分组区域右键都使用分组菜单
             };
 
             if (_isEditMode)
@@ -2197,7 +2198,9 @@ namespace SideDesk.Controls
                 newPanel.StickyNotes = new List<StickyNote>();
             else if (type == PanelType.TodoList)
                 newPanel.TodoItems = new List<TodoItem>();
-            _currentWindowConfig.Panels.Add(newPanel);
+
+            // 优先添加到最后一个分组内，使其跟随分组收起/展开
+            AddPanelToGroupOrTop(newPanel);
 
             // 自动开启编辑模式
             _isEditMode = true;
@@ -2340,12 +2343,13 @@ namespace SideDesk.Controls
         private void AddDataDashboard_Click(object sender, RoutedEventArgs e)
         {
             if (_currentWindowConfig == null || _configManager == null) return;
-            _currentWindowConfig.Panels.Add(new PanelItem
+            var newPanel = new PanelItem
             {
                 Type = PanelType.DataDashboard,
                 Title = "数据看板",
                 DashboardItems = new List<DataDashboardItem>()
-            });
+            };
+            AddPanelToGroupOrTop(newPanel);
             _configManager.Save();
             RenderPanels();
         }
@@ -2360,12 +2364,13 @@ namespace SideDesk.Controls
                 if (customItem != null)
                 {
                     if (_currentWindowConfig == null || _configManager == null) return;
-                    _currentWindowConfig.Panels.Add(new PanelItem
+                    var newPanel = new PanelItem
                     {
                         Type = PanelType.DataDashboard,
                         Title = "数据看板",
                         DashboardItems = new List<DataDashboardItem> { customItem }
-                    });
+                    };
+                    AddPanelToGroupOrTop(newPanel);
                     _configManager.Save();
                     RenderPanels();
                 }
@@ -2423,12 +2428,13 @@ namespace SideDesk.Controls
         private void AddDataBlockPanel(Models.DataTemplate tpl)
         {
             if (_currentWindowConfig == null || _configManager == null) return;
-            _currentWindowConfig.Panels.Add(new PanelItem
+            var newPanel = new PanelItem
             {
                 Type = PanelType.DataDashboard,
                 Title = "数据看板",
                 DashboardItems = new List<DataDashboardItem> { BuildDashboardItemFromTemplate(tpl) }
-            });
+            };
+            AddPanelToGroupOrTop(newPanel);
             _configManager.Save();
             RenderPanels();
         }
@@ -2449,14 +2455,30 @@ namespace SideDesk.Controls
         private void AddTimerPanel_Click(object sender, RoutedEventArgs e)
         {
             if (_currentWindowConfig == null || _configManager == null) return;
-            _currentWindowConfig.Panels.Add(new PanelItem
+            var newPanel = new PanelItem
             {
                 Type = PanelType.Timer,
                 Title = "⏱ 计时器",
                 TimerItems = new List<TimerItem>()
-            });
+            };
+            AddPanelToGroupOrTop(newPanel);
             _configManager.Save();
             RenderPanels();
+        }
+
+        /// <summary>将新面板添加到最后一个分组内（如有），否则添加到顶层</summary>
+        private void AddPanelToGroupOrTop(PanelItem newPanel)
+        {
+            var lastGroup = _currentWindowConfig!.Panels.LastOrDefault(p => p.Type == PanelType.Group);
+            if (lastGroup != null)
+            {
+                lastGroup.ChildPanels ??= new List<PanelItem>();
+                lastGroup.ChildPanels.Add(newPanel);
+            }
+            else
+            {
+                _currentWindowConfig.Panels.Add(newPanel);
+            }
         }
 
         #endregion
@@ -3376,7 +3398,9 @@ namespace SideDesk.Controls
         {
             item.DashboardItems ??= new List<DataDashboardItem>();
 
-            var container = new StackPanel();
+            // 数据项容器：根据 DashboardColumns 使用 UniformGrid 实现多列等宽布局
+            int cols = Math.Clamp(item.DashboardColumns, 1, 4);
+            var contentPanel = new System.Windows.Controls.Primitives.UniformGrid { Columns = cols };
 
             // 数据项列表
             if (item.DashboardItems != null && item.DashboardItems.Count > 0)
@@ -3385,15 +3409,64 @@ namespace SideDesk.Controls
                 {
                     var card = new StackPanel
                     {
-                        Margin = new Thickness(0, 4, 0, 4),
+                        Margin = new Thickness(4, 4, 4, 4),
                         Cursor = Cursors.Hand,
-                        Background = Brushes.Transparent // 确保可点击
+                        Background = Brushes.Transparent,
                     };
 
-                    // 右键菜单：删除数据项
-                    var dashItemMenu = new ContextMenu();
-                    var dashItemDel = new MenuItem { Header = "删除数据项" };
+                    var labelBlock = new Emoji.Wpf.TextBlock
+                    {
+                        Text = dashItem.Label,
+                        FontSize = dashItem.LabelFontSize > 0 ? dashItem.LabelFontSize : 11,
+                        FontWeight = dashItem.LabelBold ? FontWeights.Bold : FontWeights.Normal,
+                        Foreground = ApplyDashColor(dashItem.LabelColor, "BrushTextSec")
+                    };
+                    card.Children.Add(labelBlock);
+
+                    var valueBlock = new Emoji.Wpf.TextBlock
+                    {
+                        Text = dashItem.Value ?? "--",
+                        FontSize = dashItem.ValueFontSize > 0 ? dashItem.ValueFontSize : 16,
+                        FontWeight = dashItem.ValueBold ? FontWeights.Bold : FontWeights.Normal,
+                        Foreground = ApplyDashColor(dashItem.ValueColor, "BrushTextMain"),
+                        Tag = dashItem.Id
+                    };
+                    card.Children.Add(valueBlock);
+
+                    // 应用水平对齐
+                    var hAlign = dashItem.HorizontalAlignment;
+                    if (hAlign == "Center") card.HorizontalAlignment = HorizontalAlignment.Center;
+                    else if (hAlign == "Right") card.HorizontalAlignment = HorizontalAlignment.Right;
+
+                    // 右键菜单：立即更新数据 + 删除数据项
                     var capturedDash = dashItem;
+                    var dashItemMenu = new ContextMenu();
+
+                    var refreshItem = new MenuItem { Header = "立即更新数据" };
+                    refreshItem.Click += async (s, e) =>
+                    {
+                        try { await BroadcastWsFetch(capturedDash, valueBlock); }
+                        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[DataDashboard] 手动刷新失败 {capturedDash.Label}: {ex.Message}"); }
+                    };
+                    dashItemMenu.Items.Add(refreshItem);
+
+                    var editStyleItem = new MenuItem { Header = "编辑样式" };
+                    editStyleItem.Click += (s, e) => ShowDashboardItemStyleDialog(capturedDash);
+                    dashItemMenu.Items.Add(editStyleItem);
+
+                    var editItem = new MenuItem { Header = "编辑数据项" };
+                    editItem.Click += (s, e) =>
+                    {
+                        var updated = ShowAddDashboardItemDialog(capturedDash);
+                        if (updated != null)
+                        {
+                            _configManager?.Save();
+                            RenderPanels();
+                        }
+                    };
+                    dashItemMenu.Items.Add(editItem);
+
+                    var dashItemDel = new MenuItem { Header = "删除数据项" };
                     dashItemDel.Click += (s, e) =>
                     {
                         item.DashboardItems?.Remove(capturedDash);
@@ -3402,47 +3475,6 @@ namespace SideDesk.Controls
                     };
                     dashItemMenu.Items.Add(dashItemDel);
                     card.ContextMenu = dashItemMenu;
-
-                    var labelBlock = new Emoji.Wpf.TextBlock
-                    {
-                        Text = dashItem.Label,
-                        FontSize = 11,
-                        Foreground = (Brush)FindResource("BrushTextSec")
-                    };
-                    card.Children.Add(labelBlock);
-
-                    var valueBlock = new Emoji.Wpf.TextBlock
-                    {
-                        Text = dashItem.Value ?? "--",
-                        FontSize = 16,
-                        FontWeight = FontWeights.Bold,
-                        Foreground = (Brush)FindResource("BrushTextMain"),
-                        Tag = dashItem.Id
-                    };
-                    card.Children.Add(valueBlock);
-
-                    // 「抓取」按钮：向浏览器扩展广播 WebSocket 请求，命中 URL 的页面执行选择器抓取
-                    var capturedItem = dashItem;
-                    var fetchBtn = new Button
-                    {
-                        Content = "抓取",
-                        FontSize = 11,
-                        Padding = new Thickness(10, 2, 10, 2),
-                        Margin = new Thickness(0, 4, 0, 0),
-                        HorizontalAlignment = HorizontalAlignment.Left,
-                        Cursor = Cursors.Hand,
-                        Background = (Brush)FindResource("BrushAccent"),
-                        Foreground = Brushes.White,
-                        BorderThickness = new Thickness(0),
-                        ToolTip = "通知浏览器扩展抓取该数据项"
-                    };
-                    fetchBtn.Click += async (s, e) =>
-                    {
-                        fetchBtn.Content = "抓取中...";
-                        fetchBtn.IsEnabled = false;
-                        await SendDataBlockFetchRequest(capturedItem, valueBlock, fetchBtn);
-                    };
-                    card.Children.Add(fetchBtn);
 
                     // 点击卡片打开目标网址
                     var targetUrl = dashItem.TargetUrl;
@@ -3456,7 +3488,7 @@ namespace SideDesk.Controls
                         catch { }
                     };
 
-                    container.Children.Add(card);
+                    contentPanel.Children.Add(card);
 
                     // 启动定时刷新
                     StartDashboardItemRefresh(dashItem, valueBlock);
@@ -3464,7 +3496,7 @@ namespace SideDesk.Controls
             }
             else
             {
-                container.Children.Add(new Emoji.Wpf.TextBlock
+                contentPanel.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = "暂无数据项，请编辑添加",
                     FontSize = 12,
@@ -3473,7 +3505,7 @@ namespace SideDesk.Controls
                 });
             }
 
-            // 添加数据项回调（供标题栏「+」及 SkipWrapper 场景使用）
+            // 添加数据项回调
             void AddDashItem()
             {
                 var newItem = ShowAddDashboardItemDialog();
@@ -3486,7 +3518,7 @@ namespace SideDesk.Controls
                 }
             }
 
-            // SkipWrapper：分组内直接返回内容，编辑模式提供内联添加按钮
+            // SkipWrapper：分组内直接返回内容
             if (item.SkipWrapper)
             {
                 if (_isEditMode)
@@ -3502,84 +3534,404 @@ namespace SideDesk.Controls
                         Margin = new Thickness(0, 6, 0, 0)
                     };
                     addBtn.Click += (s, e) => AddDashItem();
-                    container.Children.Add(addBtn);
+                    var sp = new StackPanel();
+                    sp.Children.Add(contentPanel);
+                    sp.Children.Add(addBtn);
+                    return sp;
                 }
-                return container;
+                return contentPanel;
             }
 
-            // 外层容器：非编辑模式下标题栏的「+」用于添加数据项
-            return WrapWidget("📊 数据看板", container, item, _isEditMode ? null : AddDashItem);
+            // === 自定义标题栏：标题 + 下拉三角 ===
+            var displayTitle = string.IsNullOrEmpty(item.Title) ? "📊 数据看板" : item.Title;
+            var header = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+
+            var titleBlock = new Emoji.Wpf.TextBlock
+            {
+                Text = displayTitle,
+                FontWeight = FontWeights.SemiBold,
+                FontSize = 13,
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = (Brush)FindResource("BrushTextMain")
+            };
+
+            if (_isEditMode)
+            {
+                titleBlock.Cursor = Cursors.Hand;
+                titleBlock.ToolTip = "双击编辑名称";
+                titleBlock.MouseLeftButtonDown += (s, e) =>
+                {
+                    if (e.ClickCount == 2)
+                    {
+                        PromptRenamePanel(item, "📊 数据看板");
+                        e.Handled = true;
+                    }
+                };
+            }
+
+            // 下拉三角按钮
+            var dropBtn = new Button
+            {
+                Content = "\u25BE",
+                FontSize = 12,
+                Padding = new Thickness(4, 0, 4, 0),
+                Background = Brushes.Transparent,
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Visibility = _isEditMode ? Visibility.Collapsed : Visibility.Visible
+            };
+
+            // 构建下拉菜单
+            var dropMenu = new ContextMenu();
+
+            var addMenuItem = new MenuItem { Header = "添加数据项" };
+            addMenuItem.Click += (s, e) => AddDashItem();
+            dropMenu.Items.Add(addMenuItem);
+
+            dropMenu.Items.Add(new Separator());
+
+            // 布局子菜单：几列
+            var layoutMenu = new MenuItem { Header = "布局" };
+            for (int n = 1; n <= 4; n++)
+            {
+                var colItem = new MenuItem { Header = $"{n} 列", IsCheckable = true, IsChecked = cols == n };
+                int colCount = n;
+                colItem.Click += (s, e) =>
+                {
+                    item.DashboardColumns = colCount;
+                    _configManager?.Save();
+                    RenderPanels();
+                };
+                layoutMenu.Items.Add(colItem);
+            }
+            dropMenu.Items.Add(layoutMenu);
+
+            dropMenu.Items.Add(new Separator());
+
+            // 隐藏模块外框
+            var hideFrameItem = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
+            hideFrameItem.Click += (s, e) =>
+            {
+                item.HideFrame = hideFrameItem.IsChecked;
+                _configManager?.Save();
+                RenderPanels();
+            };
+            dropMenu.Items.Add(hideFrameItem);
+
+            // 删除模块
+            var delModuleItem = new MenuItem { Header = "删除模块" };
+            delModuleItem.Click += (s, e) => RemovePanel(item);
+            dropMenu.Items.Add(delModuleItem);
+
+            dropBtn.Click += (s, e) =>
+            {
+                dropMenu.IsOpen = true;
+            };
+
+            DockPanel.SetDock(dropBtn, Dock.Right);
+            header.Children.Add(dropBtn);
+            header.Children.Add(titleBlock);
+
+            var stack = new StackPanel();
+            stack.Children.Add(header);
+            stack.Children.Add(contentPanel);
+
+            var border = new Border
+            {
+                Margin = new Thickness(0, 0, 0, 12),
+                Padding = new Thickness(0, 10, 0, 10),
+                CornerRadius = new CornerRadius(6),
+                Background = (Brush)FindResource("BrushInputBG"),
+                BorderBrush = (Brush)FindResource("BrushBorder"),
+                BorderThickness = new Thickness(1),
+                Child = stack
+            };
+
+            if (_isEditMode)
+            {
+                border.MouseEnter += (s, e) => dropBtn.Visibility = Visibility.Visible;
+                border.MouseLeave += (s, e) => dropBtn.Visibility = Visibility.Collapsed;
+            }
+
+            return border;
         }
 
-        /// <summary>
-        /// 向所有已连接的浏览器扩展广播抓取请求，并注册回调更新 UI。
-        /// </summary>
-        private async Task SendDataBlockFetchRequest(DataDashboardItem dashItem, Emoji.Wpf.TextBlock valueBlock, Button fetchBtn)
+        /// <summary>根据自定义颜色字符串或回退到主题资源获取 Brush</summary>
+        private Brush ApplyDashColor(string? customColor, string fallbackResourceKey)
         {
-            var server = Services.WebSocketServerService.Instance;
-            System.Diagnostics.Debug.WriteLine($"[DataDashboard] 抓取按钮点击: Label={dashItem.Label}, URL={dashItem.TargetUrl}, Selector={dashItem.Selector}");
-            System.Diagnostics.Debug.WriteLine($"[DataDashboard] WS运行状态={server.IsRunning}, 客户端数量={server.ClientCount}");
-
-            if (!server.IsRunning || server.ClientCount == 0)
+            if (!string.IsNullOrEmpty(customColor))
             {
-                System.Diagnostics.Debug.WriteLine("[DataDashboard] 没有已连接的浏览器扩展，中止发送");
-                fetchBtn.Content = "无连接";
-                fetchBtn.IsEnabled = true;
-                MessageBox.Show("没有已连接的浏览器扩展。\n请确认扩展已启用，并已打开目标页面。",
-                    "抓取", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
+                try { return (SolidColorBrush)new BrushConverter().ConvertFrom(customColor)!; }
+                catch { }
             }
+            return (Brush)FindResource(fallbackResourceKey);
+        }
 
-            var requestId = Guid.NewGuid().ToString();
-
-            // 注册回调：当 fetchResult 返回时更新 valueBlock 和按钮状态
-            var app = (App)Application.Current;
-            app.RegisterFetchCallback(requestId, (success, value, error) =>
+        /// <summary>数据项样式编辑弹窗</summary>
+        private void ShowDashboardItemStyleDialog(DataDashboardItem dashItem)
+        {
+            var dialog = new Window
             {
-                Dispatcher.Invoke(() =>
-                {
-                    fetchBtn.IsEnabled = true;
-                    if (success)
-                    {
-                        valueBlock.Text = value;
-                        dashItem.Value = value;
-                        fetchBtn.Content = "✓ 成功";
-                        System.Diagnostics.Debug.WriteLine($"[DataDashboard] 回调更新UI: {dashItem.Label} = {value}");
-                    }
-                    else
-                    {
-                        valueBlock.Text = "错误";
-                        fetchBtn.Content = "✗ 失败";
-                        System.Diagnostics.Debug.WriteLine($"[DataDashboard] 回调抓取失败: {dashItem.Label} - {error}");
-                    }
-                    // 3秒后恢复按钮
-                    _ = Task.Delay(3000).ContinueWith(_ => Dispatcher.Invoke(() => fetchBtn.Content = "抓取"));
-                });
+                Title = "编辑样式 - " + dashItem.Label,
+                Width = 360,
+                SizeToContent = SizeToContent.Height,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                ResizeMode = ResizeMode.NoResize,
+                ShowInTaskbar = false,
+                Background = (Brush)FindResource("BrushDialogBG"),
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                Owner = Window.GetWindow(this)
+            };
+            dialog.SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(dialog);
+
+            var root = new StackPanel { Margin = new Thickness(20) };
+
+            // 标题
+            root.Children.Add(new TextBlock
+            {
+                Text = "编辑数据块样式",
+                FontWeight = FontWeights.Bold,
+                FontSize = 15,
+                Margin = new Thickness(0, 0, 0, 16),
+                Foreground = (Brush)FindResource("BrushTextMain")
             });
 
-            var payload = new
-            {
-                type = "fetch",
-                requestId,
-                label = dashItem.Label,
-                url = dashItem.TargetUrl,
-                selector = dashItem.Selector
-            };
-            var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
-            System.Diagnostics.Debug.WriteLine($"[DataDashboard] 广播WS消息: {json}");
-            await server.BroadcastAsync(json);
-            System.Diagnostics.Debug.WriteLine("[DataDashboard] 广播完成");
+            var textBoxStyle = (Style)FindResource("GlobalTextBoxStyle");
+            var comboStyle = (Style)FindResource("GlobalComboBoxStyle");
 
-            // 15秒超时恢复
-            _ = Task.Delay(15000).ContinueWith(_ => Dispatcher.Invoke(() =>
+            var presetColors = new[]
             {
-                if (fetchBtn.Content.ToString() == "抓取中...")
+                "#FFFFFF", "#CCCCCC", "#999999", "#666666", "#333333", "#000000",
+                "#E74C3C", "#E67E22", "#F39C12", "#F1C40F", "#2ECC71", "#1ABC9C",
+                "#3498DB", "#2980B9", "#9B59B6", "#8E44AD", "#34495E", "#1A1A2E"
+            };
+
+            string? labelSelectedColor = dashItem.LabelColor;
+            string? valueSelectedColor = dashItem.ValueColor;
+
+            // 构建颜色选择器控件（色块按钮 + 弹出预设色板 + 手动输入）
+            (Border swatchBtn, TextBox hexBox) BuildColorPicker(string? currentColor)
+            {
+                // 右侧 hex 输入框（先声明，供 popup 回调使用）
+                var hexBox = new TextBox { Text = currentColor ?? "", Style = textBoxStyle, Width = 110 };
+
+                // 色块按钮（包一层容器作为 Popup PlacementTarget，避免逻辑树冲突）
+                var swatchWrapper = new Border { Padding = new Thickness(0), Margin = new Thickness(0, 0, 8, 0) };
+                var swatch = new Border
                 {
-                    fetchBtn.Content = "超时";
-                    fetchBtn.IsEnabled = true;
-                    _ = Task.Delay(3000).ContinueWith(__ => Dispatcher.Invoke(() => fetchBtn.Content = "抓取"));
+                    Width = 28, Height = 28,
+                    CornerRadius = new CornerRadius(4),
+                    BorderBrush = (Brush)FindResource("BrushBorder"),
+                    BorderThickness = new Thickness(1),
+                    Cursor = Cursors.Hand
+                };
+                swatchWrapper.Child = swatch;
+
+                void UpdateSwatch()
+                {
+                    if (string.IsNullOrEmpty(currentColor))
+                        swatch.Background = (Brush)FindResource("BrushInputBG");
+                    else
+                    {
+                        try { swatch.Background = (SolidColorBrush)new BrushConverter().ConvertFrom(currentColor)!; }
+                        catch { swatch.Background = (Brush)FindResource("BrushInputBG"); }
+                    }
                 }
-            }));
+                UpdateSwatch();
+
+                // 弹出色板
+                var popup = new System.Windows.Controls.Primitives.Popup
+                {
+                    PlacementTarget = swatchWrapper,
+                    Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
+                    AllowsTransparency = true,
+                    StaysOpen = false
+                };
+                var pickerPanel = new Border
+                {
+                    Background = (Brush)FindResource("BrushDialogBG"),
+                    BorderBrush = (Brush)FindResource("BrushBorder"),
+                    BorderThickness = new Thickness(1),
+                    Padding = new Thickness(8)
+                };
+                var pickerContent = new StackPanel();
+                var colorGrid = new WrapPanel { Width = 180 };
+                foreach (var c in presetColors)
+                {
+                    var cell = new Border
+                    {
+                        Width = 24, Height = 24,
+                        Margin = new Thickness(2),
+                        CornerRadius = new CornerRadius(3),
+                        Background = (SolidColorBrush)new BrushConverter().ConvertFrom(c)!,
+                        BorderBrush = Brushes.Transparent,
+                        BorderThickness = new Thickness(2),
+                        Cursor = Cursors.Hand
+                    };
+                    cell.MouseLeftButtonUp += (s, e) =>
+                    {
+                        currentColor = c;
+                        hexBox.Text = c;
+                        UpdateSwatch();
+                        popup.IsOpen = false;
+                    };
+                    colorGrid.Children.Add(cell);
+                }
+                pickerContent.Children.Add(colorGrid);
+
+                // 自定义颜色输入
+                var customDock = new DockPanel { Margin = new Thickness(0, 6, 0, 0) };
+                var customLabel = new TextBlock { Text = "自定义：", VerticalAlignment = VerticalAlignment.Center, FontSize = 11 };
+                DockPanel.SetDock(customLabel, Dock.Left);
+                customDock.Children.Add(customLabel);
+                var customBox = new TextBox { Width = 100, FontSize = 11, Style = textBoxStyle };
+                customDock.Children.Add(customBox);
+                var applyBtn = new Button
+                {
+                    Content = "应用", FontSize = 10, Padding = new Thickness(6, 2, 6, 2),
+                    Margin = new Thickness(4, 0, 0, 0),
+                    Style = (Style)FindResource("GhostButtonStyle")
+                };
+                applyBtn.Click += (s, e) =>
+                {
+                    var txt = customBox.Text.Trim();
+                    if (!string.IsNullOrEmpty(txt))
+                    {
+                        currentColor = txt;
+                        hexBox.Text = txt;
+                        UpdateSwatch();
+                    }
+                };
+                DockPanel.SetDock(applyBtn, Dock.Right);
+                customDock.Children.Add(applyBtn);
+                pickerContent.Children.Add(customDock);
+                pickerPanel.Child = pickerContent;
+
+                popup.Child = pickerPanel;
+
+                swatch.MouseLeftButtonUp += (s, e) => { popup.IsOpen = !popup.IsOpen; };
+
+                hexBox.TextChanged += (s, e) =>
+                {
+                    currentColor = hexBox.Text.Trim();
+                    UpdateSwatch();
+                };
+
+                // 不添加到任何父容器，由调用方负责布局
+                return (swatchWrapper, hexBox);
+            }
+
+            // 标题（颜色 + 字号 + 粗体 同一行）
+            var labelRow = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
+            var labelRowLabel = new TextBlock { Text = "标题：", Width = 50, VerticalAlignment = VerticalAlignment.Center };
+            DockPanel.SetDock(labelRowLabel, Dock.Left);
+            labelRow.Children.Add(labelRowLabel);
+            var (labelSwatch, labelHexBox) = BuildColorPicker(labelSelectedColor);
+            labelRow.Children.Add(labelSwatch);
+            labelRow.Children.Add(labelHexBox);
+            var labelSizeBox = new TextBox
+            {
+                Text = dashItem.LabelFontSize > 0 ? dashItem.LabelFontSize.ToString() : "12",
+                Style = textBoxStyle, Width = 70, Margin = new Thickness(8, 0, 0, 0)
+            };
+            DockPanel.SetDock(labelSizeBox, Dock.Right);
+            labelRow.Children.Add(labelSizeBox);
+            var labelBoldCheck = new CheckBox
+            {
+                Content = "粗体", IsChecked = dashItem.LabelBold,
+                VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0),
+                Style = (Style)FindResource("DarkCheckBoxStyle")
+            };
+            DockPanel.SetDock(labelBoldCheck, Dock.Right);
+            labelRow.Children.Add(labelBoldCheck);
+            root.Children.Add(labelRow);
+
+            // 数据（颜色 + 字号 + 粗体 同一行）
+            var valueRow = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
+            var valueRowLabel = new TextBlock { Text = "数据：", Width = 50, VerticalAlignment = VerticalAlignment.Center };
+            DockPanel.SetDock(valueRowLabel, Dock.Left);
+            valueRow.Children.Add(valueRowLabel);
+            var (valueSwatch, valueHexBox) = BuildColorPicker(valueSelectedColor);
+            valueRow.Children.Add(valueSwatch);
+            valueRow.Children.Add(valueHexBox);
+            var valueSizeBox = new TextBox
+            {
+                Text = dashItem.ValueFontSize > 0 ? dashItem.ValueFontSize.ToString() : "16",
+                Style = textBoxStyle, Width = 70, Margin = new Thickness(8, 0, 0, 0)
+            };
+            DockPanel.SetDock(valueSizeBox, Dock.Right);
+            valueRow.Children.Add(valueSizeBox);
+            var valueBoldCheck = new CheckBox
+            {
+                Content = "粗体", IsChecked = dashItem.ValueBold,
+                VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0),
+                Style = (Style)FindResource("DarkCheckBoxStyle")
+            };
+            DockPanel.SetDock(valueBoldCheck, Dock.Right);
+            valueRow.Children.Add(valueBoldCheck);
+            root.Children.Add(valueRow);
+
+            // 水平对齐
+            var alignDock = new DockPanel { Margin = new Thickness(0, 0, 0, 16) };
+            var alignLabel = new TextBlock { Text = "水平对齐：", Width = 70, VerticalAlignment = VerticalAlignment.Center };
+            DockPanel.SetDock(alignLabel, Dock.Left);
+            alignDock.Children.Add(alignLabel);
+            var alignCombo = new ComboBox { Style = comboStyle };
+            alignCombo.Items.Add("左对齐");
+            alignCombo.Items.Add("居中");
+            alignCombo.Items.Add("右对齐");
+            alignCombo.SelectedIndex = dashItem.HorizontalAlignment switch
+            {
+                "Center" => 1,
+                "Right" => 2,
+                _ => 0
+            };
+            alignDock.Children.Add(alignCombo);
+            root.Children.Add(alignDock);
+
+            // 提示
+            root.Children.Add(new TextBlock
+            {
+                Text = "点击色块选择预设颜色，也可直接输入 #RRGGBB 色值，留空使用默认主题色",
+                FontSize = 11,
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 16)
+            });
+
+            // 按钮
+            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            var okBtn = new Button { Content = "确定", Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)FindResource("PrimaryButtonStyle") };
+            var cancelBtn = new Button { Content = "取消", Width = 70, Style = (Style)FindResource("StandardButtonStyle") };
+            okBtn.Click += (s, e) =>
+            {
+                dashItem.LabelColor = labelHexBox.Text.Trim();
+                dashItem.ValueColor = valueHexBox.Text.Trim();
+                if (double.TryParse(labelSizeBox.Text.Trim(), out double ls) && ls > 0) dashItem.LabelFontSize = ls;
+                else dashItem.LabelFontSize = 0;
+                if (double.TryParse(valueSizeBox.Text.Trim(), out double vs) && vs > 0) dashItem.ValueFontSize = vs;
+                else dashItem.ValueFontSize = 0;
+                dashItem.LabelBold = labelBoldCheck.IsChecked ?? false;
+                dashItem.ValueBold = valueBoldCheck.IsChecked ?? false;
+                dashItem.HorizontalAlignment = alignCombo.SelectedIndex switch
+                {
+                    1 => "Center",
+                    2 => "Right",
+                    _ => ""
+                };
+                _configManager?.Save();
+                RenderPanels();
+                dialog.Close();
+            };
+            cancelBtn.Click += (s, e) => dialog.Close();
+            btnPanel.Children.Add(okBtn);
+            btnPanel.Children.Add(cancelBtn);
+            root.Children.Add(btnPanel);
+
+            dialog.Content = root;
+            dialog.ShowDialog();
         }
 
         private void StartDashboardItemRefresh(DataDashboardItem dashItem, Emoji.Wpf.TextBlock valueBlock)
@@ -3648,11 +4000,11 @@ namespace SideDesk.Controls
 
         #region 数据项配置对话框
 
-        private DataDashboardItem? ShowAddDashboardItemDialog()
+        private DataDashboardItem? ShowAddDashboardItemDialog(DataDashboardItem? editItem = null)
         {
             var dialog = new Window
             {
-                Title = "添加数据项",
+                Title = editItem != null ? "编辑数据项" : "添加数据项",
                 Width = 420,
                 SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -3845,6 +4197,49 @@ namespace SideDesk.Controls
             // 浏览器切换时联动 Profile
             browserCombo.SelectionChanged += (s, e) => refreshProfiles();
 
+            // 编辑模式：预填已有数据（在所有控件创建之后）
+            if (editItem != null)
+            {
+                nameBox.Text = editItem.Label ?? "";
+                urlBox.Text = editItem.TargetUrl ?? "";
+                selectorBox.Text = editItem.Selector ?? "";
+                intervalBox.Text = editItem.RefreshIntervalSeconds > 0 ? editItem.RefreshIntervalSeconds.ToString() : "60";
+                if (!string.IsNullOrEmpty(editItem.TemplateId))
+                {
+                    for (int i = 0; i < templateCombo.Items.Count; i++)
+                    {
+                        if (templateCombo.Items[i] is ComboBoxItem ci && ci.Tag is string tid && tid == editItem.TemplateId)
+                        {
+                            templateCombo.SelectedIndex = i;
+                            break;
+                        }
+                    }
+                }
+                if (!string.IsNullOrEmpty(editItem.BrowserId))
+                {
+                    for (int i = 0; i < browserCombo.Items.Count; i++)
+                    {
+                        if (browserCombo.Items[i] is ComboBoxItem ci && ci.Tag is string bid && bid == editItem.BrowserId)
+                        {
+                            browserCombo.SelectedIndex = i;
+                            break;
+                        }
+                    }
+                    refreshProfiles();
+                    if (!string.IsNullOrEmpty(editItem.ProfileId))
+                    {
+                        for (int i = 0; i < profileCombo.Items.Count; i++)
+                        {
+                            if (profileCombo.Items[i] is ComboBoxItem ci && ci.Tag is string pid && pid == editItem.ProfileId)
+                            {
+                                profileCombo.SelectedIndex = i;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
             // ===== 模板选择联动 =====
             templateCombo.SelectionChanged += (s, e) =>
             {
@@ -3935,18 +4330,20 @@ namespace SideDesk.Controls
             // 显示对话框
             if (dialog.ShowDialog() == true)
             {
-                var item = new DataDashboardItem
-                {
-                    Label = nameBox.Text.Trim(),
-                    TargetUrl = urlBox.Text.Trim(),
-                    Selector = selectorBox.Text.Trim(),
-                    RefreshIntervalSeconds = int.TryParse(intervalBox.Text.Trim(), out var interval) && interval > 0 ? interval : 60
-                };
+                var item = editItem ?? new DataDashboardItem();
+                item.Label = nameBox.Text.Trim();
+                item.TargetUrl = urlBox.Text.Trim();
+                item.Selector = selectorBox.Text.Trim();
+                item.RefreshIntervalSeconds = int.TryParse(intervalBox.Text.Trim(), out var interval) && interval > 0 ? interval : 60;
 
                 // 记录模板ID
                 if (templateCombo.SelectedItem is ComboBoxItem selItem && selItem.Tag is string tmplId)
                 {
                     item.TemplateId = tmplId;
+                }
+                else
+                {
+                    item.TemplateId = null;
                 }
 
                 // 记录浏览器和Profile
@@ -3954,9 +4351,17 @@ namespace SideDesk.Controls
                 {
                     item.BrowserId = bId;
                 }
+                else
+                {
+                    item.BrowserId = null;
+                }
                 if (profileCombo.SelectedItem is ComboBoxItem profileItem && profileItem.Tag is string pId)
                 {
                     item.ProfileId = pId;
+                }
+                else
+                {
+                    item.ProfileId = null;
                 }
 
                 return item;

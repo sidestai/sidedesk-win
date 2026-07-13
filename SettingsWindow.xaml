@@ -422,15 +422,25 @@
                                Margin="0,0,0,20"/>
                     
                     <!-- 数据模版 -->
-                    <TextBlock Text="数据模版" 
-                               FontSize="{DynamicResource FontSizeNormal}" 
-                               FontWeight="SemiBold"
-                               Foreground="{DynamicResource BrushTextMain}"
-                               Margin="0,0,0,8"/>
-                    <TextBlock Text="管理数据看板使用的模版列表，支持内置模版和自定义模版" 
-                               Foreground="{DynamicResource BrushTextMuted}" 
-                               FontSize="{DynamicResource FontSizeSmall}" 
-                               Margin="0,0,0,12"/>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="数据模版" 
+                                       FontSize="{DynamicResource FontSizeNormal}" 
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource BrushTextMain}"/>
+                            <TextBlock Text="管理数据看板使用的模版列表，支持内置模版和自定义模版" 
+                                       Foreground="{DynamicResource BrushTextMuted}" 
+                                       FontSize="{DynamicResource FontSizeSmall}" 
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="查看连接" Click="ViewWsClients_Click"
+                                Style="{StaticResource GhostButtonStyle}" Padding="10,6"
+                                VerticalAlignment="Center" Margin="12,0,0,0"/>
+                    </Grid>
                     
                     <Border Background="{DynamicResource BrushInputBG}" 
                             BorderBrush="{DynamicResource BrushBorder}" 

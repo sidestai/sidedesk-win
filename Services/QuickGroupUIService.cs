@@ -1272,7 +1272,22 @@ namespace SideDesk.Services
             };
             
             btn.Click += (s, ev) => OpenQuickItem(item);
-            panel.Children.Add(btn);
+
+            // 置顶标记：白色小圆点
+            var pinDot = new System.Windows.Shapes.Ellipse
+            {
+                Width = 4, Height = 4,
+                Fill = Brushes.White,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, 4, 4, 0),
+                Visibility = item.AlwaysOnTop ? Visibility.Visible : Visibility.Collapsed
+            };
+
+            var grid = new Grid();
+            grid.Children.Add(btn);
+            grid.Children.Add(pinDot);
+            panel.Children.Add(grid);
 
             _itemButtonRefs.Add(new ItemButtonRef { Item = item, Button = btn, BaseBackground = bgBrush });
 
@@ -1283,7 +1298,7 @@ namespace SideDesk.Services
             menu.Items.Add(editItem);
 
             var topmostItem = new MenuItem { Header = "窗口置顶", IsCheckable = true, IsChecked = item.AlwaysOnTop };
-            topmostItem.Click += (s, ev) => { item.AlwaysOnTop = topmostItem.IsChecked; ApplyTopmostIfPossible(item); QuickGroupManager.Save(); };
+            topmostItem.Click += (s, ev) => { item.AlwaysOnTop = topmostItem.IsChecked; pinDot.Visibility = item.AlwaysOnTop ? Visibility.Visible : Visibility.Collapsed; ApplyTopmostIfPossible(item); QuickGroupManager.Save(); };
             menu.Items.Add(topmostItem);
 
             var taskbarItem = new MenuItem { Header = "在任务栏显示", IsCheckable = true, IsChecked = item.ShowInTaskbar };
@@ -1986,7 +2001,8 @@ namespace SideDesk.Services
                             Target = result.Url,
                             UseAppMode = result.IsAppMode,
                             BrowserId = result.BrowserId,
-                            ProfileId = result.ProfileId
+                            ProfileId = result.ProfileId,
+                            BackgroundColor = result.BackgroundColor
                         };
                         QuickGroupManager.AddItem(groupId, newItem);
                         QuickGroupManager.Save();
@@ -2197,6 +2213,57 @@ namespace SideDesk.Services
             argsDock.Children.Add(argsBox);
             rootPanel.Children.Add(argsDock);
 
+            // === 背景颜色选择 ===
+            var colorLabel = new Emoji.Wpf.TextBlock
+            {
+                Text = "按钮颜色：",
+                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
+                FontSize = (double)Application.Current.FindResource("FontSizeNormal"),
+                Margin = new Thickness(0, 4, 0, 8)
+            };
+            rootPanel.Children.Add(colorLabel);
+
+            var presetColors = new[]
+            {
+                "#3498DB", "#2ECC71", "#E74C3C", "#9B59B6",
+                "#F39C12", "#1ABC9C", "#E67E22", "#34495E",
+                "#2980B9", "#27AE60", "#C0392B", "#8E44AD"
+            };
+            string selectedColor = "#3498DB";
+
+            var colorPanel = new WrapPanel { Margin = new Thickness(0, 0, 0, 10) };
+            Border? selectedColorBorder = null;
+
+            foreach (var color in presetColors)
+            {
+                var swatch = new Border
+                {
+                    Width = 32, Height = 32,
+                    Margin = new Thickness(0, 0, 8, 8),
+                    CornerRadius = new CornerRadius(6),
+                    Background = (SolidColorBrush)new BrushConverter().ConvertFrom(color)!,
+                    BorderBrush = color == selectedColor ? (Brush)Application.Current.FindResource("BrushAccent") : Brushes.Transparent,
+                    BorderThickness = new Thickness(2),
+                    Cursor = System.Windows.Input.Cursors.Hand,
+                    Tag = color
+                };
+                if (color == selectedColor) selectedColorBorder = swatch;
+
+                swatch.MouseLeftButtonUp += (s, ev2) =>
+                {
+                    selectedColor = (string)swatch.Tag!;
+                    // 清除所有边框
+                    foreach (UIElement child in colorPanel.Children)
+                    {
+                        if (child is Border b) b.BorderBrush = Brushes.Transparent;
+                    }
+                    swatch.BorderBrush = (Brush)Application.Current.FindResource("BrushAccent");
+                    selectedColorBorder = swatch;
+                };
+                colorPanel.Children.Add(swatch);
+            }
+            rootPanel.Children.Add(colorPanel);
+
             // === Tab 切换逻辑 ===
             Action<int> switchTab = (int tabIndex) =>
             {
@@ -2320,7 +2387,8 @@ namespace SideDesk.Services
                     UseAppMode = false,
                     LaunchArgs = argsBox.Text.Trim(),
                     BrowserId = selectedBrowserId,
-                    ProfileId = selectedProfileId
+                    ProfileId = selectedProfileId,
+                    BackgroundColor = selectedColor
                 };
                 QuickGroupManager.AddItem(groupId, newItem);
                 QuickGroupManager.Save();

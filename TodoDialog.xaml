@@ -14,6 +14,7 @@
                  Style="{StaticResource GlobalTextBoxStyle}"/>
 
         <CheckBox x:Name="enableTimeCheck" Content="设置任务时间" Margin="0,16,0,0"
+                  Style="{StaticResource DarkCheckBoxStyle}"
                   Checked="EnableTime_Changed" Unchecked="EnableTime_Changed"/>
 
         <StackPanel x:Name="timePanel" IsEnabled="False" Margin="0,10,0,0">

@@ -37,6 +37,7 @@ public class PanelItem
     public List<TodoItem>? TodoItems { get; set; } // 今日待办数据（per-panel）
     public bool SkipWrapper { get; set; } = false;     // 是否跳过外层容器包装
     public bool HideFrame { get; set; } = false;       // 单个模块独立隐藏外框（边框/标题/背景/内边距）
+    public int DashboardColumns { get; set; } = 1;     // 数据看板每排列数（1~4）
 }
 
 public class FileAreaItem

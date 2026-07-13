@@ -26,6 +26,20 @@ function connectWebSocket() {
 
   ws.addEventListener('open', () => {
     console.log('成功链接WS');
+    // 注册页面信息到 SideDesk
+    chrome.tabs.getCurrent((tab) => {
+      // 生成 uniqid：tabId + 页面URL哈希，确保同一tab刷新后ID一致
+      const uniqid = 'tab_' + (tab ? tab.id : 'unknown') + '_' + btoa(location.href).substring(0, 12);
+      const payload = JSON.stringify({
+        type: 'register',
+        title: document.title,
+        url: location.href,
+        tabId: tab ? tab.id : null,
+        uniqid: uniqid
+      });
+      console.log('[WS] 发送注册信息:', payload);
+      ws.send(payload);
+    });
   });
 
   ws.addEventListener('message', (event) => {
@@ -60,8 +74,21 @@ function handleWsMessage(data) {
   } catch (e) {
     return; // 非 JSON 消息，忽略
   }
-  if (!msg || msg.type !== 'fetch') {
-    console.log('[WS] 消息type不是fetch，忽略, msg:', msg);
+  if (!msg || (msg.type !== 'fetch' && msg.type !== 'closeTab')) {
+    console.log('[WS] 消息type不是fetch/closeTab，忽略, msg:', msg);
+    return;
+  }
+
+  // 处理关闭标签页请求
+  if (msg.type === 'closeTab') {
+    console.log('[WS] 收到关闭标签页请求');
+    chrome.tabs.getCurrent((tab) => {
+      if (tab && tab.id) {
+        chrome.tabs.remove(tab.id, () => {
+          console.log('[WS] 标签页已关闭:', tab.id);
+        });
+      }
+    });
     return;
   }
 

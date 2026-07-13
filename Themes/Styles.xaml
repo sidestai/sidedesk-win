@@ -683,6 +683,53 @@
         </Setter>
     </Style>
 
+    <!-- Dark CheckBox Style (暗色主题通用勾选框) -->
+    <Style x:Key="DarkCheckBoxStyle" TargetType="CheckBox">
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeNormal}" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Grid Width="18" Height="18" Margin="0,0,8,0">
+                            <Border x:Name="Box"
+                                    Width="18" Height="18"
+                                    CornerRadius="3"
+                                    Background="{DynamicResource BrushInputBG}"
+                                    BorderBrush="{DynamicResource BrushBorder}"
+                                    BorderThickness="1.5" />
+                            <Path x:Name="Check"
+                                  Width="10" Height="10"
+                                  Stretch="Uniform"
+                                  Stroke="White"
+                                  StrokeThickness="2.5"
+                                  StrokeEndLineCap="Round"
+                                  StrokeStartLineCap="Round"
+                                  StrokeLineJoin="Round"
+                                  Data="M 2,5 L 4.5,7.5 L 9,2"
+                                  Opacity="0" />
+                        </Grid>
+                        <ContentPresenter VerticalAlignment="Center" />
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Box" Property="Background" Value="{DynamicResource BrushAccent}" />
+                            <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
+                            <Setter TargetName="Check" Property="Opacity" Value="1" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- Standard Button Style (用于对话框确定/取消等) -->
     <Style x:Key="StandardButtonStyle" TargetType="Button">
         <Setter Property="Background" Value="{DynamicResource BrushInputBG}" />

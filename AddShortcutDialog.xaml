@@ -58,6 +58,12 @@
                     <ComboBox x:Name="profileCombo"
                               Style="{StaticResource GlobalComboBoxStyle}"/>
                 </DockPanel>
+
+                <!-- 背景颜色选择 -->
+                <TextBlock Text="按钮颜色：" Margin="0,14,0,8"
+                           FontSize="{DynamicResource FontSizeNormal}"
+                           Foreground="{DynamicResource BrushTextMain}"/>
+                <WrapPanel x:Name="colorPickerPanel" Margin="0,0,0,4"/>
             </StackPanel>
 
             <!-- 批量模式 -->

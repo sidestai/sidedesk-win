@@ -3,7 +3,7 @@
   "name": "CSS Selector Picker",
   "version": "1.0.0",
   "description": "点击页面元素获取CSS Selector路径",
-  "permissions": ["activeTab"],
+  "permissions": ["activeTab", "tabs"],
   "action": {
     "default_popup": "popup.html",
     "default_icon": {

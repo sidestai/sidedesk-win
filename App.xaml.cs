@@ -212,7 +212,7 @@ namespace SideDesk
 
         /// <summary>
         /// 收到浏览器扩展通过 WebSocket 回传的消息。
-        /// fetchResult 类型通过回调更新数据看板 UI，其他类型弹窗提示。
+        /// fetchResult 类型通过回调更新数据看板 UI，register 类型更新客户端元数据，其他类型弹窗提示。
         /// </summary>
         private void OnWebSocketMessageReceived(Guid clientId, string message)
         {
@@ -222,7 +222,9 @@ namespace SideDesk
                 try
                 {
                     var obj = Newtonsoft.Json.Linq.JObject.Parse(message);
-                    if ((string?)obj["type"] == "fetchResult")
+                    var msgType = (string?)obj["type"];
+
+                    if (msgType == "fetchResult")
                     {
                         var success = (bool?)obj["success"] ?? false;
                         var label = (string?)obj["label"] ?? "";
@@ -245,12 +247,32 @@ namespace SideDesk
 
                         return; // fetchResult 不弹窗，由回调更新UI
                     }
+
+                    if (msgType == "register")
+                    {
+                        var uniqId = (string?)obj["uniqid"] ?? "";
+                        var title = (string?)obj["title"] ?? "";
+                        var url = (string?)obj["url"] ?? "";
+                        int? tabId = obj["tabId"] != null ? (int?)obj["tabId"] : null;
+                        Services.WebSocketServerService.Instance.UpdateClientInfo(clientId, uniqId, title, url, tabId);
+                        System.Diagnostics.Debug.WriteLine($"[App] register: uniqid={uniqId}, title={title}, url={url}, tabId={tabId}");
+                        return; // register 不弹窗
+                    }
                 }
                 catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[App] WS消息解析异常: {ex.Message}"); }
 
-                // 非 fetchResult 消息弹窗提示
+                // 非 fetchResult/register 消息弹窗提示
                 MessageBox.Show(message, "收到扩展消息", MessageBoxButton.OK, MessageBoxImage.Information);
             });
+        }
+
+        /// <summary>
+        /// 向指定 WebSocket 客户端发送关闭标签页命令
+        /// </summary>
+        public async void CloseWsClientTab(Guid clientId)
+        {
+            var payload = Newtonsoft.Json.JsonConvert.SerializeObject(new { type = "closeTab" });
+            await Services.WebSocketServerService.Instance.SendAsync(clientId, payload);
         }
 
         /// <summary>

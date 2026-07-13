@@ -18,6 +18,7 @@ namespace SideDesk
         private WindowConfigManager? _configManager;
         private DockWindowState? _dockState;
         private DispatcherTimer? _hoverTimer;
+        private SettingsWindow? _settingsWindow;
 
         public ScreenType CurrentScreen => _currentScreen;
 
@@ -241,9 +242,14 @@ namespace SideDesk
 
         private void Settings_Click(object sender, RoutedEventArgs e)
         {
-            var settingsWin = new SettingsWindow();
-            settingsWin.Owner = this;
-            settingsWin.ShowDialog();
+            if (_settingsWindow == null || !_settingsWindow.IsVisible)
+            {
+                _settingsWindow = new SettingsWindow();
+                _settingsWindow.Owner = this;
+                _settingsWindow.Closed += (s, ev) => _settingsWindow = null;
+            }
+            _settingsWindow.Show();
+            _settingsWindow.Activate();
         }
 
         /// <summary>

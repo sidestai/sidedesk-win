@@ -864,6 +864,13 @@ namespace SideDesk
             }
         }
 
+        private void ViewWsClients_Click(object sender, RoutedEventArgs e)
+        {
+            var win = new WsClientsWindow();
+            win.Owner = this;
+            win.Show();
+        }
+
         private void AddTemplate_Click(object sender, RoutedEventArgs e)
         {
             var dialog = new Window

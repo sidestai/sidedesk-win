@@ -1,12 +1,20 @@
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 
 namespace SideDesk;
 
 public partial class AddShortcutDialog : Window
 {
     private bool _isBatchMode = false;
+    private string _selectedColor = "#3498DB";
+    private readonly string[] _presetColors =
+    {
+        "#3498DB", "#2ECC71", "#E74C3C", "#9B59B6",
+        "#F39C12", "#1ABC9C", "#E67E22", "#34495E",
+        "#2980B9", "#27AE60", "#C0392B", "#8E44AD"
+    };
 
     /// <summary>单个模式结果</summary>
     public ShortcutResult? SingleResult { get; private set; }
@@ -26,6 +34,38 @@ public partial class AddShortcutDialog : Window
             browserCombo.Items.Add(browser.Name);
         }
         browserCombo.SelectedIndex = 0;
+
+        // 初始化颜色选择器
+        InitColorPicker();
+    }
+
+    private void InitColorPicker()
+    {
+        var accentBrush = (Brush)FindResource("BrushAccent");
+        foreach (var color in _presetColors)
+        {
+            var swatch = new Border
+            {
+                Width = 32, Height = 32,
+                Margin = new Thickness(0, 0, 8, 8),
+                CornerRadius = new CornerRadius(6),
+                Background = (SolidColorBrush)new BrushConverter().ConvertFrom(color)!,
+                BorderBrush = color == _selectedColor ? accentBrush : Brushes.Transparent,
+                BorderThickness = new Thickness(2),
+                Cursor = System.Windows.Input.Cursors.Hand,
+                Tag = color
+            };
+            swatch.MouseLeftButtonUp += (s, e) =>
+            {
+                _selectedColor = (string)swatch.Tag!;
+                foreach (UIElement child in colorPickerPanel.Children)
+                {
+                    if (child is Border b) b.BorderBrush = Brushes.Transparent;
+                }
+                swatch.BorderBrush = accentBrush;
+            };
+            colorPickerPanel.Children.Add(swatch);
+        }
     }
 
     private void BrowserCombo_Changed(object sender, SelectionChangedEventArgs e)
@@ -219,7 +259,8 @@ public partial class AddShortcutDialog : Window
                 Url = url,
                 IsAppMode = appModeCheck.IsChecked ?? false,
                 BrowserId = browserId,
-                ProfileId = profileId
+                ProfileId = profileId,
+                BackgroundColor = _selectedColor
             };
             DialogResult = true;
             Close();
@@ -240,4 +281,5 @@ public class ShortcutResult
     public bool IsAppMode { get; set; } = false;
     public string? BrowserId { get; set; }
     public string? ProfileId { get; set; }
+    public string BackgroundColor { get; set; } = "#3498DB";
 }

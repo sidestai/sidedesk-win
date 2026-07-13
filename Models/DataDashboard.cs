@@ -21,6 +21,15 @@ public class DataDashboardItem
     public string TargetUrl { get; set; } = "";      // 目标网址
     public string Selector { get; set; } = "";       // XPath 或 CSS Selector
     public int RefreshIntervalSeconds { get; set; } = 60; // 刷新间隔（秒）
+
+    // 样式配置
+    public string LabelColor { get; set; } = "";         // 标题文字颜色（空=默认）
+    public double LabelFontSize { get; set; } = 0;       // 标题字号（0=默认11）
+    public bool LabelBold { get; set; } = false;          // 标题是否粗体
+    public string ValueColor { get; set; } = "";         // 数据字体颜色（空=默认）
+    public double ValueFontSize { get; set; } = 0;       // 数据字号（0=默认16）
+    public bool ValueBold { get; set; } = false;          // 数据是否粗体
+    public string HorizontalAlignment { get; set; } = ""; // 水平对齐：Left/Center/Right（空=默认Left）
 }
 
 /// <summary>
