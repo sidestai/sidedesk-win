@@ -19,6 +19,7 @@
 
     <!-- Premium Button Theme Resources -->
     <SolidColorBrush x:Key="BrushAccentText" Color="White"/>
+    <SolidColorBrush x:Key="BrushItemButtonText" Color="White"/>
     <SolidColorBrush x:Key="BrushTagSelectedText" Color="White"/>
     <SolidColorBrush x:Key="BrushSecondaryBtnBG" Color="#FF252525"/>
     <SolidColorBrush x:Key="BrushSecondaryBtnBorder" Color="#FF333333"/>
