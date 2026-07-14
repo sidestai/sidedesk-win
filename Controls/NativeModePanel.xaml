@@ -27,6 +27,7 @@
                     <MenuItem Header="(加载中...)" IsEnabled="False"/>
                 </MenuItem>
                 <MenuItem Header="计时器" Click="AddTimerPanel_Click"/>
+                <MenuItem Header="信号灯" Click="AddSignalLightPanel_Click"/>
             </MenuItem>
             <Separator />
             <MenuItem Header="布局" x:Name="LayoutMenu">

@@ -33,6 +33,13 @@
                     <TextBox x:Name="nameBox" Style="{StaticResource GlobalTextBoxStyle}"/>
                 </DockPanel>
                 <DockPanel Margin="0,0,0,10" LastChildFill="True">
+                    <TextBlock DockPanel.Dock="Left" Text="图标：" Width="60" VerticalAlignment="Center"
+                               FontSize="{DynamicResource FontSizeNormal}" Foreground="{DynamicResource BrushTextMain}"/>
+                    <TextBox x:Name="iconBox" Style="{StaticResource GlobalTextBoxStyle}" Width="80" MaxLength="4"/>
+                    <TextBlock x:Name="iconPreview" FontSize="16" VerticalAlignment="Center" Margin="8,0,0,0"
+                               Foreground="{DynamicResource BrushTextMain}"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,10" LastChildFill="True">
                     <TextBlock DockPanel.Dock="Left" Text="网址：" Width="60" VerticalAlignment="Center"
                                FontSize="{DynamicResource FontSizeNormal}" Foreground="{DynamicResource BrushTextMain}"/>
                     <TextBox x:Name="urlBox" Text="https://" Style="{StaticResource GlobalTextBoxStyle}"/>
@@ -75,13 +82,15 @@
                 <!-- 表头 -->
                 <Grid Grid.Row="0" Margin="0,0,0,6">
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="65"/>
                         <ColumnDefinition Width="100"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="45"/>
                     </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="名称" FontSize="{DynamicResource FontSizeSmall}" Foreground="{DynamicResource BrushTextSec}"/>
-                    <TextBlock Grid.Column="1" Text="网址/路径" FontSize="{DynamicResource FontSizeSmall}" Foreground="{DynamicResource BrushTextSec}" Margin="5,0,0,0"/>
-                    <TextBlock Grid.Column="2" Text="App" FontSize="{DynamicResource FontSizeSmall}" Foreground="{DynamicResource BrushTextSec}" HorizontalAlignment="Center"/>
+                    <TextBlock Grid.Column="0" Text="图标" FontSize="{DynamicResource FontSizeSmall}" Foreground="{DynamicResource BrushTextSec}"/>
+                    <TextBlock Grid.Column="1" Text="名称" FontSize="{DynamicResource FontSizeSmall}" Foreground="{DynamicResource BrushTextSec}" Margin="5,0,0,0"/>
+                    <TextBlock Grid.Column="2" Text="网址/路径" FontSize="{DynamicResource FontSizeSmall}" Foreground="{DynamicResource BrushTextSec}" Margin="5,0,0,0"/>
+                    <TextBlock Grid.Column="3" Text="App" FontSize="{DynamicResource FontSizeSmall}" Foreground="{DynamicResource BrushTextSec}" HorizontalAlignment="Center"/>
                 </Grid>
                 <!-- 行列表 -->
                 <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" MaxHeight="200">

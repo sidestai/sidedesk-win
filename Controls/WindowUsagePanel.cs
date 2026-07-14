@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -78,7 +78,7 @@ namespace SideDesk.Controls
             {
                 Height = 180,
                 Margin = new Thickness(12, 8, 12, 8),
-                Background = new SolidColorBrush(Color.FromRgb(30, 30, 30)),
+                Background = (Brush)Application.Current.FindResource("BrushInputBG"),
                 CornerRadius = new CornerRadius(6)
             };
             _pieCanvas = new Canvas { Margin = new Thickness(8) };
@@ -94,7 +94,7 @@ namespace SideDesk.Controls
                 Text = "今日使用统计",
                 FontSize = 16,
                 FontWeight = FontWeights.Bold,
-                Foreground = Brushes.White,
+                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                 VerticalAlignment = VerticalAlignment.Center
             };
             DockPanel.SetDock(titleText, Dock.Left);
@@ -115,7 +115,7 @@ namespace SideDesk.Controls
             {
                 Text = "",
                 FontSize = 13,
-                Foreground = new SolidColorBrush(Color.FromRgb(180, 180, 180)),
+                Foreground = (Brush)Application.Current.FindResource("BrushTextSec"),
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(12, 0, 0, 0)
             };
@@ -139,7 +139,7 @@ namespace SideDesk.Controls
                 Text = "应用使用时长",
                 FontSize = 14,
                 FontWeight = FontWeights.SemiBold,
-                Foreground = new SolidColorBrush(Color.FromRgb(200, 200, 200)),
+                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                 Margin = new Thickness(0, 8, 0, 6)
             };
             contentPanel.Children.Add(summaryHeader);
@@ -151,7 +151,7 @@ namespace SideDesk.Controls
             var separator = new Border
             {
                 Height = 1,
-                Background = new SolidColorBrush(Color.FromRgb(80, 80, 80)),
+                Background = (Brush)Application.Current.FindResource("BrushBorder"),
                 Margin = new Thickness(0, 12, 0, 12)
             };
             contentPanel.Children.Add(separator);
@@ -162,7 +162,7 @@ namespace SideDesk.Controls
                 Text = "最近窗口记录",
                 FontSize = 14,
                 FontWeight = FontWeights.SemiBold,
-                Foreground = new SolidColorBrush(Color.FromRgb(200, 200, 200)),
+                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                 Margin = new Thickness(0, 0, 0, 6)
             };
             contentPanel.Children.Add(recentHeader);
@@ -230,7 +230,7 @@ namespace SideDesk.Controls
                 _summaryStack.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = "暂无数据",
-                    Foreground = new SolidColorBrush(Color.FromRgb(140, 140, 140)),
+                    Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
                     Margin = new Thickness(0, 4, 0, 4)
                 });
             }
@@ -249,7 +249,7 @@ namespace SideDesk.Controls
                 _recentStack.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = "暂无记录",
-                    Foreground = new SolidColorBrush(Color.FromRgb(140, 140, 140)),
+                    Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
                     Margin = new Thickness(0, 4, 0, 4)
                 });
             }
@@ -401,7 +401,7 @@ namespace SideDesk.Controls
                 {
                     Text = label,
                     FontSize = 11,
-                    Foreground = new SolidColorBrush(Color.FromRgb(200, 200, 200)),
+                    Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                     VerticalAlignment = VerticalAlignment.Center
                 };
                 Canvas.SetLeft(text, legendX + 20);
@@ -418,7 +418,7 @@ namespace SideDesk.Controls
             var path = new System.Windows.Shapes.Path
             {
                 Fill = new SolidColorBrush(color),
-                Stroke = new SolidColorBrush(Color.FromRgb(30, 30, 30)),
+                Stroke = (Brush)Application.Current.FindResource("BrushBorder"),
                 StrokeThickness = 2
             };
 
@@ -519,7 +519,7 @@ namespace SideDesk.Controls
                     Text = item.ProcessName,
                     FontSize = 12,
                     FontWeight = FontWeights.SemiBold,
-                    Foreground = Brushes.White,
+                    Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                     VerticalAlignment = VerticalAlignment.Center,
                     TextTrimming = TextTrimming.CharacterEllipsis
                 };
@@ -557,7 +557,7 @@ namespace SideDesk.Controls
             {
                 Text = item.ProcessName,
                 FontSize = 12,
-                Foreground = Brushes.White,
+                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
@@ -608,7 +608,7 @@ namespace SideDesk.Controls
             {
                 Text = sub.Name,
                 FontSize = 11,
-                Foreground = new SolidColorBrush(Color.FromRgb(200, 200, 200)),
+                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
@@ -635,8 +635,8 @@ namespace SideDesk.Controls
             if (string.IsNullOrEmpty(category))
             {
                 btn.Content = "+";
-                btn.Background = new SolidColorBrush(Color.FromRgb(60, 60, 60));
-                btn.Foreground = new SolidColorBrush(Color.FromRgb(180, 180, 180));
+                btn.Background = (Brush)Application.Current.FindResource("BrushSecondaryBtnBG");
+                btn.Foreground = (Brush)Application.Current.FindResource("BrushTextMuted");
             }
             else
             {
@@ -656,7 +656,7 @@ namespace SideDesk.Controls
                 StaysOpen = false
             };
 
-            var pickerStack = new StackPanel { Background = new SolidColorBrush(Color.FromRgb(35, 35, 35)) };
+            var pickerStack = new StackPanel { Background = (Brush)Application.Current.FindResource("BrushDialogBG") };
             foreach (var cat in ProgramCategoryManager.AvailableCategories)
             {
                 var catBtn = new Button
@@ -711,7 +711,7 @@ namespace SideDesk.Controls
             {
                 Text = record.Timestamp.ToString("HH:mm:ss"),
                 FontSize = 11,
-                Foreground = new SolidColorBrush(Color.FromRgb(150, 150, 150)),
+                Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
                 Width = 60,
                 VerticalAlignment = VerticalAlignment.Center
             };
@@ -735,7 +735,7 @@ namespace SideDesk.Controls
                 Text = record.ProcessName,
                 FontSize = 12,
                 FontWeight = FontWeights.Medium,
-                Foreground = Brushes.White,
+                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
@@ -752,8 +752,8 @@ namespace SideDesk.Controls
                     Text = secondLine,
                     FontSize = 11,
                     Foreground = !string.IsNullOrEmpty(record.Url)
-                        ? new SolidColorBrush(Color.FromRgb(120, 180, 140))
-                        : new SolidColorBrush(Color.FromRgb(140, 140, 140)),
+                        ? (Brush)Application.Current.FindResource("BrushTextSec")
+                        : (Brush)Application.Current.FindResource("BrushTextMuted"),
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     Margin = new Thickness(60, 0, 60, 0)
                 };

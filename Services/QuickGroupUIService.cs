@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -40,7 +40,32 @@ namespace SideDesk.Services
 
         private static readonly Brush ActiveHighlightBorder =
             new SolidColorBrush(Color.FromRgb(0xFF, 0xD7, 0x00));
-        private static readonly Brush InactiveForeground = Brushes.Black;
+        private static Brush InactiveForeground =>
+            (Brush)Application.Current.FindResource("BrushTextSec");
+
+        /// <summary>
+        /// 为模块容器应用主题背景色（显式获取资源，确保每次创建时使用当前主题）
+        /// </summary>
+        private static void ApplyModuleBackground(Border border)
+        {
+            border.Background = (Brush)Application.Current.FindResource("BrushInputBG");
+        }
+
+        /// <summary>
+        /// 为模块容器应用主题背景色（StackPanel 等无 Background 属性的容器，用 Border 包裹）
+        /// </summary>
+        private static Border WrapWithThemeBackground(FrameworkElement content)
+        {
+            var wrapper = new Border
+            {
+                CornerRadius = new CornerRadius(4),
+                Margin = new Thickness(0, 0, 0, 5),
+                Padding = new Thickness(2),
+                Child = content
+            };
+            wrapper.Background = (Brush)Application.Current.FindResource("BrushInputBG");
+            return wrapper;
+        }
 
         private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
         private static readonly IntPtr HWND_NOTOPMOST = new IntPtr(-2);
@@ -132,8 +157,8 @@ namespace SideDesk.Services
                 Width = 350, Height = 200,
                 WindowStartupLocation = WindowStartupLocation.CenterScreen,
                 ResizeMode = ResizeMode.NoResize,
-                Background = new SolidColorBrush(Color.FromRgb(30, 30, 30)),
-                Foreground = Brushes.White,
+                Background = (Brush)Application.Current.FindResource("BrushDialogBG"),
+                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                 Owner = OwnerWindow
             };
 
@@ -143,14 +168,14 @@ namespace SideDesk.Services
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
             var namePanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(10, 15, 10, 5) };
-            namePanel.Children.Add(new Emoji.Wpf.TextBlock { Text = "名称:", Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center, Width = 50 });
+            namePanel.Children.Add(new Emoji.Wpf.TextBlock { Text = "名称:", Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), VerticalAlignment = VerticalAlignment.Center, Width = 50 });
             var nameBox = new TextBox { Width = 220, Text = "新分组" };
             namePanel.Children.Add(nameBox);
             Grid.SetRow(namePanel, 0);
             grid.Children.Add(namePanel);
 
             var colPanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(10, 5, 10, 5) };
-            colPanel.Children.Add(new Emoji.Wpf.TextBlock { Text = "列数:", Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center, Width = 50 });
+            colPanel.Children.Add(new Emoji.Wpf.TextBlock { Text = "列数:", Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), VerticalAlignment = VerticalAlignment.Center, Width = 50 });
             var colCombo = new ComboBox { Width = 100 };
             colCombo.Items.Add("1 列"); colCombo.Items.Add("2 列");
             colCombo.Items.Add("3 列"); colCombo.Items.Add("4 列");
@@ -263,8 +288,8 @@ namespace SideDesk.Services
                 Width = 340, Height = 170,
                 WindowStartupLocation = WindowStartupLocation.CenterScreen,
                 ResizeMode = ResizeMode.NoResize,
-                Background = new SolidColorBrush(Color.FromRgb(30, 30, 30)),
-                Foreground = Brushes.White,
+                Background = (Brush)Application.Current.FindResource("BrushDialogBG"),
+                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                 Owner = OwnerWindow
             };
 
@@ -273,7 +298,7 @@ namespace SideDesk.Services
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
             var namePanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(10, 15, 10, 5) };
-            namePanel.Children.Add(new Emoji.Wpf.TextBlock { Text = "分组名:", Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center, Width = 60 });
+            namePanel.Children.Add(new Emoji.Wpf.TextBlock { Text = "分组名:", Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), VerticalAlignment = VerticalAlignment.Center, Width = 60 });
             var nameBox = new TextBox { Width = 220 };
             namePanel.Children.Add(nameBox);
             Grid.SetRow(namePanel, 0);
@@ -436,12 +461,14 @@ namespace SideDesk.Services
 
             var border = new Border
             {
-                Background = group.HideFrame ? Brushes.Transparent : new SolidColorBrush(Color.FromRgb(45, 45, 48)),
+                Background = group.HideFrame ? Brushes.Transparent : null,
                 CornerRadius = new CornerRadius(group.HideFrame ? 0 : 4),
                 Margin = new Thickness(0, 0, 0, group.HideFrame ? 8 : 5),
                 Padding = new Thickness(group.HideFrame ? 0 : 2),
                 Tag = group.Id
             };
+            if (!group.HideFrame)
+                ApplyModuleBackground(border);
 
             var outerPanel = new StackPanel();
 
@@ -505,7 +532,7 @@ namespace SideDesk.Services
             var toggleBtn = new Button
             {
                 Content = "▼", Width = 22, Height = 22,
-                Background = Brushes.Transparent, Foreground = Brushes.White,
+                Background = Brushes.Transparent, Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
                 BorderThickness = new Thickness(0), FontSize = 10, Padding = new Thickness(0)
             };
             DockPanel.SetDock(toggleBtn, Dock.Right);
@@ -516,7 +543,7 @@ namespace SideDesk.Services
             // 分组名
             var titleText = new Emoji.Wpf.TextBlock
             {
-                Text = group.Name, Foreground = Brushes.White, FontSize = 12,
+                Text = group.Name, Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), FontSize = 12,
                 FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(3, 0, 0, 0), Cursor = Cursors.Hand
             };
@@ -804,7 +831,7 @@ namespace SideDesk.Services
                 container.Children.Add(BuildStickyNoteItem(note, panel));
             }
 
-            return container;
+            return WrapWithThemeBackground(container);
         }
 
         private FrameworkElement BuildStickyNoteItem(StickyNote note, PanelItem panel)
@@ -883,18 +910,18 @@ namespace SideDesk.Services
                 container.Children.Add(BuildTimerCard(timer, panel));
             }
 
-            return container;
+            return WrapWithThemeBackground(container);
         }
 
         private FrameworkElement BuildTimerCard(TimerItem timer, PanelItem panel)
         {
             var card = new Border
             {
-                Background = new SolidColorBrush(Color.FromRgb(30, 30, 30)),
                 CornerRadius = new CornerRadius(8),
                 Padding = new Thickness(12),
                 Margin = new Thickness(0, 0, 0, 8)
             };
+            ApplyModuleBackground(card);
 
             var mainStack = new StackPanel();
 
@@ -903,7 +930,7 @@ namespace SideDesk.Services
             var titleLabel = new Emoji.Wpf.TextBlock
             {
                 Text = string.IsNullOrEmpty(timer.Name) ? "新计时" : timer.Name,
-                Foreground = Brushes.White,
+                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                 FontSize = 13,
                 FontWeight = FontWeights.Bold,
                 VerticalAlignment = VerticalAlignment.Center
@@ -932,7 +959,7 @@ namespace SideDesk.Services
             var timeDisplay = new Emoji.Wpf.TextBlock
             {
                 Text = FormatTimeSpan(timer.GetElapsed()),
-                Foreground = Brushes.White,
+                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                 FontSize = 24,
                 FontWeight = FontWeights.Bold,
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -949,7 +976,7 @@ namespace SideDesk.Services
                 Width = 80,
                 Height = 28,
                 Background = timer.IsRunning ? Brushes.IndianRed : new SolidColorBrush(Color.FromRgb(52, 152, 219)),
-                Foreground = Brushes.White,
+                Foreground = (Brush)Application.Current.FindResource("BrushAccentText"),
                 BorderThickness = new Thickness(0),
                 Cursor = Cursors.Hand
             };
@@ -1141,12 +1168,12 @@ namespace SideDesk.Services
         }
 
         // 其他模块的占位实现
-        private FrameworkElement BuildClipboardModule(PanelItem panel, string groupId) => new Emoji.Wpf.TextBlock { Text = "📋 剪贴板收藏", Foreground = Brushes.White };
-        private FrameworkElement BuildUsageStatsModule(PanelItem panel, string groupId) => new Emoji.Wpf.TextBlock { Text = "📊 使用统计", Foreground = Brushes.White };
-        private FrameworkElement BuildAIChatModule(PanelItem panel, string groupId) => new Emoji.Wpf.TextBlock { Text = "🤖 AI 对话", Foreground = Brushes.White };
-        private FrameworkElement BuildSystemMonitorModule(PanelItem panel, string groupId) => new Emoji.Wpf.TextBlock { Text = "💻 系统信息", Foreground = Brushes.White };
-        private FrameworkElement BuildFileAreaModule(PanelItem panel, string groupId) => new Emoji.Wpf.TextBlock { Text = "📁 文件区", Foreground = Brushes.White };
-        private FrameworkElement BuildDataDashboardModule(PanelItem panel, string groupId) => new Emoji.Wpf.TextBlock { Text = "📈 数据看板", Foreground = Brushes.White };
+        private FrameworkElement BuildClipboardModule(PanelItem panel, string groupId) => WrapWithThemeBackground(new Emoji.Wpf.TextBlock { Text = "📋 剪贴板收藏", Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), Margin = new Thickness(8) });
+        private FrameworkElement BuildUsageStatsModule(PanelItem panel, string groupId) => WrapWithThemeBackground(new Emoji.Wpf.TextBlock { Text = "📊 使用统计", Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), Margin = new Thickness(8) });
+        private FrameworkElement BuildAIChatModule(PanelItem panel, string groupId) => WrapWithThemeBackground(new Emoji.Wpf.TextBlock { Text = "🤖 AI 对话", Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), Margin = new Thickness(8) });
+        private FrameworkElement BuildSystemMonitorModule(PanelItem panel, string groupId) => WrapWithThemeBackground(new Emoji.Wpf.TextBlock { Text = "💻 系统信息", Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), Margin = new Thickness(8) });
+        private FrameworkElement BuildFileAreaModule(PanelItem panel, string groupId) => WrapWithThemeBackground(new Emoji.Wpf.TextBlock { Text = "📁 文件区", Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), Margin = new Thickness(8) });
+        private FrameworkElement BuildDataDashboardModule(PanelItem panel, string groupId) => WrapWithThemeBackground(new Emoji.Wpf.TextBlock { Text = "📈 数据看板", Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), Margin = new Thickness(8) });
 
         private FrameworkElement BuildItemButton(QuickItem item, string groupId)
         {
@@ -1158,17 +1185,39 @@ namespace SideDesk.Services
 
             var btn = new Button
             {
-                Content = item.Name,
                 Padding = new Thickness(6, 4, 6, 4),
                 Background = bgBrush,
                 Foreground = item.WindowHandle != IntPtr.Zero && NativeMethods.IsWindow(item.WindowHandle)
-                    ? Brushes.White : InactiveForeground,
+                    ? (Brush)Application.Current.FindResource("BrushAccentText") : InactiveForeground,
                 BorderThickness = new Thickness(2),
                 BorderBrush = Brushes.Transparent,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 FontSize = 11,
                 AllowDrop = true
             };
+
+            // 按钮内容：图标 + 名称
+            if (!string.IsNullOrEmpty(item.Icon))
+            {
+                var contentPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Center };
+                contentPanel.Children.Add(new Emoji.Wpf.TextBlock
+                {
+                    Text = item.Icon,
+                    FontSize = 13,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 4, 0)
+                });
+                contentPanel.Children.Add(new TextBlock
+                {
+                    Text = item.Name,
+                    VerticalAlignment = VerticalAlignment.Center
+                });
+                btn.Content = contentPanel;
+            }
+            else
+            {
+                btn.Content = item.Name;
+            }
 
             // 圆角样式（保留每项自定义背景色与拖拽高亮边框）
             var roundedStyle = Application.Current.TryFindResource("QuickItemButtonStyle") as Style;
@@ -1778,7 +1827,7 @@ namespace SideDesk.Services
                 if (alive != r.IsAlive)
                 {
                     r.IsAlive = alive;
-                    r.Button.Foreground = alive ? Brushes.White : InactiveForeground;
+                    r.Button.Foreground = alive ? (Brush)Application.Current.FindResource("BrushAccentText") : InactiveForeground;
                 }
                 bool active = alive && fg != IntPtr.Zero && r.Item.WindowHandle == fg;
                 if (active == r.IsActive) continue;
@@ -1977,6 +2026,7 @@ namespace SideDesk.Services
                                 Name = string.IsNullOrEmpty(result.Name)
                                     ? (string.IsNullOrEmpty(result.Url) ? "新快捷项" : result.Url)
                                     : result.Name,
+                                Icon = result.Icon,
                                 Type = "url",
                                 Target = result.Url,
                                 UseAppMode = result.IsAppMode,
@@ -1997,6 +2047,7 @@ namespace SideDesk.Services
                             Name = string.IsNullOrEmpty(result.Name)
                                 ? (string.IsNullOrEmpty(result.Url) ? "新快捷项" : result.Url)
                                 : result.Name,
+                            Icon = result.Icon,
                             Type = "url",
                             Target = result.Url,
                             UseAppMode = result.IsAppMode,
@@ -2195,6 +2246,18 @@ namespace SideDesk.Services
             nameDock.Children.Add(nameBox);
             rootPanel.Children.Add(nameDock);
 
+            // 图标
+            var iconDock = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
+            var iconLabel = new Emoji.Wpf.TextBlock { Text = "图标：", Width = 60, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)Application.Current.FindResource("BrushTextMain") };
+            DockPanel.SetDock(iconLabel, Dock.Left);
+            iconDock.Children.Add(iconLabel);
+            var iconBox = new TextBox { Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle"), Width = 80, MaxLength = 4 };
+            iconDock.Children.Add(iconBox);
+            var iconPreview = new Emoji.Wpf.TextBlock { Text = "", FontSize = 16, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
+            iconBox.TextChanged += (s, ev2) => iconPreview.Text = iconBox.Text.Trim();
+            iconDock.Children.Add(iconPreview);
+            rootPanel.Children.Add(iconDock);
+
             // 路径
             var targetDock = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
             var targetLabel = new Emoji.Wpf.TextBlock { Text = "路径：", Width = 60, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)Application.Current.FindResource("BrushTextMain") };
@@ -2382,6 +2445,7 @@ namespace SideDesk.Services
                 var newItem = new QuickItem
                 {
                     Name = name,
+                    Icon = string.IsNullOrEmpty(iconBox.Text.Trim()) ? null : iconBox.Text.Trim(),
                     Type = "program",
                     Target = target,
                     UseAppMode = false,
@@ -2437,6 +2501,18 @@ namespace SideDesk.Services
                 Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle")
             };
             rootPanel.Children.Add(nameBox);
+
+            // 图标
+            var iconDock = new DockPanel { Margin = new Thickness(0, 12, 0, 0) };
+            var iconLabel = new Emoji.Wpf.TextBlock { Text = "图标：", Width = 50, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)Application.Current.FindResource("BrushTextMain") };
+            DockPanel.SetDock(iconLabel, Dock.Left);
+            iconDock.Children.Add(iconLabel);
+            var iconBox = new TextBox { Text = item.Icon ?? "", Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle"), Width = 80, MaxLength = 4 };
+            iconDock.Children.Add(iconBox);
+            var iconPreview = new Emoji.Wpf.TextBlock { Text = item.Icon ?? "", FontSize = 16, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
+            iconBox.TextChanged += (s, ev) => iconPreview.Text = iconBox.Text.Trim();
+            iconDock.Children.Add(iconPreview);
+            rootPanel.Children.Add(iconDock);
 
             // 目标
             rootPanel.Children.Add(new Emoji.Wpf.TextBlock
@@ -2499,11 +2575,23 @@ namespace SideDesk.Services
             okBtn.Click += (s, ev) =>
             {
                 item.Name = nameBox.Text.Trim();
+                item.Icon = string.IsNullOrEmpty(iconBox.Text.Trim()) ? null : iconBox.Text.Trim();
                 item.Target = targetBox.Text.Trim();
                 item.UseAppMode = appModeSwitch.IsChecked == true;
                 QuickGroupManager.UpdateGroup(QuickGroupManager.GetAll().FirstOrDefault(g => g.Id == groupId) ?? new QuickGroup());
                 QuickGroupManager.Save();
-                itemBtn.Content = item.Name;
+                // 更新按钮显示
+                if (!string.IsNullOrEmpty(item.Icon))
+                {
+                    var cp = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Center };
+                    cp.Children.Add(new Emoji.Wpf.TextBlock { Text = item.Icon, FontSize = 13, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) });
+                    cp.Children.Add(new TextBlock { Text = item.Name, VerticalAlignment = VerticalAlignment.Center });
+                    itemBtn.Content = cp;
+                }
+                else
+                {
+                    itemBtn.Content = item.Name;
+                }
                 dialog.Close();
             };
             cancelBtn.Click += (s, ev) => dialog.Close();

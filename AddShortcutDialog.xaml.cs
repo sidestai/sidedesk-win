@@ -37,6 +37,9 @@ public partial class AddShortcutDialog : Window
 
         // 初始化颜色选择器
         InitColorPicker();
+
+        // 图标预览
+        iconBox.TextChanged += (s, e) => iconPreview.Text = iconBox.Text.Trim();
     }
 
     private void InitColorPicker()
@@ -112,11 +115,22 @@ public partial class AddShortcutDialog : Window
     private void AddBatchRow()
     {
         var row = new Grid { Margin = new Thickness(0, 3, 0, 3) };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(95) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(45) });
 
         var textBoxStyle = (Style)FindResource("GlobalTextBoxStyle");
+
+        var iconBox = new TextBox
+        {
+            Margin = new Thickness(0, 0, 5, 0),
+            Style = textBoxStyle,
+            Height = 30,
+            FontSize = (double)FindResource("FontSizeSmallPlus"),
+            MaxLength = 4
+        };
+        Grid.SetColumn(iconBox, 0);
 
         var nameBox = new TextBox
         {
@@ -125,7 +139,7 @@ public partial class AddShortcutDialog : Window
             Height = 30,
             FontSize = (double)FindResource("FontSizeSmallPlus")
         };
-        Grid.SetColumn(nameBox, 0);
+        Grid.SetColumn(nameBox, 1);
 
         var urlBox = new TextBox
         {
@@ -135,7 +149,7 @@ public partial class AddShortcutDialog : Window
             Height = 30,
             FontSize = (double)FindResource("FontSizeSmallPlus")
         };
-        Grid.SetColumn(urlBox, 1);
+        Grid.SetColumn(urlBox, 2);
 
         var appCheck = new CheckBox
         {
@@ -144,11 +158,12 @@ public partial class AddShortcutDialog : Window
             IsChecked = true,
             Style = (Style)FindResource("RaycastSwitchStyle")
         };
-        Grid.SetColumn(appCheck, 2);
+        Grid.SetColumn(appCheck, 3);
 
         nameBox.TextChanged += BatchRow_TextChanged;
         urlBox.TextChanged += BatchRow_TextChanged;
 
+        row.Children.Add(iconBox);
         row.Children.Add(nameBox);
         row.Children.Add(urlBox);
         row.Children.Add(appCheck);
@@ -169,8 +184,8 @@ public partial class AddShortcutDialog : Window
             if (child is TextBox tb)
             {
                 int col = Grid.GetColumn(tb);
-                if (col == 0) name = tb.Text;
-                else if (col == 1) url = tb.Text;
+                if (col == 1) name = tb.Text;
+                else if (col == 2) url = tb.Text;
             }
         }
 
@@ -191,6 +206,7 @@ public partial class AddShortcutDialog : Window
 
                 string name = "";
                 string url = "";
+                string icon = "";
                 bool isApp = false;
 
                 foreach (UIElement child in row.Children)
@@ -198,8 +214,9 @@ public partial class AddShortcutDialog : Window
                     if (child is TextBox tb)
                     {
                         int col = Grid.GetColumn(tb);
-                        if (col == 0) name = tb.Text?.Trim() ?? "";
-                        else if (col == 1) url = tb.Text?.Trim() ?? "";
+                        if (col == 0) icon = tb.Text?.Trim() ?? "";
+                        else if (col == 1) name = tb.Text?.Trim() ?? "";
+                        else if (col == 2) url = tb.Text?.Trim() ?? "";
                     }
                     else if (child is CheckBox cb)
                     {
@@ -213,6 +230,7 @@ public partial class AddShortcutDialog : Window
                     BatchResults.Add(new ShortcutResult
                     {
                         Name = name,
+                        Icon = string.IsNullOrEmpty(icon) ? null : icon,
                         Url = url,
                         IsAppMode = isApp
                     });
@@ -256,6 +274,7 @@ public partial class AddShortcutDialog : Window
             SingleResult = new ShortcutResult
             {
                 Name = nameBox.Text?.Trim() ?? "",
+                Icon = string.IsNullOrEmpty(iconBox.Text.Trim()) ? null : iconBox.Text.Trim(),
                 Url = url,
                 IsAppMode = appModeCheck.IsChecked ?? false,
                 BrowserId = browserId,
@@ -277,6 +296,7 @@ public partial class AddShortcutDialog : Window
 public class ShortcutResult
 {
     public string Name { get; set; } = "";
+    public string? Icon { get; set; }
     public string Url { get; set; } = "";
     public bool IsAppMode { get; set; } = false;
     public string? BrowserId { get; set; }

@@ -32,6 +32,13 @@ namespace SideDesk
             // 应用背景透明度
             ApplyBackgroundOpacity();
 
+            // 订阅主题变更事件，重新应用背景和刷新窗口标签
+            App.ThemeChanged += () =>
+            {
+                ApplyBackgroundOpacity();
+                RefreshWindowTabs();
+            };
+
             // 配置 AppBar
             DockSide = side;
             AppBarWidth = 105;
@@ -60,14 +67,16 @@ namespace SideDesk
             // 网页模式：使用不透明背景，避免半透明窗口与 WebView2 叠加导致异常显示
             if (config != null && config.Type == WindowType.WebView)
             {
-                Background = new SolidColorBrush(Color.FromRgb(0, 0, 0));
+                // 使用动态资源引用，主题切换时自动更新
+                SetResourceReference(BackgroundProperty, "BrushBG");
                 return;
             }
 
-            // 本地模式：按设置的背景透明度应用半透明黑
+            // 本地模式：按设置的背景透明度应用半透明背景色
             double opacity = app.AppSettings.BackgroundOpacity / 100.0;
+            var bgColor = (Color)FindResource("ColorBG");
             Background = new SolidColorBrush(Color.FromArgb(
-                (byte)(opacity * 255), 0, 0, 0));
+                (byte)(opacity * 255), bgColor.R, bgColor.G, bgColor.B));
         }
 
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)

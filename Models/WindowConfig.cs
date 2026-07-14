@@ -18,7 +18,8 @@ public enum PanelType
     DataDashboard,     // 数据看板
     Timer,           // 计时器
     Group,           // 分组
-    TodoList         // 今日待办
+    TodoList,        // 今日待办
+    SignalLight      // 信号灯
 }
 
 public class PanelItem
@@ -38,6 +39,10 @@ public class PanelItem
     public bool SkipWrapper { get; set; } = false;     // 是否跳过外层容器包装
     public bool HideFrame { get; set; } = false;       // 单个模块独立隐藏外框（边框/标题/背景/内边距）
     public int DashboardColumns { get; set; } = 1;     // 数据看板每排列数（1~4）
+    public List<SignalLightItem>? SignalLights { get; set; } // 信号灯数据
+    public bool SignalLightVertical { get; set; } = false; // 信号灯纵向排列
+    public double SignalLightSpacing { get; set; } = 5;    // 信号灯间距（px）
+    public string SignalLightAlignment { get; set; } = "Center"; // 信号灯对齐：Left/Center/Right
 }
 
 public class FileAreaItem
@@ -98,6 +103,19 @@ public class TodoItem
     public DateTime? DueTime { get; set; }               // 任务时间（可选）
     public int RemindBeforeMinutes { get; set; } = -1;   // 提前多少分钟提醒；-1=不提醒，0=准时
     public bool Reminded { get; set; } = false;          // 是否已提醒（防重复）
+}
+
+/// <summary>
+/// 信号灯项
+/// </summary>
+public class SignalLightItem
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string Color { get; set; } = "#FF4444";   // 灯颜色（hex）
+    public double Size { get; set; } = 36;            // 灯直径
+    public string? Icon { get; set; }                  // 灯上方图标（emoji/文字，空则无）
+    public bool IsOn { get; set; } = true;             // 亮/灭状态
+    public string LightStyle { get; set; } = "Circle"; // 灯样式：Circle/Square/Pixel
 }
 
 public class WindowConfig

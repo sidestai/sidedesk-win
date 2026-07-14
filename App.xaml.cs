@@ -27,6 +27,9 @@ namespace SideDesk
         private MainWindow? _rightWindow;
         private System.Windows.Forms.NotifyIcon? _notifyIcon;
 
+        /// <summary>主题变更事件</summary>
+        public static event Action? ThemeChanged;
+
         /// <summary>fetchResult 回调注册表：requestId → 回调委托</summary>
         private readonly ConcurrentDictionary<string, Action<bool, string, string>> _fetchCallbacks = new();
 
@@ -449,9 +452,12 @@ namespace SideDesk
 
             var mergedDicts = Current.Resources.MergedDictionaries;
 
-            // 查找并移除当前主题字典
+            // 查找并移除当前主题字典（只匹配 DarkTheme.xaml 或 LightTheme.xaml）
             var existingThemeDict = mergedDicts.FirstOrDefault(d =>
-                d.Source != null && d.Source.OriginalString.Contains("Theme.xaml"));
+                d.Source != null && (
+                    d.Source.OriginalString.EndsWith("DarkTheme.xaml", StringComparison.OrdinalIgnoreCase) ||
+                    d.Source.OriginalString.EndsWith("LightTheme.xaml", StringComparison.OrdinalIgnoreCase)
+                ));
 
             if (existingThemeDict != null)
             {
@@ -468,6 +474,9 @@ namespace SideDesk
 
             // 更新所有窗口 DWM 标题栏主题
             UpdateAllWindowDwmThemes(useLightTheme);
+
+            // 通知主题已变更
+            ThemeChanged?.Invoke();
         }
 
         /// <summary>

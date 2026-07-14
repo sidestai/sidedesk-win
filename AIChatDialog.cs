@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Runtime.InteropServices;
@@ -125,7 +125,7 @@ namespace SideDesk
             {
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 Padding = new Thickness(10),
-                Foreground = System.Windows.Media.Brushes.White
+                Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("BrushTextMain")
             };
             _chatStack = new StackPanel();
             _chatScrollViewer.Content = _chatStack;
@@ -300,7 +300,7 @@ namespace SideDesk
                     prefix = "你: ";
                     break;
                 case "assistant":
-                    bgBrush = (System.Windows.Media.SolidColorBrush)new System.Windows.Media.BrushConverter().ConvertFrom("#2C3E50");
+                    bgBrush = (System.Windows.Media.Brush)Application.Current.FindResource("BrushInputBG");
                     hAlign = HorizontalAlignment.Left;
                     prefix = "AI: ";
                     break;
@@ -323,7 +323,7 @@ namespace SideDesk
             var msgText = new Emoji.Wpf.TextBlock
             {
                 Text = string.IsNullOrEmpty(message) ? "" : (prefix + message),
-                Foreground = System.Windows.Media.Brushes.White,
+                Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("BrushTextMain"),
                 TextWrapping = TextWrapping.Wrap
             };
 
@@ -413,7 +413,7 @@ namespace SideDesk
                 Text = "AI 对话配置",
                 FontSize = 18,
                 FontWeight = FontWeights.Bold,
-                Foreground = System.Windows.Media.Brushes.White,
+                Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("BrushTextMain"),
                 Margin = new Thickness(0, 0, 0, 15)
             });
 
@@ -422,7 +422,7 @@ namespace SideDesk
             {
                 Text = "1. 选择模型服务商",
                 FontWeight = FontWeights.Bold,
-                Foreground = System.Windows.Media.Brushes.White,
+                Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("BrushTextMain"),
                 Margin = new Thickness(0, 10, 0, 5)
             });
             mainPanel.Children.Add(new Emoji.Wpf.TextBlock
@@ -454,7 +454,7 @@ namespace SideDesk
             {
                 Text = "2. 填写 API Key",
                 FontWeight = FontWeights.Bold,
-                Foreground = System.Windows.Media.Brushes.White,
+                Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("BrushTextMain"),
                 Margin = new Thickness(0, 10, 0, 5)
             });
             mainPanel.Children.Add(new Emoji.Wpf.TextBlock
@@ -480,7 +480,7 @@ namespace SideDesk
             {
                 Text = "3. 自定义模型 ID（可选）",
                 FontWeight = FontWeights.Bold,
-                Foreground = System.Windows.Media.Brushes.White,
+                Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("BrushTextMain"),
                 Margin = new Thickness(0, 10, 0, 5)
             });
             mainPanel.Children.Add(new Emoji.Wpf.TextBlock

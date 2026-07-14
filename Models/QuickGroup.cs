@@ -10,6 +10,8 @@ namespace SideDesk.Models
     {
         public string Id { get; set; }
         public string Name { get; set; }
+        /// <summary>Emoji 图标字符（如 、📁）</summary>
+        public string? Icon { get; set; }
         /// <summary>"url" / "program"</summary>
         public string Type { get; set; } = "url";
         /// <summary>网址或程序路径</summary>

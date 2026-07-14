@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -103,7 +103,7 @@ namespace SideDesk.Controls
             var outerBorder = new Border
             {
                 CornerRadius = new CornerRadius(12),
-                Background = new SolidColorBrush(Color.FromArgb(255, 30, 30, 30)), // 深灰色背景
+                Background = (Brush)Application.Current.FindResource("BrushInputBG"), // 深灰色背景
                 Effect = new System.Windows.Media.Effects.DropShadowEffect
                 {
                     Color = Colors.Black,
@@ -124,7 +124,7 @@ namespace SideDesk.Controls
             // === 标题栏区域 ===
             var titleBar = new DockPanel();
             titleBar.LastChildFill = false; // 关闭填充：让关闭按钮的 Dock.Right 生效，停靠到右上角
-            titleBar.Background = new SolidColorBrush(Color.FromArgb(255, 40, 40, 40));
+            titleBar.Background = (Brush)Application.Current.FindResource("BrushBG");
             titleBar.Margin = new Thickness(0);
             Grid.SetRow(titleBar, 0);
 
@@ -133,7 +133,7 @@ namespace SideDesk.Controls
             {
                 Text = _currentNote.CreatedAt.ToString("MM-dd HH:mm"),
                 FontSize = 11,
-                Foreground = new SolidColorBrush(Color.FromRgb(160, 160, 160)),
+                Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(10, 0, 0, 0)
             };
@@ -144,7 +144,7 @@ namespace SideDesk.Controls
             var titleLabel = new Emoji.Wpf.TextBlock
             {
                 Text = "便签",
-                Foreground = Brushes.White,
+                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                 FontSize = 14,
                 FontWeight = FontWeights.Bold,
                 VerticalAlignment = VerticalAlignment.Center,
@@ -164,7 +164,7 @@ namespace SideDesk.Controls
                 Margin = new Thickness(0, 0, 8, 0),
                 Background = Brushes.Transparent,
                 BorderThickness = new Thickness(0),
-                Foreground = Brushes.White,
+                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                 FontSize = 16,
                 Cursor = Cursors.Hand,
                 Padding = new Thickness(0)
@@ -223,8 +223,8 @@ namespace SideDesk.Controls
                 FontSize = 14,
                 BorderThickness = new Thickness(0),
                 Background = Brushes.Transparent,
-                Foreground = Brushes.White,
-                CaretBrush = Brushes.White,
+                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
+                CaretBrush = (Brush)Application.Current.FindResource("BrushTextMain"),
                 VerticalAlignment = VerticalAlignment.Stretch
             };
             contentPanel.Children.Add(_contentBox);

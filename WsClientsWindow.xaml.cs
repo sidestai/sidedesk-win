@@ -109,7 +109,7 @@ namespace SideDesk
                         {
                             Text = matchedDashboard,
                             FontSize = 11,
-                            Foreground = Brushes.White
+                            Foreground = (Brush)FindResource("BrushAccentText")
                         }
                     };
                     titleRow.Children.Add(tag);
@@ -126,7 +126,7 @@ namespace SideDesk
                         {
                             Text = "未关联",
                             FontSize = 11,
-                            Foreground = Brushes.White
+                            Foreground = (Brush)FindResource("BrushAccentText")
                         }
                     };
                     titleRow.Children.Add(tag);

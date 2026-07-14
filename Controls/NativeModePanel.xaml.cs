@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Linq;
@@ -80,6 +80,12 @@ namespace SideDesk.Controls
             InitializeComponent();
             Loaded += NativeModePanel_Loaded;
             Unloaded += NativeModePanel_Unloaded;
+            
+            // 订阅主题变更事件，重建所有面板（独立模块 + 快捷分组）以应用新主题颜色
+            App.ThemeChanged += () =>
+            {
+                RenderPanels();
+            };
         }
 
         /// <summary>
@@ -337,6 +343,7 @@ namespace SideDesk.Controls
                 PanelType.DataDashboard => BuildDataDashboardWidget(item),
                 PanelType.Timer => BuildTimerWidget(item),
                 PanelType.TodoList => BuildTodoWidget(item),
+                PanelType.SignalLight => BuildSignalLightWidget(item),
                 PanelType.Group => BuildGroupWidget(item),
                 _ => null
             };
@@ -603,7 +610,8 @@ namespace SideDesk.Controls
                 ("AI 对话", PanelType.AIChat),
                 ("文件区", PanelType.FileArea),
                 ("数据看板", PanelType.DataDashboard),
-                ("计时器", PanelType.Timer)
+                ("计时器", PanelType.Timer),
+                ("信号灯", PanelType.SignalLight)
             })
             {
                 var mi = new MenuItem { Header = header };
@@ -1056,6 +1064,355 @@ namespace SideDesk.Controls
             return WrapWidget("今日待办", container, item, () => ShowTodoDialog(item));
         }
 
+        #region 信号灯面板
+
+        /// <summary>根据样式创建灯形状控件</summary>
+        private FrameworkElement CreateLightShape(SignalLightItem light)
+        {
+            var colorStr = light.IsOn ? light.Color : "#333333";
+            var color = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(colorStr);
+            var brush = new SolidColorBrush(color);
+            var size = light.Size;
+
+            FrameworkElement shape = light.LightStyle switch
+            {
+                "Square" => new System.Windows.Shapes.Rectangle
+                {
+                    Width = size, Height = size,
+                    Fill = brush,
+                    RadiusX = size * 0.15, RadiusY = size * 0.15
+                },
+                "Pixel" => new System.Windows.Shapes.Rectangle
+                {
+                    Width = size, Height = size,
+                    Fill = brush,
+                    RadiusX = 0, RadiusY = 0
+                },
+                _ => (FrameworkElement)new System.Windows.Shapes.Ellipse
+                {
+                    Width = size, Height = size,
+                    Fill = brush
+                }
+            };
+
+            // 发光效果（亮时）
+            if (light.IsOn)
+            {
+                shape.Effect = new System.Windows.Media.Effects.DropShadowEffect
+                {
+                    Color = color,
+                    BlurRadius = size * 0.4,
+                    ShadowDepth = 0,
+                    Opacity = 0.7
+                };
+            }
+
+            shape.Cursor = Cursors.Hand;
+            shape.MouseLeftButtonUp += (s, e) =>
+            {
+                light.IsOn = !light.IsOn;
+                _configManager?.Save();
+                // 重新渲染整个面板
+                if (shape.Parent is Panel parentPanel)
+                {
+                    // 通过重新调用 RenderPanels 来刷新
+                    RenderPanels();
+                }
+            };
+
+            var lightMenu = new ContextMenu();
+            var editMi = new MenuItem { Header = "编辑信号灯" };
+            // 需要找到对应的 PanelItem，通过遍历查找
+            editMi.Click += (s, e) =>
+            {
+                // 从 SignalLights 列表中找到包含此 light 的 PanelItem
+                if (_currentWindowConfig != null)
+                {
+                    foreach (var panel in _currentWindowConfig.Panels)
+                    {
+                        if (panel.SignalLights != null && panel.SignalLights.Contains(light))
+                        {
+                            ShowSignalLightEditDialog(panel);
+                            return;
+                        }
+                        if (panel.ChildPanels != null)
+                        {
+                            foreach (var child in panel.ChildPanels)
+                            {
+                                if (child.SignalLights != null && child.SignalLights.Contains(light))
+                                {
+                                    ShowSignalLightEditDialog(child);
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+            lightMenu.Items.Add(editMi);
+            shape.ContextMenu = lightMenu;
+
+            return shape;
+        }
+
+        private UIElement BuildSignalLightWidget(PanelItem item)
+        {
+            item.SignalLights ??= new List<SignalLightItem>
+            {
+                new() { Color = "#FF4444", Size = 36, Icon = "", IsOn = true },
+                new() { Color = "#FFAA00", Size = 36, Icon = "", IsOn = true },
+                new() { Color = "#44CC44", Size = 36, Icon = "", IsOn = true }
+            };
+
+            var container = new StackPanel();
+
+            void RenderLights()
+            {
+                container.Children.Clear();
+                var hAlign = item.SignalLightAlignment switch
+                {
+                    "Left" => HorizontalAlignment.Left,
+                    "Right" => HorizontalAlignment.Right,
+                    _ => HorizontalAlignment.Center
+                };
+                var lightsPanel = item.SignalLightVertical
+                    ? (Panel)new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = hAlign }
+                    : new WrapPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = hAlign };
+
+                foreach (var light in item.SignalLights)
+                {
+                    var lightContainer = new StackPanel
+                    {
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        Margin = new Thickness(item.SignalLightSpacing, 4, item.SignalLightSpacing, 4)
+                    };
+
+                    // 图标（灯上方）
+                    if (!string.IsNullOrEmpty(light.Icon))
+                    {
+                        var iconBlock = new Emoji.Wpf.TextBlock
+                        {
+                            Text = light.Icon,
+                            FontSize = light.Size * 0.5,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            Margin = new Thickness(0, 0, 0, 2)
+                        };
+                        lightContainer.Children.Add(iconBlock);
+                    }
+
+                    lightContainer.Children.Add(CreateLightShape(light));
+                    lightsPanel.Children.Add(lightContainer);
+                }
+
+                container.Children.Add(lightsPanel);
+            }
+
+            RenderLights();
+
+            return WrapWidget("🚦 信号灯", container, item, () => ShowSignalLightEditDialog(item));
+        }
+
+        private void ShowSignalLightEditDialog(PanelItem item)
+        {
+            item.SignalLights ??= new List<SignalLightItem>();
+
+            var dialog = new Window
+            {
+                Title = "编辑信号灯",
+                Width = 400,
+                SizeToContent = SizeToContent.Height,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = Window.GetWindow(this),
+                Background = (Brush)FindResource("BrushDialogBG"),
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                ResizeMode = ResizeMode.NoResize
+            };
+            dialog.SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(dialog, App.IsCurrentThemeLight());
+
+            var root = new StackPanel { Margin = new Thickness(20) };
+            var textBoxStyle = (Style)FindResource("GlobalTextBoxStyle");
+            var comboStyle = (Style)FindResource("GlobalComboBoxStyle");
+
+            // 第一行：排列方向 + 灯样式
+            var row1 = new DockPanel { Margin = new Thickness(0, 0, 0, 12) };
+            var orientLabel = new TextBlock { Text = "排列方向：", Width = 70, VerticalAlignment = VerticalAlignment.Center };
+            DockPanel.SetDock(orientLabel, Dock.Left);
+            row1.Children.Add(orientLabel);
+            var orientCombo = new ComboBox { Style = comboStyle, Width = 100 };
+            orientCombo.Items.Add("横向");
+            orientCombo.Items.Add("纵向");
+            orientCombo.SelectedIndex = item.SignalLightVertical ? 1 : 0;
+            row1.Children.Add(orientCombo);
+
+            // Dock.Right 先加控件（最右），再加标签（控件左边）
+            var styleCombo = new ComboBox { Style = comboStyle, Width = 100 };
+            styleCombo.Items.Add("圆形");
+            styleCombo.Items.Add("方形");
+            styleCombo.Items.Add("像素");
+            var firstLight = item.SignalLights.FirstOrDefault();
+            styleCombo.SelectedIndex = firstLight?.LightStyle switch
+            {
+                "Square" => 1,
+                "Pixel" => 2,
+                _ => 0
+            };
+            DockPanel.SetDock(styleCombo, Dock.Right);
+            row1.Children.Add(styleCombo);
+            var styleLabel = new TextBlock { Text = "  灯样式：", VerticalAlignment = VerticalAlignment.Center };
+            DockPanel.SetDock(styleLabel, Dock.Right);
+            row1.Children.Add(styleLabel);
+            root.Children.Add(row1);
+
+            // 第二行：大小 + 间距 + 对齐
+            var row2 = new DockPanel { Margin = new Thickness(0, 0, 0, 12) };
+            var sizeLabel = new TextBlock { Text = "灯大小：", Width = 70, VerticalAlignment = VerticalAlignment.Center };
+            DockPanel.SetDock(sizeLabel, Dock.Left);
+            row2.Children.Add(sizeLabel);
+            var sizeBox = new TextBox { Text = firstLight?.Size.ToString() ?? "36", Style = textBoxStyle, Width = 70 };
+            row2.Children.Add(sizeBox);
+
+            // Dock.Right 从右到左：对齐控件 → 对齐标签 → 间距控件 → 间距标签
+            var alignCombo = new ComboBox { Style = comboStyle, Width = 80 };
+            alignCombo.Items.Add("居左");
+            alignCombo.Items.Add("居中");
+            alignCombo.Items.Add("居右");
+            alignCombo.SelectedIndex = item.SignalLightAlignment switch
+            {
+                "Left" => 0,
+                "Right" => 2,
+                _ => 1
+            };
+            DockPanel.SetDock(alignCombo, Dock.Right);
+            row2.Children.Add(alignCombo);
+
+            var alignLabel = new TextBlock { Text = "  对齐：", VerticalAlignment = VerticalAlignment.Center };
+            DockPanel.SetDock(alignLabel, Dock.Right);
+            row2.Children.Add(alignLabel);
+
+            var spacingBox = new TextBox { Text = item.SignalLightSpacing.ToString(), Style = textBoxStyle, Width = 50 };
+            DockPanel.SetDock(spacingBox, Dock.Right);
+            row2.Children.Add(spacingBox);
+
+            var spacingLabel = new TextBlock { Text = "  间距：", VerticalAlignment = VerticalAlignment.Center };
+            DockPanel.SetDock(spacingLabel, Dock.Right);
+            row2.Children.Add(spacingLabel);
+            root.Children.Add(row2);
+
+            // 灯列表
+            var lightsStack = new StackPanel();
+            void RenderEditList()
+            {
+                lightsStack.Children.Clear();
+                for (int i = 0; i < item.SignalLights.Count; i++)
+                {
+                    int idx = i; // 闭包捕获
+                    var light = item.SignalLights[i];
+                    var row = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
+
+                    // 序号
+                    var idxLabel = new TextBlock { Text = $"{i + 1}.", Width = 25, VerticalAlignment = VerticalAlignment.Center };
+                    DockPanel.SetDock(idxLabel, Dock.Left);
+                    row.Children.Add(idxLabel);
+
+                    // 颜色选择
+                    var colorBox = new TextBox { Text = light.Color, Style = textBoxStyle, Width = 80, Margin = new Thickness(0, 0, 4, 0) };
+                    colorBox.TextChanged += (s, e) => { try { light.Color = colorBox.Text.Trim(); } catch { } };
+                    row.Children.Add(colorBox);
+
+                    // 大小
+                    var sizeLabel = new TextBlock { Text = "大小:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 2, 0) };
+                    row.Children.Add(sizeLabel);
+                    var sizeBox = new TextBox { Text = light.Size.ToString(), Style = textBoxStyle, Width = 70, Margin = new Thickness(0, 0, 4, 0) };
+                    sizeBox.TextChanged += (s, e) => { if (double.TryParse(sizeBox.Text.Trim(), out double v) && v > 0) light.Size = v; };
+                    row.Children.Add(sizeBox);
+
+                    // 图标
+                    var iconLabel = new TextBlock { Text = "图标:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 2, 0) };
+                    row.Children.Add(iconLabel);
+                    var iconBox = new TextBox { Text = light.Icon ?? "", Style = textBoxStyle, Width = 60, Margin = new Thickness(0, 0, 4, 0) };
+                    iconBox.TextChanged += (s, e) => light.Icon = iconBox.Text.Trim();
+                    row.Children.Add(iconBox);
+
+                    // 删除按钮
+                    var delBtn = new Button
+                    {
+                        Content = "✕", Width = 22, Height = 22, FontSize = 10,
+                        Background = Brushes.Transparent,
+                        Foreground = (Brush)FindResource("BrushTextMuted"),
+                        BorderThickness = new Thickness(0), Padding = new Thickness(0),
+                        Cursor = Cursors.Hand, Margin = new Thickness(4, 0, 0, 0)
+                    };
+                    delBtn.Click += (s, e) => { item.SignalLights.RemoveAt(idx); RenderEditList(); };
+                    DockPanel.SetDock(delBtn, Dock.Right);
+                    row.Children.Add(delBtn);
+
+                    lightsStack.Children.Add(row);
+                }
+            }
+            RenderEditList();
+            root.Children.Add(lightsStack);
+
+            // 添加灯按钮
+            var addBtn = new Button
+            {
+                Content = "+ 添加灯",
+                Style = (Style)FindResource("StandardButtonStyle"),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(0, 4, 0, 16)
+            };
+            addBtn.Click += (s, e) =>
+            {
+                item.SignalLights.Add(new SignalLightItem { Color = "#FF4444", Size = 36, Icon = "", IsOn = true });
+                RenderEditList();
+            };
+            root.Children.Add(addBtn);
+
+            // 按钮
+            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            var okBtn = new Button { Content = "确定", Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)FindResource("PrimaryButtonStyle") };
+            var cancelBtn = new Button { Content = "取消", Width = 70, Style = (Style)FindResource("StandardButtonStyle") };
+            okBtn.Click += (s, e) =>
+            {
+                item.SignalLightVertical = orientCombo.SelectedIndex == 1;
+                var newStyle = styleCombo.SelectedIndex switch
+                {
+                    1 => "Square",
+                    2 => "Pixel",
+                    _ => "Circle"
+                };
+                double newSize = 36;
+                if (double.TryParse(sizeBox.Text.Trim(), out double parsedSize) && parsedSize > 0)
+                    newSize = parsedSize;
+                double newSpacing = 5;
+                if (double.TryParse(spacingBox.Text.Trim(), out double parsedSpacing) && parsedSpacing >= 0)
+                    newSpacing = parsedSpacing;
+                item.SignalLightSpacing = newSpacing;
+                item.SignalLightAlignment = alignCombo.SelectedIndex switch
+                {
+                    0 => "Left",
+                    2 => "Right",
+                    _ => "Center"
+                };
+                foreach (var light in item.SignalLights)
+                {
+                    light.LightStyle = newStyle;
+                    light.Size = newSize;
+                }
+                _configManager?.Save();
+                RenderPanels();
+                dialog.Close();
+            };
+            cancelBtn.Click += (s, e) => dialog.Close();
+            btnPanel.Children.Add(okBtn);
+            btnPanel.Children.Add(cancelBtn);
+            root.Children.Add(btnPanel);
+
+            dialog.Content = root;
+            dialog.ShowDialog();
+        }
+
+        #endregion
+
         private UIElement CreateTodoRow(TodoItem todo, PanelItem panelItem)
         {
             var row = new DockPanel { Margin = new Thickness(0, 0, 0, 4) };
@@ -1443,7 +1800,7 @@ namespace SideDesk.Controls
                 Width = 80,
                 Height = 28,
                 Background = timer.IsRunning ? Brushes.IndianRed : (Brush)FindResource("BrushAccent"),
-                Foreground = Brushes.White,
+                Foreground = (Brush)FindResource("BrushAccentText"),
                 FontWeight = FontWeights.Bold,
                 Cursor = Cursors.Hand
             };
@@ -1613,7 +1970,7 @@ namespace SideDesk.Controls
                 Height = 30,
                 Margin = new Thickness(0, 0, 8, 0),
                 Background = (Brush)FindResource("BrushAccent"),
-                Foreground = Brushes.White
+                Foreground = (Brush)FindResource("BrushAccentText")
             };
             saveBtn.Click += (s, e) =>
             {
@@ -2120,7 +2477,7 @@ namespace SideDesk.Controls
                 Content = "⎘",
                 Width = 20, Height = 20,
                 Background = Brushes.Transparent,
-                Foreground = new SolidColorBrush(Color.FromRgb(140, 140, 140)),
+                Foreground = (Brush)FindResource("BrushTextMuted"),
                 BorderThickness = new Thickness(0),
                 FontSize = 12,
                 Padding = new Thickness(0),
@@ -2479,6 +2836,25 @@ namespace SideDesk.Controls
             {
                 _currentWindowConfig.Panels.Add(newPanel);
             }
+        }
+
+        private void AddSignalLightPanel_Click(object sender, RoutedEventArgs e)
+        {
+            if (_currentWindowConfig == null || _configManager == null) return;
+            var newPanel = new PanelItem
+            {
+                Type = PanelType.SignalLight,
+                Title = "🚦 信号灯",
+                SignalLights = new List<SignalLightItem>
+                {
+                    new() { Color = "#FF4444", Size = 36, Icon = "", IsOn = true },
+                    new() { Color = "#FFAA00", Size = 36, Icon = "", IsOn = true },
+                    new() { Color = "#44CC44", Size = 36, Icon = "", IsOn = true }
+                }
+            };
+            AddPanelToGroupOrTop(newPanel);
+            _configManager.Save();
+            RenderPanels();
         }
 
         #endregion
@@ -3539,6 +3915,12 @@ namespace SideDesk.Controls
                     sp.Children.Add(addBtn);
                     return sp;
                 }
+                return contentPanel;
+            }
+
+            // 隐藏模块外框（全局开关或模块独立开关，非编辑模式生效）
+            if ((item.HideFrame || AppSettings.Instance.HideModuleFrame) && !_isEditMode)
+            {
                 return contentPanel;
             }
 
@@ -4693,7 +5075,7 @@ namespace SideDesk.Controls
                 {
                     Content = "🎤 点击开始",
                     Padding = new Thickness(12, 5, 12, 5),
-                    Foreground = Brushes.White,
+                    Foreground = (Brush)FindResource("BrushAccentText"),
                     FontWeight = FontWeights.Bold,
                     BorderThickness = new Thickness(0),
                     Background = Brushes.Transparent,
@@ -4936,7 +5318,7 @@ namespace SideDesk.Controls
                     Height = 35,
                     Margin = new Thickness(0, 0, 10, 0),
                     Background = (Brush)FindResource("BrushAccent"),
-                    Foreground = Brushes.White,
+                    Foreground = (Brush)FindResource("BrushAccentText"),
                     FontWeight = FontWeights.Bold
                 };
 
