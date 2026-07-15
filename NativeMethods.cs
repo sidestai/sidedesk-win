@@ -184,6 +184,145 @@ namespace SideDesk
             info.nShow = 1; // SW_SHOWNORMAL
             ShellExecuteEx(ref info);
         }
+
+        #region Shell Context Menu (Explorer 右键菜单)
+
+        [ComImport, Guid("000214e4-0000-0000-c000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        internal interface IContextMenu
+        {
+            [PreserveSig]
+            int QueryContextMenu(IntPtr hMenu, uint indexMenu, uint idCmdFirst, uint idCmdLast, uint uFlags);
+            [PreserveSig]
+            int InvokeCommand(ref CMINVOKECOMMANDINFO lpici);
+            [PreserveSig]
+            int GetCommandString(uint idCmd, uint uType, IntPtr pwReserved, StringBuilder pszName, uint cchMax);
+        }
+
+        [ComImport, Guid("000214f2-0000-0000-c000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        internal interface IContextMenu2 : IContextMenu
+        {
+            [PreserveSig]
+            int HandleMenuMsg(uint uMsg, IntPtr wParam, IntPtr lParam);
+        }
+
+        [ComImport, Guid("bcfce0a0-ec17-11d0-8d10-00a0c90f2719"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        internal interface IContextMenu3 : IContextMenu2
+        {
+            [PreserveSig]
+            int HandleMenuMsg2(uint uMsg, IntPtr wParam, IntPtr lParam, IntPtr plResult);
+        }
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        internal struct CMINVOKECOMMANDINFO
+        {
+            public int cbSize;
+            public uint fMask;
+            public IntPtr hwnd;
+            public IntPtr lpVerb;
+            [MarshalAs(UnmanagedType.LPStr)] public string lpParameters;
+            [MarshalAs(UnmanagedType.LPStr)] public string lpDirectory;
+            public int nShow;
+            public int dwHotKey;
+            public IntPtr hIcon;
+        }
+
+        [ComImport, Guid("000214E6-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        internal interface IShellFolder
+        {
+            void ParseDisplayName(IntPtr hwnd, IntPtr pbc, [MarshalAs(UnmanagedType.LPWStr)] string pszDisplayName, ref uint pchEaten, out IntPtr ppidl, ref uint pdwAttributes);
+            void EnumObjects(IntPtr hwnd, uint grfFlags, out IntPtr ppenumIDList);
+            void BindToObject(IntPtr pidl, IntPtr pbc, ref Guid riid, out IntPtr ppv);
+            void BindToStorage(IntPtr pidl, IntPtr pbc, ref Guid riid, out IntPtr ppv);
+            void CompareIDs(IntPtr lParam, IntPtr pidl1, IntPtr pidl2);
+            void CreateViewObject(IntPtr hwndOwner, ref Guid riid, out IntPtr ppv);
+            void GetAttributesOf(uint cidl, IntPtr apidl, ref uint rgfInOut);
+            void GetUIObjectOf(IntPtr hwndOwner, uint cidl, IntPtr apidl, ref Guid riid, IntPtr rgfReserved, out IntPtr ppv);
+            void GetDisplayNameOf(IntPtr pidl, uint uFlags, IntPtr lpName);
+            void SetNameOf(IntPtr hwnd, IntPtr pidl, [MarshalAs(UnmanagedType.LPWStr)] string pszName, uint uFlags, out IntPtr ppidlOut);
+        }
+
+        [DllImport("shell32.dll")]
+        internal static extern int SHGetDesktopFolder(out IntPtr ppshf);
+
+        [DllImport("shell32.dll")]
+        internal static extern int SHGetPathFromIDListW(IntPtr pidl, [MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszPath);
+
+        [DllImport("ole32.dll")]
+        internal static extern void CoTaskMemFree(IntPtr pv);
+
+        [DllImport("user32.dll")]
+        internal static extern IntPtr CreatePopupMenu();
+
+        [DllImport("user32.dll")]
+        internal static extern bool DestroyMenu(IntPtr hMenu);
+
+        [DllImport("user32.dll")]
+        internal static extern uint TrackPopupMenu(IntPtr hMenu, uint uFlags, int x, int y, int nReserved, IntPtr hwnd, IntPtr lprc);
+
+        internal const uint CMF_NORMAL = 0x00000000;
+        internal const uint CMF_EXTENDEDVERBS = 0x00000100;
+        internal const uint TPM_RETURNCMD = 0x0100;
+        internal const uint TPM_RIGHTBUTTON = 0x0002;
+
+        /// <summary>显示 Windows 资源管理器风格的右键菜单</summary>
+        internal static void ShowExplorerContextMenu(IntPtr ownerHwnd, string filePath, int x, int y)
+        {
+            IntPtr desktopPtr;
+            if (SHGetDesktopFolder(out desktopPtr) != 0) return;
+            var desktop = (IShellFolder)Marshal.GetObjectForIUnknown(desktopPtr);
+            Marshal.Release(desktopPtr);
+
+            uint eaten = 0, attrs = 0;
+            IntPtr pidl;
+            try
+            {
+                desktop.ParseDisplayName(ownerHwnd, IntPtr.Zero, filePath, ref eaten, out pidl, ref attrs);
+            }
+            catch { return; }
+
+            Guid iidContextMenu = typeof(IContextMenu).GUID;
+            IntPtr ctxPtr;
+            // apidl 必须是指向 PIDL 指针数组的指针
+            IntPtr apidl = Marshal.AllocCoTaskMem(IntPtr.Size);
+            try
+            {
+                Marshal.WriteIntPtr(apidl, pidl);
+                desktop.GetUIObjectOf(ownerHwnd, 1, apidl, ref iidContextMenu, IntPtr.Zero, out ctxPtr);
+            }
+            catch { CoTaskMemFree(pidl); Marshal.FreeCoTaskMem(apidl); return; }
+            Marshal.FreeCoTaskMem(apidl);
+
+            var ctxMenu = (IContextMenu)Marshal.GetObjectForIUnknown(ctxPtr);
+            Marshal.Release(ctxPtr);
+
+            IntPtr hMenu = CreatePopupMenu();
+            if (hMenu == IntPtr.Zero) { CoTaskMemFree(pidl); return; }
+
+            try
+            {
+                ctxMenu.QueryContextMenu(hMenu, 0, 1, 0x7FFF, CMF_NORMAL | CMF_EXTENDEDVERBS);
+
+                var ctxMenu2 = ctxMenu as IContextMenu2;
+                uint cmd = TrackPopupMenu(hMenu, TPM_RETURNCMD | TPM_RIGHTBUTTON, x, y, 0, ownerHwnd, IntPtr.Zero);
+
+                if (cmd > 0)
+                {
+                    var ici = new CMINVOKECOMMANDINFO();
+                    ici.cbSize = Marshal.SizeOf(ici);
+                    ici.hwnd = ownerHwnd;
+                    ici.lpVerb = (IntPtr)(cmd - 1);
+                    ici.nShow = 1;
+                    ctxMenu.InvokeCommand(ref ici);
+                }
+            }
+            finally
+            {
+                DestroyMenu(hMenu);
+                CoTaskMemFree(pidl);
+            }
+        }
+
+        #endregion
     }
 
     #region Structs

@@ -924,7 +924,18 @@ namespace SideDesk.Services
             ApplyModuleBackground(card);
 
             var mainStack = new StackPanel();
-
+            
+            // 时间显示（先声明，供 toggleBtn 的点击事件引用）
+            var timeDisplay = new Emoji.Wpf.TextBlock
+            {
+                Text = FormatTimeSpan(timer.GetElapsed()),
+                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
+                FontSize = 24,
+                FontWeight = FontWeights.Bold,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 8, 0, 8)
+            };
+            
             // 标题行
             var titleRow = new DockPanel();
             var titleLabel = new Emoji.Wpf.TextBlock
@@ -936,7 +947,55 @@ namespace SideDesk.Services
                 VerticalAlignment = VerticalAlignment.Center
             };
             titleRow.Children.Add(titleLabel);
-
+            
+            // 开始/停止圆钮（放在标题右侧）
+            var toggleBtn = new Button
+            {
+                Content = timer.IsRunning ? "⏹" : "▶",
+                Width = 22,
+                Height = 22,
+                FontSize = 10,
+                Background = timer.IsRunning ? Brushes.IndianRed : new SolidColorBrush(Color.FromRgb(52, 152, 219)),
+                Foreground = (Brush)Application.Current.FindResource("BrushAccentText"),
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand,
+                Padding = new Thickness(0),
+                Template = new ControlTemplate(typeof(Button))
+                {
+                    VisualTree = new FrameworkElementFactory(typeof(Border))
+                }
+            };
+            // 用圆角 Border 包裹实现圆形按钮效果
+            var toggleBtnBorder = new Border
+            {
+                CornerRadius = new CornerRadius(11),
+                Child = toggleBtn
+            };
+            DockPanel.SetDock(toggleBtnBorder, Dock.Right);
+            toggleBtn.Click += (s, e) =>
+            {
+                if (!timer.IsRunning)
+                {
+                    timer.IsRunning = true;
+                    timer.StartTime = DateTime.Now;
+                    QuickGroupManager.Save();
+                    StartTimerUpdate(timer, timeDisplay, panel, toggleBtn);
+                    toggleBtn.Content = "⏹";
+                    toggleBtn.Background = Brushes.IndianRed;
+                }
+                else
+                {
+                    if (timer.StartTime.HasValue)
+                        timer.ElapsedTime += (DateTime.Now - timer.StartTime.Value);
+                    timer.IsRunning = false;
+                    timer.StartTime = null;
+                    AccumulateToDailyRecord(timer);
+                    QuickGroupManager.Save();
+                    LoadGroups();
+                }
+            };
+            titleRow.Children.Add(toggleBtnBorder);
+            
             // 编辑按钮
             var editBtn = new Button
             {
@@ -952,61 +1011,10 @@ namespace SideDesk.Services
             DockPanel.SetDock(editBtn, Dock.Right);
             editBtn.Click += (s, e) => ShowEditTimerDialog(timer, panel);
             titleRow.Children.Add(editBtn);
-
+            
             mainStack.Children.Add(titleRow);
-
-            // 时间显示
-            var timeDisplay = new Emoji.Wpf.TextBlock
-            {
-                Text = FormatTimeSpan(timer.GetElapsed()),
-                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
-                FontSize = 24,
-                FontWeight = FontWeights.Bold,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 8, 0, 8)
-            };
             mainStack.Children.Add(timeDisplay);
-
-            // 控制按钮
-            var controlPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
-
-            var toggleBtn = new Button
-            {
-                Content = timer.IsRunning ? "⏹ 停止" : "▶ 开始",
-                Width = 80,
-                Height = 28,
-                Background = timer.IsRunning ? Brushes.IndianRed : new SolidColorBrush(Color.FromRgb(52, 152, 219)),
-                Foreground = (Brush)Application.Current.FindResource("BrushAccentText"),
-                BorderThickness = new Thickness(0),
-                Cursor = Cursors.Hand
-            };
-            toggleBtn.Click += (s, e) =>
-            {
-                if (!timer.IsRunning)
-                {
-                    timer.IsRunning = true;
-                    timer.StartTime = DateTime.Now;
-                    QuickGroupManager.Save();
-                    StartTimerUpdate(timer, timeDisplay, panel, toggleBtn);
-                    toggleBtn.Content = "⏹ 停止";
-                    toggleBtn.Background = Brushes.IndianRed;
-                }
-                else
-                {
-                    // 累加当前运行时段到 ElapsedTime
-                    if (timer.StartTime.HasValue)
-                        timer.ElapsedTime += (DateTime.Now - timer.StartTime.Value);
-                    timer.IsRunning = false;
-                    timer.StartTime = null;
-                    AccumulateToDailyRecord(timer);
-                    QuickGroupManager.Save();
-                    LoadGroups();
-                }
-            };
-            controlPanel.Children.Add(toggleBtn);
-
-            mainStack.Children.Add(controlPanel);
-
+            
             // 今日统计
             var today = DateTime.Now.ToString("yyyy-MM-dd");
             if (timer.DailyRecords.TryGetValue(today, out int todaySeconds) && todaySeconds > 0)
@@ -1187,8 +1195,7 @@ namespace SideDesk.Services
             {
                 Padding = new Thickness(6, 4, 6, 4),
                 Background = bgBrush,
-                Foreground = item.WindowHandle != IntPtr.Zero && NativeMethods.IsWindow(item.WindowHandle)
-                    ? (Brush)Application.Current.FindResource("BrushAccentText") : InactiveForeground,
+                Foreground = (Brush)Application.Current.FindResource("BrushItemButtonText"),
                 BorderThickness = new Thickness(2),
                 BorderBrush = Brushes.Transparent,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -1827,7 +1834,7 @@ namespace SideDesk.Services
                 if (alive != r.IsAlive)
                 {
                     r.IsAlive = alive;
-                    r.Button.Foreground = alive ? (Brush)Application.Current.FindResource("BrushAccentText") : InactiveForeground;
+                    r.Button.Foreground = (Brush)Application.Current.FindResource("BrushItemButtonText");
                 }
                 bool active = alive && fg != IntPtr.Zero && r.Item.WindowHandle == fg;
                 if (active == r.IsActive) continue;

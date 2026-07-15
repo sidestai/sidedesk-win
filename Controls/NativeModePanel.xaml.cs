@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -1649,48 +1650,158 @@ namespace SideDesk.Controls
         private UIElement BuildTimerWidget(PanelItem item)
         {
             item.TimerItems ??= new List<TimerItem>();
-
+        
             var container = new StackPanel();
-
-            // 添加计时器按钮
-            var addBtn = new Button
-            {
-                Content = "+ 添加计时器",
-                Height = 28,
-                Margin = new Thickness(0, 0, 0, 8),
-                Cursor = Cursors.Hand,
-                Visibility = item.SkipWrapper ? Visibility.Visible : (_isEditMode ? Visibility.Visible : Visibility.Collapsed)
-            };
-            addBtn.Click += (s, e) =>
-            {
-                item.TimerItems.Add(new TimerItem());
-                _configManager?.Save();
-                RenderPanels();
-            };
-            container.Children.Add(addBtn);
-
+        
             // 计时器列表
             foreach (var timer in item.TimerItems)
             {
                 var timerCard = CreateTimerCard(timer, item);
                 container.Children.Add(timerCard);
             }
-
-            // ✅ 根据SkipWrapper标记决定是否使用外层容器
-            if (item.SkipWrapper)
+        
+            // 空列表提示
+            if (item.TimerItems.Count == 0)
             {
-                return container;  // 直接返回内容，不用外层容器
-            }
-            else
-            {
-                // 非编辑模式下标题栏的「+」用于添加计时器（与“+ 添加计时器”按钮等效）
-                return WrapWidget("⏱ 计时器", container, item, _isEditMode ? null : () =>
+                container.Children.Add(new Emoji.Wpf.TextBlock
                 {
-                    item.TimerItems.Add(new TimerItem());
-                    _configManager?.Save();
-                    RenderPanels();
+                    Text = "暂无计时器，点击标题栏 ▾ 添加",
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
+                    FontSize = 12,
+                    Opacity = 0.7,
+                    Margin = new Thickness(2, 2, 0, 2)
                 });
             }
+        
+            // === 自定义标题栏：标题 + 下拉三角 ===
+            var defaultTitle = "⏱ 计时器";
+            var displayTitle = string.IsNullOrEmpty(item.Title) ? defaultTitle : item.Title;
+            var header = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+        
+            var titleBlock = new Emoji.Wpf.TextBlock
+            {
+                Text = displayTitle,
+                FontWeight = FontWeights.SemiBold,
+                FontSize = 13,
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = (Brush)FindResource("BrushTextMain")
+            };
+        
+            if (_isEditMode)
+            {
+                titleBlock.Cursor = Cursors.Hand;
+                titleBlock.ToolTip = "双击编辑名称";
+                titleBlock.MouseLeftButtonDown += (s, e) =>
+                {
+                    if (e.ClickCount == 2)
+                    {
+                        PromptRenamePanel(item, defaultTitle);
+                        e.Handled = true;
+                    }
+                };
+            }
+        
+            // 下拉三角按钮
+            var dropBtn = new Button
+            {
+                Content = "\u25BE",
+                FontSize = 12,
+                Padding = new Thickness(4, 0, 4, 0),
+                Background = Brushes.Transparent,
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Visibility = _isEditMode ? Visibility.Collapsed : Visibility.Visible
+            };
+        
+            // 构建下拉菜单
+            var dropMenu = new ContextMenu();
+        
+            var addTimerMi = new MenuItem { Header = "添加计时器" };
+            addTimerMi.Click += (s, e) =>
+            {
+                item.TimerItems.Add(new TimerItem());
+                _configManager?.Save();
+                RenderPanels();
+            };
+            dropMenu.Items.Add(addTimerMi);
+        
+            dropMenu.Items.Add(new Separator());
+        
+            // 隐藏模块外框
+            var hideFrameMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
+            hideFrameMi.Click += (s, e) => { item.HideFrame = hideFrameMi.IsChecked; _configManager?.Save(); RenderPanels(); };
+            dropMenu.Items.Add(hideFrameMi);
+        
+            // 删除模块
+            var delModuleMi = new MenuItem { Header = "删除模块" };
+            delModuleMi.Click += (s, e) => RemovePanel(item);
+            dropMenu.Items.Add(delModuleMi);
+        
+            dropBtn.Click += (s, e) =>
+            {
+                dropMenu.IsOpen = true;
+            };
+        
+            DockPanel.SetDock(dropBtn, Dock.Right);
+            header.Children.Add(dropBtn);
+            header.Children.Add(titleBlock);
+        
+            var mainStack = new StackPanel();
+            mainStack.Children.Add(header);
+            mainStack.Children.Add(container);
+        
+            // 隐藏模块外框判断
+            if ((item.HideFrame || AppSettings.Instance.HideModuleFrame) && !_isEditMode)
+            {
+                var bareBorder = new Border
+                {
+                    Margin = new Thickness(0, 0, 0, 8),
+                    Padding = new Thickness(0),
+                    Background = Brushes.Transparent,
+                    BorderThickness = new Thickness(0),
+                    Child = mainStack
+                };
+                var bareMenu = new ContextMenu();
+                var bareHideMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
+                bareHideMi.Click += (s, e) => { item.HideFrame = bareHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
+                bareMenu.Items.Add(bareHideMi);
+                var bareDelMi = new MenuItem { Header = "删除模块" };
+                bareDelMi.Click += (s, e) => RemovePanel(item);
+                bareMenu.Items.Add(bareDelMi);
+                bareBorder.ContextMenu = bareMenu;
+                return bareBorder;
+            }
+        
+            var wrapper = new Border
+            {
+                Margin = new Thickness(0, 0, 0, 12),
+                Padding = new Thickness(0, 10, 0, 10),
+                CornerRadius = new CornerRadius(6),
+                Background = (Brush)FindResource("BrushInputBG"),
+                BorderBrush = (Brush)FindResource("BrushBorder"),
+                BorderThickness = new Thickness(1),
+                Child = mainStack
+            };
+        
+            if (_isEditMode)
+            {
+                wrapper.MouseEnter += (s, e) => dropBtn.Visibility = Visibility.Visible;
+                wrapper.MouseLeave += (s, e) => dropBtn.Visibility = Visibility.Collapsed;
+            }
+        
+            // 右键菜单
+            var moduleMenu = new ContextMenu();
+            var hideFrameMi2 = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
+            hideFrameMi2.Click += (s, e) => { item.HideFrame = hideFrameMi2.IsChecked; _configManager?.Save(); RenderPanels(); };
+            moduleMenu.Items.Add(hideFrameMi2);
+            var delMi2 = new MenuItem { Header = "删除模块" };
+            delMi2.Click += (s, e) => RemovePanel(item);
+            moduleMenu.Items.Add(delMi2);
+            wrapper.ContextMenu = moduleMenu;
+        
+            return wrapper;
         }
 
         private Border CreateTimerCard(TimerItem timer, PanelItem panelItem)
@@ -1714,7 +1825,19 @@ namespace SideDesk.Controls
 
             var mainStack = new StackPanel();
 
-            // 顶部：名称 + 操作按钮
+            // 时间显示（先声明，供 toggleBtn 的点击事件引用）
+            var timeDisplay = new Emoji.Wpf.TextBlock
+            {
+                Text = FormatTimeSpan(timer.GetElapsed()),
+                FontSize = 24,
+                FontWeight = FontWeights.Bold,
+                FontFamily = new FontFamily("Consolas"),
+                Foreground = timer.IsRunning ? (Brush)FindResource("BrushAccent") : (Brush)FindResource("BrushTextMain"),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 8, 0, 8)
+            };
+
+            // 标题行：名称 + 开始/停止圆钮 + 编辑按钮
             var headerPanel = new DockPanel();
             
             var nameBlock = new Emoji.Wpf.TextBlock
@@ -1726,115 +1849,77 @@ namespace SideDesk.Controls
                 VerticalAlignment = VerticalAlignment.Center
             };
 
-            // 编辑模式下的操作按钮
-            var actionPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-            
-            if (_isEditMode)
-            {
-                // 编辑按钮
-                var editBtn = new Button
-                {
-                    Content = "✏",
-                    Width = 24,
-                    Height = 24,
-                    Margin = new Thickness(0, 0, 4, 0),
-                    FontSize = 12,
-                    Background = Brushes.Transparent,
-                    Foreground = (Brush)FindResource("BrushTextMuted"),
-                    BorderThickness = new Thickness(0),
-                    Cursor = Cursors.Hand
-                };
-                editBtn.Click += (s, e) => ShowTimerEditDialog(timer, panelItem);
-                actionPanel.Children.Add(editBtn);
-
-                // 删除按钮
-                var deleteBtn = new Button
-                {
-                    Content = "✕",
-                    Width = 24,
-                    Height = 24,
-                    FontSize = 12,
-                    Background = Brushes.Transparent,
-                    Foreground = (Brush)FindResource("BrushTextMuted"),
-                    BorderThickness = new Thickness(0),
-                    Cursor = Cursors.Hand,
-                    Tag = timer.Id  // 保存timer ID
-                };
-                deleteBtn.Click += (s, e) =>
-                {
-                    // 通过ID查找并删除，避免闭包问题
-                    var timerId = ((Button)s!).Tag as string;
-                    var timerToRemove = panelItem.TimerItems?.FirstOrDefault(t => t.Id == timerId);
-                    if (timerToRemove != null)
-                        DeleteTimer(timerToRemove, panelItem);
-                };
-                actionPanel.Children.Add(deleteBtn);
-            }
-
-            DockPanel.SetDock(actionPanel, Dock.Right);
-            headerPanel.Children.Add(actionPanel);
-            headerPanel.Children.Add(nameBlock);
-
-            mainStack.Children.Add(headerPanel);
-
-            // 时间显示
-            var timeDisplay = new Emoji.Wpf.TextBlock
-            {
-                Text = FormatTimeSpan(timer.ElapsedTime),
-                FontSize = 24,
-                FontWeight = FontWeights.Bold,
-                FontFamily = new FontFamily("Consolas"),
-                Foreground = timer.IsRunning ? (Brush)FindResource("BrushAccent") : (Brush)FindResource("BrushTextMain"),
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 8, 0, 8)
-            };
-            mainStack.Children.Add(timeDisplay);
-
-            // 控制按钮
-            var controlPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
-            
-            // 根据当前运行状态初始化按钮
+            // 开始/停止圆钮（放在标题右侧）
             var toggleBtn = new Button
             {
-                Content = timer.IsRunning ? "⏹ 停止" : "▶ 开始",
-                Width = 80,
-                Height = 28,
-                Background = timer.IsRunning ? Brushes.IndianRed : (Brush)FindResource("BrushAccent"),
-                Foreground = (Brush)FindResource("BrushAccentText"),
-                FontWeight = FontWeights.Bold,
-                Cursor = Cursors.Hand
+                Content = timer.IsRunning ? "⏹" : "▶",
+                Width = 22,
+                Height = 22,
+                FontSize = 10,
+                Background = timer.IsRunning ? Brushes.IndianRed : new SolidColorBrush(Color.FromRgb(52, 152, 219)),
+                Foreground = Brushes.White,
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand,
+                Padding = new Thickness(0)
             };
-            
+            var toggleBtnBorder = new Border
+            {
+                CornerRadius = new CornerRadius(11),
+                Child = toggleBtn
+            };
+            DockPanel.SetDock(toggleBtnBorder, Dock.Right);
+
             // 如果计时器正在运行，启动更新
             if (timer.IsRunning)
             {
                 StartTimerUpdate(timer, timeDisplay, panelItem, toggleBtn);
             }
-            
+
             toggleBtn.Click += (s, e) =>
             {
                 if (!timer.IsRunning)
                 {
-                    // 开始计时
                     timer.IsRunning = true;
                     timer.StartTime = DateTime.Now;
                     _configManager?.Save();
                     StartTimerUpdate(timer, timeDisplay, panelItem, toggleBtn);
-                    toggleBtn.Content = "⏹ 停止";
+                    toggleBtn.Content = "";
                     toggleBtn.Background = Brushes.IndianRed;
                 }
                 else
                 {
-                    // 停止计时（累加到今日总计）
+                    if (timer.StartTime.HasValue)
+                        timer.ElapsedTime += (DateTime.Now - timer.StartTime.Value);
                     timer.IsRunning = false;
+                    timer.StartTime = null;
                     AccumulateToDailyRecord(timer);
                     _configManager?.Save();
                     RenderPanels();
                 }
             };
-            controlPanel.Children.Add(toggleBtn);
 
-            mainStack.Children.Add(controlPanel);
+            // 编辑按钮
+            var editBtn = new Button
+            {
+                Content = "✏",
+                Width = 24,
+                Height = 24,
+                FontSize = 12,
+                Background = Brushes.Transparent,
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand,
+                Visibility = _isEditMode ? Visibility.Visible : Visibility.Collapsed
+            };
+            DockPanel.SetDock(editBtn, Dock.Right);
+            editBtn.Click += (s, e) => ShowTimerEditDialog(timer, panelItem);
+
+            headerPanel.Children.Add(editBtn);
+            headerPanel.Children.Add(toggleBtnBorder);
+            headerPanel.Children.Add(nameBlock);
+
+            mainStack.Children.Add(headerPanel);
+            mainStack.Children.Add(timeDisplay);
 
             // 今日统计
             var today = DateTime.Now.ToString("yyyy-MM-dd");
@@ -2013,35 +2098,41 @@ namespace SideDesk.Controls
 
             var container = new StackPanel();
 
-            // 添加按钮区域
-            var addPanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 5), Visibility = _isEditMode ? Visibility.Visible : Visibility.Collapsed };
-
-            var addFileBtn = new Button
-            {
-                Content = "+ 文件",
-                Margin = new Thickness(0, 0, 5, 0),
-                Padding = new Thickness(8, 3, 8, 3),
-                Cursor = Cursors.Hand
-            };
-            addFileBtn.Click += (s, e) => AddFileToArea(item);
-
-            var addFolderBtn = new Button
-            {
-                Content = "+ 文件夹",
-                Padding = new Thickness(8, 3, 8, 3),
-                Cursor = Cursors.Hand
-            };
-            addFolderBtn.Click += (s, e) => AddFolderToArea(item);
-
-            addPanel.Children.Add(addFileBtn);
-            addPanel.Children.Add(addFolderBtn);
-            container.Children.Add(addPanel);
-
             // 拖拽事件处理委托
+            Panel? fileAreaListContainer = null; // 稍后赋值，用于检测落点是否在目录项上
+
+            // 判断拖放位置是否在某个目录项上
+            bool IsDropOverFolderItem(DragEventArgs e)
+            {
+                if (fileAreaListContainer == null) return false;
+                try
+                {
+                    var pt = e.GetPosition(fileAreaListContainer);
+                    var hit = VisualTreeHelper.HitTest(fileAreaListContainer, pt);
+                    if (hit == null) return false;
+                    var dep = hit.VisualHit;
+                    while (dep != null && dep != fileAreaListContainer)
+                    {
+                        if (dep is FrameworkElement fe)
+                        {
+                            // 检查 Tag 是否标记为文件夹项
+                            if (fe.Tag is string t && t == "__folder__") return true;
+                            // 检查 DataContext
+                            if (fe.DataContext is FileAreaItem fai && fai.IsFolder) return true;
+                        }
+                        dep = VisualTreeHelper.GetParent(dep);
+                    }
+                }
+                catch { }
+                return false;
+            }
+
             void HandleFileDragEnter(object sender, DragEventArgs e, Border zone)
             {
                 if (e.Data.GetDataPresent(DataFormats.FileDrop))
                 {
+                    // 如果落在目录项上，不处理（让目录项自己处理）
+                    if (IsDropOverFolderItem(e)) return;
                     e.Effects = DragDropEffects.Copy;
                     zone.BorderBrush = (Brush)FindResource("BrushAccent");
                 }
@@ -2055,6 +2146,12 @@ namespace SideDesk.Controls
             {
                 if (e.Data.GetDataPresent(DataFormats.FileDrop))
                 {
+                    // 如果落在目录项上，不添加到列表（由目录项的 HandleDropOnFolder 处理）
+                    if (IsDropOverFolderItem(e))
+                    {
+                        e.Handled = true;
+                        return;
+                    }
                     var files = (string[])e.Data.GetData(DataFormats.FileDrop);
                     foreach (var path in files)
                     {
@@ -2106,7 +2203,7 @@ namespace SideDesk.Controls
             }
             else
             {
-                // 文件列表（同时支持拖拽）
+                // 文件列表（支持多种布局 + 拖拽）
                 var listBorder = new Border
                 {
                     AllowDrop = true,
@@ -2114,225 +2211,470 @@ namespace SideDesk.Controls
                     BorderBrush = (Brush)FindResource("BrushBorder"),
                     BorderThickness = new Thickness(1),
                     CornerRadius = new CornerRadius(3),
-                    Padding = new Thickness(0, 4, 0, 4)
+                    Padding = new Thickness(4)
                 };
-                var listContainer = new StackPanel();
-                listBorder.Child = listContainer;
 
                 listBorder.DragEnter += (s, e) => HandleFileDragEnter(s, e, listBorder);
+                listBorder.DragOver += (s, e) =>
+                {
+                    if (e.Data.GetDataPresent(DataFormats.FileDrop))
+                    {
+                        // 如果拖在目录项上，不设置 Effects（让目录项自己的 DragOver 处理）
+                        if (!IsDropOverFolderItem(e))
+                        {
+                            e.Effects = DragDropEffects.Copy;
+                        }
+                    }
+                    e.Handled = true;
+                };
                 listBorder.DragLeave += (s, e) => HandleFileDragLeave(s, e, listBorder);
                 listBorder.Drop += (s, e) => { listBorder.BorderBrush = (Brush)FindResource("BrushBorder"); HandleFileDrop(s, e); };
 
+                Panel listContainer;
+                bool isIconLayout = item.FileAreaLayout == "LargeIcons" || item.FileAreaLayout == "SmallIcons";
+                int cols = Math.Clamp(item.FileAreaColumns, 1, 4);
+
+                if (isIconLayout)
+                {
+                    var wrap = new WrapPanel { Orientation = Orientation.Horizontal };
+                    listContainer = wrap;
+                }
+                else if (cols > 1)
+                {
+                    var grid = new UniformGrid { Columns = cols };
+                    listContainer = grid;
+                }
+                else
+                {
+                    var sp = new StackPanel();
+                    listContainer = sp;
+                }
+
+                listBorder.Child = listContainer;
+                fileAreaListContainer = listContainer; // 供 IsDropOverFolderItem 使用
+
                 foreach (var fileItem in item.FileItems.OrderByDescending(f => f.AddedAt))
                 {
-                    var row = new DockPanel { Margin = new Thickness(0, 2, 0, 2) };
-
-                    // 删除按钮
-                    var delBtn = new Button
-                    {
-                        Content = "✕", FontSize = 10,
-                        Padding = new Thickness(3, 0, 3, 0),
-                        Background = Brushes.Transparent,
-                        Foreground = (Brush)FindResource("BrushTextMuted"),
-                        BorderThickness = new Thickness(0),
-                        Cursor = Cursors.Hand,
-                        Visibility = Visibility.Collapsed
-                    };
-                    var capturedFileItem = fileItem;
-                    delBtn.Click += (s, e) =>
-                    {
-                        item.FileItems.Remove(capturedFileItem);
-                        _configManager?.Save();
-                        RenderPanels();
-                    };
-
-                    // 打开按钮
-                    var openBtn = new Button
-                    {
-                        Content = "📂", FontSize = 10,
-                        Padding = new Thickness(3, 0, 3, 0),
-                        Background = Brushes.Transparent,
-                        BorderThickness = new Thickness(0),
-                        Cursor = Cursors.Hand,
-                        Visibility = Visibility.Collapsed
-                    };
                     string filePath = fileItem.Path;
-                    openBtn.Click += (s, e) =>
-                    {
-                        try { Process.Start(new ProcessStartInfo(filePath) { UseShellExecute = true }); }
-                        catch { }
-                    };
-
-                    // 图标 + 名称
-                    var icon = fileItem.IsFolder ? "📁" : "📄";
-                    var nameBlock = new Emoji.Wpf.TextBlock
-                    {
-                        Text = $"{icon} {fileItem.Name}",
-                        VerticalAlignment = VerticalAlignment.Center,
-                        TextTrimming = TextTrimming.CharacterEllipsis,
-                        Foreground = (Brush)FindResource("BrushTextMain"),
-                        ToolTip = fileItem.Path,
-                        Cursor = Cursors.Hand
-                    };
-
-                    // 点击项：目录则打开目录，文件则打开所在目录并选中
                     bool isFolder = fileItem.IsFolder;
-                    nameBlock.MouseLeftButtonUp += (s, e) =>
+                    var capturedFileItem = fileItem;
+
+                    if (isIconLayout)
                     {
-                        try
+                        // ===== 图标布局（大/小图标）=====
+                        bool isLarge = item.FileAreaLayout == "LargeIcons";
+                        double iconSize = isLarge ? 48 : 28;
+                        double itemW = isLarge ? 80 : 60;
+
+                        var iconStack = new StackPanel
                         {
-                            if (isFolder)
+                            Width = itemW,
+                            Margin = new Thickness(4),
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            Cursor = Cursors.Hand,
+                            Tag = isFolder ? "__folder__" : null
+                        };
+
+                        // 图标
+                        var iconText = new Emoji.Wpf.TextBlock
+                        {
+                            Text = isFolder ? "📁" : "📄",
+                            FontSize = iconSize,
+                            HorizontalAlignment = HorizontalAlignment.Center
+                        };
+                        iconStack.Children.Add(iconText);
+
+                        // 名称
+                        var nameText = new Emoji.Wpf.TextBlock
+                        {
+                            Text = fileItem.Name,
+                            FontSize = isLarge ? 12 : 11,
+                            TextAlignment = TextAlignment.Center,
+                            TextTrimming = TextTrimming.CharacterEllipsis,
+                            TextWrapping = TextWrapping.Wrap,
+                            MaxHeight = isLarge ? 32 : 16,
+                            Foreground = (Brush)FindResource("BrushTextMain"),
+                            ToolTip = fileItem.Path,
+                            HorizontalAlignment = HorizontalAlignment.Center
+                        };
+                        iconStack.Children.Add(nameText);
+
+                        // 点击打开
+                        iconStack.MouseLeftButtonUp += (s, e) =>
+                        {
+                            try
                             {
-                                Process.Start(new ProcessStartInfo("explorer.exe", filePath) { UseShellExecute = false });
+                                if (isFolder)
+                                    Process.Start(new ProcessStartInfo("explorer.exe", filePath) { UseShellExecute = false });
+                                else
+                                    Process.Start(new ProcessStartInfo(filePath) { UseShellExecute = true });
                             }
-                            else
+                            catch { }
+                        };
+
+                        // 右键菜单（调用资源管理器原生右键菜单）
+                        iconStack.MouseRightButtonDown += (s, e) =>
+                        {
+                            iconStack.Opacity = 0.7;
+                            var hwnd = new System.Windows.Interop.WindowInteropHelper(Window.GetWindow(this)).Handle;
+                            var pt = System.Windows.Forms.Cursor.Position;
+                            NativeMethods.ShowExplorerContextMenu(hwnd, filePath, pt.X, pt.Y);
+                            iconStack.Opacity = 1.0;
+                            e.Handled = true;
+                        };
+
+                        // 编辑模式：hover 显示删除
+                        if (_isEditMode)
+                        {
+                            var delIconBtn = new Button
                             {
-                                Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{filePath}\"") { UseShellExecute = false });
-                            }
+                                Content = "✕", FontSize = 9,
+                                Width = 16, Height = 16,
+                                Background = Brushes.IndianRed,
+                                Foreground = Brushes.White,
+                                BorderThickness = new Thickness(0),
+                                Padding = new Thickness(0),
+                                Cursor = Cursors.Hand,
+                                HorizontalAlignment = HorizontalAlignment.Right,
+                                Visibility = Visibility.Collapsed,
+                                Margin = new Thickness(0, -iconSize - 4, 0, 0)
+                            };
+                            var delIconBorder = new Border
+                            {
+                                CornerRadius = new CornerRadius(8),
+                                Child = delIconBtn
+                            };
+                            delIconBtn.Click += (s, e) =>
+                            {
+                                item.FileItems.Remove(capturedFileItem);
+                                _configManager?.Save();
+                                RenderPanels();
+                            };
+                            iconStack.MouseEnter += (s, e) => delIconBorder.Visibility = Visibility.Visible;
+                            iconStack.MouseLeave += (s, e) => delIconBorder.Visibility = Visibility.Collapsed;
+
+                            // 用 Grid 叠放图标和删除按钮
+                            var iconGrid = new Grid();
+                            iconGrid.Children.Add(iconStack);
+                            iconGrid.Children.Add(delIconBorder);
+                            listContainer.Children.Add(iconGrid);
                         }
-                        catch { }
-                    };
-
-                    DockPanel.SetDock(delBtn, Dock.Right);
-                    DockPanel.SetDock(openBtn, Dock.Right);
-                    row.Children.Add(delBtn);
-                    row.Children.Add(openBtn);
-                    row.Children.Add(nameBlock);
-
-                    // 右键菜单
-                    var ctx = new ContextMenu();
-                    if (isFolder)
-                    {
-                        var menuOpen = new MenuItem { Header = "打开" };
-                        menuOpen.Click += (s, e) =>
+                        else
                         {
-                            try { Process.Start(new ProcessStartInfo("explorer.exe", filePath) { UseShellExecute = false }); }
-                            catch { }
-                        };
-                        ctx.Items.Add(menuOpen);
+                            listContainer.Children.Add(iconStack);
+                        }
 
-                        var menuEmpty = new MenuItem { Header = "清空文件夹" };
-                        menuEmpty.Click += (s, e) =>
+                        // 目录项支持拖拽接收
+                        if (isFolder)
                         {
-                            if (MessageBox.Show($"确定清空\n{filePath}\n下的所有内容？", "确认清空", MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK)
+                            iconStack.AllowDrop = true;
+                            iconStack.DragEnter += (s, e) =>
                             {
-                                try
+                                if (e.Data.GetDataPresent(DataFormats.FileDrop))
                                 {
-                                    foreach (var f in System.IO.Directory.GetFiles(filePath)) System.IO.File.Delete(f);
-                                    foreach (var d in System.IO.Directory.GetDirectories(filePath)) System.IO.Directory.Delete(d, true);
+                                    e.Effects = DragDropEffects.Copy;
+                                    iconStack.Opacity = 0.6;
                                 }
-                                catch (Exception ex) { MessageBox.Show($"清空失败: {ex.Message}"); }
-                            }
-                        };
-                        ctx.Items.Add(menuEmpty);
-
-                        var menuDel = new MenuItem { Header = "删除" };
-                        menuDel.Click += (s, e) =>
-                        {
-                            if (MessageBox.Show($"确定删除文件夹\n{filePath}\n及其所有内容？", "确认删除", MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK)
+                                e.Handled = true;
+                            };
+                            iconStack.DragOver += (s, e) =>
                             {
-                                try
+                                if (e.Data.GetDataPresent(DataFormats.FileDrop))
                                 {
-                                    System.IO.Directory.Delete(filePath, true);
-                                    item.FileItems.Remove(capturedFileItem);
-                                    _configManager?.Save();
-                                    RenderPanels();
+                                    e.Effects = DragDropEffects.Copy;
                                 }
-                                catch (Exception ex) { MessageBox.Show($"删除失败: {ex.Message}"); }
-                            }
-                        };
-                        ctx.Items.Add(menuDel);
-
-                        ctx.Items.Add(new Separator());
-                        var menuProps1 = new MenuItem { Header = "属性" };
-                        menuProps1.Click += (s, e) =>
-                        {
-                            try { NativeMethods.ShowFileProperties(filePath); }
-                            catch { }
-                        };
-                        ctx.Items.Add(menuProps1);
+                                e.Handled = true;
+                            };
+                            iconStack.DragLeave += (s, e) => iconStack.Opacity = 1.0;
+                            iconStack.Drop += (s, e) =>
+                            {
+                                iconStack.Opacity = 1.0;
+                                HandleDropOnFolder(s, e, filePath, item);
+                            };
+                        }
                     }
                     else
                     {
-                        var menuOpen = new MenuItem { Header = "打开" };
-                        menuOpen.Click += (s, e) =>
+                        // ===== 列表布局（支持多列）=====
+                        var row = new DockPanel { Margin = new Thickness(0, 2, 0, 2), Tag = isFolder ? "__folder__" : null };
+
+                        // 删除按钮
+                        var delBtn = new Button
+                        {
+                            Content = "✕", FontSize = 10,
+                            Padding = new Thickness(3, 0, 3, 0),
+                            Background = Brushes.Transparent,
+                            Foreground = (Brush)FindResource("BrushTextMuted"),
+                            BorderThickness = new Thickness(0),
+                            Cursor = Cursors.Hand,
+                            Visibility = Visibility.Collapsed
+                        };
+                        delBtn.Click += (s, e) =>
+                        {
+                            item.FileItems.Remove(capturedFileItem);
+                            _configManager?.Save();
+                            RenderPanels();
+                        };
+
+                        // 打开按钮
+                        var openBtn = new Button
+                        {
+                            Content = "📂", FontSize = 10,
+                            Padding = new Thickness(3, 0, 3, 0),
+                            Background = Brushes.Transparent,
+                            BorderThickness = new Thickness(0),
+                            Cursor = Cursors.Hand,
+                            Visibility = Visibility.Collapsed
+                        };
+                        openBtn.Click += (s, e) =>
                         {
                             try { Process.Start(new ProcessStartInfo(filePath) { UseShellExecute = true }); }
                             catch { }
                         };
-                        ctx.Items.Add(menuOpen);
 
-                        var menuLocate = new MenuItem { Header = "定位" };
-                        menuLocate.Click += (s, e) =>
+                        // 图标 + 名称
+                        var icon = isFolder ? "📁" : "📄";
+                        var nameBlock = new Emoji.Wpf.TextBlock
                         {
-                            try { Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{filePath}\"") { UseShellExecute = false }); }
-                            catch { }
+                            Text = $"{icon} {fileItem.Name}",
+                            VerticalAlignment = VerticalAlignment.Center,
+                            TextTrimming = TextTrimming.CharacterEllipsis,
+                            Foreground = (Brush)FindResource("BrushTextMain"),
+                            ToolTip = fileItem.Path,
+                            Cursor = Cursors.Hand
                         };
-                        ctx.Items.Add(menuLocate);
 
-                        var menuDel = new MenuItem { Header = "删除" };
-                        menuDel.Click += (s, e) =>
+                        nameBlock.MouseLeftButtonUp += (s, e) =>
                         {
-                            if (MessageBox.Show($"确定删除文件\n{filePath}？", "确认删除", MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK)
+                            try
                             {
-                                try
-                                {
-                                    System.IO.File.Delete(filePath);
-                                    item.FileItems.Remove(capturedFileItem);
-                                    _configManager?.Save();
-                                    RenderPanels();
-                                }
-                                catch (Exception ex) { MessageBox.Show($"删除失败: {ex.Message}"); }
+                                if (isFolder)
+                                    Process.Start(new ProcessStartInfo("explorer.exe", filePath) { UseShellExecute = false });
+                                else
+                                    Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{filePath}\"") { UseShellExecute = false });
                             }
-                        };
-                        ctx.Items.Add(menuDel);
-
-                        ctx.Items.Add(new Separator());
-                        var menuProps2 = new MenuItem { Header = "属性" };
-                        menuProps2.Click += (s, e) =>
-                        {
-                            try { NativeMethods.ShowFileProperties(filePath); }
                             catch { }
                         };
-                        ctx.Items.Add(menuProps2);
+
+                        DockPanel.SetDock(delBtn, Dock.Right);
+                        DockPanel.SetDock(openBtn, Dock.Right);
+                        row.Children.Add(delBtn);
+                        row.Children.Add(openBtn);
+                        row.Children.Add(nameBlock);
+
+                        // 右键菜单（调用资源管理器原生右键菜单）
+                        var highlightBrush = (Brush)FindResource("BrushListViewItemMouseOver");
+                        row.MouseRightButtonDown += (s, e) =>
+                        {
+                            row.Background = highlightBrush;
+                            var hwnd = new System.Windows.Interop.WindowInteropHelper(Window.GetWindow(this)).Handle;
+                            var pt = System.Windows.Forms.Cursor.Position;
+                            NativeMethods.ShowExplorerContextMenu(hwnd, filePath, pt.X, pt.Y);
+                            row.Background = Brushes.Transparent;
+                            e.Handled = true;
+                        };
+
+                        // hover 显示按钮
+                        if (_isEditMode)
+                        {
+                            row.MouseEnter += (s, e) => { delBtn.Visibility = Visibility.Visible; openBtn.Visibility = Visibility.Visible; };
+                            row.MouseLeave += (s, e) => { delBtn.Visibility = Visibility.Collapsed; openBtn.Visibility = Visibility.Collapsed; };
+                        }
+                        else
+                        {
+                            row.MouseEnter += (s, e) => { openBtn.Visibility = Visibility.Visible; };
+                            row.MouseLeave += (s, e) => { openBtn.Visibility = Visibility.Collapsed; };
+                        }
+
+                        // 目录项支持拖拽接收
+                        if (isFolder)
+                        {
+                            row.AllowDrop = true;
+                            row.DragEnter += (s, e) =>
+                            {
+                                if (e.Data.GetDataPresent(DataFormats.FileDrop))
+                                {
+                                    e.Effects = DragDropEffects.Copy;
+                                    row.Background = (Brush)FindResource("BrushListViewItemMouseOver");
+                                }
+                                e.Handled = true;
+                            };
+                            row.DragOver += (s, e) =>
+                            {
+                                if (e.Data.GetDataPresent(DataFormats.FileDrop))
+                                {
+                                    e.Effects = DragDropEffects.Copy;
+                                }
+                                e.Handled = true;
+                            };
+                            row.DragLeave += (s, e) => row.Background = Brushes.Transparent;
+                            row.Drop += (s, e) =>
+                            {
+                                row.Background = Brushes.Transparent;
+                                HandleDropOnFolder(s, e, filePath, item);
+                            };
+                        }
+
+                        listContainer.Children.Add(row);
                     }
-
-                    // 从列表移除（不删除磁盘文件）
-                    ctx.Items.Add(new Separator());
-                    var menuRemoveFromList = new MenuItem { Header = "从列表移除" };
-                    menuRemoveFromList.Click += (s, e) =>
-                    {
-                        item.FileItems.Remove(capturedFileItem);
-                        _configManager?.Save();
-                        RenderPanels();
-                    };
-                    ctx.Items.Add(menuRemoveFromList);
-
-                    row.ContextMenu = ctx;
-
-                    // 右键时高亮选中项
-                    var highlightBrush = (Brush)FindResource("BrushListViewItemMouseOver");
-                    ctx.Opened += (s, e) => row.Background = highlightBrush;
-                    ctx.Closed += (s, e) => row.Background = Brushes.Transparent;
-
-                    // hover 显示操作按钮（删除按钮仅编辑模式，打开按钮始终可hover）
-                    if (_isEditMode)
-                    {
-                        row.MouseEnter += (s, e) => { delBtn.Visibility = Visibility.Visible; openBtn.Visibility = Visibility.Visible; };
-                        row.MouseLeave += (s, e) => { delBtn.Visibility = Visibility.Collapsed; openBtn.Visibility = Visibility.Collapsed; };
-                    }
-                    else
-                    {
-                        row.MouseEnter += (s, e) => { openBtn.Visibility = Visibility.Visible; };
-                        row.MouseLeave += (s, e) => { openBtn.Visibility = Visibility.Collapsed; };
-                    }
-
-                    listContainer.Children.Add(row);
                 }
                 container.Children.Add(listBorder);
             }
 
-            return WrapWidget("📁 文件区", container, item);
+            // === 自定义标题栏：标题 + 下拉三角 ===
+            var defaultTitle = "📁 文件区";
+            var displayTitle = string.IsNullOrEmpty(item.Title) ? defaultTitle : item.Title;
+            var header = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+
+            var titleBlock = new Emoji.Wpf.TextBlock
+            {
+                Text = displayTitle,
+                FontWeight = FontWeights.SemiBold,
+                FontSize = 13,
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = (Brush)FindResource("BrushTextMain")
+            };
+
+            if (_isEditMode)
+            {
+                titleBlock.Cursor = Cursors.Hand;
+                titleBlock.ToolTip = "双击编辑名称";
+                titleBlock.MouseLeftButtonDown += (s, e) =>
+                {
+                    if (e.ClickCount == 2)
+                    {
+                        PromptRenamePanel(item, defaultTitle);
+                        e.Handled = true;
+                    }
+                };
+            }
+
+            // 下拉三角按钮
+            var dropBtn = new Button
+            {
+                Content = "\u25BE",
+                FontSize = 12,
+                Padding = new Thickness(4, 0, 4, 0),
+                Background = Brushes.Transparent,
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Visibility = _isEditMode ? Visibility.Collapsed : Visibility.Visible
+            };
+
+            // 构建下拉菜单
+            var dropMenu = new ContextMenu();
+
+            var addFileMi = new MenuItem { Header = "添加文件" };
+            addFileMi.Click += (s, e) => AddFileToArea(item);
+            dropMenu.Items.Add(addFileMi);
+
+            var addFolderMi = new MenuItem { Header = "添加目录" };
+            addFolderMi.Click += (s, e) => AddFolderToArea(item);
+            dropMenu.Items.Add(addFolderMi);
+
+            dropMenu.Items.Add(new Separator());
+
+            // 布局子菜单
+            var layoutMenu = new MenuItem { Header = "布局" };
+            var largeIconsMi = new MenuItem { Header = "大图标", IsCheckable = true, IsChecked = item.FileAreaLayout == "LargeIcons" };
+            largeIconsMi.Click += (s, e) => { item.FileAreaLayout = "LargeIcons"; _configManager?.Save(); RenderPanels(); };
+            layoutMenu.Items.Add(largeIconsMi);
+            var smallIconsMi = new MenuItem { Header = "小图标", IsCheckable = true, IsChecked = item.FileAreaLayout == "SmallIcons" };
+            smallIconsMi.Click += (s, e) => { item.FileAreaLayout = "SmallIcons"; _configManager?.Save(); RenderPanels(); };
+            layoutMenu.Items.Add(smallIconsMi);
+            var listMi = new MenuItem { Header = "列表", IsCheckable = true, IsChecked = item.FileAreaLayout == "List" };
+            listMi.Click += (s, e) => { item.FileAreaLayout = "List"; _configManager?.Save(); RenderPanels(); };
+            layoutMenu.Items.Add(listMi);
+            dropMenu.Items.Add(layoutMenu);
+
+            // 列数子菜单
+            var columnsMenu = new MenuItem { Header = "列" };
+            for (int col = 1; col <= 4; col++)
+            {
+                var colItem = new MenuItem { Header = $"{col}列", IsCheckable = true, IsChecked = item.FileAreaColumns == col };
+                int colCount = col;
+                colItem.Click += (s, e) => { item.FileAreaColumns = colCount; _configManager?.Save(); RenderPanels(); };
+                columnsMenu.Items.Add(colItem);
+            }
+            dropMenu.Items.Add(columnsMenu);
+
+            dropMenu.Items.Add(new Separator());
+
+            // 隐藏模块外框
+            var hideFrameMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
+            hideFrameMi.Click += (s, e) => { item.HideFrame = hideFrameMi.IsChecked; _configManager?.Save(); RenderPanels(); };
+            dropMenu.Items.Add(hideFrameMi);
+
+            // 删除模块
+            var delModuleMi = new MenuItem { Header = "删除模块" };
+            delModuleMi.Click += (s, e) => RemovePanel(item);
+            dropMenu.Items.Add(delModuleMi);
+
+            dropBtn.Click += (s, e) =>
+            {
+                dropMenu.IsOpen = true;
+            };
+
+            DockPanel.SetDock(dropBtn, Dock.Right);
+            header.Children.Add(dropBtn);
+            header.Children.Add(titleBlock);
+
+            var mainStack = new StackPanel();
+            mainStack.Children.Add(header);
+            mainStack.Children.Add(container);
+
+            // 隐藏模块外框判断
+            if ((item.HideFrame || AppSettings.Instance.HideModuleFrame) && !_isEditMode)
+            {
+                var bareBorder = new Border
+                {
+                    Margin = new Thickness(0, 0, 0, 8),
+                    Padding = new Thickness(0),
+                    Background = Brushes.Transparent,
+                    BorderThickness = new Thickness(0),
+                    Child = mainStack
+                };
+                var bareMenu = new ContextMenu();
+                var bareHideMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
+                bareHideMi.Click += (s, e) => { item.HideFrame = bareHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
+                bareMenu.Items.Add(bareHideMi);
+                var bareDelMi = new MenuItem { Header = "删除模块" };
+                bareDelMi.Click += (s, e) => RemovePanel(item);
+                bareMenu.Items.Add(bareDelMi);
+                bareBorder.ContextMenu = bareMenu;
+                return bareBorder;
+            }
+
+            var wrapper = new Border
+            {
+                Margin = new Thickness(0, 0, 0, 12),
+                Padding = new Thickness(0, 10, 0, 10),
+                CornerRadius = new CornerRadius(6),
+                Background = (Brush)FindResource("BrushInputBG"),
+                BorderBrush = (Brush)FindResource("BrushBorder"),
+                BorderThickness = new Thickness(1),
+                Child = mainStack
+            };
+
+            if (_isEditMode)
+            {
+                wrapper.MouseEnter += (s, e) => dropBtn.Visibility = Visibility.Visible;
+                wrapper.MouseLeave += (s, e) => dropBtn.Visibility = Visibility.Collapsed;
+            }
+
+            // 右键菜单
+            var moduleMenu = new ContextMenu();
+            var hideFrameMi2 = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
+            hideFrameMi2.Click += (s, e) => { item.HideFrame = hideFrameMi2.IsChecked; _configManager?.Save(); RenderPanels(); };
+            moduleMenu.Items.Add(hideFrameMi2);
+            var delMi2 = new MenuItem { Header = "删除模块" };
+            delMi2.Click += (s, e) => RemovePanel(item);
+            moduleMenu.Items.Add(delMi2);
+            wrapper.ContextMenu = moduleMenu;
+
+            return wrapper;
         }
 
         private void AddFileToArea(PanelItem item)
@@ -2377,6 +2719,206 @@ namespace SideDesk.Controls
                 });
                 _configManager?.Save();
                 RenderPanels();
+            }
+        }
+
+        /// <summary>打开文件或文件夹</summary>
+        private void OpenFileOrFolder(string path, bool isFolder)
+        {
+            try
+            {
+                if (isFolder)
+                {
+                    Process.Start(new ProcessStartInfo("explorer.exe", path) { UseShellExecute = false });
+                }
+                else
+                {
+                    Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = false });
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>构建文件项右键菜单</summary>
+        private ContextMenu BuildFileItemContextMenu(FileAreaItem fileItem, PanelItem panelItem, string filePath, bool isFolder)
+        {
+            var ctx = new ContextMenu();
+            var capturedFileItem = fileItem;
+
+            if (isFolder)
+            {
+                var menuOpen = new MenuItem { Header = "打开" };
+                menuOpen.Click += (s, e) =>
+                {
+                    try { Process.Start(new ProcessStartInfo("explorer.exe", filePath) { UseShellExecute = false }); }
+                    catch { }
+                };
+                ctx.Items.Add(menuOpen);
+
+                var menuEmpty = new MenuItem { Header = "清空文件夹" };
+                menuEmpty.Click += (s, e) =>
+                {
+                    if (MessageBox.Show($"确定清空\n{filePath}\n下的所有内容？", "确认清空", MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK)
+                    {
+                        try
+                        {
+                            foreach (var f in System.IO.Directory.GetFiles(filePath)) System.IO.File.Delete(f);
+                            foreach (var d in System.IO.Directory.GetDirectories(filePath)) System.IO.Directory.Delete(d, true);
+                        }
+                        catch (Exception ex) { MessageBox.Show($"清空失败：{ex.Message}"); }
+                    }
+                };
+                ctx.Items.Add(menuEmpty);
+
+                var menuDel = new MenuItem { Header = "删除" };
+                menuDel.Click += (s, e) =>
+                {
+                    if (MessageBox.Show($"确定删除文件夹\n{filePath}\n及其所有内容？", "确认删除", MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK)
+                    {
+                        try
+                        {
+                            System.IO.Directory.Delete(filePath, true);
+                            panelItem.FileItems.Remove(capturedFileItem);
+                            _configManager?.Save();
+                            RenderPanels();
+                        }
+                        catch (Exception ex) { MessageBox.Show($"删除失败：{ex.Message}"); }
+                    }
+                };
+                ctx.Items.Add(menuDel);
+
+                ctx.Items.Add(new Separator());
+                var menuProps = new MenuItem { Header = "属性" };
+                menuProps.Click += (s, e) =>
+                {
+                    try { NativeMethods.ShowFileProperties(filePath); }
+                    catch { }
+                };
+                ctx.Items.Add(menuProps);
+            }
+            else
+            {
+                var menuOpen = new MenuItem { Header = "打开" };
+                menuOpen.Click += (s, e) =>
+                {
+                    try { Process.Start(new ProcessStartInfo(filePath) { UseShellExecute = true }); }
+                    catch { }
+                };
+                ctx.Items.Add(menuOpen);
+
+                var menuLocate = new MenuItem { Header = "定位" };
+                menuLocate.Click += (s, e) =>
+                {
+                    try { Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{filePath}\"") { UseShellExecute = false }); }
+                    catch { }
+                };
+                ctx.Items.Add(menuLocate);
+
+                var menuDel = new MenuItem { Header = "删除" };
+                menuDel.Click += (s, e) =>
+                {
+                    if (MessageBox.Show($"确定删除文件\n{filePath}？", "确认删除", MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK)
+                    {
+                        try
+                        {
+                            System.IO.File.Delete(filePath);
+                            panelItem.FileItems.Remove(capturedFileItem);
+                            _configManager?.Save();
+                            RenderPanels();
+                        }
+                        catch (Exception ex) { MessageBox.Show($"删除失败：{ex.Message}"); }
+                    }
+                };
+                ctx.Items.Add(menuDel);
+
+                ctx.Items.Add(new Separator());
+                var menuProps = new MenuItem { Header = "属性" };
+                menuProps.Click += (s, e) =>
+                {
+                    try { NativeMethods.ShowFileProperties(filePath); }
+                    catch { }
+                };
+                ctx.Items.Add(menuProps);
+            }
+
+            // 从列表移除（不删除磁盘文件）
+            ctx.Items.Add(new Separator());
+            var menuRemoveFromList = new MenuItem { Header = "从列表移除" };
+            menuRemoveFromList.Click += (s, e) =>
+            {
+                panelItem.FileItems.Remove(capturedFileItem);
+                _configManager?.Save();
+                RenderPanels();
+            };
+            ctx.Items.Add(menuRemoveFromList);
+
+            return ctx;
+        }
+
+        /// <summary>处理文件拖拽到文件夹</summary>
+        private void HandleDropOnFolder(object sender, DragEventArgs e, string folderPath, PanelItem panelItem)
+        {
+            if (e.Data.GetDataPresent(DataFormats.FileDrop))
+            {
+                var files = (string[])e.Data.GetData(DataFormats.FileDrop);
+                foreach (var path in files)
+                {
+                    var fileName = System.IO.Path.GetFileName(path);
+                    var destPath = System.IO.Path.Combine(folderPath, fileName);
+
+                    try
+                    {
+                        if (System.IO.File.Exists(path))
+                        {
+                            // 复制文件到目标目录
+                            System.IO.File.Copy(path, destPath, overwrite: true);
+                        }
+                        else if (System.IO.Directory.Exists(path))
+                        {
+                            // 复制目录到目标目录
+                            CopyDirectory(path, destPath);
+                        }
+
+                        // 如果拖入的文件已在文件区列表中，更新其路径为目录内的新位置
+                        var existingItem = panelItem.FileItems.FirstOrDefault(f => f.Path == path);
+                        if (existingItem != null)
+                        {
+                            existingItem.Path = destPath;
+                            existingItem.Name = fileName;
+                        }
+                        // 如果文件不在文件区列表中，也添加进去（方便用户看到）
+                        else
+                        {
+                            panelItem.FileItems.Add(new FileAreaItem
+                            {
+                                Path = destPath,
+                                Name = fileName,
+                                IsFolder = System.IO.Directory.Exists(destPath)
+                            });
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"复制失败：{ex.Message}");
+                    }
+                }
+                _configManager?.Save();
+                RenderPanels();
+                e.Handled = true;
+            }
+        }
+
+        /// <summary>递归复制目录</summary>
+        private static void CopyDirectory(string sourceDir, string destDir)
+        {
+            System.IO.Directory.CreateDirectory(destDir);
+            foreach (var file in System.IO.Directory.GetFiles(sourceDir))
+            {
+                System.IO.File.Copy(file, System.IO.Path.Combine(destDir, System.IO.Path.GetFileName(file)), true);
+            }
+            foreach (var dir in System.IO.Directory.GetDirectories(sourceDir))
+            {
+                CopyDirectory(dir, System.IO.Path.Combine(destDir, System.IO.Path.GetFileName(dir)));
             }
         }
 

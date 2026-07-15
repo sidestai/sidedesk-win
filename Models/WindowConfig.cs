@@ -43,6 +43,8 @@ public class PanelItem
     public bool SignalLightVertical { get; set; } = false; // 信号灯纵向排列
     public double SignalLightSpacing { get; set; } = 5;    // 信号灯间距（px）
     public string SignalLightAlignment { get; set; } = "Center"; // 信号灯对齐：Left/Center/Right
+    public string FileAreaLayout { get; set; } = "List";         // 文件区布局：LargeIcons/SmallIcons/List
+    public int FileAreaColumns { get; set; } = 1;                // 文件区列数（1~4）
 }
 
 public class FileAreaItem
