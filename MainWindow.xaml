@@ -22,6 +22,8 @@
             <RowDefinition Height="30"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
+
+        <!-- 标题栏 -->
         <Border Grid.Row="0" Background="{DynamicResource BrushInputBG}">
             <Border.ContextMenu>
                 <ContextMenu>
@@ -83,6 +85,37 @@
                 </Button>
             </Grid>
         </Border>
+
         <controls:SidebarPanel x:Name="sidebarPanel" Grid.Row="1" />
+
+        <!-- 通知栏（浮动覆盖层，不影响布局） -->
+        <Border x:Name="notificationBar" Grid.Row="1"
+                VerticalAlignment="Top"
+                Panel.ZIndex="100"
+                Background="{DynamicResource BrushAccent}"
+                Padding="8,4"
+                Visibility="Visible">
+            <DockPanel>
+                <Button DockPanel.Dock="Right"
+                        Content="✕"
+                        FontSize="11"
+                        Width="18" Height="18"
+                        Margin="4,0,0,0"
+                        Background="Transparent"
+                        Foreground="{DynamicResource BrushAccentText}"
+                        BorderThickness="0"
+                        Cursor="Hand"
+                        ToolTip="关闭通知"
+                        Click="NotificationClose_Click"/>
+                <TextBlock x:Name="notificationText"
+                           Text="🔔 示例通知：欢迎使用 SideDesk！点击查看详情"
+                           Foreground="{DynamicResource BrushAccentText}"
+                           FontSize="11"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"
+                           Cursor="Hand"
+                           MouseLeftButtonUp="NotificationBar_Click"/>
+            </DockPanel>
+        </Border>
     </Grid>
 </local:AppBarWindow>

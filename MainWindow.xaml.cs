@@ -577,5 +577,76 @@ namespace SideDesk
         }
 
         #endregion
+
+        #region 通知栏
+
+        private void NotificationBar_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            var dialog = new Window
+            {
+                Title = "通知详情",
+                Width = 400,
+                Height = 250,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this,
+                ResizeMode = ResizeMode.NoResize,
+                Background = (Brush)FindResource("BrushBG")
+            };
+
+            var stack = new StackPanel { Margin = new Thickness(16) };
+
+            stack.Children.Add(new TextBlock
+            {
+                Text = "通知详情",
+                FontSize = 16,
+                FontWeight = FontWeights.Bold,
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                Margin = new Thickness(0, 0, 0, 12)
+            });
+
+            stack.Children.Add(new TextBlock
+            {
+                Text = "这是一条示例通知。\n\n欢迎使用 SideDesk！\n\n您可以在这里显示系统通知、更新提示、任务提醒等内容。",
+                FontSize = 13,
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 20)
+            });
+
+            var closeBtn = new Button
+            {
+                Content = "关闭",
+                Width = 80,
+                Height = 30,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Background = (Brush)FindResource("BrushAccent"),
+                Foreground = (Brush)FindResource("BrushAccentText")
+            };
+            closeBtn.Click += (s, ev) => dialog.Close();
+            stack.Children.Add(closeBtn);
+
+            dialog.Content = stack;
+            dialog.ShowDialog();
+        }
+
+        private void NotificationClose_Click(object sender, RoutedEventArgs e)
+        {
+            notificationBar.Visibility = Visibility.Collapsed;
+        }
+
+        /// <summary>显示通知栏（可传入自定义文本）</summary>
+        public void ShowNotification(string text)
+        {
+            notificationText.Text = text;
+            notificationBar.Visibility = Visibility.Visible;
+        }
+
+        /// <summary>隐藏通知栏</summary>
+        public void HideNotification()
+        {
+            notificationBar.Visibility = Visibility.Collapsed;
+        }
+
+        #endregion
     }
 }
