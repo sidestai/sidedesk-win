@@ -19,7 +19,8 @@ public enum PanelType
     Timer,           // 计时器
     Group,           // 分组
     TodoList,        // 今日待办
-    SignalLight      // 信号灯
+    SignalLight,     // 信号灯
+    DigitalEmployee  // 数字员工
 }
 
 public class PanelItem
@@ -46,6 +47,8 @@ public class PanelItem
     public string FileAreaLayout { get; set; } = "List";         // 文件区布局：LargeIcons/SmallIcons/List
     public int FileAreaColumns { get; set; } = 1;                // 文件区列数（1~4）
     public double? PanelHeight { get; set; }                     // 模块内容区自定义高度（px）；null=自动高度
+    public List<string>? DigitalEmployeeIds { get; set; }        // 数字员工模块：展示的员工 Id 列表（引用全局员工库）
+    public int DigitalEmployeeColumns { get; set; } = 3;         // 数字员工模块：每排展示的员工数（1~5）
 }
 
 public class FileAreaItem

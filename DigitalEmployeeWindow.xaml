@@ -1,0 +1,165 @@
+<Window x:Class="SideDesk.DigitalEmployeeWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="数字员工管理" Height="520" Width="720"
+        WindowStartupLocation="CenterScreen" ResizeMode="NoResize"
+        Background="{DynamicResource BrushBG}">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="210"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- 左侧员工 Tab 列表 -->
+        <Border Grid.Column="0" Background="{DynamicResource BrushInputBG}"
+                BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,1,0">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Top" Text="员工列表"
+                           FontSize="{DynamicResource FontSizeTitle}"
+                           FontWeight="Bold"
+                           Foreground="{DynamicResource BrushTextMain}"
+                           Margin="20,20,20,12"/>
+
+                <!-- 底部添加按钮 -->
+                <Border DockPanel.Dock="Bottom" Padding="12,10"
+                        BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,1,0,0">
+                    <Button Content="+ 添加员工" Click="AddEmployee_Click"
+                            Style="{StaticResource GhostButtonStyle}" Padding="12,6"
+                            HorizontalAlignment="Stretch"/>
+                </Border>
+
+                <!-- 员工 Tab -->
+                <ListBox x:Name="employeeList"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         Foreground="{DynamicResource BrushTextMain}"
+                         ItemContainerStyle="{StaticResource GlobalListBoxItemStyle}"
+                         SelectionChanged="EmployeeList_SelectionChanged"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         Padding="8,0">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" Margin="0,4">
+                                <Border Width="30" Height="30" CornerRadius="15"
+                                        Background="{DynamicResource BrushAccent}"
+                                        Margin="0,0,10,0">
+                                    <TextBlock Text="{Binding AvatarFallback}"
+                                               Foreground="White" FontSize="14"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Name}"
+                                               Foreground="{DynamicResource BrushTextMain}"
+                                               FontSize="13" FontWeight="SemiBold"/>
+                                    <TextBlock Text="{Binding Role}"
+                                               Foreground="{DynamicResource BrushTextMuted}"
+                                               FontSize="11"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+        </Border>
+
+        <!-- 右侧员工信息 -->
+        <Grid Grid.Column="1">
+            <!-- 空状态提示 -->
+            <TextBlock x:Name="emptyHint" Text="请选择或添加一个员工"
+                       Foreground="{DynamicResource BrushTextMuted}"
+                       FontSize="{DynamicResource FontSizeNormal}"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+
+            <ScrollViewer x:Name="detailScroll" VerticalScrollBarVisibility="Auto" Padding="30,20"
+                          Visibility="Collapsed">
+                <StackPanel>
+                    <!-- 头像 + 姓名区 -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,24">
+                        <Border Width="72" Height="72" CornerRadius="36"
+                                Background="{DynamicResource BrushAccent}" Margin="0,0,16,0">
+                            <Grid>
+                                <TextBlock x:Name="avatarFallbackText" Text="?"
+                                           Foreground="White" FontSize="30"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <Border x:Name="avatarImageHost" CornerRadius="36" Visibility="Collapsed">
+                                    <Border.Background>
+                                        <ImageBrush x:Name="avatarImageBrush" Stretch="UniformToFill"/>
+                                    </Border.Background>
+                                </Border>
+                            </Grid>
+                        </Border>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock x:Name="detailTitle" Text="员工信息"
+                                       FontSize="{DynamicResource FontSizeSubtitle}"
+                                       FontWeight="Bold"
+                                       Foreground="{DynamicResource BrushTextMain}"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <Button Content="选择头像" Click="ChooseAvatar_Click"
+                                        Style="{StaticResource GhostButtonStyle}" Padding="10,4" Margin="0,0,8,0"/>
+                                <Button Content="清除头像" Click="ClearAvatar_Click"
+                                        Style="{StaticResource GhostButtonStyle}" Padding="10,4"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- 姓名 -->
+                    <TextBlock Text="姓名" Foreground="{DynamicResource BrushTextMain}"
+                               FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                    <TextBox x:Name="nameBox" Style="{StaticResource GlobalTextBoxStyle}"
+                             TextChanged="Field_Changed" Margin="0,0,0,16"/>
+
+                    <!-- Emoji 头像 -->
+                    <TextBlock Text="Emoji 头像（无图片时显示）" Foreground="{DynamicResource BrushTextMain}"
+                               FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                    <TextBox x:Name="emojiBox" Style="{StaticResource GlobalTextBoxStyle}"
+                             TextChanged="Field_Changed" Margin="0,0,0,16"/>
+
+                    <!-- 职位 + 部门 -->
+                    <Grid Margin="0,0,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="16"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="职位/角色" Foreground="{DynamicResource BrushTextMain}"
+                                       FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                            <TextBox x:Name="roleBox" Style="{StaticResource GlobalTextBoxStyle}"
+                                     TextChanged="Field_Changed"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="部门" Foreground="{DynamicResource BrushTextMain}"
+                                       FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                            <TextBox x:Name="departmentBox" Style="{StaticResource GlobalTextBoxStyle}"
+                                     TextChanged="Field_Changed"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- 技能 -->
+                    <TextBlock Text="擅长/技能" Foreground="{DynamicResource BrushTextMain}"
+                               FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                    <TextBox x:Name="skillsBox" Style="{StaticResource GlobalTextBoxStyle}"
+                             TextChanged="Field_Changed" Margin="0,0,0,16"/>
+
+                    <!-- 联系方式 -->
+                    <TextBlock Text="联系方式" Foreground="{DynamicResource BrushTextMain}"
+                               FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                    <TextBox x:Name="contactBox" Style="{StaticResource GlobalTextBoxStyle}"
+                             TextChanged="Field_Changed" Margin="0,0,0,16"/>
+
+                    <!-- 简介 -->
+                    <TextBlock Text="简介/职责" Foreground="{DynamicResource BrushTextMain}"
+                               FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                    <TextBox x:Name="descriptionBox" Style="{StaticResource GlobalTextBoxStyle}"
+                             TextChanged="Field_Changed" Margin="0,0,0,24"
+                             AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80"
+                             VerticalScrollBarVisibility="Auto"/>
+
+                    <!-- 删除按钮 -->
+                    <Button Content="删除该员工" Click="DeleteEmployee_Click"
+                            Style="{StaticResource ErrorButton_SM}" HorizontalAlignment="Left"/>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+</Window>

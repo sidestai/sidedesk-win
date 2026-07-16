@@ -34,6 +34,21 @@ namespace SideDesk.Controls
         private WindowConfig? _currentWindowConfig;
         private WindowConfigManager? _configManager;
 
+        // 数字员工全局库（懒加载，模块间共享）
+        private DigitalEmployeeManager? _digitalEmployeeManager;
+        private DigitalEmployeeManager DigitalEmployees
+        {
+            get
+            {
+                if (_digitalEmployeeManager == null)
+                {
+                    _digitalEmployeeManager = DigitalEmployeeManager.Load();
+                    _digitalEmployeeManager.EnsureDefault();
+                }
+                return _digitalEmployeeManager;
+            }
+        }
+
         // 服务实例
         private KeyboardHookService? _keyboardHookService;
         private MouseHookService? _mouseHookService;
@@ -59,7 +74,7 @@ namespace SideDesk.Controls
         private bool _isEditMode = false;
 
         // 顶层面板拖拽排序指示器（编辑模式下上下拖动模块/分组调换位置）
-        private Border? _panelDragIndicator;
+        // 指示器为 XAML 中的常驻叠加层 panelDropIndicator，不再动态插入/移除子元素，避免布局抖动
 
         // 今日待办到点提醒
         private DispatcherTimer? _todoReminderTimer;
@@ -349,6 +364,7 @@ namespace SideDesk.Controls
                 PanelType.Timer => BuildTimerWidget(item),
                 PanelType.TodoList => BuildTodoWidget(item),
                 PanelType.SignalLight => BuildSignalLightWidget(item),
+                PanelType.DigitalEmployee => BuildDigitalEmployeeWidget(item),
                 PanelType.Group => BuildGroupWidget(item),
                 _ => null
             };
@@ -418,6 +434,12 @@ namespace SideDesk.Controls
             var displayTitle = string.IsNullOrEmpty(item.Title) ? defaultTitle : item.Title;
 
             var header = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+            // 编辑模式下，标题栏作为拖拽手柄（仅此处可拖拽调整模块位置）
+            if (_isEditMode)
+            {
+                header.Tag = PanelDragHandleTag;
+                header.Cursor = Cursors.SizeAll;
+            }
             var titleBlock = new Emoji.Wpf.TextBlock
             {
                 Text = displayTitle,
@@ -518,7 +540,15 @@ namespace SideDesk.Controls
                 Content = content
             };
             if (item.PanelHeight.HasValue && item.PanelHeight.Value > 0)
+            {
                 host.Height = item.PanelHeight.Value;
+                // 固定高度时，让内容至少擑满可视区域：短内容填满整个模块，长内容仍可滚动
+                if (content is FrameworkElement cfe)
+                {
+                    cfe.SetBinding(FrameworkElement.MinHeightProperty,
+                        new System.Windows.Data.Binding(nameof(ScrollViewer.ViewportHeight)) { Source = host });
+                }
+            }
 
             host.PreviewMouseWheel += (s, e) =>
             {
@@ -619,6 +649,37 @@ namespace SideDesk.Controls
         /// </summary>
         private UIElement WrapResizable(FrameworkElement widget, PanelItem item)
         {
+            // 带固定标题栏的卡片（标题栏 Uid = panelHeader）：标题栏保持固定，仅标题栏下方到底部的内容参与滚动
+            if (widget is Border headerCard && headerCard.Child is StackPanel ms
+                && ms.Children.Count >= 1 && ms.Children[0] is FrameworkElement hdr && hdr.Uid == PanelHeaderUid)
+            {
+                // 拆分“标题栏”与“其余内容”
+                var contentChildren = ms.Children.Cast<UIElement>().Skip(1).ToList();
+                ms.Children.Clear();
+                headerCard.Child = null;
+
+                UIElement content;
+                if (contentChildren.Count == 1)
+                {
+                    content = contentChildren[0];
+                }
+                else
+                {
+                    var cs = new StackPanel();
+                    foreach (var c in contentChildren) cs.Children.Add(c);
+                    content = cs;
+                }
+
+                var contentHost = BuildResizableHost(content, item);
+                var outer = new StackPanel();
+                outer.Children.Add(hdr);
+                outer.Children.Add(contentHost);
+                if (_isEditMode)
+                    outer.Children.Add(CreateResizeGrip(contentHost, item));
+                headerCard.Child = outer;
+                return headerCard;
+            }
+
             // 标准卡片：将卡片内容包入可约束高度的 ScrollViewer，手柄置于卡片外框内部底部
             if (widget is Border card && card.Child is UIElement inner)
             {
@@ -705,6 +766,13 @@ namespace SideDesk.Controls
 
             // 标题栏（展开/收起箭头 + 分组名）
             var titleBar = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
+            titleBar.Uid = PanelHeaderUid;
+            // 编辑模式下，标题栏作为拖拽手柄
+            if (_isEditMode)
+            {
+                titleBar.Tag = PanelDragHandleTag;
+                titleBar.Cursor = Cursors.SizeAll;
+            }
             var arrowBtn = new Button
             {
                 Content = item.IsExpanded ? "▼" : "▶",
@@ -837,7 +905,7 @@ namespace SideDesk.Controls
             var border = new Border
             {
                 Margin = new Thickness(0, 0, 0, 12),
-                Padding = new Thickness(0, 10, 0, 10),
+                Padding = new Thickness(0, 10, 0, 0),
                 CornerRadius = new CornerRadius(6),
                 Background = (Brush)FindResource("BrushInputBG"),
                 BorderBrush = (Brush)FindResource("BrushBorder"),
@@ -1839,6 +1907,8 @@ namespace SideDesk.Controls
             var defaultTitle = "⏱ 计时器";
             var displayTitle = string.IsNullOrEmpty(item.Title) ? defaultTitle : item.Title;
             var header = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+            header.Uid = PanelHeaderUid;
+            if (_isEditMode) { header.Tag = PanelDragHandleTag; header.Cursor = Cursors.SizeAll; }
         
             var titleBlock = new Emoji.Wpf.TextBlock
             {
@@ -1939,7 +2009,7 @@ namespace SideDesk.Controls
             var wrapper = new Border
             {
                 Margin = new Thickness(0, 0, 0, 12),
-                Padding = new Thickness(0, 10, 0, 10),
+                Padding = new Thickness(0, 10, 0, 0),
                 CornerRadius = new CornerRadius(6),
                 Background = (Brush)FindResource("BrushInputBG"),
                 BorderBrush = (Brush)FindResource("BrushBorder"),
@@ -2258,7 +2328,8 @@ namespace SideDesk.Controls
         {
             item.FileItems ??= new List<FileAreaItem>();
 
-            var container = new StackPanel();
+            // 用 Grid 作为内容容器，使其唯一子项（文件列表/拖拽区）在固定高度时可垂直擑满
+            var container = new Grid();
 
             // 拖拽事件处理委托
             Panel? fileAreaListContainer = null; // 稍后赋值，用于检测落点是否在目录项上
@@ -2687,6 +2758,8 @@ namespace SideDesk.Controls
             var defaultTitle = "📁 文件区";
             var displayTitle = string.IsNullOrEmpty(item.Title) ? defaultTitle : item.Title;
             var header = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+            header.Uid = PanelHeaderUid;
+            if (_isEditMode) { header.Tag = PanelDragHandleTag; header.Cursor = Cursors.SizeAll; }
 
             var titleBlock = new Emoji.Wpf.TextBlock
             {
@@ -2812,7 +2885,7 @@ namespace SideDesk.Controls
             var wrapper = new Border
             {
                 Margin = new Thickness(0, 0, 0, 12),
-                Padding = new Thickness(0, 10, 0, 10),
+                Padding = new Thickness(0, 10, 0, 0),
                 CornerRadius = new CornerRadius(6),
                 Background = (Brush)FindResource("BrushInputBG"),
                 BorderBrush = (Brush)FindResource("BrushBorder"),
@@ -3561,6 +3634,429 @@ namespace SideDesk.Controls
             RenderPanels();
         }
 
+        private void AddDigitalEmployeePanel_Click(object sender, RoutedEventArgs e)
+        {
+            if (_currentWindowConfig == null || _configManager == null) return;
+            // 默认展示全局库中前几个员工
+            var defaultIds = DigitalEmployees.Employees.Take(3).Select(emp => emp.Id).ToList();
+            var newPanel = new PanelItem
+            {
+                Type = PanelType.DigitalEmployee,
+                Title = "👥 数字员工",
+                DigitalEmployeeIds = defaultIds
+            };
+            AddPanelToGroupOrTop(newPanel);
+            _configManager.Save();
+            RenderPanels();
+        }
+
+        #endregion
+
+        #region 数字员工面板
+
+        private UIElement BuildDigitalEmployeeWidget(PanelItem item)
+        {
+            item.DigitalEmployeeIds ??= new List<string>();
+            var columns = Math.Clamp(item.DigitalEmployeeColumns <= 0 ? 3 : item.DigitalEmployeeColumns, 1, 5);
+
+            var container = new StackPanel();
+
+            // 按模块指定的 Id 顺序取出存在的员工
+            var shown = item.DigitalEmployeeIds
+                .Select(id => DigitalEmployees.GetById(id))
+                .Where(emp => emp != null)
+                .Cast<DigitalEmployee>()
+                .ToList();
+
+            if (shown.Count == 0)
+            {
+                container.Children.Add(new Emoji.Wpf.TextBlock
+                {
+                    Text = "暂未选择展示员工，点击标题栏 ▾ 选择",
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
+                    FontSize = 12,
+                    Opacity = 0.7,
+                    Margin = new Thickness(2, 2, 0, 2)
+                });
+            }
+            else
+            {
+                var grid = new WrapPanel { Orientation = Orientation.Horizontal };
+                foreach (var emp in shown)
+                    grid.Children.Add(CreateEmployeeCard(emp, columns));
+                container.Children.Add(grid);
+            }
+
+            // === 自定义标题栏：标题 + 下拉三角 ===
+            var defaultTitle = "👥 数字员工";
+            var displayTitle = string.IsNullOrEmpty(item.Title) ? defaultTitle : item.Title;
+            var header = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+            header.Uid = PanelHeaderUid;
+            if (_isEditMode) { header.Tag = PanelDragHandleTag; header.Cursor = Cursors.SizeAll; }
+
+            var titleBlock = new Emoji.Wpf.TextBlock
+            {
+                Text = displayTitle,
+                FontWeight = FontWeights.SemiBold,
+                FontSize = 13,
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = (Brush)FindResource("BrushTextMain")
+            };
+
+            if (_isEditMode)
+            {
+                titleBlock.Cursor = Cursors.Hand;
+                titleBlock.ToolTip = "双击编辑名称";
+                titleBlock.MouseLeftButtonDown += (s, e) =>
+                {
+                    if (e.ClickCount == 2)
+                    {
+                        PromptRenamePanel(item, defaultTitle);
+                        e.Handled = true;
+                    }
+                };
+            }
+
+            var dropBtn = new Button
+            {
+                Content = "\u25BE",
+                FontSize = 12,
+                Padding = new Thickness(4, 0, 4, 0),
+                Background = Brushes.Transparent,
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Visibility = _isEditMode ? Visibility.Collapsed : Visibility.Visible
+            };
+
+            var dropMenu = new ContextMenu();
+
+            // 管理数字员工
+            var manageMi = new MenuItem { Header = "管理数字员工" };
+            manageMi.Click += (s, e) => OpenDigitalEmployeeManager();
+            dropMenu.Items.Add(manageMi);
+
+            // 选择展示员工（子菜单勾选）
+            var selectMi = new MenuItem { Header = "选择展示员工" };
+            selectMi.SubmenuOpened += (s, e) => PopulateEmployeeSelectMenu(selectMi, item);
+            PopulateEmployeeSelectMenu(selectMi, item);
+            dropMenu.Items.Add(selectMi);
+
+            // 每排列数
+            var columnsMi = new MenuItem { Header = "每排列数" };
+            for (int c = 1; c <= 5; c++)
+            {
+                int cc = c;
+                var cmi = new MenuItem { Header = cc.ToString(), IsCheckable = true, IsChecked = columns == cc };
+                cmi.Click += (s, e) =>
+                {
+                    item.DigitalEmployeeColumns = cc;
+                    _configManager?.Save();
+                    RenderPanels();
+                };
+                columnsMi.Items.Add(cmi);
+            }
+            dropMenu.Items.Add(columnsMi);
+
+            dropMenu.Items.Add(new Separator());
+
+            var hideFrameMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
+            hideFrameMi.Click += (s, e) => { item.HideFrame = hideFrameMi.IsChecked; _configManager?.Save(); RenderPanels(); };
+            dropMenu.Items.Add(hideFrameMi);
+
+            var delModuleMi = new MenuItem { Header = "删除模块" };
+            delModuleMi.Click += (s, e) => RemovePanel(item);
+            dropMenu.Items.Add(delModuleMi);
+
+            dropBtn.Click += (s, e) => dropMenu.IsOpen = true;
+
+            DockPanel.SetDock(dropBtn, Dock.Right);
+            header.Children.Add(dropBtn);
+            header.Children.Add(titleBlock);
+
+            var mainStack = new StackPanel();
+            mainStack.Children.Add(header);
+            mainStack.Children.Add(container);
+
+            // 隐藏模块外框
+            if ((item.HideFrame || AppSettings.Instance.HideModuleFrame) && !_isEditMode)
+            {
+                var bareBorder = new Border
+                {
+                    Margin = new Thickness(0, 0, 0, 8),
+                    Padding = new Thickness(0),
+                    Background = Brushes.Transparent,
+                    BorderThickness = new Thickness(0),
+                    Child = mainStack
+                };
+                var bareMenu = new ContextMenu();
+                var bareHideMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
+                bareHideMi.Click += (s, e) => { item.HideFrame = bareHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
+                bareMenu.Items.Add(bareHideMi);
+                var bareDelMi = new MenuItem { Header = "删除模块" };
+                bareDelMi.Click += (s, e) => RemovePanel(item);
+                bareMenu.Items.Add(bareDelMi);
+                bareBorder.ContextMenu = bareMenu;
+                return bareBorder;
+            }
+
+            var wrapper = new Border
+            {
+                Margin = new Thickness(0, 0, 0, 12),
+                Padding = new Thickness(0, 10, 0, 0),
+                CornerRadius = new CornerRadius(6),
+                Background = (Brush)FindResource("BrushInputBG"),
+                BorderBrush = (Brush)FindResource("BrushBorder"),
+                BorderThickness = new Thickness(1),
+                Child = mainStack
+            };
+
+            if (_isEditMode)
+            {
+                wrapper.MouseEnter += (s, e) => dropBtn.Visibility = Visibility.Visible;
+                wrapper.MouseLeave += (s, e) => dropBtn.Visibility = Visibility.Collapsed;
+            }
+
+            var moduleMenu = new ContextMenu();
+            var hideFrameMi2 = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
+            hideFrameMi2.Click += (s, e) => { item.HideFrame = hideFrameMi2.IsChecked; _configManager?.Save(); RenderPanels(); };
+            moduleMenu.Items.Add(hideFrameMi2);
+            var delMi2 = new MenuItem { Header = "删除模块" };
+            delMi2.Click += (s, e) => RemovePanel(item);
+            moduleMenu.Items.Add(delMi2);
+            wrapper.ContextMenu = moduleMenu;
+
+            return wrapper;
+        }
+
+        /// <summary>创建单个员工卡片（头像 + 名字），点击弹出详情</summary>
+        private FrameworkElement CreateEmployeeCard(DigitalEmployee emp, int columns)
+        {
+            var card = new StackPanel
+            {
+                Width = columns switch { 1 => 150, 2 => 88, 3 => 60, 4 => 46, _ => 38 },
+                Margin = new Thickness(4, 4, 4, 8),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Cursor = Cursors.Hand
+            };
+
+            double avatarSize = columns switch { 1 => 48, 2 => 44, 3 => 40, 4 => 36, _ => 30 };
+
+            var avatarBorder = new Border
+            {
+                Width = avatarSize,
+                Height = avatarSize,
+                CornerRadius = new CornerRadius(avatarSize / 2),
+                Background = (Brush)FindResource("BrushAccent"),
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+
+            if (!string.IsNullOrWhiteSpace(emp.AvatarPath) && System.IO.File.Exists(emp.AvatarPath))
+            {
+                try
+                {
+                    var bmp = new System.Windows.Media.Imaging.BitmapImage();
+                    bmp.BeginInit();
+                    bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                    bmp.UriSource = new Uri(emp.AvatarPath);
+                    bmp.EndInit();
+                    avatarBorder.Background = new ImageBrush(bmp) { Stretch = Stretch.UniformToFill };
+                }
+                catch
+                {
+                    avatarBorder.Child = CreateAvatarFallbackText(emp, avatarSize);
+                }
+            }
+            else
+            {
+                avatarBorder.Child = CreateAvatarFallbackText(emp, avatarSize);
+            }
+
+            card.Children.Add(avatarBorder);
+
+            var nameBlock = new Emoji.Wpf.TextBlock
+            {
+                Text = emp.Name,
+                FontSize = columns >= 4 ? 10 : 12,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                TextAlignment = TextAlignment.Center,
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                Margin = new Thickness(0, 4, 0, 0),
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                MaxWidth = 140
+            };
+            card.Children.Add(nameBlock);
+
+            if (columns <= 2 && !string.IsNullOrWhiteSpace(emp.Role))
+            {
+                card.Children.Add(new Emoji.Wpf.TextBlock
+                {
+                    Text = emp.Role,
+                    FontSize = 10,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    TextAlignment = TextAlignment.Center,
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    MaxWidth = 140
+                });
+            }
+
+            card.ToolTip = string.IsNullOrWhiteSpace(emp.Role) ? emp.Name : $"{emp.Name} · {emp.Role}";
+            card.MouseLeftButtonUp += (s, e) => ShowEmployeeInfoDialog(emp);
+
+            return card;
+        }
+
+        private Emoji.Wpf.TextBlock CreateAvatarFallbackText(DigitalEmployee emp, double avatarSize) => new()
+        {
+            Text = emp.AvatarFallback,
+            Foreground = Brushes.White,
+            FontSize = avatarSize * 0.42,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        /// <summary>填充“选择展示员工”子菜单（全局员工列表勾选）</summary>
+        private void PopulateEmployeeSelectMenu(MenuItem menu, PanelItem item)
+        {
+            menu.Items.Clear();
+            item.DigitalEmployeeIds ??= new List<string>();
+            var all = DigitalEmployees.Employees;
+            if (all.Count == 0)
+            {
+                menu.Items.Add(new MenuItem { Header = "(暂无员工，请先管理添加)", IsEnabled = false });
+                return;
+            }
+            foreach (var emp in all)
+            {
+                var mi = new MenuItem
+                {
+                    Header = string.IsNullOrWhiteSpace(emp.Role) ? emp.Name : $"{emp.Name}  [{emp.Role}]",
+                    IsCheckable = true,
+                    IsChecked = item.DigitalEmployeeIds.Contains(emp.Id),
+                    StaysOpenOnClick = true
+                };
+                var captured = emp;
+                mi.Click += (s, e) =>
+                {
+                    if (mi.IsChecked)
+                    {
+                        if (!item.DigitalEmployeeIds.Contains(captured.Id))
+                            item.DigitalEmployeeIds.Add(captured.Id);
+                    }
+                    else
+                    {
+                        item.DigitalEmployeeIds.Remove(captured.Id);
+                    }
+                    _configManager?.Save();
+                    RenderPanels();
+                };
+                menu.Items.Add(mi);
+            }
+        }
+
+        /// <summary>打开数字员工管理窗口</summary>
+        private void OpenDigitalEmployeeManager()
+        {
+            var win = new DigitalEmployeeWindow(DigitalEmployees)
+            {
+                Owner = Window.GetWindow(this),
+                OnChanged = () => RenderPanels()
+            };
+            win.ShowDialog();
+            RenderPanels();
+        }
+
+        /// <summary>展示员工详情弹窗</summary>
+        private void ShowEmployeeInfoDialog(DigitalEmployee emp)
+        {
+            var dialog = new Window
+            {
+                Title = emp.Name,
+                Width = 340,
+                SizeToContent = SizeToContent.Height,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = Window.GetWindow(this),
+                Background = (Brush)FindResource("BrushDialogBG"),
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                ResizeMode = ResizeMode.NoResize
+            };
+            dialog.SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(dialog, App.IsCurrentThemeLight());
+
+            var root = new StackPanel { Margin = new Thickness(20) };
+
+            // 头像 + 名字 + 职位
+            var top = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 16) };
+            var avatarBorder = new Border
+            {
+                Width = 56, Height = 56, CornerRadius = new CornerRadius(28),
+                Background = (Brush)FindResource("BrushAccent"), Margin = new Thickness(0, 0, 14, 0)
+            };
+            if (!string.IsNullOrWhiteSpace(emp.AvatarPath) && System.IO.File.Exists(emp.AvatarPath))
+            {
+                try
+                {
+                    var bmp = new System.Windows.Media.Imaging.BitmapImage();
+                    bmp.BeginInit();
+                    bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                    bmp.UriSource = new Uri(emp.AvatarPath);
+                    bmp.EndInit();
+                    avatarBorder.Background = new ImageBrush(bmp) { Stretch = Stretch.UniformToFill };
+                }
+                catch { avatarBorder.Child = CreateAvatarFallbackText(emp, 56); }
+            }
+            else avatarBorder.Child = CreateAvatarFallbackText(emp, 56);
+            top.Children.Add(avatarBorder);
+
+            var nameCol = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            nameCol.Children.Add(new Emoji.Wpf.TextBlock
+            {
+                Text = emp.Name, FontSize = 18, FontWeight = FontWeights.Bold,
+                Foreground = (Brush)FindResource("BrushTextMain")
+            });
+            if (!string.IsNullOrWhiteSpace(emp.Role) || !string.IsNullOrWhiteSpace(emp.Department))
+            {
+                var sub = string.Join(" · ", new[] { emp.Role, emp.Department }.Where(x => !string.IsNullOrWhiteSpace(x)));
+                nameCol.Children.Add(new Emoji.Wpf.TextBlock
+                {
+                    Text = sub, FontSize = 12, Foreground = (Brush)FindResource("BrushTextMuted"),
+                    Margin = new Thickness(0, 4, 0, 0)
+                });
+            }
+            top.Children.Add(nameCol);
+            root.Children.Add(top);
+
+            void AddInfoRow(string label, string value)
+            {
+                if (string.IsNullOrWhiteSpace(value)) return;
+                var row = new StackPanel { Margin = new Thickness(0, 0, 0, 10) };
+                row.Children.Add(new TextBlock
+                {
+                    Text = label, FontSize = 11, FontWeight = FontWeights.SemiBold,
+                    Foreground = (Brush)FindResource("BrushTextMuted"), Margin = new Thickness(0, 0, 0, 2)
+                });
+                row.Children.Add(new TextBlock
+                {
+                    Text = value, FontSize = 13, TextWrapping = TextWrapping.Wrap,
+                    Foreground = (Brush)FindResource("BrushTextMain")
+                });
+                root.Children.Add(row);
+            }
+
+            AddInfoRow("擅长/技能", emp.Skills);
+            AddInfoRow("联系方式", emp.Contact);
+            AddInfoRow("简介/职责", emp.Description);
+
+            dialog.Content = new ScrollViewer
+            {
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                MaxHeight = 480,
+                Content = root
+            };
+            dialog.ShowDialog();
+        }
+
         #endregion
 
         #region 窗口展开/收缩
@@ -3939,7 +4435,13 @@ namespace SideDesk.Controls
             fe.Tag = item.Id;
             Point start = default;
             bool ready = false;
-            fe.PreviewMouseLeftButtonDown += (s, e) => { start = e.GetPosition(fe); ready = true; };
+            fe.PreviewMouseLeftButtonDown += (s, e) =>
+            {
+                // 仅当鼠标按在「标题栏」上时才准备拖拽调序，避免拖动滚动条/内容误触发移动
+                if (!IsWithinPanelDragHandle(e.OriginalSource, fe)) { ready = false; return; }
+                start = e.GetPosition(fe);
+                ready = true;
+            };
             fe.PreviewMouseMove += (s, e) =>
             {
                 if (!ready || e.LeftButton != MouseButtonState.Pressed) return;
@@ -3958,12 +4460,34 @@ namespace SideDesk.Controls
             fe.PreviewMouseLeftButtonUp += (s, e) => { ready = false; };
         }
 
+        /// <summary>标题栏拖拽手柄标记：仅带此 Tag 的元素（含其子元素）可发起面板调序拖拽</summary>
+        private const string PanelDragHandleTag = "panelDragHandle";
+
+        /// <summary>自定义卡片标题栏标记：带此 Uid 的标题栏在可调高包装时保持固定（不参与滚动）</summary>
+        private const string PanelHeaderUid = "panelHeader";
+
+        /// <summary>判断鼠标事件源是否位于某个「标题栏拖拽手柄」内（向上遍历至 stopAt 为止）</summary>
+        private bool IsWithinPanelDragHandle(object? source, FrameworkElement stopAt)
+        {
+            DependencyObject? d = source as DependencyObject;
+            while (d != null)
+            {
+                if (d is FrameworkElement f && (f.Tag as string) == PanelDragHandleTag) return true;
+                if (ReferenceEquals(d, stopAt)) return false;
+                d = (d is Visual || d is System.Windows.Media.Media3D.Visual3D)
+                    ? VisualTreeHelper.GetParent(d)
+                    : LogicalTreeHelper.GetParent(d);
+            }
+            return false;
+        }
+
         private void DynamicContent_DragOver(object sender, DragEventArgs e)
         {
             if (!_isEditMode || !e.Data.GetDataPresent("PanelItemId")) { HidePanelDragIndicator(); return; }
             e.Effects = DragDropEffects.Move;
             e.Handled = true;
-            ShowPanelDragIndicator(GetPanelDropIndex(e));
+            var (_, y) = GetPanelDrop(e);
+            ShowPanelDragIndicator(y);
         }
 
         private void DynamicContent_DragLeave(object sender, DragEventArgs e) => HidePanelDragIndicator();
@@ -3977,47 +4501,37 @@ namespace SideDesk.Controls
             e.Handled = true;
         }
 
-        /// <summary>根据拖放的 Y 坐标计算目标插入位置（数据层面板索引，忽略指示器）</summary>
-        private int GetPanelDropIndex(DragEventArgs e)
+        /// <summary>根据拖放的 Y 坐标计算目标插入位置（数据层面板索引）</summary>
+        private int GetPanelDropIndex(DragEventArgs e) => GetPanelDrop(e).index;
+
+        /// <summary>同时返回插入索引与该边界在 dynamicContent 内容坐标系中的 Y 位置</summary>
+        private (int index, double y) GetPanelDrop(DragEventArgs e)
         {
             Point pos = e.GetPosition(dynamicContent);
             double y = 0; int panelIdx = 0;
             foreach (UIElement uie in dynamicContent.Children)
             {
-                if (uie is not FrameworkElement fe || ReferenceEquals(fe, _panelDragIndicator) || fe.Tag is not string) continue;
+                if (uie is not FrameworkElement fe || fe.Tag is not string) continue;
                 double h = fe.ActualHeight + fe.Margin.Top + fe.Margin.Bottom;
-                if (pos.Y < y + h / 2) return panelIdx;
+                if (pos.Y < y + h / 2) return (panelIdx, y);
                 y += h; panelIdx++;
             }
-            return panelIdx;
+            return (panelIdx, y);
         }
 
-        private void ShowPanelDragIndicator(int insertPanelIdx)
+        /// <summary>将常驻叠加层指示器定位到指定边界并显示（不改变布局）</summary>
+        private void ShowPanelDragIndicator(double contentY)
         {
-            if (_panelDragIndicator == null)
-                _panelDragIndicator = new Border { Height = 3, Background = Brushes.DodgerBlue, Margin = new Thickness(0, 2, 0, 2) };
-            if (dynamicContent.Children.Contains(_panelDragIndicator))
-                dynamicContent.Children.Remove(_panelDragIndicator);
-            _panelDragIndicator.Visibility = Visibility.Visible;
-
-            // 将「数据层面板索引」换算为 dynamicContent.Children 的实际插入位置
-            int childInsert = 0, seen = 0;
-            for (int i = 0; i < dynamicContent.Children.Count; i++)
-            {
-                if (seen >= insertPanelIdx) { childInsert = i; break; }
-                if (dynamicContent.Children[i] is FrameworkElement fe && fe.Tag is string) seen++;
-                childInsert = i + 1;
-            }
-            if (childInsert >= dynamicContent.Children.Count) dynamicContent.Children.Add(_panelDragIndicator);
-            else dynamicContent.Children.Insert(childInsert, _panelDragIndicator);
+            // dynamicContent 在 Grid 中向下偏移了其 Margin.Top，指示器与其同处一个 Grid，故需叠加该偏移
+            double top = dynamicContent.Margin.Top + contentY - panelDropIndicator.Height / 2;
+            if (top < 0) top = 0;
+            panelDropIndicator.Margin = new Thickness(0, top, 0, 0);
+            panelDropIndicator.Visibility = Visibility.Visible;
         }
 
         private void HidePanelDragIndicator()
         {
-            if (_panelDragIndicator == null) return;
-            _panelDragIndicator.Visibility = Visibility.Collapsed;
-            if (dynamicContent.Children.Contains(_panelDragIndicator))
-                dynamicContent.Children.Remove(_panelDragIndicator);
+            panelDropIndicator.Visibility = Visibility.Collapsed;
         }
 
         /// <summary>将指定面板移动到目标位置并持久化</summary>
@@ -4633,6 +5147,8 @@ namespace SideDesk.Controls
             // === 自定义标题栏：标题 + 下拉三角 ===
             var displayTitle = string.IsNullOrEmpty(item.Title) ? "📊 数据看板" : item.Title;
             var header = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+            header.Uid = PanelHeaderUid;
+            if (_isEditMode) { header.Tag = PanelDragHandleTag; header.Cursor = Cursors.SizeAll; }
 
             var titleBlock = new Emoji.Wpf.TextBlock
             {
@@ -4729,7 +5245,7 @@ namespace SideDesk.Controls
             var border = new Border
             {
                 Margin = new Thickness(0, 0, 0, 12),
-                Padding = new Thickness(0, 10, 0, 10),
+                Padding = new Thickness(0, 10, 0, 0),
                 CornerRadius = new CornerRadius(6),
                 Background = (Brush)FindResource("BrushInputBG"),
                 BorderBrush = (Brush)FindResource("BrushBorder"),
