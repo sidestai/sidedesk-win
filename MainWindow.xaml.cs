@@ -23,7 +23,7 @@ namespace SideDesk
         public ScreenType CurrentScreen => _currentScreen;
 
 
-        public MainWindow(DockEdge side, ScreenType screen)
+        public MainWindow(DockEdge side, ScreenType screen, int monitorIndex)
         {
             InitializeComponent();
 
@@ -42,7 +42,7 @@ namespace SideDesk
             // 配置 AppBar
             DockSide = side;
             AppBarWidth = 105;
-            ScreenIndex = 0;
+            ScreenIndex = monitorIndex;
 
             Loaded += MainWindow_Loaded;
 
@@ -114,13 +114,14 @@ namespace SideDesk
         public void ReloadHoverConfig()
         {
             var app = (App)Application.Current;
+            var cfg = app.AppSettings.GetMonitor(ScreenIndex);
             // 按停靠侧读取对应的开关与展开宽度
             bool enabled = DockSide == DockEdge.Left
-                ? app.AppSettings.LeftHoverEnabled
-                : app.AppSettings.RightHoverEnabled;
+                ? cfg.LeftHoverEnabled
+                : cfg.RightHoverEnabled;
             int width = DockSide == DockEdge.Left
-                ? app.AppSettings.LeftHoverWidth
-                : app.AppSettings.RightHoverWidth;
+                ? cfg.LeftHoverWidth
+                : cfg.RightHoverWidth;
 
             if (enabled)
             {
@@ -219,7 +220,7 @@ namespace SideDesk
 
             // 仅双侧模式下显示"关闭面板"（非双侧时不能关闭唯一的 dock）
             var app = (App)Application.Current;
-            bool isBothSide = app.CurrentLayout == LayoutMode.Both;
+            bool isBothSide = app.AppSettings.GetMonitor(ScreenIndex).Layout == LayoutMode.Both;
             var showClose = isBothSide ? Visibility.Visible : Visibility.Collapsed;
             closeWindowMenu.Visibility = showClose;
             closeWindowSeparator.Visibility = showClose;
@@ -273,13 +274,13 @@ namespace SideDesk
         private void CloseWindow_Click(object sender, RoutedEventArgs e)
         {
             var app = (App)Application.Current;
-            if (app.CurrentLayout != LayoutMode.Both) return;
+            if (app.AppSettings.GetMonitor(ScreenIndex).Layout != LayoutMode.Both) return;
 
-            // 关闭当前 dock 面板：切换为只保留另一侧
+            // 关闭当前 dock 面板：切换为只保留另一侧（仅作用于本显示器）
             if (DockSide == DockEdge.Left)
-                app.SwitchLayout(LayoutMode.Right);
+                app.SwitchLayoutForMonitor(ScreenIndex, LayoutMode.Right);
             else
-                app.SwitchLayout(LayoutMode.Left);
+                app.SwitchLayoutForMonitor(ScreenIndex, LayoutMode.Left);
         }
 
         private void Exit_Click(object sender, RoutedEventArgs e)
@@ -324,17 +325,17 @@ namespace SideDesk
 
         private void Layout_Left(object sender, RoutedEventArgs e)
         {
-            ((App)Application.Current).SwitchLayout(LayoutMode.Left);
+            ((App)Application.Current).SwitchLayoutForMonitor(ScreenIndex, LayoutMode.Left);
         }
 
         private void Layout_Right(object sender, RoutedEventArgs e)
         {
-            ((App)Application.Current).SwitchLayout(LayoutMode.Right);
+            ((App)Application.Current).SwitchLayoutForMonitor(ScreenIndex, LayoutMode.Right);
         }
 
         private void Layout_Both(object sender, RoutedEventArgs e)
         {
-            ((App)Application.Current).SwitchLayout(LayoutMode.Both);
+            ((App)Application.Current).SwitchLayoutForMonitor(ScreenIndex, LayoutMode.Both);
         }
 
         #endregion

@@ -43,28 +43,11 @@ namespace SideDesk
                 default: themeModeCombo.SelectedIndex = 0; break;
             }
 
-            // 每侧面板宽度与浮动配置
-            leftWidthBox.Text = _app.AppSettings.LeftPanelWidth.ToString();
-            leftHoverCheck.IsChecked = _app.AppSettings.LeftHoverEnabled;
-            leftHoverWidthBox.Text = _app.AppSettings.LeftHoverWidth.ToString();
-            rightWidthBox.Text = _app.AppSettings.RightPanelWidth.ToString();
-            rightHoverCheck.IsChecked = _app.AppSettings.RightHoverEnabled;
-            rightHoverWidthBox.Text = _app.AppSettings.RightHoverWidth.ToString();
-
             // 背景透明度
             bgOpacityBox.Text = _app.AppSettings.BackgroundOpacity.ToString("F0");
 
-            // 停靠位置
-            dockCombo.Items.Add("左侧");
-            dockCombo.Items.Add("右侧");
-            dockCombo.Items.Add("双侧");
-
-            switch (_app.CurrentLayout)
-            {
-                case LayoutMode.Right: dockCombo.SelectedIndex = 1; break;
-                case LayoutMode.Both: dockCombo.SelectedIndex = 2; break;
-                default: dockCombo.SelectedIndex = 0; break;
-            }
+            // 停靠配置：为每个显示器动态生成一张卡片
+            BuildDockConfigCards();
 
             // 程序注册表
             _registry = _app.ProgramRegistry;
@@ -80,10 +63,6 @@ namespace SideDesk
 
             titleLockSwitch.IsChecked = _app.AppSettings.EnableTitleLock;
             windowSwitchHotkeySwitch.IsChecked = _app.AppSettings.EnableWindowSwitchHotkey;
-
-            // 按当前停靠位置显隐左右区块，并同步浮动宽度框可用性
-            UpdateSideSectionsVisibility();
-            UpdateHoverWidthEnabled();
 
             InitUpdateUI();
         }
@@ -133,180 +112,248 @@ namespace SideDesk
             App.ApplyTheme(mode);
         }
 
-        // ===== 左侧侧边栏宽度 =====
-        private void LeftWidth_LostFocus(object sender, RoutedEventArgs e)
+        // ===== 停靠配置卡片动态构建（每显示器一张） =====
+        private void BuildDockConfigCards()
         {
-            ApplyLeftWidth();
-        }
+            dockConfigContainer.Children.Clear();
+            var monitors = MonitorEnumerator.GetMonitorsPrimaryFirst();
+            if (monitors.Count == 0)
+                monitors.Add(new MonitorDisplayInfo { IsPrimary = true, PixelWidth = 0, PixelHeight = 0 });
 
-        private void LeftWidth_KeyDown(object sender, KeyEventArgs e)
-        {
-            if (e.Key == Key.Enter)
+            bool showHeader = monitors.Count > 1;
+            for (int i = 0; i < monitors.Count; i++)
             {
-                ApplyLeftWidth();
+                dockConfigContainer.Children.Add(BuildMonitorCard(i, monitors[i], showHeader));
             }
         }
 
-        private void ApplyLeftWidth()
+        private FrameworkElement BuildMonitorCard(int monitorIndex, MonitorDisplayInfo mon, bool showHeader)
         {
-            if (_isLoading) return;
-            if (!int.TryParse(leftWidthBox.Text, out int width) || width < 50 || width > 500)
+            var cfg = _app.AppSettings.GetMonitor(monitorIndex);
+            var outer = new StackPanel { Margin = new Thickness(0, 0, 0, 8) };
+
+            if (showHeader)
             {
-                // 非法输入还原为当前设置值
-                leftWidthBox.Text = _app.AppSettings.LeftPanelWidth.ToString();
-                return;
+                string primary = mon.IsPrimary ? " · 主" : "";
+                string res = mon.PixelWidth > 0 ? $" · {mon.PixelWidth}×{mon.PixelHeight}" : "";
+                outer.Children.Add(new TextBlock
+                {
+                    Text = $"显示器 {monitorIndex + 1}{primary}{res}",
+                    Foreground = (Brush)FindResource("BrushTextMain"),
+                    FontSize = (double)FindResource("FontSizeNormal"),
+                    FontWeight = FontWeights.Bold,
+                    Margin = new Thickness(0, 0, 0, 10)
+                });
             }
 
-            if (width != _app.AppSettings.LeftPanelWidth)
+            // 停靠位置下拉框
+            var dockCombo = new ComboBox
             {
-                _app.AppSettings.LeftPanelWidth = width;
+                Width = 120,
+                Style = (Style)FindResource("GlobalComboBoxStyle")
+            };
+            dockCombo.Items.Add("无停靠");
+            dockCombo.Items.Add("左侧");
+            dockCombo.Items.Add("右侧");
+            dockCombo.Items.Add("两侧");
+            dockCombo.SelectedIndex = cfg.Layout switch
+            {
+                LayoutMode.Left => 1,
+                LayoutMode.Right => 2,
+                LayoutMode.Both => 3,
+                _ => 0
+            };
+            outer.Children.Add(BuildInfoRow("停靠位置", "面板停靠在该显示器的哪一侧", dockCombo, new Thickness(0, 0, 0, 16)));
+
+            // 左右侧子区块
+            var leftBlock = BuildSideBlock("左侧面板", monitorIndex, DockEdge.Left);
+            var rightBlock = BuildSideBlock("右侧面板", monitorIndex, DockEdge.Right);
+            outer.Children.Add(leftBlock);
+            outer.Children.Add(rightBlock);
+
+            void UpdateVisibility()
+            {
+                var layout = _app.AppSettings.GetMonitor(monitorIndex).Layout;
+                leftBlock.Visibility = (layout == LayoutMode.Left || layout == LayoutMode.Both)
+                    ? Visibility.Visible : Visibility.Collapsed;
+                rightBlock.Visibility = (layout == LayoutMode.Right || layout == LayoutMode.Both)
+                    ? Visibility.Visible : Visibility.Collapsed;
+            }
+            UpdateVisibility();
+
+            dockCombo.SelectionChanged += (s, e) =>
+            {
+                if (_isLoading) return;
+                var newLayout = dockCombo.SelectedIndex switch
+                {
+                    1 => LayoutMode.Left,
+                    2 => LayoutMode.Right,
+                    3 => LayoutMode.Both,
+                    _ => LayoutMode.None
+                };
+                var mcfg = _app.AppSettings.GetMonitor(monitorIndex);
+                if (newLayout != mcfg.Layout)
+                {
+                    mcfg.Layout = newLayout;
+                    _app.AppSettings.Save();
+                    _app.ApplyLayout(save: true);
+                    UpdateVisibility();
+                }
+            };
+
+            return outer;
+        }
+
+        private Border BuildSideBlock(string title, int monitorIndex, DockEdge side)
+        {
+            var cfg = _app.AppSettings.GetMonitor(monitorIndex);
+            var panel = new StackPanel();
+            panel.Children.Add(new TextBlock
+            {
+                Text = title,
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                FontSize = (double)FindResource("FontSizeNormal"),
+                FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, 0, 0, 12)
+            });
+
+            // 侧边栏宽度
+            var widthBox = new TextBox
+            {
+                Width = 70,
+                Style = (Style)FindResource("GlobalTextBoxStyle"),
+                TextAlignment = TextAlignment.Center,
+                Text = (side == DockEdge.Left ? cfg.LeftPanelWidth : cfg.RightPanelWidth).ToString()
+            };
+            void ApplyWidth()
+            {
+                if (_isLoading) return;
+                var c = _app.AppSettings.GetMonitor(monitorIndex);
+                int cur = side == DockEdge.Left ? c.LeftPanelWidth : c.RightPanelWidth;
+                if (!int.TryParse(widthBox.Text, out int w) || w < 50 || w > 500)
+                {
+                    widthBox.Text = cur.ToString();
+                    return;
+                }
+                if (w != cur)
+                {
+                    if (side == DockEdge.Left) c.LeftPanelWidth = w; else c.RightPanelWidth = w;
+                    _app.AppSettings.Save();
+                    _app.ApplyPanelWidths();
+                }
+            }
+            widthBox.LostFocus += (s, e) => ApplyWidth();
+            widthBox.KeyDown += (s, e) => { if (e.Key == Key.Enter) ApplyWidth(); };
+            panel.Children.Add(BuildInputRow("侧边栏宽度", "侧边栏停靠宽度（50-500）", widthBox, "px", new Thickness(0, 0, 0, 12)));
+
+            // 开启浮动
+            var hoverCheck = new CheckBox
+            {
+                Style = (Style)FindResource("RaycastSwitchStyle"),
+                VerticalAlignment = VerticalAlignment.Center,
+                IsChecked = side == DockEdge.Left ? cfg.LeftHoverEnabled : cfg.RightHoverEnabled
+            };
+
+            // 浮动宽度
+            var hoverWidthBox = new TextBox
+            {
+                Width = 70,
+                Style = (Style)FindResource("GlobalTextBoxStyle"),
+                TextAlignment = TextAlignment.Center,
+                Text = (side == DockEdge.Left ? cfg.LeftHoverWidth : cfg.RightHoverWidth).ToString()
+            };
+            void ApplyHoverWidth()
+            {
+                if (_isLoading) return;
+                var c = _app.AppSettings.GetMonitor(monitorIndex);
+                int cur = side == DockEdge.Left ? c.LeftHoverWidth : c.RightHoverWidth;
+                if (!int.TryParse(hoverWidthBox.Text, out int w) || w < 100 || w > 500)
+                {
+                    hoverWidthBox.Text = cur.ToString();
+                    return;
+                }
+                if (w != cur)
+                {
+                    if (side == DockEdge.Left) c.LeftHoverWidth = w; else c.RightHoverWidth = w;
+                    _app.AppSettings.Save();
+                    _app.ReloadHoverSettings();
+                }
+            }
+            hoverWidthBox.LostFocus += (s, e) => ApplyHoverWidth();
+            hoverWidthBox.KeyDown += (s, e) => { if (e.Key == Key.Enter) ApplyHoverWidth(); };
+            var hoverWidthRow = BuildInputRow("浮动宽度", "悬停展开宽度（100-500）", hoverWidthBox, "px", new Thickness(0));
+            hoverWidthRow.Visibility = hoverCheck.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+
+            void HoverChanged()
+            {
+                if (_isLoading) return;
+                var c = _app.AppSettings.GetMonitor(monitorIndex);
+                bool en = hoverCheck.IsChecked == true;
+                if (side == DockEdge.Left) c.LeftHoverEnabled = en; else c.RightHoverEnabled = en;
                 _app.AppSettings.Save();
-                _app.ApplyPanelWidths();
-            }
-        }
-
-        // ===== 右侧侧边栏宽度 =====
-        private void RightWidth_LostFocus(object sender, RoutedEventArgs e)
-        {
-            ApplyRightWidth();
-        }
-
-        private void RightWidth_KeyDown(object sender, KeyEventArgs e)
-        {
-            if (e.Key == Key.Enter)
-            {
-                ApplyRightWidth();
-            }
-        }
-
-        private void ApplyRightWidth()
-        {
-            if (_isLoading) return;
-            if (!int.TryParse(rightWidthBox.Text, out int width) || width < 50 || width > 500)
-            {
-                // 非法输入还原为当前设置值
-                rightWidthBox.Text = _app.AppSettings.RightPanelWidth.ToString();
-                return;
-            }
-
-            if (width != _app.AppSettings.RightPanelWidth)
-            {
-                _app.AppSettings.RightPanelWidth = width;
-                _app.AppSettings.Save();
-                _app.ApplyPanelWidths();
-            }
-        }
-
-        // ===== 左侧开启浮动 =====
-        private void LeftHover_Changed(object sender, RoutedEventArgs e)
-        {
-            if (_isLoading) return;
-            _app.AppSettings.LeftHoverEnabled = leftHoverCheck.IsChecked == true;
-            _app.AppSettings.Save();
-            UpdateHoverWidthEnabled();
-            _app.ReloadHoverSettings();
-        }
-
-        // ===== 右侧开启浮动 =====
-        private void RightHover_Changed(object sender, RoutedEventArgs e)
-        {
-            if (_isLoading) return;
-            _app.AppSettings.RightHoverEnabled = rightHoverCheck.IsChecked == true;
-            _app.AppSettings.Save();
-            UpdateHoverWidthEnabled();
-            _app.ReloadHoverSettings();
-        }
-
-        // ===== 左侧浮动宽度 =====
-        private void LeftHoverWidth_LostFocus(object sender, RoutedEventArgs e)
-        {
-            ApplyLeftHoverWidth();
-        }
-
-        private void LeftHoverWidth_KeyDown(object sender, KeyEventArgs e)
-        {
-            if (e.Key == Key.Enter)
-            {
-                ApplyLeftHoverWidth();
-            }
-        }
-
-        private void ApplyLeftHoverWidth()
-        {
-            if (_isLoading) return;
-            if (!int.TryParse(leftHoverWidthBox.Text, out int width) || width < 100 || width > 500)
-            {
-                // 非法输入还原为当前设置值
-                leftHoverWidthBox.Text = _app.AppSettings.LeftHoverWidth.ToString();
-                return;
-            }
-
-            if (width != _app.AppSettings.LeftHoverWidth)
-            {
-                _app.AppSettings.LeftHoverWidth = width;
-                _app.AppSettings.Save();
+                hoverWidthRow.Visibility = en ? Visibility.Visible : Visibility.Collapsed;
                 _app.ReloadHoverSettings();
             }
-        }
+            hoverCheck.Checked += (s, e) => HoverChanged();
+            hoverCheck.Unchecked += (s, e) => HoverChanged();
+            panel.Children.Add(BuildInfoRow("开启浮动", "开启浮动（鼠标悬停展开）", hoverCheck, new Thickness(0, 0, 0, 12)));
+            panel.Children.Add(hoverWidthRow);
 
-        // ===== 右侧浮动宽度 =====
-        private void RightHoverWidth_LostFocus(object sender, RoutedEventArgs e)
-        {
-            ApplyRightHoverWidth();
-        }
-
-        private void RightHoverWidth_KeyDown(object sender, KeyEventArgs e)
-        {
-            if (e.Key == Key.Enter)
+            return new Border
             {
-                ApplyRightHoverWidth();
-            }
+                Background = (Brush)FindResource("BrushInputBG"),
+                BorderBrush = (Brush)FindResource("BrushBorder"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(12),
+                Margin = new Thickness(0, 0, 0, 16),
+                Child = panel
+            };
         }
 
-        private void ApplyRightHoverWidth()
+        // 构建“标题 + 右侧控件”行
+        private Grid BuildInfoRow(string title, string subtitle, FrameworkElement control, Thickness margin)
         {
-            if (_isLoading) return;
-            if (!int.TryParse(rightHoverWidthBox.Text, out int width) || width < 100 || width > 500)
-            {
-                // 非法输入还原为当前设置值
-                rightHoverWidthBox.Text = _app.AppSettings.RightHoverWidth.ToString();
-                return;
-            }
+            var grid = new Grid { Margin = margin };
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            if (width != _app.AppSettings.RightHoverWidth)
+            var labels = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            labels.Children.Add(new TextBlock
             {
-                _app.AppSettings.RightHoverWidth = width;
-                _app.AppSettings.Save();
-                _app.ReloadHoverSettings();
-            }
+                Text = title,
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                FontSize = (double)FindResource("FontSizeNormal")
+            });
+            labels.Children.Add(new TextBlock
+            {
+                Text = subtitle,
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                FontSize = (double)FindResource("FontSizeSmall"),
+                Margin = new Thickness(0, 4, 0, 0)
+            });
+            Grid.SetColumn(labels, 0);
+            grid.Children.Add(labels);
+
+            control.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(control, 1);
+            grid.Children.Add(control);
+            return grid;
         }
 
-        // 按当前停靠布局显隐左右面板区块
-        private void UpdateSideSectionsVisibility()
+        // 构建“标题 + 输入框 + 单位”行
+        private Grid BuildInputRow(string title, string subtitle, FrameworkElement input, string unit, Thickness margin)
         {
-            if (leftSideSection == null || rightSideSection == null) return;
-            switch (_app.CurrentLayout)
+            var wrap = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            wrap.Children.Add(input);
+            wrap.Children.Add(new TextBlock
             {
-                case LayoutMode.Right:
-                    leftSideSection.Visibility = Visibility.Collapsed;
-                    rightSideSection.Visibility = Visibility.Visible;
-                    break;
-                case LayoutMode.Both:
-                    leftSideSection.Visibility = Visibility.Visible;
-                    rightSideSection.Visibility = Visibility.Visible;
-                    break;
-                default: // Left
-                    leftSideSection.Visibility = Visibility.Visible;
-                    rightSideSection.Visibility = Visibility.Collapsed;
-                    break;
-            }
-        }
-
-        // 浮动宽度行仅在勾选浮动时显示
-        private void UpdateHoverWidthEnabled()
-        {
-            leftHoverWidthRow.Visibility = leftHoverCheck.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
-            rightHoverWidthRow.Visibility = rightHoverCheck.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+                Text = unit,
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(6, 0, 0, 0)
+            });
+            return BuildInfoRow(title, subtitle, wrap, margin);
         }
 
         private void BgOpacity_LostFocus(object sender, RoutedEventArgs e)
@@ -349,27 +396,6 @@ namespace SideDesk
                     mw.Background = new SolidColorBrush(Color.FromArgb(
                         (byte)(opacity * 255), 0, 0, 0));
                 }
-            }
-        }
-
-        private void Dock_Changed(object sender, SelectionChangedEventArgs e)
-        {
-            if (_isLoading) return;
-
-            LayoutMode newLayout = dockCombo.SelectedIndex switch
-            {
-                1 => LayoutMode.Right,
-                2 => LayoutMode.Both,
-                _ => LayoutMode.Left
-            };
-
-            if (newLayout != _app.CurrentLayout)
-            {
-                _app.AppSettings.Layout = newLayout;
-                _app.AppSettings.Save();
-                _app.SwitchLayout(newLayout);
-                // 切换布局后同步左右区块显隐
-                UpdateSideSectionsVisibility();
             }
         }
 

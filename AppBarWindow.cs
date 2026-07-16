@@ -430,8 +430,54 @@ namespace SideDesk
 
     public enum LayoutMode
     {
+        // 顺序不可重排：旧版 settings.json 以整数序列化枚举（Left=0/Right=1/Both=2），
+        // 新增的 None 必须追加在末尾，否则会使旧配置的 Left 被误读为 None。
         Left,
         Right,
-        Both
+        Both,
+        None
+    }
+
+    /// <summary>
+    /// 单个物理显示器信息（供多屏停靠配置使用）
+    /// </summary>
+    public struct MonitorDisplayInfo
+    {
+        public bool IsPrimary;
+        public int PixelWidth;
+        public int PixelHeight;
+    }
+
+    /// <summary>
+    /// 枚举所有物理显示器，按「主显示器优先」排序返回，
+    /// 顺序与 <see cref="AppBarWindow"/> 的 ScreenIndex/GetTargetMonitor 保持一致。
+    /// </summary>
+    public static class MonitorEnumerator
+    {
+        public static List<MonitorDisplayInfo> GetMonitorsPrimaryFirst()
+        {
+            var monitors = new List<MONITORINFO>();
+
+            NativeMethods.EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero,
+                (IntPtr hMonitor, IntPtr hdc, ref RECT pRect, int dwData) =>
+                {
+                    var info = new MONITORINFO();
+                    info.cbSize = Marshal.SizeOf<MONITORINFO>();
+                    if (NativeMethods.GetMonitorInfo(hMonitor, ref info))
+                        monitors.Add(info);
+                    return true;
+                }, 0);
+
+            // 主显示器优先（MONITORINFOF_PRIMARY = 1），与 GetTargetMonitor 排序一致
+            return monitors
+                .OrderByDescending(m => m.dwFlags & 1)
+                .Select(m => new MonitorDisplayInfo
+                {
+                    IsPrimary = (m.dwFlags & 1) != 0,
+                    PixelWidth = m.rcMonitor.Width,
+                    PixelHeight = m.rcMonitor.Height
+                })
+                .ToList();
+        }
     }
 }

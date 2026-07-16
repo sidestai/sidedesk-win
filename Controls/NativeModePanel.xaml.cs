@@ -213,6 +213,10 @@ namespace SideDesk.Controls
                 var widget = CreatePanelWidget(panel);
                 if (widget != null)
                 {
+                    // 未走 WrapWidget 的自定义卡片模块，在顶层统一附加可调高能力（编辑模式显示拖拽手柄）
+                    if (widget is FrameworkElement wfe && wfe.Uid != "wrapHandled")
+                        widget = WrapResizable(wfe, panel);
+
                     // 编辑模式下，为每个顶层面板挂载拖拽排序手柄
                     if (_isEditMode && widget is FrameworkElement fe)
                         AttachPanelDragHandlers(fe, panel);
@@ -376,13 +380,18 @@ namespace SideDesk.Controls
             // 隐藏模块外框（仅非编辑模式生效）：模块独立开关 或 全局开关，任一为真即隐藏
             if ((item.HideFrame || AppSettings.Instance.HideModuleFrame) && !_isEditMode)
             {
+                var bareHost = BuildResizableHost(content, item);
+                var bareStack = new StackPanel();
+                bareStack.Children.Add(bareHost);
+                // 拖拽 resize 手柄仅在编辑模式显示；无框分支仅在非编辑模式渲染，故不添加手柄。
+
                 var bareBorder = new Border
                 {
-                    Margin = new Thickness(0, 0, 0, 8),
+                    Margin = new Thickness(0, 0, 0, 3),
                     Padding = new Thickness(0),
                     Background = Brushes.Transparent,
                     BorderThickness = new Thickness(0),
-                    Child = content
+                    Child = bareStack
                 };
 
                 // 右键菜单：隐藏模块外框（可勾选） + 删除模块
@@ -402,6 +411,7 @@ namespace SideDesk.Controls
                 if (content is FrameworkElement contentFe && contentFe.ContextMenu == null)
                     contentFe.ContextMenu = BuildBareMenu();
 
+                bareBorder.Uid = "wrapHandled";
                 return bareBorder;
             }
 
@@ -459,12 +469,16 @@ namespace SideDesk.Controls
 
             var stack = new StackPanel();
             stack.Children.Add(header);
-            stack.Children.Add(content);
+            var contentHost = BuildResizableHost(content, item);
+            stack.Children.Add(contentHost);
+            // 拖拽 resize 手柄仅在编辑模式显示并允许拖拽
+            if (_isEditMode)
+                stack.Children.Add(CreateResizeGrip(contentHost, item));
 
             var border = new Border
             {
-                Margin = new Thickness(0, 0, 0, 12),
-                Padding = new Thickness(0, 10, 0, 10),
+                Margin = new Thickness(0, 0, 0, 3),
+                Padding = new Thickness(0, 10, 0, 0),
                 CornerRadius = new CornerRadius(6),
                 Background = (Brush)FindResource("BrushInputBG"),
                 BorderBrush = (Brush)FindResource("BrushBorder"),
@@ -486,7 +500,155 @@ namespace SideDesk.Controls
             moduleMenu.Items.Add(deleteModuleItem);
             border.ContextMenu = moduleMenu;
 
+            border.Uid = "wrapHandled";
             return border;
+        }
+
+        /// <summary>
+        /// 将模块内容包入可约束高度的 ScrollViewer：
+        /// 设置了 item.PanelHeight 时应用固定高度并内部滚动；未设置时为自动高度。
+        /// 内容未溢出（无法滚动）时将滑轮事件转发给外层页面，避免吞掉页面滚动。
+        /// </summary>
+        private ScrollViewer BuildResizableHost(UIElement content, PanelItem item)
+        {
+            var host = new ScrollViewer
+            {
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content = content
+            };
+            if (item.PanelHeight.HasValue && item.PanelHeight.Value > 0)
+                host.Height = item.PanelHeight.Value;
+
+            host.PreviewMouseWheel += (s, e) =>
+            {
+                var sv = (ScrollViewer)s;
+                if ((e.Delta < 0 && sv.VerticalOffset >= sv.ScrollableHeight) ||
+                    (e.Delta > 0 && sv.VerticalOffset <= 0))
+                {
+                    e.Handled = true;
+                    (sv.Parent as UIElement)?.RaiseEvent(new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
+                    {
+                        RoutedEvent = UIElement.MouseWheelEvent,
+                        Source = sv
+                    });
+                }
+            };
+            return host;
+        }
+
+        /// <summary>模块高度拖拽进行中标志：为 true 时抑制顶层面板的拖拽调序逻辑，避免二者冲突。</summary>
+        private bool _resizingModule;
+
+        /// <summary>
+        /// 创建模块底部拖拽手柄：拖拽调整内容区高度并持久化到 item.PanelHeight；双击恢复自动高度。
+        /// </summary>
+        private Border CreateResizeGrip(ScrollViewer host, PanelItem item)
+        {
+            const double MinHeight = 48;
+            var grip = new Border
+            {
+                Height = 6,
+                Background = Brushes.Transparent,
+                Cursor = Cursors.SizeNS,
+                Margin = new Thickness(0, 1, 0, 0),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                ToolTip = "拖拽调整模块高度（双击恢复自动高度）"
+            };
+            var line = new Border
+            {
+                Width = 34,
+                Height = 3,
+                CornerRadius = new CornerRadius(1.5),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Background = (Brush)FindResource("BrushTextMuted"),
+                Opacity = 0.35
+            };
+            grip.Child = line;
+            grip.MouseEnter += (s, e) => line.Opacity = 0.8;
+            grip.MouseLeave += (s, e) => line.Opacity = 0.35;
+
+            bool dragging = false;
+            double startY = 0, startHeight = 0;
+            grip.MouseLeftButtonDown += (s, e) =>
+            {
+                if (e.ClickCount == 2)
+                {
+                    host.ClearValue(FrameworkElement.HeightProperty);
+                    item.PanelHeight = null;
+                    _configManager?.Save();
+                    dragging = false;
+                    _resizingModule = false;
+                    grip.ReleaseMouseCapture();
+                    e.Handled = true;
+                    return;
+                }
+                dragging = true;
+                _resizingModule = true;
+                startY = e.GetPosition(this).Y;
+                startHeight = (double.IsNaN(host.Height) || host.Height <= 0) ? host.ActualHeight : host.Height;
+                grip.CaptureMouse();
+                e.Handled = true;
+            };
+            grip.MouseMove += (s, e) =>
+            {
+                if (!dragging) return;
+                double h = startHeight + (e.GetPosition(this).Y - startY);
+                if (h < MinHeight) h = MinHeight;
+                host.Height = h;
+            };
+            grip.MouseLeftButtonUp += (s, e) =>
+            {
+                if (!dragging) return;
+                dragging = false;
+                _resizingModule = false;
+                grip.ReleaseMouseCapture();
+                item.PanelHeight = host.Height;
+                _configManager?.Save();
+                e.Handled = true;
+            };
+            grip.LostMouseCapture += (s, e) => { _resizingModule = false; };
+            return grip;
+        }
+
+        /// <summary>
+        /// 为未走 WrapWidget 的自定义卡片模块统一附加「可调整高度」能力：
+        /// 优先将拖拽手柄放入卡片外框内部底部（与 WrapWidget 模块视觉一致，而非悬浮在卡片下方）；
+        /// 编辑模式才显示手柄并允许拖拽。WrapWidget 已自带手柄，不在此重复包裹（通过 Uid 标记区分）。
+        /// </summary>
+        private UIElement WrapResizable(FrameworkElement widget, PanelItem item)
+        {
+            // 标准卡片：将卡片内容包入可约束高度的 ScrollViewer，手柄置于卡片外框内部底部
+            if (widget is Border card && card.Child is UIElement inner)
+            {
+                card.Child = null; // 先解除与外框的父关系，再交给 ScrollViewer 托管
+                var host = BuildResizableHost(inner, item);
+                if (!_isEditMode)
+                {
+                    card.Child = host;
+                    return card;
+                }
+                var innerStack = new StackPanel();
+                innerStack.Children.Add(host);
+                innerStack.Children.Add(CreateResizeGrip(host, item));
+                card.Child = innerStack;
+                return card;
+            }
+
+            // 回退：非标准外框卡片（如直接返回的原始内容），在顶层包裹
+            var spacing = widget.Margin;
+            widget.Margin = new Thickness(0);
+            var outerHost = BuildResizableHost(widget, item);
+            if (!_isEditMode)
+            {
+                outerHost.Margin = spacing;
+                return outerHost;
+            }
+            var stack = new StackPanel { Margin = spacing };
+            stack.Children.Add(outerHost);
+            stack.Children.Add(CreateResizeGrip(outerHost, item));
+            return stack;
         }
 
         private void RemovePanel(PanelItem item)
@@ -3781,6 +3943,8 @@ namespace SideDesk.Controls
             fe.PreviewMouseMove += (s, e) =>
             {
                 if (!ready || e.LeftButton != MouseButtonState.Pressed) return;
+                // 若正在拖拽调整模块高度，则不触发面板调序
+                if (_resizingModule) { ready = false; return; }
                 Point pos = e.GetPosition(fe);
                 if (Math.Abs(pos.X - start.X) > SystemParameters.MinimumHorizontalDragDistance ||
                     Math.Abs(pos.Y - start.Y) > SystemParameters.MinimumVerticalDragDistance)

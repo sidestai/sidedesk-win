@@ -14,7 +14,7 @@ namespace SideDesk
 
     public partial class App : Application
     {
-        public LayoutMode CurrentLayout { get; private set; } = LayoutMode.Left;
+        public LayoutMode CurrentLayout => AppSettings.GetMonitor(0).Layout;
         public Settings AppSettings { get; private set; } = new();
         public WindowConfigManager WindowConfigs { get; private set; } = new();
         public ProgramRegistryManager ProgramRegistry { get; private set; } = new();
@@ -23,8 +23,7 @@ namespace SideDesk
         public string ScreenAUrl { get; set; } = "https://www.baidu.com";
         public string ScreenBUrl { get; set; } = "https://www.bing.com";
 
-        private MainWindow? _leftWindow;
-        private MainWindow? _rightWindow;
+        private readonly System.Collections.Generic.List<MainWindow> _windows = new();
         private System.Windows.Forms.NotifyIcon? _notifyIcon;
 
         /// <summary>主题变更事件</summary>
@@ -74,7 +73,11 @@ namespace SideDesk
             // 应用主题
             ApplyTheme(AppSettings.ThemeMode);
 
-            SwitchLayout(AppSettings.Layout, AppSettings.LeftScreen, AppSettings.RightScreen, save: false);
+            // 首次启动（无任何显示器配置）：默认主显示器左侧停靠，保持旧默认行为
+            if (AppSettings.Monitors.Count == 0)
+                AppSettings.GetMonitor(0).Layout = LayoutMode.Left;
+
+            ApplyLayout(save: false);
 
             // 初始化系统托盘图标
             InitNotifyIcon();
@@ -136,37 +139,55 @@ namespace SideDesk
         }
 
         /// <summary>
-        /// 切换布局模式
+        /// 全局布局切换（菜单入口）：作用于主显示器（下标 0）。
         /// </summary>
         public void SwitchLayout(LayoutMode mode)
         {
-            // 默认屏幕分配：单窗口显示 A，双侧左A右B
-            ScreenType left = ScreenType.A;
-            ScreenType right = mode == LayoutMode.Both ? ScreenType.B : ScreenType.A;
-            SwitchLayout(mode, left, right, save: true);
+            AppSettings.GetMonitor(0).Layout = mode;
+            ApplyLayout(save: true);
         }
 
-        public void SwitchLayout(LayoutMode mode, ScreenType leftScreen, ScreenType rightScreen, bool save)
+        /// <summary>
+        /// 指定显示器的布局切换（供单个窗口菜单使用）。
+        /// </summary>
+        public void SwitchLayoutForMonitor(int monitorIndex, LayoutMode mode)
         {
-            CloseWindow(ref _leftWindow);
-            CloseWindow(ref _rightWindow);
+            AppSettings.GetMonitor(monitorIndex).Layout = mode;
+            ApplyLayout(save: true);
+        }
 
-            CurrentLayout = mode;
+        /// <summary>
+        /// 根据每个显示器的停靠配置重建所有停靠窗口。
+        /// </summary>
+        public void ApplyLayout(bool save)
+        {
+            // 关闭并释放现有窗口
+            foreach (var w in _windows.ToList())
+                CloseWindow(w);
+            _windows.Clear();
 
-            switch (mode)
+            int monitorCount = MonitorEnumerator.GetMonitorsPrimaryFirst().Count;
+            if (monitorCount <= 0) monitorCount = 1;
+
+            for (int i = 0; i < monitorCount; i++)
             {
-                case LayoutMode.Left:
-                    _leftWindow = CreatePanel(DockEdge.Left, leftScreen);
-                    break;
-
-                case LayoutMode.Right:
-                    _rightWindow = CreatePanel(DockEdge.Right, rightScreen);
-                    break;
-
-                case LayoutMode.Both:
-                    _leftWindow = CreatePanel(DockEdge.Left, leftScreen);
-                    _rightWindow = CreatePanel(DockEdge.Right, rightScreen);
-                    break;
+                var cfg = AppSettings.GetMonitor(i);
+                switch (cfg.Layout)
+                {
+                    case LayoutMode.Left:
+                        _windows.Add(CreatePanel(DockEdge.Left, ScreenType.A, i));
+                        break;
+                    case LayoutMode.Right:
+                        _windows.Add(CreatePanel(DockEdge.Right, ScreenType.A, i));
+                        break;
+                    case LayoutMode.Both:
+                        _windows.Add(CreatePanel(DockEdge.Left, ScreenType.A, i));
+                        _windows.Add(CreatePanel(DockEdge.Right, ScreenType.A, i));
+                        break;
+                    case LayoutMode.None:
+                    default:
+                        break;
+                }
             }
 
             if (save) SaveState();
@@ -177,9 +198,6 @@ namespace SideDesk
         /// </summary>
         public void SaveState()
         {
-            AppSettings.Layout = CurrentLayout;
-            AppSettings.LeftScreen = _leftWindow?.CurrentScreen ?? ScreenType.A;
-            AppSettings.RightScreen = _rightWindow?.CurrentScreen ?? ScreenType.B;
             AppSettings.Save();
         }
 
@@ -187,8 +205,9 @@ namespace SideDesk
         {
             SaveState();
             WindowConfigs.Save();
-            CloseWindow(ref _leftWindow);
-            CloseWindow(ref _rightWindow);
+            foreach (var w in _windows.ToList())
+                CloseWindow(w);
+            _windows.Clear();
             Shutdown();
         }
 
@@ -294,29 +313,29 @@ namespace SideDesk
                     if (h == fg) { target = mw; break; }
                 }
             }
-            target ??= _leftWindow ?? _rightWindow;
+            target ??= _windows.FirstOrDefault();
             target?.SwitchTabByHotkey(index);
         }
 
-        private MainWindow CreatePanel(DockEdge side, ScreenType screen)
+        private MainWindow CreatePanel(DockEdge side, ScreenType screen, int monitorIndex)
         {
-            var window = new MainWindow(side, screen);
-            // 按停靠边取各自的停靠宽度：左侧用 LeftPanelWidth，右侧用 RightPanelWidth
+            var window = new MainWindow(side, screen, monitorIndex);
+            // 按停靠边取该显示器各自的停靠宽度：左侧用 LeftPanelWidth，右侧用 RightPanelWidth
+            var cfg = AppSettings.GetMonitor(monitorIndex);
             window.AppBarWidth = side == DockEdge.Left
-                ? AppSettings.LeftPanelWidth
-                : AppSettings.RightPanelWidth;
+                ? cfg.LeftPanelWidth
+                : cfg.RightPanelWidth;
             window.SetWindowConfigManager(WindowConfigs);
             window.Show();
             return window;
         }
 
-        private void CloseWindow(ref MainWindow? window)
+        private void CloseWindow(MainWindow? window)
         {
             if (window != null)
             {
                 window.UnregisterAppBar();
                 window.Close();
-                window = null;
             }
         }
 
@@ -385,44 +404,29 @@ namespace SideDesk
         }
 
         /// <summary>
-        /// 应用新的面板宽度（重新注册 AppBar）
-        /// </summary>
-        public void ApplyPanelWidth(int width)
-        {
-            AppSettings.PanelWidth = width;
-            // 重新切换布局以应用新宽度
-            SwitchLayout(CurrentLayout, 
-                _leftWindow?.CurrentScreen ?? ScreenType.A, 
-                _rightWindow?.CurrentScreen ?? ScreenType.B, 
-                save: true);
-        }
-
-        /// <summary>
-        /// 应用左右两侧各自的停靠宽度。
+        /// 应用各显示器每侧的停靠宽度。
         /// 直接更新现有窗口的 AppBarWidth 并重新定位，避免销毁重建窗口（
         /// 重建会连带关闭作为设置窗口 Owner 的主窗口，导致宽度不生效）。
         /// </summary>
         public void ApplyPanelWidths()
         {
-            if (_leftWindow != null)
+            foreach (var w in _windows)
             {
-                _leftWindow.AppBarWidth = AppSettings.LeftPanelWidth;
-                _leftWindow.PositionAppBar();
-            }
-            if (_rightWindow != null)
-            {
-                _rightWindow.AppBarWidth = AppSettings.RightPanelWidth;
-                _rightWindow.PositionAppBar();
+                var cfg = AppSettings.GetMonitor(w.ScreenIndex);
+                w.AppBarWidth = w.DockSide == DockEdge.Left
+                    ? cfg.LeftPanelWidth
+                    : cfg.RightPanelWidth;
+                w.PositionAppBar();
             }
         }
 
         /// <summary>
-        /// 热重载悬浮配置：遍历现存左右窗口，各自重新读取悬浮设置
+        /// 热重载悬浮配置：遍历现存所有停靠窗口，各自重新读取悬浮设置
         /// </summary>
         public void ReloadHoverSettings()
         {
-            _leftWindow?.ReloadHoverConfig();
-            _rightWindow?.ReloadHoverConfig();
+            foreach (var w in _windows)
+                w.ReloadHoverConfig();
         }
 
         #region 主题切换
@@ -667,6 +671,29 @@ namespace SideDesk
         
         #endregion
 
+        /// <summary>
+        /// 打开设置窗口（供托盘右键菜单使用）。
+        /// 若已有打开的设置窗口则激活；无停靠窗口时也能独立弹出。
+        /// </summary>
+        public void OpenSettings()
+        {
+            foreach (Window w in Windows)
+            {
+                if (w is SettingsWindow existing)
+                {
+                    existing.Show();
+                    existing.Activate();
+                    return;
+                }
+            }
+
+            var settings = new SettingsWindow();
+            var owner = _windows.FirstOrDefault();
+            if (owner != null) settings.Owner = owner;
+            settings.Show();
+            settings.Activate();
+        }
+
         #region 系统托盘图标
 
         /// <summary>初始化系统托盘图标（右键菜单含退出选项）</summary>
@@ -685,6 +712,8 @@ namespace SideDesk
                 catch { }
 
                 var contextMenu = new System.Windows.Forms.ContextMenuStrip();
+                contextMenu.Items.Add("设置", null, (s, e) => OpenSettings());
+                contextMenu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
                 contextMenu.Items.Add("退出 SideDesk", null, (s, e) => CloseAll());
 
                 _notifyIcon = new System.Windows.Forms.NotifyIcon
@@ -698,10 +727,7 @@ namespace SideDesk
                 // 双击托盘图标激活主窗口
                 _notifyIcon.DoubleClick += (s, e) =>
                 {
-                    if (_leftWindow != null)
-                        _leftWindow.Activate();
-                    else if (_rightWindow != null)
-                        _rightWindow.Activate();
+                    _windows.FirstOrDefault()?.Activate();
                 };
             }
             catch (Exception ex)

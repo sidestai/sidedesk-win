@@ -45,6 +45,7 @@ public class PanelItem
     public string SignalLightAlignment { get; set; } = "Center"; // 信号灯对齐：Left/Center/Right
     public string FileAreaLayout { get; set; } = "List";         // 文件区布局：LargeIcons/SmallIcons/List
     public int FileAreaColumns { get; set; } = 1;                // 文件区列数（1~4）
+    public double? PanelHeight { get; set; }                     // 模块内容区自定义高度（px）；null=自动高度
 }
 
 public class FileAreaItem
