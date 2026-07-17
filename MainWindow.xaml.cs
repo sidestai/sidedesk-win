@@ -107,6 +107,9 @@ namespace SideDesk
             sidebarPanel.NavigateToUrl(url);
         }
 
+        /// <summary>重新渲染原生模式面板（设置变更后调用）。</summary>
+        public void RefreshNativePanels() => sidebarPanel.RefreshNativePanels();
+
         /// <summary>
         /// 重新加载悬停浮动配置：按当前 DockSide 从设置读取该侧的开关与宽度，
         /// 动态启动或停止悬停计时器。可在设置变更后热重载调用。

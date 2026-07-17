@@ -30,6 +30,7 @@
                          SelectionChanged="Nav_Changed"
                          Padding="8,0">
                     <ListBoxItem Content="常规" IsSelected="True"/>
+                    <ListBoxItem Content="账户"/>
                     <ListBoxItem Content="外观"/>
                     <ListBoxItem Content="程序管理"/>
                     <ListBoxItem Content="扩展管理"/>
@@ -54,6 +55,115 @@
                     
                     <!-- 停靠配置（每显示器一个卡片，代码动态生成） -->
                     <StackPanel x:Name="dockConfigContainer"/>
+                </StackPanel>
+
+                <!-- 账户页面 -->
+                <StackPanel x:Name="pageAccount" Visibility="Collapsed" Margin="0,0,0,20">
+                    <TextBlock Text="账户"
+                               FontSize="{DynamicResource FontSizeSubtitle}"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource BrushTextMain}"
+                               Margin="0,0,0,24"/>
+
+                    <!-- 登录状态卡片 -->
+                    <Border Background="{DynamicResource BrushInputBG}"
+                            BorderBrush="{DynamicResource BrushBorder}"
+                            BorderThickness="1" CornerRadius="8"
+                            Padding="16" Margin="0,0,0,16">
+                        <DockPanel>
+                            <Button x:Name="accountActionBtn" DockPanel.Dock="Right" Content="登录"
+                                    Click="AccountAction_Click"
+                                    Style="{DynamicResource PrimaryButtonStyle}"
+                                    Padding="16,6" Height="32" VerticalAlignment="Center"/>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock x:Name="accountStatusText" Text="未登录"
+                                           Foreground="{DynamicResource BrushTextMain}"
+                                           FontSize="{DynamicResource FontSizeNormal}"
+                                           FontWeight="SemiBold"/>
+                                <TextBlock x:Name="accountSubText" Text="登录后可开启云同步备份"
+                                           Foreground="{DynamicResource BrushTextMuted}"
+                                           FontSize="{DynamicResource FontSizeSmall}"
+                                           Margin="0,4,0,0"/>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+
+                    <!-- 云同步卡片 -->
+                    <Border Background="{DynamicResource BrushInputBG}"
+                            BorderBrush="{DynamicResource BrushBorder}"
+                            BorderThickness="1" CornerRadius="8" Padding="16">
+                        <StackPanel>
+                            <DockPanel>
+                                <CheckBox x:Name="cloudSyncSwitch" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                          Style="{StaticResource RaycastSwitchStyle}"
+                                          Checked="CloudSyncSwitch_Changed"
+                                          Unchecked="CloudSyncSwitch_Changed"/>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="云同步"
+                                               Foreground="{DynamicResource BrushTextMain}"
+                                               FontSize="{DynamicResource FontSizeNormal}"
+                                               FontWeight="SemiBold"/>
+                                    <TextBlock Text="开启后每 30 分钟自动把本地全部配置备份到服务器，并在退出时再同步一次"
+                                               Foreground="{DynamicResource BrushTextMuted}"
+                                               FontSize="{DynamicResource FontSizeTiny}"
+                                               TextWrapping="Wrap" Margin="0,2,8,0"/>
+                                </StackPanel>
+                            </DockPanel>
+                            <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,12,0,12"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock x:Name="cloudSyncStatusText" Text="尚未同步"
+                                           Foreground="{DynamicResource BrushTextSec}"
+                                           FontSize="{DynamicResource FontSizeNormal}"
+                                           VerticalAlignment="Center"/>
+                                <Button x:Name="syncNowBtn" Grid.Column="1" Content="立即同步"
+                                        Click="SyncNow_Click"
+                                        Style="{StaticResource GhostButtonStyle}"
+                                        Padding="14,6" Height="30"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 本地备份 / 导出 -->
+                    <Border Background="{DynamicResource BrushInputBG}"
+                            BorderBrush="{DynamicResource BrushBorder}"
+                            BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,16,0,0">
+                        <StackPanel>
+                            <TextBlock Text="备份与导出"
+                                       Foreground="{DynamicResource BrushTextMain}"
+                                       FontSize="{DynamicResource FontSizeNormal}"
+                                       FontWeight="SemiBold"/>
+                            <TextBlock Text="在本地保存最近一次的配置快照（仅保留最后一个），可随时点“恢复”还原；导出可将全部配置保存为 JSON 文件。"
+                                       Foreground="{DynamicResource BrushTextMuted}"
+                                       FontSize="{DynamicResource FontSizeTiny}"
+                                       TextWrapping="Wrap" Margin="0,2,0,0"/>
+                            <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,12,0,12"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock x:Name="backupStatusText" Text="尚无本地备份"
+                                           Foreground="{DynamicResource BrushTextSec}"
+                                           FontSize="{DynamicResource FontSizeNormal}"
+                                           VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                    <Button Content="备份" Click="Backup_Click"
+                                            Style="{StaticResource GhostButtonStyle}"
+                                            Padding="14,6" Height="30" Margin="0,0,8,0"/>
+                                    <Button x:Name="restoreBtn" Content="恢复" Click="Restore_Click"
+                                            Style="{StaticResource GhostButtonStyle}"
+                                            Padding="14,6" Height="30" Margin="0,0,8,0"/>
+                                    <Button Content="导出配置" Click="ExportConfig_Click"
+                                            Style="{StaticResource GhostButtonStyle}"
+                                            Padding="14,6" Height="30"/>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
                 
                 <!-- 外观页面 -->
@@ -102,6 +212,24 @@
                             <TextBlock Text="%" Foreground="{DynamicResource BrushTextMuted}"
                                        VerticalAlignment="Center" Margin="6,0,0,0"/>
                         </StackPanel>
+                    </Grid>
+
+                    <!-- 隐藏模块外框时同时隐藏标题 -->
+                    <Grid Margin="0,0,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="隐藏模块外框时同时隐藏模块标题" Foreground="{DynamicResource BrushTextMain}"
+                                       FontSize="{DynamicResource FontSizeNormal}"/>
+                            <TextBlock Text="开启后，模块隐藏外框时一并隐藏其标题栏" Foreground="{DynamicResource BrushTextMuted}"
+                                       FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0"/>
+                        </StackPanel>
+                        <CheckBox x:Name="hideModuleTitleSwitch" Grid.Column="1" VerticalAlignment="Center"
+                                  Style="{StaticResource RaycastSwitchStyle}"
+                                  Checked="HideModuleTitleSwitch_Changed"
+                                  Unchecked="HideModuleTitleSwitch_Changed"/>
                     </Grid>
                 </StackPanel>
                 

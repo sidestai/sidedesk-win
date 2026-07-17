@@ -318,6 +318,16 @@ namespace SideDesk.Framework
             set { _hideModuleFrame = value; NotifyPropertyChanged("HideModuleFrame"); }
         }
 
+        private bool _hideModuleTitle { get; set; } = false;
+
+        /// <summary>隐藏模块外框时，是否同时隐藏模块标题栏</summary>
+        [JsonProperty]
+        public bool HideModuleTitle
+        {
+            get { return _hideModuleTitle; }
+            set { _hideModuleTitle = value; NotifyPropertyChanged("HideModuleTitle"); }
+        }
+
         #endregion
 
         #region 主题/外观属性

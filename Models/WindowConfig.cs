@@ -20,7 +20,9 @@ public enum PanelType
     Group,           // 分组
     TodoList,        // 今日待办
     SignalLight,     // 信号灯
-    DigitalEmployee  // 数字员工
+    DigitalEmployee, // 数字员工
+    Friend,          // 好友
+    ImageCarousel    // 图片轮播
 }
 
 public class PanelItem
@@ -49,6 +51,19 @@ public class PanelItem
     public double? PanelHeight { get; set; }                     // 模块内容区自定义高度（px）；null=自动高度
     public List<string>? DigitalEmployeeIds { get; set; }        // 数字员工模块：展示的员工 Id 列表（引用全局员工库）
     public int DigitalEmployeeColumns { get; set; } = 3;         // 数字员工模块：每排展示的员工数（1~5）
+    public string? FriendName { get; set; }                      // 好友模块：名字
+    public string? FriendAvatarPath { get; set; }                // 好友模块：头像图片路径
+    public string? FriendEmoji { get; set; }                     // 好友模块：Emoji/文字头像（无图片时的兜底）
+    public string? FriendStatusText { get; set; }                // 好友模块：状态文字
+    public string FriendOnlineStatus { get; set; } = "online";   // 好友模块：在线状态 online/away/busy/offline
+    public string FriendDisplayMode { get; set; } = "HorizontalSmall"; // 好友模块：显示方式 HorizontalSmall/VerticalLarge
+    public string? CarouselFolder { get; set; }                  // 图片轮播：图片所在目录
+    public int CarouselIntervalSeconds { get; set; } = 5;        // 图片轮播：切换间隔（秒）
+    public bool CarouselRandom { get; set; } = false;            // 图片轮播：随机播放（否则顺序）
+    public bool CarouselIncludeSubfolders { get; set; } = false; // 图片轮播：包含子目录
+    public string CarouselStretch { get; set; } = "Uniform";     // 图片轮播：填充方式 Uniform/UniformToFill/Fill
+    public double CarouselHeight { get; set; } = 140;            // 图片轮播：显示区高度（px）
+    public bool CarouselAutoPlay { get; set; } = true;           // 图片轮播：自动播放
 }
 
 public class FileAreaItem

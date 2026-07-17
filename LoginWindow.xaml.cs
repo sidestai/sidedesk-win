@@ -15,6 +15,9 @@ namespace SideDesk
         /// <summary>最近一次成功拦截到的登录接口 token（供外部读取）</summary>
         public static string? LastToken { get; private set; }
 
+        /// <summary>最近一次登录解析到的用户名称（尽力提取，可能为空）</summary>
+        public static string? LastUserName { get; private set; }
+
         private string? _targetRequestId;
         private bool _tokenHandled;
 
@@ -101,9 +104,17 @@ namespace SideDesk
                 if (!string.IsNullOrEmpty(token))
                 {
                     LastToken = token;
-                    try { Clipboard.SetText(token); } catch { }
-                    MessageBox.Show($"已获取 token（已复制到剪贴板）：\n\n{token}", "登录成功",
-                        MessageBoxButton.OK, MessageBoxImage.Information);
+                    LastUserName = ExtractUserName(body);
+                    // 登录成功：关闭窗口并返回成功（由调用方读取 LastToken 处理后续）
+                    try
+                    {
+                        Dispatcher.Invoke(() =>
+                        {
+                            try { DialogResult = true; } catch { }
+                            Close();
+                        });
+                    }
+                    catch { }
                 }
                 else
                 {
@@ -126,6 +137,50 @@ namespace SideDesk
                 return FindToken(doc.RootElement);
             }
             catch { return null; }
+        }
+
+        /// <summary>从登录接口响应 JSON 中尽力提取用户名称（兼容常见字段与嵌套结构）</summary>
+        private static string? ExtractUserName(string json)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(json);
+                return FindUserName(doc.RootElement);
+            }
+            catch { return null; }
+        }
+
+        private static string? FindUserName(JsonElement el)
+        {
+            if (el.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var prop in el.EnumerateObject())
+                {
+                    string name = prop.Name.ToLowerInvariant();
+                    if ((name == "nickname" || name == "nick_name" || name == "username"
+                         || name == "user_name" || name == "realname" || name == "real_name"
+                         || name == "name")
+                        && prop.Value.ValueKind == JsonValueKind.String)
+                    {
+                        var v = prop.Value.GetString();
+                        if (!string.IsNullOrWhiteSpace(v)) return v;
+                    }
+                }
+                foreach (var prop in el.EnumerateObject())
+                {
+                    var found = FindUserName(prop.Value);
+                    if (!string.IsNullOrEmpty(found)) return found;
+                }
+            }
+            else if (el.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in el.EnumerateArray())
+                {
+                    var found = FindUserName(item);
+                    if (!string.IsNullOrEmpty(found)) return found;
+                }
+            }
+            return null;
         }
 
         private static string? FindToken(JsonElement el)

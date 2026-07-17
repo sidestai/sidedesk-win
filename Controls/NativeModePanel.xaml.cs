@@ -76,6 +76,9 @@ namespace SideDesk.Controls
         // 顶层面板拖拽排序指示器（编辑模式下上下拖动模块/分组调换位置）
         // 指示器为 XAML 中的常驻叠加层 panelDropIndicator，不再动态插入/移除子元素，避免布局抖动
 
+        // 右键菜单打开时记录的插入位置：当右键点在两个模块之间时，新增模块插入到该位置；null 表示按默认追加
+        private int? _pendingInsertIndex;
+
         // 今日待办到点提醒
         private DispatcherTimer? _todoReminderTimer;
         private static readonly HashSet<string> _remindedTodoIds = new();
@@ -207,6 +210,9 @@ namespace SideDesk.Controls
         /// <summary>
         /// 根据当前窗口配置渲染所有面板
         /// </summary>
+        /// <summary>外部触发重新渲染面板（例如设置变更后）。</summary>
+        public void RefreshLayout() => RenderPanels();
+
         private void RenderPanels()
         {
             dynamicContent.Children.Clear();
@@ -365,6 +371,8 @@ namespace SideDesk.Controls
                 PanelType.TodoList => BuildTodoWidget(item),
                 PanelType.SignalLight => BuildSignalLightWidget(item),
                 PanelType.DigitalEmployee => BuildDigitalEmployeeWidget(item),
+                PanelType.Friend => BuildFriendWidget(item),
+                PanelType.ImageCarousel => BuildImageCarouselWidget(item),
                 PanelType.Group => BuildGroupWidget(item),
                 _ => null
             };
@@ -373,7 +381,7 @@ namespace SideDesk.Controls
         /// <summary>
         /// 通用面板包裹器：带标题和删除按钮
         /// </summary>
-        private Border WrapWidget(string defaultTitle, UIElement content, PanelItem item, Action? onAddClick = null)
+        private Border WrapWidget(string defaultTitle, UIElement content, PanelItem item, Action? onAddClick = null, ContextMenu? actionMenu = null)
         {
             // 该模块「隐藏模块外框」可勾选菜单项（独立控制单个模块的外框样式）
             MenuItem BuildHideFrameMenuItem()
@@ -403,7 +411,7 @@ namespace SideDesk.Controls
 
                 var bareBorder = new Border
                 {
-                    Margin = new Thickness(0, 0, 0, 3),
+                    Margin = new Thickness(0, 0, 0, 6),
                     Padding = new Thickness(0),
                     Background = Brushes.Transparent,
                     BorderThickness = new Thickness(0),
@@ -480,6 +488,17 @@ namespace SideDesk.Controls
             {
                 actionBtn.Click += (s, e) => RemovePanel(item);
             }
+            else if (actionMenu != null)
+            {
+                actionBtn.Content = "\u25BE";
+                actionBtn.FontSize = 12;
+                actionBtn.Click += (s, e) =>
+                {
+                    actionMenu.PlacementTarget = actionBtn;
+                    actionMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+                    actionMenu.IsOpen = true;
+                };
+            }
             else if (onAddClick != null)
             {
                 actionBtn.Click += (s, e) => onAddClick();
@@ -499,7 +518,7 @@ namespace SideDesk.Controls
 
             var border = new Border
             {
-                Margin = new Thickness(0, 0, 0, 3),
+                Margin = new Thickness(0, 0, 0, 6),
                 Padding = new Thickness(0, 10, 0, 0),
                 CornerRadius = new CornerRadius(6),
                 Background = (Brush)FindResource("BrushInputBG"),
@@ -842,7 +861,9 @@ namespace SideDesk.Controls
                 ("文件区", PanelType.FileArea),
                 ("数据看板", PanelType.DataDashboard),
                 ("计时器", PanelType.Timer),
-                ("信号灯", PanelType.SignalLight)
+                ("信号灯", PanelType.SignalLight),
+                ("图片轮播", PanelType.ImageCarousel),
+                ("好友", PanelType.Friend)
             })
             {
                 var mi = new MenuItem { Header = header };
@@ -904,7 +925,7 @@ namespace SideDesk.Controls
             // 分组外框（轻量 Border，无额外标题栏）
             var border = new Border
             {
-                Margin = new Thickness(0, 0, 0, 12),
+                Margin = new Thickness(0, 0, 0, 6),
                 Padding = new Thickness(0, 10, 0, 0),
                 CornerRadius = new CornerRadius(6),
                 Background = (Brush)FindResource("BrushInputBG"),
@@ -1049,6 +1070,9 @@ namespace SideDesk.Controls
                         RenderPanels();
                     };
                     clipMenu.Items.Add(clipDelItem);
+                    var clipHideMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
+                    clipHideMi.Click += (s, ev) => { item.HideFrame = clipHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
+                    clipMenu.Items.Add(clipHideMi);
                     itemPanel.ContextMenu = clipMenu;
 
                     // 删除按钮
@@ -1706,6 +1730,9 @@ namespace SideDesk.Controls
             var del = new MenuItem { Header = "删除" };
             del.Click += (s, e) => { panelItem.TodoItems?.Remove(todo); _configManager?.Save(); RenderPanels(); };
             menu.Items.Add(del);
+            var todoHideMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = panelItem.HideFrame };
+            todoHideMi.Click += (s, e) => { panelItem.HideFrame = todoHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
+            menu.Items.Add(todoHideMi);
             row.ContextMenu = menu;
 
             return row;
@@ -1987,6 +2014,9 @@ namespace SideDesk.Controls
             // 隐藏模块外框判断
             if ((item.HideFrame || AppSettings.Instance.HideModuleFrame) && !_isEditMode)
             {
+                // 隐藏外框时，若开启了「同时隐藏模块标题」则移除标题栏
+                if (AppSettings.Instance.HideModuleTitle)
+                    mainStack.Children.Remove(header);
                 var bareBorder = new Border
                 {
                     Margin = new Thickness(0, 0, 0, 8),
@@ -2008,7 +2038,7 @@ namespace SideDesk.Controls
         
             var wrapper = new Border
             {
-                Margin = new Thickness(0, 0, 0, 12),
+                Margin = new Thickness(0, 0, 0, 6),
                 Padding = new Thickness(0, 10, 0, 0),
                 CornerRadius = new CornerRadius(6),
                 Background = (Brush)FindResource("BrushInputBG"),
@@ -2036,12 +2066,371 @@ namespace SideDesk.Controls
             return wrapper;
         }
 
+        // ==================== 图片轮播模块 ====================
+
+        /// <summary>加载指定目录下的图片文件路径列表</summary>
+        private List<string> LoadCarouselImages(PanelItem item)
+        {
+            var result = new List<string>();
+            if (string.IsNullOrWhiteSpace(item.CarouselFolder) || !System.IO.Directory.Exists(item.CarouselFolder))
+                return result;
+            var exts = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp" };
+            try
+            {
+                var opt = item.CarouselIncludeSubfolders
+                    ? System.IO.SearchOption.AllDirectories
+                    : System.IO.SearchOption.TopDirectoryOnly;
+                foreach (var f in System.IO.Directory.EnumerateFiles(item.CarouselFolder, "*.*", opt))
+                {
+                    if (exts.Contains(System.IO.Path.GetExtension(f)))
+                        result.Add(f);
+                }
+                result.Sort(StringComparer.OrdinalIgnoreCase);
+            }
+            catch { }
+            return result;
+        }
+
+        private UIElement BuildImageCarouselWidget(PanelItem item)
+        {
+            var images = LoadCarouselImages(item);
+            int index = 0;
+            var rnd = new Random();
+
+            // 图片显示控件
+            var image = new Image
+            {
+                Stretch = item.CarouselStretch switch
+                {
+                    "UniformToFill" => Stretch.UniformToFill,
+                    "Fill" => Stretch.Fill,
+                    _ => Stretch.Uniform
+                },
+                Cursor = Cursors.Hand
+            };
+
+            // 序号标签
+            var infoLabel = new TextBlock
+            {
+                FontSize = 10,
+                Foreground = Brushes.White,
+                Background = new SolidColorBrush(Color.FromArgb(120, 0, 0, 0)),
+                Padding = new Thickness(4, 1, 4, 1),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(0, 0, 4, 4)
+            };
+
+            // 空状态提示
+            var emptyHint = new TextBlock
+            {
+                Text = "未设置目录或无图片\n点标题栏 ▾ → 设置",
+                TextAlignment = TextAlignment.Center,
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                FontSize = 12,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            var displayGrid = new Grid { Height = item.CarouselHeight, ClipToBounds = true };
+            displayGrid.Children.Add(image);
+            displayGrid.Children.Add(infoLabel);
+            displayGrid.Children.Add(emptyHint);
+
+            void ShowImage()
+            {
+                if (images.Count == 0)
+                {
+                    image.Source = null;
+                    infoLabel.Visibility = Visibility.Collapsed;
+                    emptyHint.Visibility = Visibility.Visible;
+                    return;
+                }
+                emptyHint.Visibility = Visibility.Collapsed;
+                if (index < 0) index = images.Count - 1;
+                if (index >= images.Count) index = 0;
+                try
+                {
+                    var bmp = new BitmapImage();
+                    bmp.BeginInit();
+                    bmp.CacheOption = BitmapCacheOption.OnLoad;
+                    bmp.UriSource = new Uri(images[index]);
+                    bmp.EndInit();
+                    bmp.Freeze();
+                    image.Source = bmp;
+                    infoLabel.Text = $"{index + 1}/{images.Count}";
+                    infoLabel.Visibility = Visibility.Visible;
+                }
+                catch { image.Source = null; }
+            }
+
+            void Next()
+            {
+                if (images.Count == 0) return;
+                if (item.CarouselRandom && images.Count > 1)
+                {
+                    int n; do { n = rnd.Next(images.Count); } while (n == index);
+                    index = n;
+                }
+                else index = (index + 1) % images.Count;
+                ShowImage();
+            }
+
+            void Prev()
+            {
+                if (images.Count == 0) return;
+                index = (index - 1 + images.Count) % images.Count;
+                ShowImage();
+            }
+
+            image.MouseLeftButtonUp += (s, e) => Next();
+            ShowImage();
+
+            // 自动播放定时器（非编辑模式、至少两张图）
+            if (item.CarouselAutoPlay && !_isEditMode && images.Count > 1)
+            {
+                var playTimer = new DispatcherTimer(DispatcherPriority.Normal)
+                {
+                    Interval = TimeSpan.FromSeconds(Math.Max(1, item.CarouselIntervalSeconds))
+                };
+                playTimer.Tick += (s, e) => Next();
+                playTimer.Start();
+                // 面板重新渲染/窗口关闭导致控件卸载时停止，避免定时器泄漏
+                displayGrid.Unloaded += (s, e) => playTimer.Stop();
+            }
+
+            // === 自定义标题栏：标题 + 下拉三角 ===
+            var defaultTitle = "🖼 图片轮播";
+            var displayTitle = string.IsNullOrEmpty(item.Title) ? defaultTitle : item.Title;
+            var header = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+            header.Uid = PanelHeaderUid;
+            if (_isEditMode) { header.Tag = PanelDragHandleTag; header.Cursor = Cursors.SizeAll; }
+
+            var titleBlock = new Emoji.Wpf.TextBlock
+            {
+                Text = displayTitle,
+                FontWeight = FontWeights.SemiBold,
+                FontSize = 13,
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = (Brush)FindResource("BrushTextMain")
+            };
+            if (_isEditMode)
+            {
+                titleBlock.Cursor = Cursors.Hand;
+                titleBlock.ToolTip = "双击编辑名称";
+                titleBlock.MouseLeftButtonDown += (s, e) =>
+                {
+                    if (e.ClickCount == 2) { PromptRenamePanel(item, defaultTitle); e.Handled = true; }
+                };
+            }
+
+            var dropBtn = new Button
+            {
+                Content = "\u25BE",
+                FontSize = 12,
+                Padding = new Thickness(4, 0, 4, 0),
+                Background = Brushes.Transparent,
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Visibility = _isEditMode ? Visibility.Collapsed : Visibility.Visible
+            };
+
+            var dropMenu = new ContextMenu();
+            var settingsMi = new MenuItem { Header = "设置目录/播放规则..." };
+            settingsMi.Click += (s, e) => ShowCarouselSettingsDialog(item);
+            dropMenu.Items.Add(settingsMi);
+            var prevMi = new MenuItem { Header = "上一张" };
+            prevMi.Click += (s, e) => Prev();
+            dropMenu.Items.Add(prevMi);
+            var nextMi = new MenuItem { Header = "下一张" };
+            nextMi.Click += (s, e) => Next();
+            dropMenu.Items.Add(nextMi);
+            var playMi = new MenuItem { Header = item.CarouselAutoPlay ? "暂停自动播放" : "开始自动播放" };
+            playMi.Click += (s, e) => { item.CarouselAutoPlay = !item.CarouselAutoPlay; _configManager?.Save(); RenderPanels(); };
+            dropMenu.Items.Add(playMi);
+            dropMenu.Items.Add(new Separator());
+            var hideFrameMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
+            hideFrameMi.Click += (s, e) => { item.HideFrame = hideFrameMi.IsChecked; _configManager?.Save(); RenderPanels(); };
+            dropMenu.Items.Add(hideFrameMi);
+            var delModuleMi = new MenuItem { Header = "删除模块" };
+            delModuleMi.Click += (s, e) => RemovePanel(item);
+            dropMenu.Items.Add(delModuleMi);
+            dropBtn.Click += (s, e) => dropMenu.IsOpen = true;
+
+            DockPanel.SetDock(dropBtn, Dock.Right);
+            header.Children.Add(dropBtn);
+            header.Children.Add(titleBlock);
+
+            var mainStack = new StackPanel();
+            mainStack.Children.Add(header);
+            mainStack.Children.Add(displayGrid);
+
+            // 隐藏模块外框判断
+            if ((item.HideFrame || AppSettings.Instance.HideModuleFrame) && !_isEditMode)
+            {
+                if (AppSettings.Instance.HideModuleTitle)
+                    mainStack.Children.Remove(header);
+                var bareBorder = new Border
+                {
+                    Margin = new Thickness(0, 0, 0, 8),
+                    Padding = new Thickness(0),
+                    Background = Brushes.Transparent,
+                    BorderThickness = new Thickness(0),
+                    Child = mainStack
+                };
+                var bareMenu = new ContextMenu();
+                var bareSettingsMi = new MenuItem { Header = "设置目录/播放规则..." };
+                bareSettingsMi.Click += (s, e) => ShowCarouselSettingsDialog(item);
+                bareMenu.Items.Add(bareSettingsMi);
+                var bareHideMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
+                bareHideMi.Click += (s, e) => { item.HideFrame = bareHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
+                bareMenu.Items.Add(bareHideMi);
+                var bareDelMi = new MenuItem { Header = "删除模块" };
+                bareDelMi.Click += (s, e) => RemovePanel(item);
+                bareMenu.Items.Add(bareDelMi);
+                bareBorder.ContextMenu = bareMenu;
+                return bareBorder;
+            }
+
+            var wrapper = new Border
+            {
+                Margin = new Thickness(0, 0, 0, 6),
+                Padding = new Thickness(0, 10, 0, 0),
+                CornerRadius = new CornerRadius(6),
+                Background = (Brush)FindResource("BrushInputBG"),
+                BorderBrush = (Brush)FindResource("BrushBorder"),
+                BorderThickness = new Thickness(1),
+                Child = mainStack
+            };
+            if (_isEditMode)
+            {
+                wrapper.MouseEnter += (s, e) => dropBtn.Visibility = Visibility.Visible;
+                wrapper.MouseLeave += (s, e) => dropBtn.Visibility = Visibility.Collapsed;
+            }
+            var moduleMenu = new ContextMenu();
+            var mSettingsMi = new MenuItem { Header = "设置目录/播放规则..." };
+            mSettingsMi.Click += (s, e) => ShowCarouselSettingsDialog(item);
+            moduleMenu.Items.Add(mSettingsMi);
+            var mHideMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
+            mHideMi.Click += (s, e) => { item.HideFrame = mHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
+            moduleMenu.Items.Add(mHideMi);
+            var mDelMi = new MenuItem { Header = "删除模块" };
+            mDelMi.Click += (s, e) => RemovePanel(item);
+            moduleMenu.Items.Add(mDelMi);
+            wrapper.ContextMenu = moduleMenu;
+
+            return wrapper;
+        }
+
+        /// <summary>图片轮播设置对话框：目录 + 播放规则</summary>
+        private void ShowCarouselSettingsDialog(PanelItem item)
+        {
+            var dialog = new Window
+            {
+                Title = "图片轮播设置",
+                Width = 380,
+                SizeToContent = SizeToContent.Height,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                ResizeMode = ResizeMode.NoResize,
+                ShowInTaskbar = false,
+                Background = (Brush)FindResource("BrushDialogBG"),
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                Owner = Window.GetWindow(this)
+            };
+            dialog.SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(dialog);
+
+            var root = new StackPanel { Margin = new Thickness(16) };
+            TextBlock MakeLabel(string t) => new Emoji.Wpf.TextBlock
+            {
+                Text = t,
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                Margin = new Thickness(0, 0, 0, 4)
+            };
+
+            // 图片目录
+            root.Children.Add(MakeLabel("图片目录"));
+            var folderRow = new DockPanel { Margin = new Thickness(0, 0, 0, 12) };
+            var browseBtn = new Button { Content = "浏览", Width = 60, Margin = new Thickness(8, 0, 0, 0), Style = (Style)Application.Current.FindResource("StandardButtonStyle") };
+            DockPanel.SetDock(browseBtn, Dock.Right);
+            var folderBox = new TextBox { Text = item.CarouselFolder ?? "", IsReadOnly = true, Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
+            browseBtn.Click += (s, e) =>
+            {
+                var fd = new Microsoft.Win32.OpenFolderDialog { Title = "选择图片目录" };
+                if (!string.IsNullOrWhiteSpace(item.CarouselFolder) && System.IO.Directory.Exists(item.CarouselFolder))
+                    fd.InitialDirectory = item.CarouselFolder;
+                if (fd.ShowDialog() == true) folderBox.Text = fd.FolderName;
+            };
+            folderRow.Children.Add(browseBtn);
+            folderRow.Children.Add(folderBox);
+            root.Children.Add(folderRow);
+
+            // 切换间隔
+            root.Children.Add(MakeLabel("切换间隔（秒）"));
+            var intervalBox = new TextBox { Text = item.CarouselIntervalSeconds.ToString(), Margin = new Thickness(0, 0, 0, 12), Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
+            root.Children.Add(intervalBox);
+
+            // 显示高度
+            root.Children.Add(MakeLabel("显示高度（px）"));
+            var heightBox = new TextBox { Text = ((int)item.CarouselHeight).ToString(), Margin = new Thickness(0, 0, 0, 12), Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
+            root.Children.Add(heightBox);
+
+            // 播放顺序
+            root.Children.Add(MakeLabel("播放顺序"));
+            var orderCombo = new ComboBox { Margin = new Thickness(0, 0, 0, 12), Style = (Style)Application.Current.FindResource("GlobalComboBoxStyle") };
+            orderCombo.Items.Add("顺序播放");
+            orderCombo.Items.Add("随机播放");
+            orderCombo.SelectedIndex = item.CarouselRandom ? 1 : 0;
+            root.Children.Add(orderCombo);
+
+            // 填充方式
+            root.Children.Add(MakeLabel("填充方式"));
+            var fitCombo = new ComboBox { Margin = new Thickness(0, 0, 0, 12), Style = (Style)Application.Current.FindResource("GlobalComboBoxStyle") };
+            fitCombo.Items.Add("适应（完整显示）");
+            fitCombo.Items.Add("填满（裁剪铺满）");
+            fitCombo.Items.Add("拉伸（变形铺满）");
+            fitCombo.SelectedIndex = item.CarouselStretch switch { "UniformToFill" => 1, "Fill" => 2, _ => 0 };
+            root.Children.Add(fitCombo);
+
+            // 开关项
+            var subChk = new CheckBox { Content = "包含子目录", IsChecked = item.CarouselIncludeSubfolders, Foreground = (Brush)FindResource("BrushTextMain"), Margin = new Thickness(0, 0, 0, 8) };
+            root.Children.Add(subChk);
+            var autoChk = new CheckBox { Content = "自动播放", IsChecked = item.CarouselAutoPlay, Foreground = (Brush)FindResource("BrushTextMain"), Margin = new Thickness(0, 0, 0, 16) };
+            root.Children.Add(autoChk);
+
+            // 按钮
+            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            var okBtn = new Button { Content = "确定", Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)Application.Current.FindResource("PrimaryButtonStyle") };
+            var cancelBtn = new Button { Content = "取消", Width = 70, Style = (Style)Application.Current.FindResource("StandardButtonStyle") };
+            okBtn.Click += (s, e) =>
+            {
+                item.CarouselFolder = string.IsNullOrWhiteSpace(folderBox.Text) ? null : folderBox.Text;
+                if (int.TryParse(intervalBox.Text, out var iv) && iv >= 1) item.CarouselIntervalSeconds = iv;
+                if (double.TryParse(heightBox.Text, out var h) && h >= 40 && h <= 800) item.CarouselHeight = h;
+                item.CarouselRandom = orderCombo.SelectedIndex == 1;
+                item.CarouselStretch = fitCombo.SelectedIndex switch { 1 => "UniformToFill", 2 => "Fill", _ => "Uniform" };
+                item.CarouselIncludeSubfolders = subChk.IsChecked ?? false;
+                item.CarouselAutoPlay = autoChk.IsChecked ?? true;
+                _configManager?.Save();
+                RenderPanels();
+                dialog.DialogResult = true;
+            };
+            cancelBtn.Click += (s, e) => dialog.DialogResult = false;
+            btnPanel.Children.Add(okBtn);
+            btnPanel.Children.Add(cancelBtn);
+            root.Children.Add(btnPanel);
+
+            dialog.Content = root;
+            dialog.ShowDialog();
+        }
+
         private Border CreateTimerCard(TimerItem timer, PanelItem panelItem)
         {
             var card = new Border
             {
                 Margin = new Thickness(0, 0, 0, 8),
-                Padding = new Thickness(0, 8, 0, 8),
+                Padding = new Thickness(10, 8, 10, 8),
                 Background = (Brush)FindResource("BrushBG"),
                 BorderBrush = (Brush)FindResource("BrushBorder"),
                 BorderThickness = new Thickness(1),
@@ -2863,6 +3252,9 @@ namespace SideDesk.Controls
             // 隐藏模块外框判断
             if ((item.HideFrame || AppSettings.Instance.HideModuleFrame) && !_isEditMode)
             {
+                // 隐藏外框时，若开启了「同时隐藏模块标题」则移除标题栏
+                if (AppSettings.Instance.HideModuleTitle)
+                    mainStack.Children.Remove(header);
                 var bareBorder = new Border
                 {
                     Margin = new Thickness(0, 0, 0, 8),
@@ -2884,7 +3276,7 @@ namespace SideDesk.Controls
 
             var wrapper = new Border
             {
-                Margin = new Thickness(0, 0, 0, 12),
+                Margin = new Thickness(0, 0, 0, 6),
                 Padding = new Thickness(0, 10, 0, 0),
                 CornerRadius = new CornerRadius(6),
                 Background = (Brush)FindResource("BrushInputBG"),
@@ -3474,6 +3866,7 @@ namespace SideDesk.Controls
         private void AddAIChatPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.AIChat);
         private void AddFileAreaPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.FileArea);
         private void AddClipboardHistoryPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.ClipboardHistory);
+        private void AddImageCarouselPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.ImageCarousel);
         private void AddDataDashboard_Click(object sender, RoutedEventArgs e)
         {
             if (_currentWindowConfig == null || _configManager == null) return;
@@ -3603,6 +3996,17 @@ namespace SideDesk.Controls
         /// <summary>将新面板添加到最后一个分组内（如有），否则添加到顶层</summary>
         private void AddPanelToGroupOrTop(PanelItem newPanel)
         {
+            // 若右键点击位置落在两个顶层模块之间，则插入到该位置（优先于分组追加行为）
+            if (_pendingInsertIndex is int insertIdx)
+            {
+                _pendingInsertIndex = null;
+                int count = _currentWindowConfig!.Panels.Count;
+                if (insertIdx > 0 && insertIdx < count)
+                {
+                    _currentWindowConfig.Panels.Insert(insertIdx, newPanel);
+                    return;
+                }
+            }
             var lastGroup = _currentWindowConfig!.Panels.LastOrDefault(p => p.Type == PanelType.Group);
             if (lastGroup != null)
             {
@@ -3782,6 +4186,9 @@ namespace SideDesk.Controls
             // 隐藏模块外框
             if ((item.HideFrame || AppSettings.Instance.HideModuleFrame) && !_isEditMode)
             {
+                // 隐藏外框时，若开启了「同时隐藏模块标题」则移除标题栏
+                if (AppSettings.Instance.HideModuleTitle)
+                    mainStack.Children.Remove(header);
                 var bareBorder = new Border
                 {
                     Margin = new Thickness(0, 0, 0, 8),
@@ -3803,7 +4210,7 @@ namespace SideDesk.Controls
 
             var wrapper = new Border
             {
-                Margin = new Thickness(0, 0, 0, 12),
+                Margin = new Thickness(0, 0, 0, 6),
                 Padding = new Thickness(0, 10, 0, 0),
                 CornerRadius = new CornerRadius(6),
                 Background = (Brush)FindResource("BrushInputBG"),
@@ -4082,6 +4489,408 @@ namespace SideDesk.Controls
 
         #endregion
 
+        #region 好友面板
+
+        /// <summary>好友在线状态 → 颜色</summary>
+        private Brush GetFriendStatusBrush(string? status) => status switch
+        {
+            "online" => new SolidColorBrush(Color.FromRgb(0x4C, 0xAF, 0x50)), // 绿色 在线
+            "away"   => new SolidColorBrush(Color.FromRgb(0xFF, 0xB3, 0x00)), // 橙黄 离开
+            "busy"   => new SolidColorBrush(Color.FromRgb(0xF4, 0x43, 0x36)), // 红色 忙碌
+            _        => new SolidColorBrush(Color.FromRgb(0x9E, 0x9E, 0x9E)), // 灰色 离线
+        };
+
+        /// <summary>好友在线状态 → 中文标签</summary>
+        private string GetFriendStatusLabel(string? status) => status switch
+        {
+            "online" => "在线",
+            "away"   => "离开",
+            "busy"   => "忙碌",
+            _        => "离线",
+        };
+
+        /// <summary>好友头像兜底文字（Emoji 优先，否则名字首字）</summary>
+        private Emoji.Wpf.TextBlock CreateFriendAvatarFallback(PanelItem item, double size)
+        {
+            string fallback;
+            if (!string.IsNullOrWhiteSpace(item.FriendEmoji)) fallback = item.FriendEmoji!;
+            else if (!string.IsNullOrWhiteSpace(item.FriendName)) fallback = item.FriendName!.Substring(0, 1);
+            else fallback = "\U0001F642";
+            return new Emoji.Wpf.TextBlock
+            {
+                Text = fallback,
+                Foreground = Brushes.White,
+                FontSize = size * 0.42,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+        }
+
+        /// <summary>好友头像：圆形头像 + 右下角在线状态圆点</summary>
+        private FrameworkElement BuildFriendAvatar(PanelItem item, double size)
+        {
+            var grid = new Grid { Width = size, Height = size, HorizontalAlignment = HorizontalAlignment.Left };
+
+            var avatarBorder = new Border
+            {
+                Width = size, Height = size,
+                CornerRadius = new CornerRadius(size / 2),
+                Background = (Brush)FindResource("BrushAccent")
+            };
+            if (!string.IsNullOrWhiteSpace(item.FriendAvatarPath) && System.IO.File.Exists(item.FriendAvatarPath))
+            {
+                try
+                {
+                    var bmp = new System.Windows.Media.Imaging.BitmapImage();
+                    bmp.BeginInit();
+                    bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                    bmp.UriSource = new Uri(item.FriendAvatarPath);
+                    bmp.EndInit();
+                    avatarBorder.Background = new ImageBrush(bmp) { Stretch = Stretch.UniformToFill };
+                }
+                catch { avatarBorder.Child = CreateFriendAvatarFallback(item, size); }
+            }
+            else avatarBorder.Child = CreateFriendAvatarFallback(item, size);
+            grid.Children.Add(avatarBorder);
+
+            // 右下角在线状态圆点（带描边，与头像分离）
+            double dotSize = Math.Max(10, size * 0.28);
+            var dot = new Border
+            {
+                Width = dotSize, Height = dotSize,
+                CornerRadius = new CornerRadius(dotSize / 2),
+                Background = GetFriendStatusBrush(item.FriendOnlineStatus),
+                BorderBrush = (Brush)FindResource("BrushInputBG"),
+                BorderThickness = new Thickness(2),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                ToolTip = GetFriendStatusLabel(item.FriendOnlineStatus)
+            };
+            grid.Children.Add(dot);
+
+            return grid;
+        }
+
+        private UIElement BuildFriendWidget(PanelItem item)
+        {
+            bool vertical = item.FriendDisplayMode == "VerticalLarge";
+
+            var nameBlock = new Emoji.Wpf.TextBlock
+            {
+                Text = string.IsNullOrWhiteSpace(item.FriendName) ? "未命名好友" : item.FriendName!,
+                FontSize = vertical ? 15 : 14,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                MaxWidth = vertical ? 170 : 170,
+                HorizontalAlignment = vertical ? HorizontalAlignment.Center : HorizontalAlignment.Left
+            };
+
+            // 状态行：小圆点 + 状态文字
+            var statusRow = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(0, 3, 0, 0),
+                HorizontalAlignment = vertical ? HorizontalAlignment.Center : HorizontalAlignment.Left
+            };
+            statusRow.Children.Add(new Border
+            {
+                Width = 8, Height = 8, CornerRadius = new CornerRadius(4),
+                Background = GetFriendStatusBrush(item.FriendOnlineStatus),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 5, 0)
+            });
+            statusRow.Children.Add(new Emoji.Wpf.TextBlock
+            {
+                Text = string.IsNullOrWhiteSpace(item.FriendStatusText) ? GetFriendStatusLabel(item.FriendOnlineStatus) : item.FriendStatusText!,
+                FontSize = 11,
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                MaxWidth = 160
+            });
+
+            UIElement content;
+            if (vertical)
+            {
+                // 垂直大头像：头像居中在上，名称/状态在下
+                var stack = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, Cursor = Cursors.Hand };
+                var avatar = BuildFriendAvatar(item, 72);
+                avatar.HorizontalAlignment = HorizontalAlignment.Center;
+                avatar.Margin = new Thickness(0, 0, 0, 8);
+                stack.Children.Add(avatar);
+                nameBlock.HorizontalAlignment = HorizontalAlignment.Center;
+                stack.Children.Add(nameBlock);
+                stack.Children.Add(statusRow);
+                content = stack;
+            }
+            else
+            {
+                // 水平小头像：头像在左，名称/状态在右
+                var row = new StackPanel { Orientation = Orientation.Horizontal, Cursor = Cursors.Hand };
+                var avatar = BuildFriendAvatar(item, 30);
+                avatar.Margin = new Thickness(0, 0, 10, 0);
+                avatar.VerticalAlignment = VerticalAlignment.Center;
+                row.Children.Add(avatar);
+                var col = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                col.Children.Add(nameBlock);
+                col.Children.Add(statusRow);
+                row.Children.Add(col);
+                content = row;
+            }
+
+            if (content is FrameworkElement cfe)
+            {
+                cfe.MouseLeftButtonUp += (s, e) => { if (!_isEditMode) ShowFriendEditDialog(item); };
+                cfe.ToolTip = "点击编辑好友信息";
+            }
+
+            // 右上角按钮的下拉菜单
+            var actionMenu = new ContextMenu();
+            var editMi = new MenuItem { Header = "编辑" };
+            editMi.Click += (s, e) => ShowFriendEditDialog(item);
+            actionMenu.Items.Add(editMi);
+
+            var displayMi = new MenuItem { Header = "显示方式" };
+            var modeHorizontal = new MenuItem { Header = "水平小头像", IsCheckable = true, IsChecked = !vertical };
+            modeHorizontal.Click += (s, e) => { item.FriendDisplayMode = "HorizontalSmall"; _configManager?.Save(); RenderPanels(); };
+            displayMi.Items.Add(modeHorizontal);
+            var modeVertical = new MenuItem { Header = "垂直大头像", IsCheckable = true, IsChecked = vertical };
+            modeVertical.Click += (s, e) => { item.FriendDisplayMode = "VerticalLarge"; _configManager?.Save(); RenderPanels(); };
+            displayMi.Items.Add(modeVertical);
+            actionMenu.Items.Add(displayMi);
+
+            actionMenu.Items.Add(new Separator());
+            var addMi = new MenuItem { Header = "添加新好友" };
+            addMi.Click += (s, e) => ShowAddFriendByCodeDialog();
+            actionMenu.Items.Add(addMi);
+
+            return WrapWidget("好友", content, item, actionMenu: actionMenu);
+        }
+
+        private void AddFriendPanel_Click(object sender, RoutedEventArgs e)
+        {
+            if (_currentWindowConfig == null || _configManager == null) return;
+            var newPanel = new PanelItem
+            {
+                Type = PanelType.Friend,
+                Title = "好友",
+                FriendName = "好友",
+                FriendEmoji = "\U0001F642",
+                FriendStatusText = "在线",
+                FriendOnlineStatus = "online"
+            };
+            AddPanelToGroupOrTop(newPanel);
+            _configManager.Save();
+            RenderPanels();
+        }
+
+        /// <summary>通过邀请码添加新好友（暂无后端，先根据邀请码创建一个新的好友模块）</summary>
+        private void ShowAddFriendByCodeDialog()
+        {
+            if (_currentWindowConfig == null || _configManager == null) return;
+
+            var dialog = new Window
+            {
+                Title = "添加新好友",
+                Width = 340,
+                SizeToContent = SizeToContent.Height,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                ResizeMode = ResizeMode.NoResize,
+                ShowInTaskbar = false,
+                Background = (Brush)FindResource("BrushDialogBG"),
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                Owner = Window.GetWindow(this)
+            };
+            dialog.SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(dialog);
+
+            var root = new StackPanel { Margin = new Thickness(16) };
+            root.Children.Add(new Emoji.Wpf.TextBlock
+            {
+                Text = "输入好友邀请码",
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                Margin = new Thickness(0, 0, 0, 8)
+            });
+            var codeBox = new TextBox { Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
+            root.Children.Add(codeBox);
+            root.Children.Add(new Emoji.Wpf.TextBlock
+            {
+                Text = "输入对方的邀请码即可添加为好友",
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                FontSize = 11,
+                Margin = new Thickness(0, 6, 0, 16)
+            });
+
+            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            var okBtn = new Button { Content = "添加", Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)Application.Current.FindResource("PrimaryButtonStyle") };
+            var cancelBtn = new Button { Content = "取消", Width = 70, Style = (Style)Application.Current.FindResource("StandardButtonStyle") };
+            okBtn.Click += (s, e) =>
+            {
+                var code = codeBox.Text.Trim();
+                if (string.IsNullOrEmpty(code))
+                {
+                    MessageBox.Show("请输入邀请码", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+                var newPanel = new PanelItem
+                {
+                    Type = PanelType.Friend,
+                    Title = "好友",
+                    FriendName = "好友 " + code,
+                    FriendEmoji = "\U0001F642",
+                    FriendStatusText = "在线",
+                    FriendOnlineStatus = "online"
+                };
+                AddPanelToGroupOrTop(newPanel);
+                _configManager.Save();
+                RenderPanels();
+                dialog.DialogResult = true;
+            };
+            cancelBtn.Click += (s, e) => dialog.DialogResult = false;
+            btnPanel.Children.Add(okBtn);
+            btnPanel.Children.Add(cancelBtn);
+            root.Children.Add(btnPanel);
+
+            dialog.Content = root;
+            dialog.ShowDialog();
+        }
+
+        /// <summary>编辑好友信息对话框</summary>
+        private void ShowFriendEditDialog(PanelItem item)
+        {
+            var dialog = new Window
+            {
+                Title = "编辑好友",
+                Width = 340,
+                SizeToContent = SizeToContent.Height,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = Window.GetWindow(this),
+                Background = (Brush)FindResource("BrushDialogBG"),
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                ResizeMode = ResizeMode.NoResize
+            };
+            dialog.SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(dialog, App.IsCurrentThemeLight());
+
+            var root = new StackPanel { Margin = new Thickness(20) };
+
+            string? avatarPath = item.FriendAvatarPath;
+
+            // 头像预览
+            var previewBorder = new Border
+            {
+                Width = 64, Height = 64, CornerRadius = new CornerRadius(32),
+                Background = (Brush)FindResource("BrushAccent"),
+                HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 12)
+            };
+
+            var nameBox = new TextBox { Style = (Style)FindResource("GlobalTextBoxStyle"), Text = item.FriendName ?? "" };
+            var emojiBox = new TextBox { Style = (Style)FindResource("GlobalTextBoxStyle"), Text = item.FriendEmoji ?? "" };
+
+            void RefreshPreview()
+            {
+                previewBorder.Child = null;
+                if (!string.IsNullOrWhiteSpace(avatarPath) && System.IO.File.Exists(avatarPath))
+                {
+                    try
+                    {
+                        var bmp = new System.Windows.Media.Imaging.BitmapImage();
+                        bmp.BeginInit();
+                        bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                        bmp.UriSource = new Uri(avatarPath);
+                        bmp.EndInit();
+                        previewBorder.Background = new ImageBrush(bmp) { Stretch = Stretch.UniformToFill };
+                        return;
+                    }
+                    catch { }
+                }
+                previewBorder.Background = (Brush)FindResource("BrushAccent");
+                string fallback = !string.IsNullOrWhiteSpace(emojiBox.Text) ? emojiBox.Text
+                    : (!string.IsNullOrWhiteSpace(nameBox.Text) ? nameBox.Text.Substring(0, 1) : "\U0001F642");
+                previewBorder.Child = new Emoji.Wpf.TextBlock
+                {
+                    Text = fallback, Foreground = Brushes.White, FontSize = 27,
+                    HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
+                };
+            }
+            RefreshPreview();
+            root.Children.Add(previewBorder);
+
+            var avatarBtns = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 14) };
+            var chooseBtn = new Button { Content = "选择头像", Style = (Style)FindResource("GhostButtonStyle"), Margin = new Thickness(0, 0, 8, 0) };
+            var clearBtn = new Button { Content = "清除头像", Style = (Style)FindResource("GhostButtonStyle") };
+            chooseBtn.Click += (s, e) =>
+            {
+                var ofd = new Microsoft.Win32.OpenFileDialog { Title = "选择头像", Filter = "图片|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp" };
+                if (ofd.ShowDialog() == true) { avatarPath = ofd.FileName; RefreshPreview(); }
+            };
+            clearBtn.Click += (s, e) => { avatarPath = null; RefreshPreview(); };
+            avatarBtns.Children.Add(chooseBtn);
+            avatarBtns.Children.Add(clearBtn);
+            root.Children.Add(avatarBtns);
+
+            TextBlock Label(string t) => new TextBlock
+            {
+                Text = t, FontSize = 12, Margin = new Thickness(0, 0, 0, 4),
+                Foreground = (Brush)FindResource("BrushTextMuted")
+            };
+
+            root.Children.Add(Label("名字"));
+            nameBox.TextChanged += (s, e) => RefreshPreview();
+            root.Children.Add(nameBox);
+
+            root.Children.Add(new TextBlock
+            {
+                Text = "Emoji/文字头像（无图片时使用）", FontSize = 12,
+                Margin = new Thickness(0, 12, 0, 4), Foreground = (Brush)FindResource("BrushTextMuted")
+            });
+            emojiBox.TextChanged += (s, e) => RefreshPreview();
+            root.Children.Add(emojiBox);
+
+            root.Children.Add(Label("状态文字"));
+            var statusBox = new TextBox { Style = (Style)FindResource("GlobalTextBoxStyle"), Text = item.FriendStatusText ?? "" };
+            root.Children.Add(statusBox);
+
+            root.Children.Add(new TextBlock
+            {
+                Text = "在线状态", FontSize = 12,
+                Margin = new Thickness(0, 12, 0, 4), Foreground = (Brush)FindResource("BrushTextMuted")
+            });
+            var statusCombo = new ComboBox { Style = (Style)FindResource("GlobalComboBoxStyle") };
+            foreach (var (key, label) in new[] { ("online", "在线"), ("away", "离开"), ("busy", "忙碌"), ("offline", "离线") })
+                statusCombo.Items.Add(new ComboBoxItem { Content = label, Tag = key });
+            statusCombo.SelectedIndex = (item.FriendOnlineStatus) switch { "away" => 1, "busy" => 2, "offline" => 3, _ => 0 };
+            root.Children.Add(statusCombo);
+
+            // 按钮行
+            var btnRow = new StackPanel
+            {
+                Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 18, 0, 0)
+            };
+            var cancelBtn = new Button { Content = "取消", Style = (Style)FindResource("StandardButtonStyle"), Margin = new Thickness(0, 0, 8, 0), MinWidth = 72 };
+            var okBtn = new Button { Content = "确定", Style = (Style)FindResource("PrimaryButtonStyle"), MinWidth = 72 };
+            cancelBtn.Click += (s, e) => dialog.Close();
+            okBtn.Click += (s, e) =>
+            {
+                item.FriendName = nameBox.Text.Trim();
+                item.FriendEmoji = emojiBox.Text.Trim();
+                item.FriendStatusText = statusBox.Text.Trim();
+                item.FriendAvatarPath = avatarPath;
+                item.FriendOnlineStatus = (statusCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "online";
+                _configManager?.Save();
+                RenderPanels();
+                dialog.Close();
+            };
+            btnRow.Children.Add(cancelBtn);
+            btnRow.Children.Add(okBtn);
+            root.Children.Add(btnRow);
+
+            dialog.Content = root;
+            dialog.ShowDialog();
+        }
+
+        #endregion
+
         #region 剪贴板收藏（已移除自动监听）
         #endregion
 
@@ -4243,6 +5052,9 @@ namespace SideDesk.Controls
                 RefreshPanelStickyNotes(container, item);
             };
             noteMenu.Items.Add(deleteNoteItem);
+            var noteHideMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
+            noteHideMi.Click += (s, e) => { item.HideFrame = noteHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
+            noteMenu.Items.Add(noteHideMi);
             row.ContextMenu = noteMenu;
 
             var delBtn = new Button
@@ -4503,6 +5315,20 @@ namespace SideDesk.Controls
 
         /// <summary>根据拖放的 Y 坐标计算目标插入位置（数据层面板索引）</summary>
         private int GetPanelDropIndex(DragEventArgs e) => GetPanelDrop(e).index;
+
+        /// <summary>根据 dynamicContent 内容坐标系中的位置计算顶层面板插入索引（以各模块中线为界）</summary>
+        private int GetPanelInsertIndexAt(Point pos)
+        {
+            double y = 0; int panelIdx = 0;
+            foreach (UIElement uie in dynamicContent.Children)
+            {
+                if (uie is not FrameworkElement fe || fe.Tag is not string) continue;
+                double h = fe.ActualHeight + fe.Margin.Top + fe.Margin.Bottom;
+                if (pos.Y < y + h / 2) return panelIdx;
+                y += h; panelIdx++;
+            }
+            return panelIdx;
+        }
 
         /// <summary>同时返回插入索引与该边界在 dynamicContent 内容坐标系中的 Y 位置</summary>
         private (int index, double y) GetPanelDrop(DragEventArgs e)
@@ -4941,6 +5767,11 @@ namespace SideDesk.Controls
         /// </summary>
         private void ContextMenu_Opened(object sender, RoutedEventArgs e)
         {
+            // 记录右键点击位置对应的插入索引（用于“添加模块”时插入到两模块之间）
+            _pendingInsertIndex = null;
+            try { _pendingInsertIndex = GetPanelInsertIndexAt(Mouse.GetPosition(dynamicContent)); }
+            catch { _pendingInsertIndex = null; }
+
             // 同步编辑模式 checkbox 状态
             editModeMenu.IsChecked = _isEditMode;
 
@@ -5141,7 +5972,25 @@ namespace SideDesk.Controls
             // 隐藏模块外框（全局开关或模块独立开关，非编辑模式生效）
             if ((item.HideFrame || AppSettings.Instance.HideModuleFrame) && !_isEditMode)
             {
-                return contentPanel;
+                // 无框态也提供右键菜单，确保能恢复外框
+                var bareMenu = new ContextMenu();
+                var bareHideMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
+                bareHideMi.Click += (s, e) => { item.HideFrame = bareHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
+                bareMenu.Items.Add(bareHideMi);
+                var bareDelMi = new MenuItem { Header = "删除模块" };
+                bareDelMi.Click += (s, e) => RemovePanel(item);
+                bareMenu.Items.Add(bareDelMi);
+
+                var bareBorder = new Border
+                {
+                    Margin = new Thickness(0, 0, 0, 8),
+                    Padding = new Thickness(0),
+                    Background = Brushes.Transparent,
+                    BorderThickness = new Thickness(0),
+                    Child = contentPanel,
+                    ContextMenu = bareMenu
+                };
+                return bareBorder;
             }
 
             // === 自定义标题栏：标题 + 下拉三角 ===
@@ -5244,7 +6093,7 @@ namespace SideDesk.Controls
 
             var border = new Border
             {
-                Margin = new Thickness(0, 0, 0, 12),
+                Margin = new Thickness(0, 0, 0, 6),
                 Padding = new Thickness(0, 10, 0, 0),
                 CornerRadius = new CornerRadius(6),
                 Background = (Brush)FindResource("BrushInputBG"),
@@ -5258,6 +6107,16 @@ namespace SideDesk.Controls
                 border.MouseEnter += (s, e) => dropBtn.Visibility = Visibility.Visible;
                 border.MouseLeave += (s, e) => dropBtn.Visibility = Visibility.Collapsed;
             }
+
+            // 右键菜单：隐藏模块外框（可勾选） + 删除模块（无需进入编辑模式也能隐藏/恢复）
+            var dashMenu = new ContextMenu();
+            var dashHideMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
+            dashHideMi.Click += (s, e) => { item.HideFrame = dashHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
+            dashMenu.Items.Add(dashHideMi);
+            var dashDelMi = new MenuItem { Header = "删除模块" };
+            dashDelMi.Click += (s, e) => RemovePanel(item);
+            dashMenu.Items.Add(dashDelMi);
+            border.ContextMenu = dashMenu;
 
             return border;
         }
@@ -6786,7 +7645,7 @@ namespace SideDesk.Controls
         {
             var border = new Border
             {
-                Margin = new Thickness(0, 0, 0, 12),
+                Margin = new Thickness(0, 0, 0, 6),
                 Padding = new Thickness(0, 10, 0, 10),
                 CornerRadius = new CornerRadius(6),
                 Background = (Brush)FindResource("BrushInputBG"),

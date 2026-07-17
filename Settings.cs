@@ -46,6 +46,23 @@ namespace SideDesk
         // 全局窗口切换热键（Ctrl+1~9），默认关闭以避免与浏览器等应用的 Ctrl+数字切标签冲突
         public bool EnableWindowSwitchHotkey { get; set; } = false;
 
+        // ========== 账户 / 云同步 ==========
+
+        /// <summary>登录后保存的账户 token（用于云同步鉴权；非空即视为已登录）</summary>
+        public string? AccountToken { get; set; }
+
+        /// <summary>账户显示名称</summary>
+        public string? AccountName { get; set; }
+
+        /// <summary>最近一次登录时间</summary>
+        public DateTime? AccountLoginTime { get; set; }
+
+        /// <summary>是否开启云同步（开启后定时把本地全部配置备份到服务器）</summary>
+        public bool EnableCloudSync { get; set; } = false;
+
+        /// <summary>最近一次云同步成功的时间</summary>
+        public DateTime? LastCloudSyncTime { get; set; }
+
         /// <summary>每个物理显示器的停靠配置（下标 = 主显示器优先排序后的显示器序号）</summary>
         public List<MonitorDockSettings> Monitors { get; set; } = new();
 

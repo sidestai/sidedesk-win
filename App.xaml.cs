@@ -118,6 +118,17 @@ namespace SideDesk
                 System.Diagnostics.Debug.WriteLine($"[TitleLock] 启动恢复锁定规则失败: {ex.Message}");
             }
 
+            // 启动云同步（仅在已登录且已开启时）
+            try
+            {
+                if (AppSettings.EnableCloudSync && !string.IsNullOrEmpty(AppSettings.AccountToken))
+                    Services.CloudSyncService.Instance.Start();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] 启动异常: {ex.Message}");
+            }
+
             // 【已禁用】启动 5 秒后静默检查更新 - 2026-06-09 禁用，解决程序自动重启问题
             // 如果以后需要启用，请取消下面的注释
             //_ = Task.Delay(5000).ContinueWith(async _ =>
@@ -226,6 +237,18 @@ namespace SideDesk
 
             // 停止全局窗口切换热键
             try { GlobalHotkeyService.Instance.Stop(); } catch { }
+
+            // 退出前执行一次云同步备份（仅在开启且已登录时；放到线程池避免阻塞 UI 线程）
+            try
+            {
+                if (AppSettings.EnableCloudSync && !string.IsNullOrEmpty(AppSettings.AccountToken))
+                {
+                    System.Threading.Tasks.Task.Run(() =>
+                        Services.CloudSyncService.Instance.SyncNowAsync(silent: true))
+                        .Wait(TimeSpan.FromSeconds(8));
+                }
+            }
+            catch { }
 
             // 【已禁用】CDP浏览器服务 - 2026-06-09 禁用，解决重复启动问题
             // try { Services.CdpBrowserService.Instance.Dispose(); } catch { }

@@ -28,7 +28,9 @@
                 </MenuItem>
                 <MenuItem Header="计时器" Click="AddTimerPanel_Click"/>
                 <MenuItem Header="信号灯" Click="AddSignalLightPanel_Click"/>
+                <MenuItem Header="图片轮播" Click="AddImageCarouselPanel_Click"/>
                 <MenuItem Header="数字员工" Click="AddDigitalEmployeePanel_Click"/>
+                <MenuItem Header="好友" Click="AddFriendPanel_Click"/>
             </MenuItem>
             <Separator />
             <MenuItem Header="布局" x:Name="LayoutMenu">

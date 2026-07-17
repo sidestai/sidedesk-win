@@ -650,15 +650,15 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="CheckBox">
-                    <Grid Width="18" Height="18">
+                    <Grid Width="14" Height="14">
                         <Border x:Name="Box"
-                                Width="18" Height="18"
-                                CornerRadius="5"
+                                Width="14" Height="14"
+                                CornerRadius="4"
                                 Background="Transparent"
                                 BorderBrush="{DynamicResource BrushTextSec}"
-                                BorderThickness="2" />
+                                BorderThickness="1.5" />
                         <Path x:Name="Check"
-                              Width="11" Height="11"
+                              Width="9" Height="9"
                               Stretch="Uniform"
                               Stroke="White"
                               StrokeThickness="2"
@@ -673,8 +673,8 @@
                             <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
                         </Trigger>
                         <Trigger Property="IsChecked" Value="True">
-                            <Setter TargetName="Box" Property="Background" Value="{DynamicResource BrushAccent}" />
-                            <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
+                            <Setter TargetName="Box" Property="Background" Value="#4CAF50" />
+                            <Setter TargetName="Box" Property="BorderBrush" Value="#4CAF50" />
                             <Setter TargetName="Check" Property="Opacity" Value="1" />
                         </Trigger>
                     </ControlTemplate.Triggers>

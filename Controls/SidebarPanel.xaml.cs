@@ -130,5 +130,8 @@ namespace SideDesk.Controls
                 }
             }
         }
+
+        /// <summary>重新渲染原生模式面板（设置变更后调用）。</summary>
+        public void RefreshNativePanels() => nativePanel.RefreshLayout();
     }
 }

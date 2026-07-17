@@ -26,6 +26,13 @@ namespace SideDesk
             LoadCurrentSettings();
             _isLoading = false;
 
+            // 订阅云同步状态变化，实时更新账户页提示文本
+            Services.CloudSyncService.Instance.StatusChanged += OnCloudSyncStatusChanged;
+            Closed += (s, e) =>
+            {
+                try { Services.CloudSyncService.Instance.StatusChanged -= OnCloudSyncStatusChanged; } catch { }
+            };
+
             SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(this, App.IsCurrentThemeLight());
         }
 
@@ -46,6 +53,9 @@ namespace SideDesk
             // 背景透明度
             bgOpacityBox.Text = _app.AppSettings.BackgroundOpacity.ToString("F0");
 
+            // 隐藏模块外框时同时隐藏标题
+            hideModuleTitleSwitch.IsChecked = Framework.AppSettings.Instance.HideModuleTitle;
+
             // 停靠配置：为每个显示器动态生成一张卡片
             BuildDockConfigCards();
 
@@ -64,16 +74,20 @@ namespace SideDesk
             titleLockSwitch.IsChecked = _app.AppSettings.EnableTitleLock;
             windowSwitchHotkeySwitch.IsChecked = _app.AppSettings.EnableWindowSwitchHotkey;
 
+            // 账户 / 云同步
+            RefreshAccountUI();
+
             InitUpdateUI();
         }
 
         private void Nav_Changed(object sender, SelectionChangedEventArgs e)
         {
             if (_isLoading) return;
-            if (pageGeneral == null || pageAppearance == null || pageProgramManager == null || pageExtensions == null || pageTools == null || pageModules == null || pageShortcuts == null || pageAbout == null) return;
-        
-            // 隱藏所有页面
+            if (pageGeneral == null || pageAccount == null || pageAppearance == null || pageProgramManager == null || pageExtensions == null || pageTools == null || pageModules == null || pageShortcuts == null || pageAbout == null) return;
+                    
+            // 隐藏所有页面
             pageGeneral.Visibility = Visibility.Collapsed;
+            pageAccount.Visibility = Visibility.Collapsed;
             pageAppearance.Visibility = Visibility.Collapsed;
             pageProgramManager.Visibility = Visibility.Collapsed;
             pageExtensions.Visibility = Visibility.Collapsed;
@@ -81,20 +95,212 @@ namespace SideDesk
             pageModules.Visibility = Visibility.Collapsed;
             pageShortcuts.Visibility = Visibility.Collapsed;
             pageAbout.Visibility = Visibility.Collapsed;
-        
+                    
             // 显示选中页面
             switch (navList.SelectedIndex)
             {
                 case 0: pageGeneral.Visibility = Visibility.Visible; break;
-                case 1: pageAppearance.Visibility = Visibility.Visible; break;
-                case 2: pageProgramManager.Visibility = Visibility.Visible; break;
-                case 3: pageExtensions.Visibility = Visibility.Visible; break;
-                case 4: pageTools.Visibility = Visibility.Visible; break;
-                case 5: pageModules.Visibility = Visibility.Visible; RefreshTemplateList(); break;
-                case 6: pageShortcuts.Visibility = Visibility.Visible; break;
-                case 7: pageAbout.Visibility = Visibility.Visible; break;
+                case 1: pageAccount.Visibility = Visibility.Visible; RefreshAccountUI(); break;
+                case 2: pageAppearance.Visibility = Visibility.Visible; break;
+                case 3: pageProgramManager.Visibility = Visibility.Visible; break;
+                case 4: pageExtensions.Visibility = Visibility.Visible; break;
+                case 5: pageTools.Visibility = Visibility.Visible; break;
+                case 6: pageModules.Visibility = Visibility.Visible; RefreshTemplateList(); break;
+                case 7: pageShortcuts.Visibility = Visibility.Visible; break;
+                case 8: pageAbout.Visibility = Visibility.Visible; break;
             }
         }
+
+        #region 账户 / 云同步
+
+        /// <summary>根据当前登录/同步状态刷新账户页 UI</summary>
+        private void RefreshAccountUI()
+        {
+            if (accountStatusText == null) return; // 尚未加载完成
+            var s = _app.AppSettings;
+            bool loggedIn = !string.IsNullOrEmpty(s.AccountToken);
+
+            if (loggedIn)
+            {
+                accountStatusText.Text = "已登录" + (string.IsNullOrEmpty(s.AccountName) ? "" : "：" + s.AccountName);
+                accountSubText.Text = s.AccountLoginTime.HasValue
+                    ? $"登录时间：{s.AccountLoginTime:yyyy-MM-dd HH:mm}"
+                    : "已登录";
+                accountActionBtn.Content = "退出登录";
+            }
+            else
+            {
+                accountStatusText.Text = "未登录";
+                accountSubText.Text = "登录后可开启云同步备份";
+                accountActionBtn.Content = "登录";
+            }
+
+            // 云同步开关：仅登录后可用
+            _isLoading = true;
+            cloudSyncSwitch.IsChecked = s.EnableCloudSync && loggedIn;
+            _isLoading = false;
+            cloudSyncSwitch.IsEnabled = loggedIn;
+            syncNowBtn.IsEnabled = loggedIn;
+
+            if (s.LastCloudSyncTime.HasValue)
+                cloudSyncStatusText.Text = $"上次同步：{s.LastCloudSyncTime:yyyy-MM-dd HH:mm}";
+            else
+                cloudSyncStatusText.Text = loggedIn ? "尚未同步" : "登录后可同步";
+
+            RefreshBackupUI();
+        }
+
+        /// <summary>刷新本地备份状态。</summary>
+        private void RefreshBackupUI()
+        {
+            if (backupStatusText == null) return;
+            var t = Services.CloudSyncService.GetLocalBackupTime();
+            if (t.HasValue)
+            {
+                backupStatusText.Text = $"最近备份：{t:yyyy-MM-dd HH:mm}";
+                restoreBtn.IsEnabled = true;
+            }
+            else
+            {
+                backupStatusText.Text = "尚无本地备份";
+                restoreBtn.IsEnabled = false;
+            }
+        }
+
+        /// <summary>创建本地备份（覆盖最后一个）</summary>
+        private void Backup_Click(object sender, RoutedEventArgs e)
+        {
+            if (Services.CloudSyncService.CreateLocalBackup())
+                MessageBox.Show("已创建本地备份。", "备份", MessageBoxButton.OK, MessageBoxImage.Information);
+            else
+                MessageBox.Show("备份失败，请重试。", "备份", MessageBoxButton.OK, MessageBoxImage.Warning);
+            RefreshBackupUI();
+        }
+
+        /// <summary>从最后一次本地备份恢复</summary>
+        private void Restore_Click(object sender, RoutedEventArgs e)
+        {
+            if (!Services.CloudSyncService.HasLocalBackup())
+            {
+                MessageBox.Show("暂无可恢复的本地备份。", "恢复", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            var r = MessageBox.Show("恢复将用最近一次备份覆盖当前全部配置，需要重启应用后生效。确定继续吗？",
+                "恢复备份", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
+            if (r != MessageBoxResult.OK) return;
+
+            int n = Services.CloudSyncService.RestoreLocalBackup();
+            if (n >= 0)
+                MessageBox.Show($"已恢复 {n} 个配置文件，重启应用后生效。", "恢复", MessageBoxButton.OK, MessageBoxImage.Information);
+            else
+                MessageBox.Show("恢复失败，请重试。", "恢复", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+
+        /// <summary>导出全部配置为 JSON 文件</summary>
+        private void ExportConfig_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new SaveFileDialog
+            {
+                Title = "导出配置",
+                Filter = "JSON 文件 (*.json)|*.json",
+                FileName = $"SideDesk-config-{DateTime.Now:yyyyMMdd-HHmmss}.json"
+            };
+            if (dlg.ShowDialog(this) != true) return;
+            try
+            {
+                System.IO.File.WriteAllText(dlg.FileName, Services.CloudSyncService.BuildConfigBundleJson(indented: true));
+                MessageBox.Show("配置已导出。", "导出", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("导出失败：" + ex.Message, "导出", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        /// <summary>登录 / 退出登录</summary>
+        private void AccountAction_Click(object sender, RoutedEventArgs e)
+        {
+            var s = _app.AppSettings;
+            if (!string.IsNullOrEmpty(s.AccountToken))
+            {
+                // 退出登录
+                var r = MessageBox.Show("确定要退出登录吗？退出后云同步将停止。", "退出登录",
+                    MessageBoxButton.OKCancel, MessageBoxImage.Question);
+                if (r != MessageBoxResult.OK) return;
+
+                s.AccountToken = null;
+                s.AccountName = null;
+                s.AccountLoginTime = null;
+                s.EnableCloudSync = false;
+                s.Save();
+                try { Services.CloudSyncService.Instance.Stop(); } catch { }
+                RefreshAccountUI();
+                return;
+            }
+
+            // 登录：打开登录窗口，成功后由 LoginWindow.LastToken 读取
+            var login = new LoginWindow { Owner = this };
+            login.ShowDialog();
+            if (!string.IsNullOrEmpty(LoginWindow.LastToken))
+            {
+                s.AccountToken = LoginWindow.LastToken;
+                s.AccountName = LoginWindow.LastUserName;
+                s.AccountLoginTime = DateTime.Now;
+                s.Save();
+                RefreshAccountUI();
+            }
+        }
+
+        /// <summary>云同步开关切换</summary>
+        private void CloudSyncSwitch_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_isLoading) return;
+            var s = _app.AppSettings;
+            bool on = cloudSyncSwitch.IsChecked == true;
+
+            if (on && string.IsNullOrEmpty(s.AccountToken))
+            {
+                MessageBox.Show("请先登录后再开启云同步。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                _isLoading = true;
+                cloudSyncSwitch.IsChecked = false;
+                _isLoading = false;
+                return;
+            }
+
+            s.EnableCloudSync = on;
+            s.Save();
+            try
+            {
+                if (on) Services.CloudSyncService.Instance.Start();
+                else Services.CloudSyncService.Instance.Stop();
+            }
+            catch { }
+            RefreshAccountUI();
+        }
+
+        /// <summary>立即同步一次</summary>
+        private async void SyncNow_Click(object sender, RoutedEventArgs e)
+        {
+            syncNowBtn.IsEnabled = false;
+            await Services.CloudSyncService.Instance.SyncNowAsync(silent: false);
+            syncNowBtn.IsEnabled = !string.IsNullOrEmpty(_app.AppSettings.AccountToken);
+            RefreshAccountUI();
+        }
+
+        /// <summary>云同步状态变化回调：更新提示文本</summary>
+        private void OnCloudSyncStatusChanged(Services.CloudSyncState state, string msg)
+        {
+            try
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    if (cloudSyncStatusText != null) cloudSyncStatusText.Text = msg;
+                });
+            }
+            catch { }
+        }
+
+        #endregion
 
         private void ThemeMode_Changed(object sender, SelectionChangedEventArgs e)
         {
@@ -110,6 +316,19 @@ namespace SideDesk
             _app.AppSettings.ThemeMode = mode;
             _app.AppSettings.Save();
             App.ApplyTheme(mode);
+        }
+
+        private void HideModuleTitleSwitch_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_isLoading) return;
+            Framework.AppSettings.Instance.HideModuleTitle = hideModuleTitleSwitch.IsChecked ?? false;
+            Framework.AppSettings.Instance.Save();
+            // 即时重新渲染所有主窗口的原生面板
+            foreach (Window window in Application.Current.Windows)
+            {
+                if (window is MainWindow mw)
+                    mw.RefreshNativePanels();
+            }
         }
 
         // ===== 停靠配置卡片动态构建（每显示器一张） =====
