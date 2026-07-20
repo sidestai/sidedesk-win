@@ -55,6 +55,45 @@
                     
                     <!-- 停靠配置（每显示器一个卡片，代码动态生成） -->
                     <StackPanel x:Name="dockConfigContainer"/>
+
+                    <!-- 虚拟桌面独立配置开关 -->
+                    <Border Background="{DynamicResource BrushInputBG}"
+                            BorderBrush="{DynamicResource BrushBorder}"
+                            BorderThickness="1" CornerRadius="8"
+                            Padding="16" Margin="0,0,0,16">
+                        <StackPanel>
+                            <DockPanel>
+                                <CheckBox x:Name="perVirtualDesktopSwitch" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                          Style="{StaticResource RaycastSwitchStyle}"
+                                          Checked="PerVirtualDesktopSwitch_Changed"
+                                          Unchecked="PerVirtualDesktopSwitch_Changed"/>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="虚拟桌面独立配置"
+                                               Foreground="{DynamicResource BrushTextMain}"
+                                               FontSize="{DynamicResource FontSizeNormal}"
+                                               FontWeight="SemiBold"/>
+                                    <TextBlock Text="开启后每个虚拟桌面可独立设置停靠布局、宽度等参数"
+                                               Foreground="{DynamicResource BrushTextMuted}"
+                                               FontSize="{DynamicResource FontSizeTiny}"
+                                               TextWrapping="Wrap" Margin="0,2,8,0"/>
+                                </StackPanel>
+                            </DockPanel>
+                            <!-- 桌面选择器（仅开启时显示） -->
+                            <StackPanel x:Name="desktopSelectorPanel" Visibility="Collapsed" Margin="0,12,0,0">
+                                <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,0,0,12"/>
+                                <DockPanel>
+                                    <TextBlock Text="当前编辑桌面" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource BrushTextMain}"
+                                               FontSize="{DynamicResource FontSizeNormal}"
+                                               DockPanel.Dock="Left"/>
+                                    <ComboBox x:Name="desktopSelectorCombo" Width="120"
+                                              Style="{StaticResource GlobalComboBoxStyle}"
+                                              SelectionChanged="DesktopSelector_Changed"
+                                              DockPanel.Dock="Right"/>
+                                </DockPanel>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
 
                 <!-- 账户页面 -->
@@ -461,7 +500,7 @@
                                Foreground="{DynamicResource BrushTextMain}"
                                Margin="0,0,0,24"/>
                     
-                    <TextBlock Text="SideDesk" 
+                    <TextBlock Text="元桌小屏" 
                                FontSize="20" FontWeight="Bold"
                                Foreground="{DynamicResource BrushTextMain}"
                                Margin="0,0,0,8"/>

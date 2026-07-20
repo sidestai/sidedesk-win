@@ -240,6 +240,50 @@ namespace SideDesk.Windows
         }
 
         /// <summary>
+        /// 解析指定日期的日志文件，返回该日总活跃分钟数（相邻记录时间差累加，单次上限 5 分钟）。
+        /// 无日志文件返回 0。
+        /// </summary>
+        public static double GetActiveMinutesForDate(DateTime date)
+        {
+            string filePath = Path.Combine(LogFolder, $"windowlog_{date:yyyyMMdd}.txt");
+            if (!File.Exists(filePath)) return 0;
+
+            string[] lines;
+            try
+            {
+                using (var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (var sr = new StreamReader(fs, System.Text.Encoding.UTF8))
+                {
+                    lines = sr.ReadToEnd().Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                }
+            }
+            catch
+            {
+                return 0;
+            }
+
+            var timestamps = new List<DateTime>();
+            foreach (var line in lines)
+            {
+                int tab = line.IndexOf('\t');
+                string field = tab > 0 ? line.Substring(0, tab) : line;
+                if (DateTime.TryParseExact(field, "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out var ts))
+                    timestamps.Add(ts);
+            }
+            if (timestamps.Count < 2) return 0;
+
+            timestamps.Sort();
+            double totalMinutes = 0;
+            for (int i = 0; i < timestamps.Count - 1; i++)
+            {
+                double diff = (timestamps[i + 1] - timestamps[i]).TotalMinutes;
+                if (diff > 5) diff = 5;
+                if (diff > 0) totalMinutes += diff;
+            }
+            return totalMinutes;
+        }
+
+        /// <summary>
         /// 格式化 TimeSpan 为可读字符串，如 "2h 15m" 或 "3m 20s"
         /// </summary>
         public static string FormatDuration(TimeSpan ts)

@@ -18,6 +18,15 @@ namespace SideDesk
         private readonly App _app;
         private bool _isLoading = true;
         private ProgramRegistryManager _registry = null!;
+        private Guid _selectedDesktopId = Guid.Empty;
+
+        /// <summary>根据当前编辑上下文获取指定显示器的停靠配置</summary>
+        private MonitorDockSettings ResolveMonitorConfig(int monitorIndex)
+        {
+            if (_app.AppSettings.EnablePerVirtualDesktop && _selectedDesktopId != Guid.Empty)
+                return _app.AppSettings.GetMonitorForDesktop(_selectedDesktopId, monitorIndex);
+            return _app.AppSettings.GetMonitor(monitorIndex);
+        }
 
         public SettingsWindow()
         {
@@ -55,6 +64,14 @@ namespace SideDesk
 
             // 隐藏模块外框时同时隐藏标题
             hideModuleTitleSwitch.IsChecked = Framework.AppSettings.Instance.HideModuleTitle;
+
+            // 虚拟桌面开关
+            perVirtualDesktopSwitch.IsChecked = _app.AppSettings.EnablePerVirtualDesktop;
+            if (_app.AppSettings.EnablePerVirtualDesktop && _app.VirtualDesktop != null && _app.VirtualDesktop.IsAvailable)
+            {
+                _selectedDesktopId = _app.GetCurrentDesktopId();
+                RefreshDesktopSelector();
+            }
 
             // 停靠配置：为每个显示器动态生成一张卡片
             BuildDockConfigCards();
@@ -331,6 +348,80 @@ namespace SideDesk
             }
         }
 
+        // ===== 虚拟桌面配置 =====
+
+        private void PerVirtualDesktopSwitch_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_isLoading) return;
+            bool on = perVirtualDesktopSwitch.IsChecked == true;
+
+            if (on && (_app.VirtualDesktop == null || !_app.VirtualDesktop.IsAvailable))
+            {
+                MessageBox.Show("当前系统不支持虚拟桌面，或仅有 1 个桌面。", "提示",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                _isLoading = true;
+                perVirtualDesktopSwitch.IsChecked = false;
+                _isLoading = false;
+                return;
+            }
+
+            _app.AppSettings.EnablePerVirtualDesktop = on;
+            _app.AppSettings.Save();
+
+            if (on)
+            {
+                _selectedDesktopId = _app.GetCurrentDesktopId();
+                RefreshDesktopSelector();
+            }
+            else
+            {
+                _selectedDesktopId = Guid.Empty;
+                desktopSelectorPanel.Visibility = Visibility.Collapsed;
+            }
+
+            BuildDockConfigCards();
+            _app.ApplyLayout(save: true);
+        }
+
+        private void RefreshDesktopSelector()
+        {
+            desktopSelectorCombo.Items.Clear();
+            if (_app.VirtualDesktop == null || !_app.VirtualDesktop.IsAvailable) return;
+
+            var desktopIds = _app.VirtualDesktop.GetAllDesktopIds();
+            for (int i = 0; i < desktopIds.Count; i++)
+            {
+                var id = desktopIds[i];
+                // 尝试从 profile 获取自定义名称，否则使用默认名称
+                var profile = _app.AppSettings.GetDesktopProfile(id, createIfMissing: false);
+                string name = !string.IsNullOrEmpty(profile.DesktopName) ? profile.DesktopName : $"桌面 {i + 1}";
+                desktopSelectorCombo.Items.Add(name);
+            }
+
+            desktopSelectorPanel.Visibility = desktopIds.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
+
+            // 选中当前桌面
+            if (_selectedDesktopId != Guid.Empty)
+            {
+                int idx = desktopIds.IndexOf(_selectedDesktopId);
+                if (idx >= 0) desktopSelectorCombo.SelectedIndex = idx;
+            }
+        }
+
+        private void DesktopSelector_Changed(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isLoading) return;
+            if (_app.VirtualDesktop == null) return;
+
+            var desktopIds = _app.VirtualDesktop.GetAllDesktopIds();
+            int idx = desktopSelectorCombo.SelectedIndex;
+            if (idx >= 0 && idx < desktopIds.Count)
+            {
+                _selectedDesktopId = desktopIds[idx];
+                BuildDockConfigCards();
+            }
+        }
+
         // ===== 停靠配置卡片动态构建（每显示器一张） =====
         private void BuildDockConfigCards()
         {
@@ -348,7 +439,7 @@ namespace SideDesk
 
         private FrameworkElement BuildMonitorCard(int monitorIndex, MonitorDisplayInfo mon, bool showHeader)
         {
-            var cfg = _app.AppSettings.GetMonitor(monitorIndex);
+            var cfg = ResolveMonitorConfig(monitorIndex);
             var outer = new StackPanel { Margin = new Thickness(0, 0, 0, 8) };
 
             if (showHeader)
@@ -392,7 +483,7 @@ namespace SideDesk
 
             void UpdateVisibility()
             {
-                var layout = _app.AppSettings.GetMonitor(monitorIndex).Layout;
+                var layout = ResolveMonitorConfig(monitorIndex).Layout;
                 leftBlock.Visibility = (layout == LayoutMode.Left || layout == LayoutMode.Both)
                     ? Visibility.Visible : Visibility.Collapsed;
                 rightBlock.Visibility = (layout == LayoutMode.Right || layout == LayoutMode.Both)
@@ -410,7 +501,7 @@ namespace SideDesk
                     3 => LayoutMode.Both,
                     _ => LayoutMode.None
                 };
-                var mcfg = _app.AppSettings.GetMonitor(monitorIndex);
+                var mcfg = ResolveMonitorConfig(monitorIndex);
                 if (newLayout != mcfg.Layout)
                 {
                     mcfg.Layout = newLayout;
@@ -425,7 +516,7 @@ namespace SideDesk
 
         private Border BuildSideBlock(string title, int monitorIndex, DockEdge side)
         {
-            var cfg = _app.AppSettings.GetMonitor(monitorIndex);
+            var cfg = ResolveMonitorConfig(monitorIndex);
             var panel = new StackPanel();
             panel.Children.Add(new TextBlock
             {
@@ -447,7 +538,7 @@ namespace SideDesk
             void ApplyWidth()
             {
                 if (_isLoading) return;
-                var c = _app.AppSettings.GetMonitor(monitorIndex);
+                var c = ResolveMonitorConfig(monitorIndex);
                 int cur = side == DockEdge.Left ? c.LeftPanelWidth : c.RightPanelWidth;
                 if (!int.TryParse(widthBox.Text, out int w) || w < 50 || w > 500)
                 {
@@ -484,7 +575,7 @@ namespace SideDesk
             void ApplyHoverWidth()
             {
                 if (_isLoading) return;
-                var c = _app.AppSettings.GetMonitor(monitorIndex);
+                var c = ResolveMonitorConfig(monitorIndex);
                 int cur = side == DockEdge.Left ? c.LeftHoverWidth : c.RightHoverWidth;
                 if (!int.TryParse(hoverWidthBox.Text, out int w) || w < 100 || w > 500)
                 {
@@ -506,7 +597,7 @@ namespace SideDesk
             void HoverChanged()
             {
                 if (_isLoading) return;
-                var c = _app.AppSettings.GetMonitor(monitorIndex);
+                var c = ResolveMonitorConfig(monitorIndex);
                 bool en = hoverCheck.IsChecked == true;
                 if (side == DockEdge.Left) c.LeftHoverEnabled = en; else c.RightHoverEnabled = en;
                 _app.AppSettings.Save();

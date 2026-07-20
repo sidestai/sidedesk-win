@@ -373,6 +373,7 @@ namespace SideDesk.Controls
                 PanelType.DigitalEmployee => BuildDigitalEmployeeWidget(item),
                 PanelType.Friend => BuildFriendWidget(item),
                 PanelType.ImageCarousel => BuildImageCarouselWidget(item),
+                PanelType.DailyActivity => BuildDailyActivityWidget(item),
                 PanelType.Group => BuildGroupWidget(item),
                 _ => null
             };
@@ -863,6 +864,7 @@ namespace SideDesk.Controls
                 ("计时器", PanelType.Timer),
                 ("信号灯", PanelType.SignalLight),
                 ("图片轮播", PanelType.ImageCarousel),
+                ("每日活跃", PanelType.DailyActivity),
                 ("好友", PanelType.Friend)
             })
             {
@@ -901,7 +903,7 @@ namespace SideDesk.Controls
 
             container.Children.Add(titleBar);
 
-            // 内容区（子面板）
+            // 内容区（子面板）：高度完全由内部组件撑开，分组自身不设固定高度、不加滚动条
             var contentPanel = new StackPanel
             {
                 Visibility = item.IsExpanded ? Visibility.Visible : Visibility.Collapsed
@@ -941,6 +943,8 @@ namespace SideDesk.Controls
                 border.MouseLeave += (s, e) => deleteBtn.Visibility = Visibility.Collapsed;
             }
 
+            // 分组高度完全由内容撑开，标记为已处理，避免 RenderPanels 走 WrapResizable 给分组套滚动容器/拖拽手柄
+            border.Uid = "wrapHandled";
             return border;
         }
 
@@ -3725,7 +3729,7 @@ namespace SideDesk.Controls
             else if (type == PanelType.TodoList)
                 newPanel.TodoItems = new List<TodoItem>();
 
-            // 优先添加到最后一个分组内，使其跟随分组收起/展开
+            // 添加到顶层（若需加入分组，请在分组右键菜单里添加）
             AddPanelToGroupOrTop(newPanel);
 
             // 自动开启编辑模式
@@ -3867,6 +3871,7 @@ namespace SideDesk.Controls
         private void AddFileAreaPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.FileArea);
         private void AddClipboardHistoryPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.ClipboardHistory);
         private void AddImageCarouselPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.ImageCarousel);
+        private void AddDailyActivityPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.DailyActivity);
         private void AddDataDashboard_Click(object sender, RoutedEventArgs e)
         {
             if (_currentWindowConfig == null || _configManager == null) return;
@@ -3993,10 +3998,10 @@ namespace SideDesk.Controls
             RenderPanels();
         }
 
-        /// <summary>将新面板添加到最后一个分组内（如有），否则添加到顶层</summary>
+        /// <summary>顶层「添加模块」新面板添加到顶层（支持按右键位置插入）；分组内部添加请用 AddModuleToGroup</summary>
         private void AddPanelToGroupOrTop(PanelItem newPanel)
         {
-            // 若右键点击位置落在两个顶层模块之间，则插入到该位置（优先于分组追加行为）
+            // 若右键点击位置落在两个顶层模块之间，则插入到该位置
             if (_pendingInsertIndex is int insertIdx)
             {
                 _pendingInsertIndex = null;
@@ -4007,16 +4012,8 @@ namespace SideDesk.Controls
                     return;
                 }
             }
-            var lastGroup = _currentWindowConfig!.Panels.LastOrDefault(p => p.Type == PanelType.Group);
-            if (lastGroup != null)
-            {
-                lastGroup.ChildPanels ??= new List<PanelItem>();
-                lastGroup.ChildPanels.Add(newPanel);
-            }
-            else
-            {
-                _currentWindowConfig.Panels.Add(newPanel);
-            }
+            // 顶层「添加模块」始终添加到顶层；只有在分组的右键菜单里添加才会进入分组（走 AddModuleToGroup）
+            _currentWindowConfig!.Panels.Add(newPanel);
         }
 
         private void AddSignalLightPanel_Click(object sender, RoutedEventArgs e)
@@ -4486,6 +4483,146 @@ namespace SideDesk.Controls
         }
 
         public bool IsExpanded => _isExpanded;
+
+        #endregion
+
+        #region 每日活跃面板
+
+        /// <summary>活跃分钟数 → 等级 0~4</summary>
+        private int GetActivityLevel(double minutes)
+        {
+            if (minutes <= 0) return 0;
+            if (minutes < 30) return 1;
+            if (minutes < 120) return 2;
+            if (minutes < 240) return 3;
+            return 4;
+        }
+
+        /// <summary>活跃等级 → 格子颜色（绿色渐变，0 级使用主题边框色以适配亮/暗主题）</summary>
+        private Brush GetActivityLevelBrush(int level) => level switch
+        {
+            1 => new SolidColorBrush(Color.FromRgb(0x0E, 0x44, 0x29)),
+            2 => new SolidColorBrush(Color.FromRgb(0x00, 0x6D, 0x32)),
+            3 => new SolidColorBrush(Color.FromRgb(0x26, 0xA6, 0x41)),
+            4 => new SolidColorBrush(Color.FromRgb(0x39, 0xD3, 0x53)),
+            _ => (Brush)FindResource("BrushBorder")
+        };
+
+        /// <summary>每日活跃模块：以热力图形式展示当月每天的活跃度（每行 7 个格子 = 一周，周一起）</summary>
+        private UIElement BuildDailyActivityWidget(PanelItem item)
+        {
+            const double CellMargin = 2;   // 格子四周间距
+            const double MaxCell = 26;      // 格子最大边长（面板过宽时避免格子过大）
+
+            var today = DateTime.Today;
+            var first = new DateTime(today.Year, today.Month, 1);
+            int daysInMonth = DateTime.DaysInMonth(today.Year, today.Month);
+            // 周一起的前导空格数（DayOfWeek: 周日=0..周六=6 → 周一=0）
+            int leading = ((int)first.DayOfWeek + 6) % 7;
+
+            var root = new StackPanel();
+
+            // 月份标题
+            root.Children.Add(new Emoji.Wpf.TextBlock
+            {
+                Text = $"{today.Year}年{today.Month}月",
+                FontSize = 12,
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                Margin = new Thickness(0, 0, 0, 6),
+                HorizontalAlignment = HorizontalAlignment.Left
+            });
+
+            // 星期表头（一~日）——与格子同为 7 列，随宽度自适应铺满
+            var weekHeader = new UniformGrid
+            {
+                Columns = 7,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Margin = new Thickness(0, 0, 0, 3)
+            };
+            foreach (var wd in new[] { "一", "二", "三", "四", "五", "六", "日" })
+            {
+                weekHeader.Children.Add(new TextBlock
+                {
+                    Text = wd,
+                    FontSize = 9,
+                    TextAlignment = TextAlignment.Center,
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
+                    Opacity = 0.7
+                });
+            }
+            root.Children.Add(weekHeader);
+
+            // 日历格子：7 列自适应铺满可用宽度（不管模块多宽，每行始终 7 个）
+            var grid = new UniformGrid
+            {
+                Columns = 7,
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+            var accent = (Brush)FindResource("BrushAccent");
+            // 前导空格（占位）
+            for (int i = 0; i < leading; i++)
+                grid.Children.Add(new Border { Margin = new Thickness(CellMargin), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top });
+
+            for (int day = 1; day <= daysInMonth; day++)
+            {
+                var date = new DateTime(today.Year, today.Month, day);
+                bool isFuture = date > today;
+                var cell = new Border
+                {
+                    Margin = new Thickness(CellMargin),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Top,
+                    CornerRadius = new CornerRadius(3)
+                };
+
+                if (isFuture)
+                {
+                    cell.Background = GetActivityLevelBrush(0);
+                    cell.Opacity = 0.4;
+                    cell.ToolTip = $"{date:M月d日}";
+                }
+                else
+                {
+                    double minutes = SideDesk.Windows.WindowUsageStats.GetActiveMinutesForDate(date);
+                    int level = GetActivityLevel(minutes);
+                    cell.Background = GetActivityLevelBrush(level);
+                    cell.ToolTip = minutes > 0
+                        ? $"{date:M月d日}  活跃 {SideDesk.Windows.WindowUsageStats.FormatDuration(TimeSpan.FromMinutes(minutes))}"
+                        : $"{date:M月d日}  无活跃记录";
+                }
+
+                // 今天：高亮描边
+                if (date == today)
+                {
+                    cell.BorderBrush = accent;
+                    cell.BorderThickness = new Thickness(1.5);
+                }
+
+                grid.Children.Add(cell);
+            }
+
+            // 动态计算：7 列平分可用宽度，格子保持正方形（受 MaxCell 限制）
+            grid.SizeChanged += (s, e) =>
+            {
+                double w = e.NewSize.Width;
+                if (w <= 0) return;
+                double inner = w / 7.0 - CellMargin * 2;
+                if (inner > MaxCell) inner = MaxCell;
+                if (inner < 2) inner = 2;
+                foreach (var child in grid.Children)
+                    if (child is Border b) { b.Width = inner; b.Height = inner; }
+            };
+            root.Children.Add(grid);
+
+            // 右上角下拉菜单：刷新
+            var actionMenu = new ContextMenu();
+            var refreshMi = new MenuItem { Header = "刷新" };
+            refreshMi.Click += (s, e) => RenderPanels();
+            actionMenu.Items.Add(refreshMi);
+
+            return WrapWidget("每日活跃", root, item, actionMenu: actionMenu);
+        }
 
         #endregion
 

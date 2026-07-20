@@ -7,7 +7,7 @@
         xmlns:controls="clr-namespace:SideDesk.Controls"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         mc:Ignorable="d"
-        Title="SideDesk"
+        Title="元桌小屏"
         WindowStyle="None"
         AllowsTransparency="True"
         ResizeMode="NoResize"
@@ -44,8 +44,8 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock x:Name="titleText" Text="SideDesk [A]" Visibility="Collapsed"/>
-                <TextBlock x:Name="singleWindowTitle" Text="元桌屏霸" Visibility="Collapsed"
+                <TextBlock x:Name="titleText" Text="元桌小屏 [A]" Visibility="Collapsed"/>
+                <TextBlock x:Name="singleWindowTitle" Text="元桌小屏" Visibility="Collapsed"
                            VerticalAlignment="Center" Margin="6,0,0,0"
                            Foreground="{DynamicResource BrushTextMain}" FontSize="12"/>
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" ClipToBounds="True">
@@ -108,7 +108,7 @@
                         ToolTip="关闭通知"
                         Click="NotificationClose_Click"/>
                 <TextBlock x:Name="notificationText"
-                           Text="🔔 示例通知：欢迎使用 SideDesk！点击查看详情"
+                           Text="🔔 示例通知：欢迎使用 元桌小屏！点击查看详情"
                            Foreground="{DynamicResource BrushAccentText}"
                            FontSize="11"
                            VerticalAlignment="Center"

@@ -117,7 +117,7 @@ namespace SideDesk
         public void ReloadHoverConfig()
         {
             var app = (App)Application.Current;
-            var cfg = app.AppSettings.GetMonitor(ScreenIndex);
+            var cfg = app.AppSettings.GetCurrentMonitor(ScreenIndex, app.GetCurrentDesktopId());
             // 按停靠侧读取对应的开关与展开宽度
             bool enabled = DockSide == DockEdge.Left
                 ? cfg.LeftHoverEnabled
@@ -174,7 +174,7 @@ namespace SideDesk
 
         private void UpdateTitle()
         {
-            titleText.Text = $"SideDesk [{_currentScreen}]";
+            titleText.Text = $"元桌小屏 [{_currentScreen}]";
         }
 
         private void MoreButton_Click(object sender, RoutedEventArgs e)
@@ -223,7 +223,7 @@ namespace SideDesk
 
             // 仅双侧模式下显示"关闭面板"（非双侧时不能关闭唯一的 dock）
             var app = (App)Application.Current;
-            bool isBothSide = app.AppSettings.GetMonitor(ScreenIndex).Layout == LayoutMode.Both;
+            bool isBothSide = app.AppSettings.GetCurrentMonitor(ScreenIndex, app.GetCurrentDesktopId()).Layout == LayoutMode.Both;
             var showClose = isBothSide ? Visibility.Visible : Visibility.Collapsed;
             closeWindowMenu.Visibility = showClose;
             closeWindowSeparator.Visibility = showClose;
@@ -277,7 +277,7 @@ namespace SideDesk
         private void CloseWindow_Click(object sender, RoutedEventArgs e)
         {
             var app = (App)Application.Current;
-            if (app.AppSettings.GetMonitor(ScreenIndex).Layout != LayoutMode.Both) return;
+            if (app.AppSettings.GetCurrentMonitor(ScreenIndex, app.GetCurrentDesktopId()).Layout != LayoutMode.Both) return;
 
             // 关闭当前 dock 面板：切换为只保留另一侧（仅作用于本显示器）
             if (DockSide == DockEdge.Left)
@@ -302,7 +302,9 @@ namespace SideDesk
             _currentScreen = screen;
             UpdateTitle();
             NavigateToCurrentScreen();
-            ((App)Application.Current).SaveState();
+            var app = (App)Application.Current;
+            app.RememberScreen(ScreenIndex, DockSide, screen);
+            app.SaveState();
         }
 
         private void SwitchToScreenA(object sender, RoutedEventArgs e)
@@ -610,7 +612,7 @@ namespace SideDesk
 
             stack.Children.Add(new TextBlock
             {
-                Text = "这是一条示例通知。\n\n欢迎使用 SideDesk！\n\n您可以在这里显示系统通知、更新提示、任务提醒等内容。",
+                Text = "这是一条示例通知。\n\n欢迎使用 元桌小屏！\n\n您可以在这里显示系统通知、更新提示、任务提醒等内容。",
                 FontSize = 13,
                 Foreground = (Brush)FindResource("BrushTextMain"),
                 TextWrapping = TextWrapping.Wrap,

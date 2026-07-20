@@ -14,17 +14,21 @@ namespace SideDesk
 
     public partial class App : Application
     {
-        public LayoutMode CurrentLayout => AppSettings.GetMonitor(0).Layout;
+        public LayoutMode CurrentLayout => AppSettings.GetCurrentMonitor(0, GetCurrentDesktopId()).Layout;
         public Settings AppSettings { get; private set; } = new();
         public WindowConfigManager WindowConfigs { get; private set; } = new();
         public ProgramRegistryManager ProgramRegistry { get; private set; } = new();
         public ExtensionManager Extensions { get; private set; } = new();
+        public Services.VirtualDesktopService? VirtualDesktop { get; private set; }
 
         public string ScreenAUrl { get; set; } = "https://www.baidu.com";
         public string ScreenBUrl { get; set; } = "https://www.bing.com";
 
         private readonly System.Collections.Generic.List<MainWindow> _windows = new();
         private System.Windows.Forms.NotifyIcon? _notifyIcon;
+
+        /// <summary>记住每个(桌面ID, 显示器索引, 停靠边)对应的 ScreenType，切换虚拟桌面后恢复</summary>
+        private readonly ConcurrentDictionary<(Guid desktopId, int monitor, DockEdge side), ScreenType> _screenMemory = new();
 
         /// <summary>主题变更事件</summary>
         public static event Action? ThemeChanged;
@@ -76,6 +80,18 @@ namespace SideDesk
             // 首次启动（无任何显示器配置）：默认主显示器左侧停靠，保持旧默认行为
             if (AppSettings.Monitors.Count == 0)
                 AppSettings.GetMonitor(0).Layout = LayoutMode.Left;
+
+            // 初始化虚拟桌面服务
+            try
+            {
+                VirtualDesktop = new Services.VirtualDesktopService();
+                if (VirtualDesktop.IsAvailable)
+                    VirtualDesktop.DesktopSwitched += OnVirtualDesktopSwitched;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[VirtualDesktop] 初始化异常: {ex.Message}");
+            }
 
             ApplyLayout(save: false);
 
@@ -154,7 +170,8 @@ namespace SideDesk
         /// </summary>
         public void SwitchLayout(LayoutMode mode)
         {
-            AppSettings.GetMonitor(0).Layout = mode;
+            var desktopId = GetCurrentDesktopId();
+            AppSettings.GetCurrentMonitor(0, desktopId).Layout = mode;
             ApplyLayout(save: true);
         }
 
@@ -163,15 +180,37 @@ namespace SideDesk
         /// </summary>
         public void SwitchLayoutForMonitor(int monitorIndex, LayoutMode mode)
         {
-            AppSettings.GetMonitor(monitorIndex).Layout = mode;
+            var desktopId = GetCurrentDesktopId();
+            AppSettings.GetCurrentMonitor(monitorIndex, desktopId).Layout = mode;
             ApplyLayout(save: true);
         }
 
         /// <summary>
+        /// 获取当前活动虚拟桌面 ID（未启用或未可用时返回 Guid.Empty）
+        /// </summary>
+        public Guid GetCurrentDesktopId()
+        {
+            if (!AppSettings.EnablePerVirtualDesktop || VirtualDesktop == null || !VirtualDesktop.IsAvailable)
+                return Guid.Empty;
+            return VirtualDesktop.GetCurrentDesktopId();
+        }
+
+        /// <summary>
         /// 根据每个显示器的停靠配置重建所有停靠窗口。
+        /// 支持按当前虚拟桌面选择对应的停靠配置。
+        /// 切换虚拟桌面时会记住并恢复每个桌面的 ScreenType 选择。
         /// </summary>
         public void ApplyLayout(bool save)
         {
+            var desktopId = GetCurrentDesktopId();
+
+            // 关闭前记住每个窗口当前的 ScreenType
+            foreach (var w in _windows)
+            {
+                var key = (desktopId, w.ScreenIndex, w.DockSide);
+                _screenMemory[key] = w.CurrentScreen;
+            }
+
             // 关闭并释放现有窗口
             foreach (var w in _windows.ToList())
                 CloseWindow(w);
@@ -182,18 +221,18 @@ namespace SideDesk
 
             for (int i = 0; i < monitorCount; i++)
             {
-                var cfg = AppSettings.GetMonitor(i);
+                var cfg = AppSettings.GetCurrentMonitor(i, desktopId);
                 switch (cfg.Layout)
                 {
                     case LayoutMode.Left:
-                        _windows.Add(CreatePanel(DockEdge.Left, ScreenType.A, i));
+                        _windows.Add(CreatePanel(DockEdge.Left, i, desktopId));
                         break;
                     case LayoutMode.Right:
-                        _windows.Add(CreatePanel(DockEdge.Right, ScreenType.A, i));
+                        _windows.Add(CreatePanel(DockEdge.Right, i, desktopId));
                         break;
                     case LayoutMode.Both:
-                        _windows.Add(CreatePanel(DockEdge.Left, ScreenType.A, i));
-                        _windows.Add(CreatePanel(DockEdge.Right, ScreenType.A, i));
+                        _windows.Add(CreatePanel(DockEdge.Left, i, desktopId));
+                        _windows.Add(CreatePanel(DockEdge.Right, i, desktopId));
                         break;
                     case LayoutMode.None:
                     default:
@@ -205,11 +244,35 @@ namespace SideDesk
         }
 
         /// <summary>
+        /// 虚拟桌面切换回调：重新应用当前桌面的停靠布局。
+        /// 仅在开启"虚拟桌面独立配置"时才调整窗口，否则保持现有窗口不变。
+        /// </summary>
+        private void OnVirtualDesktopSwitched(Guid newDesktopId)
+        {
+            if (!AppSettings.EnablePerVirtualDesktop) return;
+
+            Dispatcher.Invoke(() =>
+            {
+                System.Diagnostics.Debug.WriteLine($"[App] 虚拟桌面切换，重新应用布局: {newDesktopId}");
+                ApplyLayout(save: false);
+            });
+        }
+
+        /// <summary>
         /// 保存当前状态
         /// </summary>
         public void SaveState()
         {
             AppSettings.Save();
+        }
+
+        /// <summary>
+        /// 记住指定窗口的 ScreenType，用于虚拟桌面切换后恢复
+        /// </summary>
+        public void RememberScreen(int monitorIndex, DockEdge side, ScreenType screen)
+        {
+            var desktopId = GetCurrentDesktopId();
+            _screenMemory[(desktopId, monitorIndex, side)] = screen;
         }
 
         public void CloseAll()
@@ -237,6 +300,9 @@ namespace SideDesk
 
             // 停止全局窗口切换热键
             try { GlobalHotkeyService.Instance.Stop(); } catch { }
+
+            // 停止虚拟桌面服务
+            try { VirtualDesktop?.Dispose(); } catch { }
 
             // 退出前执行一次云同步备份（仅在开启且已登录时；放到线程池避免阻塞 UI 线程）
             try
@@ -340,11 +406,15 @@ namespace SideDesk
             target?.SwitchTabByHotkey(index);
         }
 
-        private MainWindow CreatePanel(DockEdge side, ScreenType screen, int monitorIndex)
+        private MainWindow CreatePanel(DockEdge side, int monitorIndex, Guid desktopId)
         {
+            // 恢复记忆的 ScreenType，如果之前在该桌面+显示器+侧边选择过则恢复，否则默认 A
+            var key = (desktopId, monitorIndex, side);
+            var screen = _screenMemory.GetValueOrDefault(key, ScreenType.A);
+
             var window = new MainWindow(side, screen, monitorIndex);
             // 按停靠边取该显示器各自的停靠宽度：左侧用 LeftPanelWidth，右侧用 RightPanelWidth
-            var cfg = AppSettings.GetMonitor(monitorIndex);
+            var cfg = AppSettings.GetCurrentMonitor(monitorIndex, desktopId);
             window.AppBarWidth = side == DockEdge.Left
                 ? cfg.LeftPanelWidth
                 : cfg.RightPanelWidth;
@@ -433,9 +503,10 @@ namespace SideDesk
         /// </summary>
         public void ApplyPanelWidths()
         {
+            var desktopId = GetCurrentDesktopId();
             foreach (var w in _windows)
             {
-                var cfg = AppSettings.GetMonitor(w.ScreenIndex);
+                var cfg = AppSettings.GetCurrentMonitor(w.ScreenIndex, desktopId);
                 w.AppBarWidth = w.DockSide == DockEdge.Left
                     ? cfg.LeftPanelWidth
                     : cfg.RightPanelWidth;
@@ -737,12 +808,12 @@ namespace SideDesk
                 var contextMenu = new System.Windows.Forms.ContextMenuStrip();
                 contextMenu.Items.Add("设置", null, (s, e) => OpenSettings());
                 contextMenu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
-                contextMenu.Items.Add("退出 SideDesk", null, (s, e) => CloseAll());
+                contextMenu.Items.Add("退出 元桌小屏", null, (s, e) => CloseAll());
 
                 _notifyIcon = new System.Windows.Forms.NotifyIcon
                 {
                     Icon = appIcon ?? System.Drawing.SystemIcons.Application,
-                    Text = "SideDesk",
+                    Text = "元桌小屏",
                     Visible = true,
                     ContextMenuStrip = contextMenu
                 };

@@ -22,7 +22,8 @@ public enum PanelType
     SignalLight,     // 信号灯
     DigitalEmployee, // 数字员工
     Friend,          // 好友
-    ImageCarousel    // 图片轮播
+    ImageCarousel,   // 图片轮播
+    DailyActivity    // 每日活跃
 }
 
 public class PanelItem

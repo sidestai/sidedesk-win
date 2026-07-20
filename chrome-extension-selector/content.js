@@ -11,21 +11,29 @@ let options = {
 const WS_URL = 'ws://127.0.0.1:19191/';
 let ws = null;
 let wsReconnectTimer = null;
+let wsFailCount = 0;          // 连续失败次数
+let wsPausedUntil = 0;        // 暂停截止时间戳
+const WS_MAX_FAILS = 3;       // 最大连续失败次数
+const WS_PAUSE_MS = 5 * 60 * 1000; // 暂停时长：5分钟
 
 function connectWebSocket() {
   // 仅在顶层页面连接，避免每个 iframe 都建立连接
   if (window.self !== window.top) return;
 
+  // 处于暂停期内不尝试连接
+  if (Date.now() < wsPausedUntil) return;
+
   try {
     ws = new WebSocket(WS_URL);
   } catch (err) {
     console.warn('WS 创建失败，稍后重试', err);
-    scheduleReconnect();
+    onConnectFail();
     return;
   }
 
   ws.addEventListener('open', () => {
     console.log('成功链接WS');
+    wsFailCount = 0; // 连接成功，重置失败计数
     // 注册页面信息到 SideDesk
     chrome.tabs.getCurrent((tab) => {
       // 生成 uniqid：tabId + 页面URL哈希，确保同一tab刷新后ID一致
@@ -47,9 +55,14 @@ function connectWebSocket() {
     handleWsMessage(event.data);
   });
 
-  ws.addEventListener('close', () => {
+  ws.addEventListener('close', (e) => {
     ws = null;
-    scheduleReconnect();
+    // 非正常关闭（未成功建立过连接）视为失败
+    if (!e.wasClean) {
+      onConnectFail();
+    } else {
+      scheduleReconnect();
+    }
   });
 
   ws.addEventListener('error', () => {
@@ -58,8 +71,26 @@ function connectWebSocket() {
   });
 }
 
+function onConnectFail() {
+  wsFailCount++;
+  console.warn('[WS] 连接失败 (' + wsFailCount + '/' + WS_MAX_FAILS + ')');
+  if (wsFailCount >= WS_MAX_FAILS) {
+    wsPausedUntil = Date.now() + WS_PAUSE_MS;
+    wsFailCount = 0;
+    console.warn('[WS] 连续失败' + WS_MAX_FAILS + '次，暂停连接5分钟，将在 ' + new Date(wsPausedUntil).toLocaleTimeString() + ' 后恢复');
+    // 暂停结束后自动恢复连接
+    setTimeout(() => {
+      console.log('[WS] 暂停期结束，恢复连接');
+      connectWebSocket();
+    }, WS_PAUSE_MS);
+  } else {
+    scheduleReconnect();
+  }
+}
+
 function scheduleReconnect() {
   if (wsReconnectTimer) return;
+  if (Date.now() < wsPausedUntil) return;
   wsReconnectTimer = setTimeout(() => {
     wsReconnectTimer = null;
     connectWebSocket();

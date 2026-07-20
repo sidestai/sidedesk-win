@@ -21,6 +21,44 @@ namespace SideDesk
         public int RightHoverWidth { get; set; } = 200;
     }
 
+    /// <summary>
+    /// 单个虚拟桌面对应的全部显示器停靠配置
+    /// </summary>
+    public class DesktopDockProfile
+    {
+        public Guid DesktopId { get; set; }
+        public string DesktopName { get; set; } = "";
+        public List<MonitorDockSettings> Monitors { get; set; } = new();
+
+        /// <summary>获取指定显示器的停靠配置，不存在时自动扩展列表并填充默认值。</summary>
+        public MonitorDockSettings GetMonitor(int index)
+        {
+            if (index < 0) index = 0;
+            while (Monitors.Count <= index)
+                Monitors.Add(new MonitorDockSettings());
+            return Monitors[index];
+        }
+
+        /// <summary>从另一个 profile 复制所有显示器配置</summary>
+        public void CopyFrom(DesktopDockProfile source)
+        {
+            Monitors.Clear();
+            foreach (var m in source.Monitors)
+            {
+                Monitors.Add(new MonitorDockSettings
+                {
+                    Layout = m.Layout,
+                    LeftPanelWidth = m.LeftPanelWidth,
+                    LeftHoverEnabled = m.LeftHoverEnabled,
+                    LeftHoverWidth = m.LeftHoverWidth,
+                    RightPanelWidth = m.RightPanelWidth,
+                    RightHoverEnabled = m.RightHoverEnabled,
+                    RightHoverWidth = m.RightHoverWidth
+                });
+            }
+        }
+    }
+
     public class Settings
     {
         public LayoutMode Layout { get; set; } = LayoutMode.Left;
@@ -66,6 +104,14 @@ namespace SideDesk
         /// <summary>每个物理显示器的停靠配置（下标 = 主显示器优先排序后的显示器序号）</summary>
         public List<MonitorDockSettings> Monitors { get; set; } = new();
 
+        // ========== 虚拟桌面独立配置 ==========
+
+        /// <summary>是否启用按虚拟桌面独立配置停靠布局</summary>
+        public bool EnablePerVirtualDesktop { get; set; } = false;
+
+        /// <summary>每个虚拟桌面的显示器停靠配置（仅在 EnablePerVirtualDesktop=true 时使用）</summary>
+        public List<DesktopDockProfile> VirtualDesktops { get; set; } = new();
+
         /// <summary>获取指定显示器的停靠配置，不存在时自动扩展列表并填充默认值。</summary>
         public MonitorDockSettings GetMonitor(int index)
         {
@@ -73,6 +119,56 @@ namespace SideDesk
             while (Monitors.Count <= index)
                 Monitors.Add(new MonitorDockSettings());
             return Monitors[index];
+        }
+
+        /// <summary>获取指定虚拟桌面的配置 profile，不存在时自动创建并从全局 Monitors 复制。</summary>
+        public DesktopDockProfile GetDesktopProfile(Guid desktopId, bool createIfMissing = true)
+        {
+            var profile = VirtualDesktops.Find(p => p.DesktopId == desktopId);
+            if (profile != null) return profile;
+
+            if (!createIfMissing)
+                return new DesktopDockProfile { DesktopId = desktopId };
+
+            // 新建 profile，从全局 Monitors 复制
+            profile = new DesktopDockProfile { DesktopId = desktopId };
+            foreach (var m in Monitors)
+            {
+                profile.Monitors.Add(new MonitorDockSettings
+                {
+                    Layout = m.Layout,
+                    LeftPanelWidth = m.LeftPanelWidth,
+                    LeftHoverEnabled = m.LeftHoverEnabled,
+                    LeftHoverWidth = m.LeftHoverWidth,
+                    RightPanelWidth = m.RightPanelWidth,
+                    RightHoverEnabled = m.RightHoverEnabled,
+                    RightHoverWidth = m.RightHoverWidth
+                });
+            }
+            VirtualDesktops.Add(profile);
+            return profile;
+        }
+
+        /// <summary>
+        /// 获取当前虚拟桌面+指定显示器的停靠配置。
+        /// 若未启用分桌面则退化为全局 GetMonitor()。
+        /// </summary>
+        public MonitorDockSettings GetCurrentMonitor(int monitorIndex, Guid? desktopId = null)
+        {
+            if (!EnablePerVirtualDesktop || desktopId == null || desktopId == Guid.Empty)
+                return GetMonitor(monitorIndex);
+
+            var profile = GetDesktopProfile(desktopId.Value);
+            return profile.GetMonitor(monitorIndex);
+        }
+
+        /// <summary>
+        /// 获取指定虚拟桌面 profile 中的显示器配置（用于设置 UI 绑定指定桌面）。
+        /// </summary>
+        public MonitorDockSettings GetMonitorForDesktop(Guid desktopId, int monitorIndex)
+        {
+            var profile = GetDesktopProfile(desktopId);
+            return profile.GetMonitor(monitorIndex);
         }
 
         private static readonly string SettingsPath = Path.Combine(
