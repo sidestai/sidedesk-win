@@ -425,6 +425,7 @@ namespace SideDesk.Controls
                 ContextMenu BuildBareMenu()
                 {
                     var m = new ContextMenu();
+                    m.Items.Add(BuildSettingsMenuItem(item, defaultTitle));
                     m.Items.Add(BuildHideFrameMenuItem());
                     var del = new MenuItem { Header = "删除模块" };
                     del.Click += (s, e) => RemovePanel(item);
@@ -520,9 +521,9 @@ namespace SideDesk.Controls
             var border = new Border
             {
                 Margin = new Thickness(0, 0, 0, 6),
-                Padding = new Thickness(0, 10, 0, 0),
+                Padding = new Thickness(10, 10, 10, 8),
                 CornerRadius = new CornerRadius(6),
-                Background = (Brush)FindResource("BrushInputBG"),
+                Background = ApplyDashColor(item.BGColor, "BrushInputBG"),
                 BorderBrush = (Brush)FindResource("BrushBorder"),
                 BorderThickness = new Thickness(1),
                 Child = stack
@@ -534,8 +535,9 @@ namespace SideDesk.Controls
                 border.MouseLeave += (s, e) => actionBtn.Visibility = Visibility.Collapsed;
             }
 
-            // 右键菜单：隐藏模块外框（可勾选） + 删除模块（无需进入编辑模式）
+            // 右键菜单：模块设置 + 隐藏模块外框（可勾选） + 删除模块（无需进入编辑模式）
             var moduleMenu = new ContextMenu();
+            moduleMenu.Items.Add(BuildSettingsMenuItem(item, defaultTitle));
             moduleMenu.Items.Add(BuildHideFrameMenuItem());
             var deleteModuleItem = new MenuItem { Header = "删除模块" };
             deleteModuleItem.Click += (s, e) => RemovePanel(item);
@@ -832,18 +834,29 @@ namespace SideDesk.Controls
                 };
             }
 
-            // 标题栏右侧：删除按钮
-            var deleteBtn = new Button
+            // 标题栏右侧：菜单按钮
+            var menuBtn = new Button
             {
-                Content = "✕", FontSize = 10, Padding = new Thickness(3, 0, 3, 0),
+                Content = "⋯", FontSize = 12, Padding = new Thickness(4, 0, 4, 0),
                 Background = Brushes.Transparent, Foreground = (Brush)FindResource("BrushTextMuted"),
                 BorderThickness = new Thickness(0), Cursor = Cursors.Hand,
                 HorizontalAlignment = HorizontalAlignment.Right,
                 Visibility = Visibility.Collapsed
             };
-            deleteBtn.Click += (s, e) => RemovePanel(item);
-            DockPanel.SetDock(deleteBtn, Dock.Right);
-            titleBar.Children.Insert(0, deleteBtn); // 先加删除按钮（Dock.Right）
+            var groupDropMenu = new ContextMenu();
+            var editGroupMi = new MenuItem { Header = "修改分组" };
+            editGroupMi.Click += (s, e) => ShowPanelSettingsDialog(item, "分组");
+            groupDropMenu.Items.Add(editGroupMi);
+            var copyGroupMi = new MenuItem { Header = "复制分组" };
+            copyGroupMi.Click += (s, e) => DuplicateGroup(item);
+            groupDropMenu.Items.Add(copyGroupMi);
+            groupDropMenu.Items.Add(new Separator());
+            var delGroupMi = new MenuItem { Header = "删除分组" };
+            delGroupMi.Click += (s, e) => ConfirmRemoveGroup(item);
+            groupDropMenu.Items.Add(delGroupMi);
+            menuBtn.Click += (s, e) => { groupDropMenu.PlacementTarget = menuBtn; groupDropMenu.Placement = PlacementMode.Bottom; groupDropMenu.IsOpen = true; };
+            DockPanel.SetDock(menuBtn, Dock.Right);
+            titleBar.Children.Insert(0, menuBtn); // 先加菜单按钮（Dock.Right）
 
             titleBar.Children.Add(titleBlock);
 
@@ -897,7 +910,7 @@ namespace SideDesk.Controls
             groupContextMenu.Items.Add(addSubMenu);
             groupContextMenu.Items.Add(new Separator());
             var deleteGroupItem = new MenuItem { Header = "删除分组" };
-            deleteGroupItem.Click += (s, ev) => RemovePanel(item);
+            deleteGroupItem.Click += (s, ev) => ConfirmRemoveGroup(item);
             groupContextMenu.Items.Add(deleteGroupItem);
             titleBar.ContextMenu = groupContextMenu;
 
@@ -928,24 +941,292 @@ namespace SideDesk.Controls
             var border = new Border
             {
                 Margin = new Thickness(0, 0, 0, 6),
-                Padding = new Thickness(0, 10, 0, 0),
+                Padding = new Thickness(2),
                 CornerRadius = new CornerRadius(6),
-                Background = (Brush)FindResource("BrushInputBG"),
+                Background = ApplyDashColor(item.BGColor ?? item.GroupBGColor, "BrushInputBG"),
                 BorderBrush = (Brush)FindResource("BrushBorder"),
                 BorderThickness = new Thickness(1),
                 Child = container,
                 ContextMenu = groupContextMenu  // 整个分组区域右键都使用分组菜单
             };
 
-            if (_isEditMode)
-            {
-                border.MouseEnter += (s, e) => deleteBtn.Visibility = Visibility.Visible;
-                border.MouseLeave += (s, e) => deleteBtn.Visibility = Visibility.Collapsed;
-            }
+            border.MouseEnter += (s, e) => menuBtn.Visibility = Visibility.Visible;
+            border.MouseLeave += (s, e) => menuBtn.Visibility = Visibility.Collapsed;
 
             // 分组高度完全由内容撑开，标记为已处理，避免 RenderPanels 走 WrapResizable 给分组套滚动容器/拖拽手柄
             border.Uid = "wrapHandled";
             return border;
+        }
+
+        /// <summary>模块/分组设置对话框：修改标题和背景色</summary>
+        private void ShowPanelSettingsDialog(PanelItem item, string defaultTitle)
+        {
+            bool isGroup = item.Type == PanelType.Group;
+            var dialog = new Window
+            {
+                Title = isGroup ? "分组设置" : "模块设置",
+                Width = 380,
+                SizeToContent = SizeToContent.Height,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = Window.GetWindow(this),
+                ResizeMode = ResizeMode.NoResize,
+                ShowInTaskbar = false,
+                Background = (Brush)FindResource("BrushDialogBG"),
+                Foreground = (Brush)FindResource("BrushTextMain")
+            };
+            dialog.SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(dialog, App.IsCurrentThemeLight());
+
+            var root = new StackPanel { Margin = new Thickness(16) };
+
+            // 名称
+            root.Children.Add(new TextBlock
+            {
+                Text = isGroup ? "分组名称" : "模块名称",
+                FontSize = 12,
+                Foreground = (Brush)FindResource("BrushTextSec"),
+                Margin = new Thickness(0, 0, 0, 6)
+            });
+            var titleBox = new TextBox
+            {
+                Text = item.Title ?? "",
+                Style = (Style)FindResource("GlobalTextBoxStyle"),
+                Margin = new Thickness(0, 0, 0, 14)
+            };
+            root.Children.Add(titleBox);
+
+            // 背景色
+            root.Children.Add(new TextBlock
+            {
+                Text = "背景色",
+                FontSize = 12,
+                Foreground = (Brush)FindResource("BrushTextSec"),
+                Margin = new Thickness(0, 0, 0, 6)
+            });
+
+            string? selectedColor = isGroup ? (item.BGColor ?? item.GroupBGColor) : item.BGColor;
+            Border? selectedSwatch = null;
+            var accentBrush = (Brush)FindResource("BrushAccent");
+            var colorPanel = new WrapPanel { Margin = new Thickness(0, 0, 0, 10) };
+
+            // “默认”选项（跟随主题）
+            var defaultSwatch = new Border
+            {
+                Width = 28, Height = 28,
+                Margin = new Thickness(0, 0, 6, 6),
+                CornerRadius = new CornerRadius(4),
+                Background = (Brush)FindResource("BrushInputBG"),
+                BorderBrush = selectedColor == null ? accentBrush : Brushes.Transparent,
+                BorderThickness = new Thickness(2),
+                Cursor = Cursors.Hand,
+                Child = new TextBlock
+                {
+                    Text = "默认", FontSize = 9,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Foreground = (Brush)FindResource("BrushTextMuted")
+                }
+            };
+            if (selectedColor == null) selectedSwatch = defaultSwatch;
+            defaultSwatch.MouseLeftButtonUp += (s, e) =>
+            {
+                selectedColor = null;
+                if (selectedSwatch != null) selectedSwatch.BorderBrush = Brushes.Transparent;
+                selectedSwatch = defaultSwatch;
+                defaultSwatch.BorderBrush = accentBrush;
+            };
+            colorPanel.Children.Add(defaultSwatch);
+
+            var presetColors = new[]
+            {
+                "#1E293B", "#2D3748", "#374151", "#3B4252",
+                "#1A3A5C", "#1C4532", "#4A1D1D", "#4C1D95",
+                "#7C2D12", "#164E63", "#3F6212", "#701A75"
+            };
+            foreach (var c in presetColors)
+            {
+                var swatch = new Border
+                {
+                    Width = 28, Height = 28,
+                    Margin = new Thickness(0, 0, 6, 6),
+                    CornerRadius = new CornerRadius(4),
+                    Background = (SolidColorBrush)new BrushConverter().ConvertFrom(c)!,
+                    BorderBrush = string.Equals(c, selectedColor, StringComparison.OrdinalIgnoreCase) ? accentBrush : Brushes.Transparent,
+                    BorderThickness = new Thickness(2),
+                    Cursor = Cursors.Hand,
+                    Tag = c
+                };
+                if (string.Equals(c, selectedColor, StringComparison.OrdinalIgnoreCase)) selectedSwatch = swatch;
+                swatch.MouseLeftButtonUp += (s, e) =>
+                {
+                    selectedColor = (string)swatch.Tag!;
+                    if (selectedSwatch != null) selectedSwatch.BorderBrush = Brushes.Transparent;
+                    selectedSwatch = swatch;
+                    swatch.BorderBrush = accentBrush;
+                };
+                colorPanel.Children.Add(swatch);
+            }
+            root.Children.Add(colorPanel);
+
+            // 自定义颜色输入
+            var customDock = new DockPanel { Margin = new Thickness(0, 0, 0, 16) };
+            customDock.Children.Add(new TextBlock
+            {
+                Text = "自定义：", VerticalAlignment = VerticalAlignment.Center, FontSize = 11,
+                Foreground = (Brush)FindResource("BrushTextSec")
+            });
+            var customBox = new TextBox
+            {
+                Text = selectedColor ?? "",
+                Style = (Style)FindResource("GlobalTextBoxStyle"),
+                FontSize = 11, Width = 100
+            };
+            customDock.Children.Add(customBox);
+            var applyColorBtn = new Button
+            {
+                Content = "应用", FontSize = 10, Padding = new Thickness(8, 3, 8, 3),
+                Margin = new Thickness(6, 0, 0, 0),
+                Style = (Style)FindResource("GhostButtonStyle")
+            };
+            applyColorBtn.Click += (s, e) =>
+            {
+                var txt = customBox.Text.Trim();
+                if (string.IsNullOrEmpty(txt)) return;
+                try
+                {
+                    new BrushConverter().ConvertFrom(txt);
+                    selectedColor = txt;
+                    if (selectedSwatch != null) selectedSwatch.BorderBrush = Brushes.Transparent;
+                    selectedSwatch = null;
+                }
+                catch { MessageBox.Show("无效的颜色值", "提示", MessageBoxButton.OK, MessageBoxImage.Warning); }
+            };
+            customDock.Children.Add(applyColorBtn);
+            root.Children.Add(customDock);
+
+            // 按钮区
+            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            var cancelBtn = new Button
+            {
+                Content = "取消", Width = 75, MinHeight = 30, Margin = new Thickness(0, 0, 10, 0),
+                Style = (Style)FindResource("StandardButtonStyle")
+            };
+            cancelBtn.Click += (s, e) => dialog.Close();
+            var saveBtn = new Button
+            {
+                Content = "保存", Width = 75, MinHeight = 30, IsDefault = true,
+                Style = (Style)FindResource("StandardButtonStyle")
+            };
+            saveBtn.Click += (s, e) =>
+            {
+                item.Title = string.IsNullOrWhiteSpace(titleBox.Text) ? null : titleBox.Text.Trim();
+                item.BGColor = selectedColor;
+                _configManager?.Save();
+                RenderPanels();
+                dialog.Close();
+            };
+            btnPanel.Children.Add(cancelBtn);
+            btnPanel.Children.Add(saveBtn);
+            root.Children.Add(btnPanel);
+
+            dialog.Content = root;
+            dialog.ShowDialog();
+        }
+
+        /// <summary>构建“模块设置”菜单项</summary>
+        private MenuItem BuildSettingsMenuItem(PanelItem item, string defaultTitle)
+        {
+            var mi = new MenuItem { Header = "模块设置" };
+            mi.Click += (s, e) => ShowPanelSettingsDialog(item, defaultTitle);
+            return mi;
+        }
+
+        /// <summary>复制分组：深拷贝分组及其子面板，插入到原分组后方</summary>
+        private void DuplicateGroup(PanelItem item)
+        {
+            if (_currentWindowConfig == null || _configManager == null) return;
+
+            var json = Newtonsoft.Json.JsonConvert.SerializeObject(item);
+            var clone = Newtonsoft.Json.JsonConvert.DeserializeObject<PanelItem>(json);
+            if (clone == null) return;
+
+            RegeneratePanelIds(clone);
+            clone.Title = (string.IsNullOrEmpty(item.Title) ? "分组" : item.Title) + " 副本";
+
+            var idx = _currentWindowConfig.Panels.IndexOf(item);
+            _currentWindowConfig.Panels.Insert(idx >= 0 ? idx + 1 : _currentWindowConfig.Panels.Count, clone);
+            _configManager.Save();
+            RenderPanels();
+        }
+
+        /// <summary>递归重新生成面板 Id，避免复制后 Id 冲突</summary>
+        private static void RegeneratePanelIds(PanelItem p)
+        {
+            p.Id = Guid.NewGuid().ToString();
+            if (p.ChildPanels != null)
+                foreach (var c in p.ChildPanels) RegeneratePanelIds(c);
+        }
+
+        /// <summary>删除分组前弹出确认提示</summary>
+        private void ConfirmRemoveGroup(PanelItem item)
+        {
+            var name = string.IsNullOrEmpty(item.Title) ? "分组" : item.Title;
+            var count = item.ChildPanels?.Count ?? 0;
+            var msg = count > 0
+                ? $"确定删除分组「{name}」吗？\n该分组内含有 {count} 个模块，将一并删除。"
+                : $"确定删除分组「{name}」吗？";
+            if (ShowConfirmDialog("删除分组", msg))
+                RemovePanel(item);
+        }
+
+        /// <summary>主题风格确认弹框，返回 true 表示用户点击了“确定”</summary>
+        private bool ShowConfirmDialog(string title, string message, string okText = "确定", string cancelText = "取消")
+        {
+            var dialog = new Window
+            {
+                Title = title,
+                Width = 340,
+                SizeToContent = SizeToContent.Height,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = Window.GetWindow(this),
+                ResizeMode = ResizeMode.NoResize,
+                ShowInTaskbar = false,
+                Background = (Brush)FindResource("BrushDialogBG"),
+                Foreground = (Brush)FindResource("BrushTextMain")
+            };
+            dialog.SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(dialog, App.IsCurrentThemeLight());
+
+            var root = new StackPanel { Margin = new Thickness(20) };
+            root.Children.Add(new Emoji.Wpf.TextBlock
+            {
+                Text = message,
+                FontSize = 13,
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 4, 0, 20)
+            });
+
+            bool result = false;
+            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            var cancelBtn = new Button
+            {
+                Content = cancelText, Width = 75, MinHeight = 30, Margin = new Thickness(0, 0, 10, 0),
+                Style = (Style)FindResource("StandardButtonStyle"),
+                IsCancel = true
+            };
+            cancelBtn.Click += (s, e) => dialog.Close();
+            var okBtn = new Button
+            {
+                Content = okText, Width = 75, MinHeight = 30, IsDefault = true,
+                Style = (Style)FindResource("StandardButtonStyle")
+            };
+            okBtn.Click += (s, e) => { result = true; dialog.Close(); };
+            btnPanel.Children.Add(cancelBtn);
+            btnPanel.Children.Add(okBtn);
+            root.Children.Add(btnPanel);
+
+            dialog.Content = root;
+            dialog.ShowDialog();
+            return result;
         }
 
         private UIElement BuildQuickGroupWidget(PanelItem item)
@@ -1992,6 +2273,9 @@ namespace SideDesk.Controls
         
             dropMenu.Items.Add(new Separator());
         
+            // 模块设置
+            dropMenu.Items.Add(BuildSettingsMenuItem(item, defaultTitle));
+
             // 隐藏模块外框
             var hideFrameMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
             hideFrameMi.Click += (s, e) => { item.HideFrame = hideFrameMi.IsChecked; _configManager?.Save(); RenderPanels(); };
@@ -2030,6 +2314,7 @@ namespace SideDesk.Controls
                     Child = mainStack
                 };
                 var bareMenu = new ContextMenu();
+                bareMenu.Items.Add(BuildSettingsMenuItem(item, defaultTitle));
                 var bareHideMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
                 bareHideMi.Click += (s, e) => { item.HideFrame = bareHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
                 bareMenu.Items.Add(bareHideMi);
@@ -2043,9 +2328,9 @@ namespace SideDesk.Controls
             var wrapper = new Border
             {
                 Margin = new Thickness(0, 0, 0, 6),
-                Padding = new Thickness(0, 10, 0, 0),
+                Padding = new Thickness(10, 10, 10, 8),
                 CornerRadius = new CornerRadius(6),
-                Background = (Brush)FindResource("BrushInputBG"),
+                Background = ApplyDashColor(item.BGColor, "BrushInputBG"),
                 BorderBrush = (Brush)FindResource("BrushBorder"),
                 BorderThickness = new Thickness(1),
                 Child = mainStack
@@ -2059,6 +2344,7 @@ namespace SideDesk.Controls
         
             // 右键菜单
             var moduleMenu = new ContextMenu();
+            moduleMenu.Items.Add(BuildSettingsMenuItem(item, defaultTitle));
             var hideFrameMi2 = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
             hideFrameMi2.Click += (s, e) => { item.HideFrame = hideFrameMi2.IsChecked; _configManager?.Save(); RenderPanels(); };
             moduleMenu.Items.Add(hideFrameMi2);
@@ -2255,6 +2541,7 @@ namespace SideDesk.Controls
             playMi.Click += (s, e) => { item.CarouselAutoPlay = !item.CarouselAutoPlay; _configManager?.Save(); RenderPanels(); };
             dropMenu.Items.Add(playMi);
             dropMenu.Items.Add(new Separator());
+            dropMenu.Items.Add(BuildSettingsMenuItem(item, defaultTitle));
             var hideFrameMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
             hideFrameMi.Click += (s, e) => { item.HideFrame = hideFrameMi.IsChecked; _configManager?.Save(); RenderPanels(); };
             dropMenu.Items.Add(hideFrameMi);
@@ -2285,6 +2572,7 @@ namespace SideDesk.Controls
                     Child = mainStack
                 };
                 var bareMenu = new ContextMenu();
+                bareMenu.Items.Add(BuildSettingsMenuItem(item, defaultTitle));
                 var bareSettingsMi = new MenuItem { Header = "设置目录/播放规则..." };
                 bareSettingsMi.Click += (s, e) => ShowCarouselSettingsDialog(item);
                 bareMenu.Items.Add(bareSettingsMi);
@@ -2301,9 +2589,9 @@ namespace SideDesk.Controls
             var wrapper = new Border
             {
                 Margin = new Thickness(0, 0, 0, 6),
-                Padding = new Thickness(0, 10, 0, 0),
+                Padding = new Thickness(10, 10, 10, 8),
                 CornerRadius = new CornerRadius(6),
-                Background = (Brush)FindResource("BrushInputBG"),
+                Background = ApplyDashColor(item.BGColor, "BrushInputBG"),
                 BorderBrush = (Brush)FindResource("BrushBorder"),
                 BorderThickness = new Thickness(1),
                 Child = mainStack
@@ -2314,6 +2602,7 @@ namespace SideDesk.Controls
                 wrapper.MouseLeave += (s, e) => dropBtn.Visibility = Visibility.Collapsed;
             }
             var moduleMenu = new ContextMenu();
+            moduleMenu.Items.Add(BuildSettingsMenuItem(item, defaultTitle));
             var mSettingsMi = new MenuItem { Header = "设置目录/播放规则..." };
             mSettingsMi.Click += (s, e) => ShowCarouselSettingsDialog(item);
             moduleMenu.Items.Add(mSettingsMi);
@@ -3230,6 +3519,9 @@ namespace SideDesk.Controls
 
             dropMenu.Items.Add(new Separator());
 
+            // 模块设置
+            dropMenu.Items.Add(BuildSettingsMenuItem(item, defaultTitle));
+
             // 隐藏模块外框
             var hideFrameMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
             hideFrameMi.Click += (s, e) => { item.HideFrame = hideFrameMi.IsChecked; _configManager?.Save(); RenderPanels(); };
@@ -3268,6 +3560,7 @@ namespace SideDesk.Controls
                     Child = mainStack
                 };
                 var bareMenu = new ContextMenu();
+                bareMenu.Items.Add(BuildSettingsMenuItem(item, defaultTitle));
                 var bareHideMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
                 bareHideMi.Click += (s, e) => { item.HideFrame = bareHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
                 bareMenu.Items.Add(bareHideMi);
@@ -3281,9 +3574,9 @@ namespace SideDesk.Controls
             var wrapper = new Border
             {
                 Margin = new Thickness(0, 0, 0, 6),
-                Padding = new Thickness(0, 10, 0, 0),
+                Padding = new Thickness(10, 10, 10, 8),
                 CornerRadius = new CornerRadius(6),
-                Background = (Brush)FindResource("BrushInputBG"),
+                Background = ApplyDashColor(item.BGColor, "BrushInputBG"),
                 BorderBrush = (Brush)FindResource("BrushBorder"),
                 BorderThickness = new Thickness(1),
                 Child = mainStack
@@ -3297,6 +3590,7 @@ namespace SideDesk.Controls
 
             // 右键菜单
             var moduleMenu = new ContextMenu();
+            moduleMenu.Items.Add(BuildSettingsMenuItem(item, defaultTitle));
             var hideFrameMi2 = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
             hideFrameMi2.Click += (s, e) => { item.HideFrame = hideFrameMi2.IsChecked; _configManager?.Save(); RenderPanels(); };
             moduleMenu.Items.Add(hideFrameMi2);
@@ -4162,6 +4456,8 @@ namespace SideDesk.Controls
 
             dropMenu.Items.Add(new Separator());
 
+            dropMenu.Items.Add(BuildSettingsMenuItem(item, defaultTitle));
+
             var hideFrameMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
             hideFrameMi.Click += (s, e) => { item.HideFrame = hideFrameMi.IsChecked; _configManager?.Save(); RenderPanels(); };
             dropMenu.Items.Add(hideFrameMi);
@@ -4195,6 +4491,7 @@ namespace SideDesk.Controls
                     Child = mainStack
                 };
                 var bareMenu = new ContextMenu();
+                bareMenu.Items.Add(BuildSettingsMenuItem(item, defaultTitle));
                 var bareHideMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
                 bareHideMi.Click += (s, e) => { item.HideFrame = bareHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
                 bareMenu.Items.Add(bareHideMi);
@@ -4208,9 +4505,9 @@ namespace SideDesk.Controls
             var wrapper = new Border
             {
                 Margin = new Thickness(0, 0, 0, 6),
-                Padding = new Thickness(0, 10, 0, 0),
+                Padding = new Thickness(10, 10, 10, 8),
                 CornerRadius = new CornerRadius(6),
-                Background = (Brush)FindResource("BrushInputBG"),
+                Background = ApplyDashColor(item.BGColor, "BrushInputBG"),
                 BorderBrush = (Brush)FindResource("BrushBorder"),
                 BorderThickness = new Thickness(1),
                 Child = mainStack
@@ -4223,6 +4520,7 @@ namespace SideDesk.Controls
             }
 
             var moduleMenu = new ContextMenu();
+            moduleMenu.Items.Add(BuildSettingsMenuItem(item, defaultTitle));
             var hideFrameMi2 = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
             hideFrameMi2.Click += (s, e) => { item.HideFrame = hideFrameMi2.IsChecked; _configManager?.Save(); RenderPanels(); };
             moduleMenu.Items.Add(hideFrameMi2);
@@ -6111,6 +6409,7 @@ namespace SideDesk.Controls
             {
                 // 无框态也提供右键菜单，确保能恢复外框
                 var bareMenu = new ContextMenu();
+                bareMenu.Items.Add(BuildSettingsMenuItem(item, "📊 数据看板"));
                 var bareHideMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
                 bareHideMi.Click += (s, e) => { item.HideFrame = bareHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
                 bareMenu.Items.Add(bareHideMi);
@@ -6200,6 +6499,8 @@ namespace SideDesk.Controls
 
             dropMenu.Items.Add(new Separator());
 
+            dropMenu.Items.Add(BuildSettingsMenuItem(item, "📊 数据看板"));
+
             // 隐藏模块外框
             var hideFrameItem = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
             hideFrameItem.Click += (s, e) =>
@@ -6231,9 +6532,9 @@ namespace SideDesk.Controls
             var border = new Border
             {
                 Margin = new Thickness(0, 0, 0, 6),
-                Padding = new Thickness(0, 10, 0, 0),
+                Padding = new Thickness(10, 10, 10, 8),
                 CornerRadius = new CornerRadius(6),
-                Background = (Brush)FindResource("BrushInputBG"),
+                Background = ApplyDashColor(item.BGColor, "BrushInputBG"),
                 BorderBrush = (Brush)FindResource("BrushBorder"),
                 BorderThickness = new Thickness(1),
                 Child = stack
@@ -6245,8 +6546,9 @@ namespace SideDesk.Controls
                 border.MouseLeave += (s, e) => dropBtn.Visibility = Visibility.Collapsed;
             }
 
-            // 右键菜单：隐藏模块外框（可勾选） + 删除模块（无需进入编辑模式也能隐藏/恢复）
+            // 右键菜单：模块设置 + 隐藏模块外框（可勾选） + 删除模块（无需进入编辑模式也能隐藏/恢复）
             var dashMenu = new ContextMenu();
+            dashMenu.Items.Add(BuildSettingsMenuItem(item, "📊 数据看板"));
             var dashHideMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
             dashHideMi.Click += (s, e) => { item.HideFrame = dashHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
             dashMenu.Items.Add(dashHideMi);
@@ -7783,7 +8085,7 @@ namespace SideDesk.Controls
             var border = new Border
             {
                 Margin = new Thickness(0, 0, 0, 6),
-                Padding = new Thickness(0, 10, 0, 10),
+                Padding = new Thickness(10, 10, 10, 8),
                 CornerRadius = new CornerRadius(6),
                 Background = (Brush)FindResource("BrushInputBG"),
                 BorderBrush = (Brush)FindResource("BrushBorder"),

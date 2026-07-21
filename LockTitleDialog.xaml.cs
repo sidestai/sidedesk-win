@@ -14,6 +14,7 @@ namespace SideDesk
     public partial class LockTitleDialog : Window
     {
         private readonly TaskbarOverlayManager.WindowInfo _window;
+        private readonly TitleLockRule _editRule; // 非 null 表示编辑模式
 
         /// <summary>本次对话框最终应用的锁定文字（未锁定时为空）。</summary>
         public string ResultLockText { get; private set; } = string.Empty;
@@ -27,6 +28,52 @@ namespace SideDesk
             _window = window ?? throw new ArgumentNullException(nameof(window));
             SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(this);
             Loaded += (s, e) => InitFromWindow();
+        }
+
+        /// <summary>编辑模式：基于已有规则打开对话框进行修改。</summary>
+        public LockTitleDialog(TitleLockRule rule)
+        {
+            InitializeComponent();
+            _editRule = rule ?? throw new ArgumentNullException(nameof(rule));
+            SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(this);
+            Loaded += (s, e) => InitFromRule();
+        }
+
+        /// <summary>
+        /// 编辑模式初始化：从已有规则预填界面。
+        /// </summary>
+        private void InitFromRule()
+        {
+            Title = $"编辑规则: [{_editRule.LockText}] {_editRule.ProcessName}";
+            windowInfoText.Text = $"进程：{_editRule.ProcessName}";
+            processInfoText.Text = !string.IsNullOrEmpty(_editRule.OriginalTitle)
+                ? $"原标题：{_editRule.OriginalTitle}"
+                : $"目录：{_editRule.ExecutableDir}";
+
+            lockTextBox.Text = _editRule.LockText ?? string.Empty;
+            matchPatternBox.Text = _editRule.MatchPattern ?? string.Empty;
+            if (_editRule.MatchMode == TitleMatchMode.Equals)
+                equalsRadio.IsChecked = true;
+            else
+                containsRadio.IsChecked = true;
+
+            // 编辑模式下隐藏“解除锁定”按钮（无活动窗口可解锁）
+            unlockButton.Visibility = Visibility.Collapsed;
+
+            // 详细信息区显示规则摘要
+            var sb = new StringBuilder();
+            sb.AppendLine($"进程名         : {_editRule.ProcessName}");
+            sb.AppendLine($"原标题         : {_editRule.OriginalTitle}");
+            sb.AppendLine($"可执行文件目录 : {_editRule.ExecutableDir}");
+            sb.AppendLine($"锁定文字       : {_editRule.LockText}");
+            sb.AppendLine($"匹配字符串     : {_editRule.MatchPattern}");
+            sb.AppendLine($"匹配模式       : {(_editRule.MatchMode == TitleMatchMode.Equals ? "完全相同" : "包含")}");
+            sb.AppendLine($"创建时间       : {_editRule.CreatedAt:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine($"更新时间       : {_editRule.UpdatedAt:yyyy-MM-dd HH:mm:ss}");
+            detailsBox.Text = sb.ToString();
+
+            lockTextBox.Focus();
+            lockTextBox.SelectAll();
         }
 
         /// <summary>
@@ -150,6 +197,30 @@ namespace SideDesk
                 ? TitleMatchMode.Equals
                 : TitleMatchMode.Contains;
 
+            // ===== 编辑模式：更新已有规则 =====
+            if (_editRule != null)
+            {
+                var newRule = new TitleLockRule
+                {
+                    ProcessName = _editRule.ProcessName,
+                    OriginalTitle = _editRule.OriginalTitle,
+                    ExecutableDir = _editRule.ExecutableDir,
+                    LockText = lockText,
+                    MatchPattern = string.IsNullOrEmpty(pattern) ? null : pattern,
+                    MatchMode = mode,
+                    CreatedAt = _editRule.CreatedAt
+                };
+                // 键可能变化（MatchPattern 被修改），先删旧规则再写入新规则
+                TitleLockRuleManager.RemoveExact(_editRule);
+                TitleLockRuleManager.Upsert(newRule);
+                IsLocked = true;
+                ResultLockText = lockText;
+                DialogResult = true;
+                Close();
+                return;
+            }
+
+            // ===== 新建模式：锁定活动窗口 =====
             bool ok = TaskbarOverlayManager.LockWindowTitle(
                 _window.Handle,
                 lockText,

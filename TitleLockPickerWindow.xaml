@@ -18,6 +18,8 @@
                        FontSize="{DynamicResource FontSizeNormal}"
                        Foreground="{DynamicResource BrushTextMain}" Margin="0,0,0,8"/>
             <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal">
+                <Button x:Name="editRuleBtn" Content="编辑规则" Style="{StaticResource GhostButtonStyle}"
+                        Padding="10,6" Margin="0,0,8,0" Click="EditRuleBtn_Click"/>
                 <Button x:Name="deleteRuleBtn" Content="删除规则" Style="{StaticResource GhostButtonStyle}"
                         Padding="10,6" Margin="0,0,8,0" Click="DeleteRuleBtn_Click"/>
                 <Button x:Name="refreshLockedBtn" Content="刷新" Style="{StaticResource GhostButtonStyle}"
@@ -25,7 +27,7 @@
             </StackPanel>
             <ListBox x:Name="lockedListBox" Background="{DynamicResource BrushInputBG}"
                      Foreground="{DynamicResource BrushTextMain}" BorderBrush="{DynamicResource BrushBorder}"
-                     Margin="0,0,0,8"/>
+                     Margin="0,0,0,8" MouseDoubleClick="LockedListBox_MouseDoubleClick"/>
         </DockPanel>
 
         <!-- 右侧：可选窗口 -->
@@ -34,7 +36,7 @@
                        FontSize="{DynamicResource FontSizeNormal}"
                        Foreground="{DynamicResource BrushTextMain}" Margin="0,0,0,8"/>
             <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button Content="取消" Style="{StaticResource StandardButtonStyle}"
+                <Button Content="关闭" Style="{StaticResource StandardButtonStyle}"
                         Padding="16,8" Margin="0,0,10,0" Click="CancelBtn_Click"/>
                 <Button Content="下一步" Style="{StaticResource PrimaryButtonStyle}"
                         Padding="16,8" Click="NextBtn_Click"/>

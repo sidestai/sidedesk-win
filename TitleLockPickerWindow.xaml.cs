@@ -142,6 +142,30 @@ namespace SideDesk
             }
         }
 
+        private void EditRuleBtn_Click(object sender, RoutedEventArgs e)
+        {
+            EditSelectedRule();
+        }
+
+        private void LockedListBox_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            EditSelectedRule();
+        }
+
+        /// <summary>对左侧列表选中的规则打开编辑对话框，返回后刷新列表。</summary>
+        private void EditSelectedRule()
+        {
+            if (lockedListBox.SelectedItem is not ListBoxItem li || li.Tag is not TitleLockRule rule)
+            {
+                MessageBox.Show("请选中要编辑的规则", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var dialog = new LockTitleDialog(rule) { Owner = this };
+            dialog.ShowDialog();
+            ReloadLocked();
+        }
+
         private void RefreshLockedBtn_Click(object sender, RoutedEventArgs e)
         {
             LoadWindowList();

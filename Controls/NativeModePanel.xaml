@@ -76,7 +76,7 @@
         <!-- 动态内容区 -->
         <ScrollViewer VerticalScrollBarVisibility="Hidden" Style="{StaticResource ContentView}">
             <Grid>
-                <StackPanel x:Name="dynamicContent" Margin="0,10,0,0"/>
+                <StackPanel x:Name="dynamicContent" Margin="0,4,0,0"/>
                 <!-- 拖拽调序指示器：常驻叠加层，不参与布局，拖拽时仅切换可见性并定位，避免布局抖动 -->
                 <Border x:Name="panelDropIndicator" Height="3" Background="DodgerBlue"
                         VerticalAlignment="Top" HorizontalAlignment="Stretch"

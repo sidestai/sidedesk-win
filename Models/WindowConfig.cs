@@ -38,6 +38,8 @@ public class PanelItem
     public List<TimerItem>? TimerItems { get; set; } // 计时器数据
     public List<PanelItem>? ChildPanels { get; set; } // 分组子面板
     public bool IsExpanded { get; set; } = true;      // 分组是否展开
+    public string? GroupBGColor { get; set; }              // 分组自定义背景色（hex字符串，null=跟随主题）
+    public string? BGColor { get; set; }                   // 模块自定义背景色（hex字符串，null=跟随主题）
     public List<StickyNote>? StickyNotes { get; set; } // 便签数据（per-panel）
     public List<TodoItem>? TodoItems { get; set; } // 今日待办数据（per-panel）
     public bool SkipWrapper { get; set; } = false;     // 是否跳过外层容器包装
