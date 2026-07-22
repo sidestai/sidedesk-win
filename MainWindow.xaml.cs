@@ -9,6 +9,7 @@ using System.Diagnostics;
 using Microsoft.Web.WebView2.Core;
 using SideDesk.Controls;
 using SideDesk.Models;
+using SideDesk.Services;
 
 namespace SideDesk
 {
@@ -21,6 +22,8 @@ namespace SideDesk
         private SettingsWindow? _settingsWindow;
 
         public ScreenType CurrentScreen => _currentScreen;
+        internal WindowConfigManager? ConfigManager => _configManager;
+        internal DockWindowState? DockState => _dockState;
 
 
         public MainWindow(DockEdge side, ScreenType screen, int monitorIndex)
@@ -221,7 +224,7 @@ namespace SideDesk
                 }
             }
 
-            // 仅双侧模式下显示"关闭面板"（非双侧时不能关闭唯一的 dock）
+            // 仅双侧模式下显示“关闭面板”（非双侧时不能关闭唯一的 dock）
             var app = (App)Application.Current;
             bool isBothSide = app.AppSettings.GetCurrentMonitor(ScreenIndex, app.GetCurrentDesktopId()).Layout == LayoutMode.Both;
             var showClose = isBothSide ? Visibility.Visible : Visibility.Collapsed;
@@ -232,6 +235,64 @@ namespace SideDesk
             bool titleLockEnabled = app.AppSettings.EnableTitleLock;
             titleLockMenuItem.Visibility = titleLockEnabled ? Visibility.Visible : Visibility.Collapsed;
             toolsMenu.Visibility = titleLockEnabled ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        /// <summary>“小屏管理”菜单入口：弹出独立管理窗口。</summary>
+        private void ScreenManager_Click(object sender, RoutedEventArgs e)
+        {
+            if (_configManager == null || _dockState == null) return;
+            new ScreenManagerWindow(this).ShowDialog();
+        }
+
+        /// <summary>通用主题化确认对话框（返回是否点击了确定）。</summary>
+        internal bool ShowConfirmDialog(string title, string message, string okText = "确定", string cancelText = "取消")
+        {
+            var dialog = new Window
+            {
+                Title = title,
+                Width = 340,
+                SizeToContent = SizeToContent.Height,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this,
+                ResizeMode = ResizeMode.NoResize,
+                ShowInTaskbar = false,
+                Background = (Brush)FindResource("BrushDialogBG"),
+                Foreground = (Brush)FindResource("BrushTextMain")
+            };
+            dialog.SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(dialog, App.IsCurrentThemeLight());
+
+            var root = new StackPanel { Margin = new Thickness(20) };
+            root.Children.Add(new Emoji.Wpf.TextBlock
+            {
+                Text = message,
+                FontSize = 13,
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 4, 0, 20)
+            });
+
+            bool result = false;
+            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            var cancelBtn = new Button
+            {
+                Content = cancelText, Width = 75, MinHeight = 30, Margin = new Thickness(0, 0, 10, 0),
+                Style = (Style)FindResource("StandardButtonStyle"),
+                IsCancel = true
+            };
+            cancelBtn.Click += (s, e) => dialog.Close();
+            var okBtn = new Button
+            {
+                Content = okText, Width = 75, MinHeight = 30, IsDefault = true,
+                Style = (Style)FindResource("StandardButtonStyle")
+            };
+            okBtn.Click += (s, e) => { result = true; dialog.Close(); };
+            btnPanel.Children.Add(cancelBtn);
+            btnPanel.Children.Add(okBtn);
+            root.Children.Add(btnPanel);
+
+            dialog.Content = root;
+            dialog.ShowDialog();
+            return result;
         }
 
         private void EditWindowAtIndex(int index)
@@ -357,7 +418,7 @@ namespace SideDesk
             RefreshWindowTabs();
         }
 
-        private void RefreshWindowTabs()
+        internal void RefreshWindowTabs()
         {
             if (_configManager == null || _dockState == null) return;
             windowTabsPanel.Children.Clear();
@@ -463,7 +524,7 @@ namespace SideDesk
             _configManager.Save();
         }
 
-        private void SwitchToWindowByIndex(int index)
+        internal void SwitchToWindowByIndex(int index)
         {
             if (_dockState == null || _configManager == null) return;
             if (index < 0 || index >= _dockState.WindowIds.Count) index = 0;

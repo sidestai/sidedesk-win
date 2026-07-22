@@ -29,6 +29,7 @@ public enum PanelType
 public class PanelItem
 {
     public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string? ServerId { get; set; }  // 云同步服务器端 ID（服务器返回，持久化到 windows.json；null=尚未同步）
     public PanelType Type { get; set; }
     public string? GroupId { get; set; }  // 仅 QuickGroup 类型使用
     public string? Title { get; set; }    // 可选自定义标题
@@ -145,7 +146,9 @@ public class SignalLightItem
 public class WindowConfig
 {
     public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string? ServerId { get; set; }  // 云同步服务器端 ID（服务器返回，持久化到 windows.json；null=尚未同步）
     public string Name { get; set; } = "新窗口";
+    public string? BGColor { get; set; }   // 窗口(bar)自定义背景色（hex字符串，null=跟随主题）
     public WindowType Type { get; set; } = WindowType.Native;
     public string? Url { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.Now;
@@ -154,6 +157,8 @@ public class WindowConfig
     public bool IsAppMode { get; set; } = false;
     /// <summary>窗口级启用的工具列表（显示在底部工具栏）</summary>
     public List<string> EnabledTools { get; set; } = new();
+    /// <summary>是否显示在顶部标签列表中（小屏管理中勾选才显示）</summary>
+    public bool ShowInTabs { get; set; } = true;
 }
 
 public class DockWindowState

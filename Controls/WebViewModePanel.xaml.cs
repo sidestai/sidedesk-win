@@ -52,7 +52,8 @@ namespace SideDesk.Controls
         /// </summary>
         public void Navigate(string url)
         {
-            if (string.IsNullOrEmpty(url)) return;
+            if (string.IsNullOrWhiteSpace(url)) return;
+            url = url.Trim();
 
             if (_isInitialized && webView.CoreWebView2 != null)
             {
@@ -69,7 +70,14 @@ namespace SideDesk.Controls
                     return;
                 }
 
-                webView.CoreWebView2.Navigate(url);
+                try
+                {
+                    webView.CoreWebView2.Navigate(url);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[WebViewModePanel] Navigate 失败（URL无效）: {url} - {ex.Message}");
+                }
             }
             else
             {

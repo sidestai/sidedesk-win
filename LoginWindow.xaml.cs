@@ -8,9 +8,10 @@ namespace SideDesk
 {
     public partial class LoginWindow : Window
     {
-        private const string LoginUrl = "https://v3.api.yzllq.com/api/client/login?domain=https%3A%2F%2Fv3.api.yzllq.com";
+        private const string LoginUrl = "http://localhost:3007";
         // 需要拦截的登录接口路径（匹配请求 URL 中包含该片段的响应）
-        private const string TargetApiPath = "/api/system/login";
+        // 登录接口：POST /api/auth/login，响应 { code:200, msg, data:{ token } }
+        private const string TargetApiPath = "/api/auth/login";
 
         /// <summary>最近一次成功拦截到的登录接口 token（供外部读取）</summary>
         public static string? LastToken { get; private set; }

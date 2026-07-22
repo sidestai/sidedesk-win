@@ -14,6 +14,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using SideDesk.Models;
 using SideDesk.Windows;
+using SideDesk.Controls;
 
 namespace SideDesk.Services
 {
@@ -918,8 +919,8 @@ namespace SideDesk.Services
             var card = new Border
             {
                 CornerRadius = new CornerRadius(8),
-                Padding = new Thickness(12),
-                Margin = new Thickness(0, 0, 0, 8)
+                Padding = new Thickness(3),
+                Margin = new Thickness(0, 0, 0, 3)
             };
             ApplyModuleBackground(card);
 
@@ -933,7 +934,7 @@ namespace SideDesk.Services
                 FontSize = 24,
                 FontWeight = FontWeights.Bold,
                 HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 8, 0, 8)
+                Margin = new Thickness(0, 3, 0, 3)
             };
             
             // 标题行
@@ -1214,7 +1215,7 @@ namespace SideDesk.Services
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(0, 0, 4, 0)
                 });
-                contentPanel.Children.Add(new TextBlock
+                contentPanel.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = item.Name,
                     VerticalAlignment = VerticalAlignment.Center
@@ -1223,7 +1224,11 @@ namespace SideDesk.Services
             }
             else
             {
-                btn.Content = item.Name;
+                btn.Content = new Emoji.Wpf.TextBlock
+                {
+                    Text = item.Name,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
             }
 
             // 圆角样式（保留每项自定义背景色与拖拽高亮边框）
@@ -2502,11 +2507,7 @@ namespace SideDesk.Services
                 FontSize = (double)Application.Current.FindResource("FontSizeSmall"),
                 Margin = new Thickness(0, 0, 0, 6)
             });
-            var nameBox = new TextBox
-            {
-                Text = item.Name,
-                Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle")
-            };
+            var nameBox = new EmojiTextBox { Text = item.Name };
             rootPanel.Children.Add(nameBox);
 
             // 图标
@@ -2559,6 +2560,47 @@ namespace SideDesk.Services
             appModePanel.Children.Add(appModeLabel);
             rootPanel.Children.Add(appModePanel);
 
+            // 按钮颜色
+            rootPanel.Children.Add(new Emoji.Wpf.TextBlock
+            {
+                Text = "按钮颜色",
+                Foreground = (Brush)Application.Current.FindResource("BrushTextSec"),
+                FontSize = (double)Application.Current.FindResource("FontSizeSmall"),
+                Margin = new Thickness(0, 14, 0, 6)
+            });
+            var colorPanel = new WrapPanel();
+            string selectedColor = item.BackgroundColor ?? "#3498DB";
+            var accentBrush = (Brush)Application.Current.FindResource("BrushAccent");
+            var presetColors = new[]
+            {
+                "#3498DB", "#2ECC71", "#E74C3C", "#9B59B6",
+                "#F39C12", "#1ABC9C", "#E67E22", "#34495E",
+                "#2980B9", "#27AE60", "#C0392B", "#8E44AD"
+            };
+            foreach (var color in presetColors)
+            {
+                var swatch = new Border
+                {
+                    Width = 28, Height = 28,
+                    Margin = new Thickness(0, 0, 8, 8),
+                    CornerRadius = new CornerRadius(6),
+                    Background = (SolidColorBrush)new BrushConverter().ConvertFrom(color)!,
+                    BorderBrush = color.Equals(selectedColor, StringComparison.OrdinalIgnoreCase) ? accentBrush : Brushes.Transparent,
+                    BorderThickness = new Thickness(2),
+                    Cursor = Cursors.Hand,
+                    Tag = color
+                };
+                swatch.MouseLeftButtonUp += (s, ev) =>
+                {
+                    selectedColor = (string)swatch.Tag!;
+                    foreach (UIElement child in colorPanel.Children)
+                        if (child is Border b) b.BorderBrush = Brushes.Transparent;
+                    swatch.BorderBrush = accentBrush;
+                };
+                colorPanel.Children.Add(swatch);
+            }
+            rootPanel.Children.Add(colorPanel);
+
             // 按钮
             var btnPanel = new StackPanel
             {
@@ -2585,19 +2627,23 @@ namespace SideDesk.Services
                 item.Icon = string.IsNullOrEmpty(iconBox.Text.Trim()) ? null : iconBox.Text.Trim();
                 item.Target = targetBox.Text.Trim();
                 item.UseAppMode = appModeSwitch.IsChecked == true;
+                item.BackgroundColor = selectedColor;
                 QuickGroupManager.UpdateGroup(QuickGroupManager.GetAll().FirstOrDefault(g => g.Id == groupId) ?? new QuickGroup());
                 QuickGroupManager.Save();
+                // 更新按钮背景色
+                try { itemBtn.Background = (SolidColorBrush)new BrushConverter().ConvertFrom(item.BackgroundColor)!; }
+                catch { itemBtn.Background = Brushes.SteelBlue; }
                 // 更新按钮显示
                 if (!string.IsNullOrEmpty(item.Icon))
                 {
                     var cp = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Center };
                     cp.Children.Add(new Emoji.Wpf.TextBlock { Text = item.Icon, FontSize = 13, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) });
-                    cp.Children.Add(new TextBlock { Text = item.Name, VerticalAlignment = VerticalAlignment.Center });
+                    cp.Children.Add(new Emoji.Wpf.TextBlock { Text = item.Name, VerticalAlignment = VerticalAlignment.Center });
                     itemBtn.Content = cp;
                 }
                 else
                 {
-                    itemBtn.Content = item.Name;
+                    itemBtn.Content = new Emoji.Wpf.TextBlock { Text = item.Name, VerticalAlignment = VerticalAlignment.Center };
                 }
                 dialog.Close();
             };

@@ -443,7 +443,7 @@ namespace SideDesk.Controls
 
             var displayTitle = string.IsNullOrEmpty(item.Title) ? defaultTitle : item.Title;
 
-            var header = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+            var header = new DockPanel { Margin = new Thickness(0, 0, 0, 3) };
             // 编辑模式下，标题栏作为拖拽手柄（仅此处可拖拽调整模块位置）
             if (_isEditMode)
             {
@@ -453,7 +453,6 @@ namespace SideDesk.Controls
             var titleBlock = new Emoji.Wpf.TextBlock
             {
                 Text = displayTitle,
-                FontWeight = FontWeights.SemiBold,
                 FontSize = 13,
                 VerticalAlignment = VerticalAlignment.Center,
                 Foreground = (Brush)FindResource("BrushTextMain")
@@ -521,7 +520,7 @@ namespace SideDesk.Controls
             var border = new Border
             {
                 Margin = new Thickness(0, 0, 0, 6),
-                Padding = new Thickness(10, 10, 10, 8),
+                Padding = new Thickness(3),
                 CornerRadius = new CornerRadius(6),
                 Background = ApplyDashColor(item.BGColor, "BrushInputBG"),
                 BorderBrush = (Brush)FindResource("BrushBorder"),
@@ -812,7 +811,6 @@ namespace SideDesk.Controls
             var titleBlock = new Emoji.Wpf.TextBlock
             {
                 Text = string.IsNullOrEmpty(item.Title) ? "分组" : item.Title,
-                FontWeight = FontWeights.SemiBold,
                 FontSize = 13,
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(6, 0, 0, 0),
@@ -909,6 +907,12 @@ namespace SideDesk.Controls
             addSubMenu.Items.Add(groupDataBlockSub);
             groupContextMenu.Items.Add(addSubMenu);
             groupContextMenu.Items.Add(new Separator());
+            var editGroupCtxMi = new MenuItem { Header = "编辑分组" };
+            editGroupCtxMi.Click += (s, ev) => ShowPanelSettingsDialog(item, "分组");
+            groupContextMenu.Items.Add(editGroupCtxMi);
+            var copyGroupCtxMi = new MenuItem { Header = "复制分组" };
+            copyGroupCtxMi.Click += (s, ev) => DuplicateGroup(item);
+            groupContextMenu.Items.Add(copyGroupCtxMi);
             var deleteGroupItem = new MenuItem { Header = "删除分组" };
             deleteGroupItem.Click += (s, ev) => ConfirmRemoveGroup(item);
             groupContextMenu.Items.Add(deleteGroupItem);
@@ -986,10 +990,9 @@ namespace SideDesk.Controls
                 Foreground = (Brush)FindResource("BrushTextSec"),
                 Margin = new Thickness(0, 0, 0, 6)
             });
-            var titleBox = new TextBox
+            var titleBox = new EmojiTextBox
             {
                 Text = item.Title ?? "",
-                Style = (Style)FindResource("GlobalTextBoxStyle"),
                 Margin = new Thickness(0, 0, 0, 14)
             };
             root.Children.Add(titleBox);
@@ -2218,14 +2221,13 @@ namespace SideDesk.Controls
             // === 自定义标题栏：标题 + 下拉三角 ===
             var defaultTitle = "⏱ 计时器";
             var displayTitle = string.IsNullOrEmpty(item.Title) ? defaultTitle : item.Title;
-            var header = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+            var header = new DockPanel { Margin = new Thickness(0, 0, 0, 3) };
             header.Uid = PanelHeaderUid;
             if (_isEditMode) { header.Tag = PanelDragHandleTag; header.Cursor = Cursors.SizeAll; }
         
             var titleBlock = new Emoji.Wpf.TextBlock
             {
                 Text = displayTitle,
-                FontWeight = FontWeights.SemiBold,
                 FontSize = 13,
                 VerticalAlignment = VerticalAlignment.Center,
                 Foreground = (Brush)FindResource("BrushTextMain")
@@ -2328,7 +2330,7 @@ namespace SideDesk.Controls
             var wrapper = new Border
             {
                 Margin = new Thickness(0, 0, 0, 6),
-                Padding = new Thickness(10, 10, 10, 8),
+                Padding = new Thickness(3),
                 CornerRadius = new CornerRadius(6),
                 Background = ApplyDashColor(item.BGColor, "BrushInputBG"),
                 BorderBrush = (Brush)FindResource("BrushBorder"),
@@ -2492,14 +2494,13 @@ namespace SideDesk.Controls
             // === 自定义标题栏：标题 + 下拉三角 ===
             var defaultTitle = "🖼 图片轮播";
             var displayTitle = string.IsNullOrEmpty(item.Title) ? defaultTitle : item.Title;
-            var header = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+            var header = new DockPanel { Margin = new Thickness(0, 0, 0, 3) };
             header.Uid = PanelHeaderUid;
             if (_isEditMode) { header.Tag = PanelDragHandleTag; header.Cursor = Cursors.SizeAll; }
 
             var titleBlock = new Emoji.Wpf.TextBlock
             {
                 Text = displayTitle,
-                FontWeight = FontWeights.SemiBold,
                 FontSize = 13,
                 VerticalAlignment = VerticalAlignment.Center,
                 Foreground = (Brush)FindResource("BrushTextMain")
@@ -2589,7 +2590,7 @@ namespace SideDesk.Controls
             var wrapper = new Border
             {
                 Margin = new Thickness(0, 0, 0, 6),
-                Padding = new Thickness(10, 10, 10, 8),
+                Padding = new Thickness(3),
                 CornerRadius = new CornerRadius(6),
                 Background = ApplyDashColor(item.BGColor, "BrushInputBG"),
                 BorderBrush = (Brush)FindResource("BrushBorder"),
@@ -2722,19 +2723,27 @@ namespace SideDesk.Controls
         {
             var card = new Border
             {
-                Margin = new Thickness(0, 0, 0, 8),
-                Padding = new Thickness(10, 8, 10, 8),
+                Margin = new Thickness(0, 0, 0, 3),
+                Padding = new Thickness(3),
                 Background = (Brush)FindResource("BrushBG"),
                 BorderBrush = (Brush)FindResource("BrushBorder"),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(4)
             };
 
-            // 右键菜单：删除计时器（无需进入编辑模式）
+            // 右键菜单：计时器级 + 模块级操作
             var cardMenu = new ContextMenu();
             var deleteMenuItem = new MenuItem { Header = "删除计时器" };
             deleteMenuItem.Click += (s, e) => DeleteTimer(timer, panelItem);
             cardMenu.Items.Add(deleteMenuItem);
+            cardMenu.Items.Add(new Separator());
+            cardMenu.Items.Add(BuildSettingsMenuItem(panelItem, "⏱ 计时器"));
+            var cardHideMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = panelItem.HideFrame };
+            cardHideMi.Click += (s, e) => { panelItem.HideFrame = cardHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
+            cardMenu.Items.Add(cardHideMi);
+            var cardDelModuleMi = new MenuItem { Header = "删除模块" };
+            cardDelModuleMi.Click += (s, e) => RemovePanel(panelItem);
+            cardMenu.Items.Add(cardDelModuleMi);
             card.ContextMenu = cardMenu;
 
             var mainStack = new StackPanel();
@@ -2748,7 +2757,7 @@ namespace SideDesk.Controls
                 FontFamily = new FontFamily("Consolas"),
                 Foreground = timer.IsRunning ? (Brush)FindResource("BrushAccent") : (Brush)FindResource("BrushTextMain"),
                 HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 8, 0, 8)
+                Margin = new Thickness(0, 3, 0, 3)
             };
 
             // 标题行：名称 + 开始/停止圆钮 + 编辑按钮
@@ -3439,14 +3448,13 @@ namespace SideDesk.Controls
             // === 自定义标题栏：标题 + 下拉三角 ===
             var defaultTitle = "📁 文件区";
             var displayTitle = string.IsNullOrEmpty(item.Title) ? defaultTitle : item.Title;
-            var header = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+            var header = new DockPanel { Margin = new Thickness(0, 0, 0, 3) };
             header.Uid = PanelHeaderUid;
             if (_isEditMode) { header.Tag = PanelDragHandleTag; header.Cursor = Cursors.SizeAll; }
 
             var titleBlock = new Emoji.Wpf.TextBlock
             {
                 Text = displayTitle,
-                FontWeight = FontWeights.SemiBold,
                 FontSize = 13,
                 VerticalAlignment = VerticalAlignment.Center,
                 Foreground = (Brush)FindResource("BrushTextMain")
@@ -3574,7 +3582,7 @@ namespace SideDesk.Controls
             var wrapper = new Border
             {
                 Margin = new Thickness(0, 0, 0, 6),
-                Padding = new Thickness(10, 10, 10, 8),
+                Padding = new Thickness(3),
                 CornerRadius = new CornerRadius(6),
                 Background = ApplyDashColor(item.BGColor, "BrushInputBG"),
                 BorderBrush = (Brush)FindResource("BrushBorder"),
@@ -4385,14 +4393,13 @@ namespace SideDesk.Controls
             // === 自定义标题栏：标题 + 下拉三角 ===
             var defaultTitle = "👥 数字员工";
             var displayTitle = string.IsNullOrEmpty(item.Title) ? defaultTitle : item.Title;
-            var header = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+            var header = new DockPanel { Margin = new Thickness(0, 0, 0, 3) };
             header.Uid = PanelHeaderUid;
             if (_isEditMode) { header.Tag = PanelDragHandleTag; header.Cursor = Cursors.SizeAll; }
 
             var titleBlock = new Emoji.Wpf.TextBlock
             {
                 Text = displayTitle,
-                FontWeight = FontWeights.SemiBold,
                 FontSize = 13,
                 VerticalAlignment = VerticalAlignment.Center,
                 Foreground = (Brush)FindResource("BrushTextMain")
@@ -4505,7 +4512,7 @@ namespace SideDesk.Controls
             var wrapper = new Border
             {
                 Margin = new Thickness(0, 0, 0, 6),
-                Padding = new Thickness(10, 10, 10, 8),
+                Padding = new Thickness(3),
                 CornerRadius = new CornerRadius(6),
                 Background = ApplyDashColor(item.BGColor, "BrushInputBG"),
                 BorderBrush = (Brush)FindResource("BrushBorder"),
@@ -6431,14 +6438,13 @@ namespace SideDesk.Controls
 
             // === 自定义标题栏：标题 + 下拉三角 ===
             var displayTitle = string.IsNullOrEmpty(item.Title) ? "📊 数据看板" : item.Title;
-            var header = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+            var header = new DockPanel { Margin = new Thickness(0, 0, 0, 3) };
             header.Uid = PanelHeaderUid;
             if (_isEditMode) { header.Tag = PanelDragHandleTag; header.Cursor = Cursors.SizeAll; }
 
             var titleBlock = new Emoji.Wpf.TextBlock
             {
                 Text = displayTitle,
-                FontWeight = FontWeights.SemiBold,
                 FontSize = 13,
                 VerticalAlignment = VerticalAlignment.Center,
                 Foreground = (Brush)FindResource("BrushTextMain")
@@ -6532,7 +6538,7 @@ namespace SideDesk.Controls
             var border = new Border
             {
                 Margin = new Thickness(0, 0, 0, 6),
-                Padding = new Thickness(10, 10, 10, 8),
+                Padding = new Thickness(3),
                 CornerRadius = new CornerRadius(6),
                 Background = ApplyDashColor(item.BGColor, "BrushInputBG"),
                 BorderBrush = (Brush)FindResource("BrushBorder"),
@@ -7305,22 +7311,27 @@ namespace SideDesk.Controls
 
             foreach (var tool in availableTools)
             {
-                var mi = new MenuItem
-                {
-                    Header = tool.Header,
-                    IsCheckable = tool.IsCheckable,
-                    Tag = tool.Key
-                };
-                
-                // 只有可勾选的工具才显示勾选状态
-                if (tool.IsCheckable && _currentWindowConfig != null)
-                {
-                    mi.IsChecked = _currentWindowConfig.EnabledTools.Contains(tool.Key);
-                }
-                
+                // 先将 dynamic 值提取为静态类型局部变量，避免 dynamic 污染表达式
+                string headerText = tool.Header;
                 string key = tool.Key;
                 Action action = tool.Action;
                 bool isCheckable = tool.IsCheckable;
+
+                // Header 用纯字符串：Styles.xaml 的全局 MenuItem 隐式样式会通过 HeaderTemplate
+                // 自动将字符串渲染为彩色 emoji。不能手动设为 Emoji.Wpf.TextBlock（UIElement），
+                // 否则会与 HeaderTemplate 冲突，绑定到该对象并调 ToString 显示类型名
+                var mi = new MenuItem
+                {
+                    Header = headerText,
+                    IsCheckable = isCheckable,
+                    Tag = key
+                };
+                
+                // 只有可勾选的工具才显示勾选状态
+                if (isCheckable && _currentWindowConfig != null)
+                {
+                    mi.IsChecked = _currentWindowConfig.EnabledTools.Contains(key);
+                }
                 
                 mi.Click += (s, ev) =>
                 {
@@ -7462,7 +7473,7 @@ namespace SideDesk.Controls
             {
                 "ClipboardHistory" => new Button
                 {
-                    Content = "📋 剪贴板历史",
+                    Content = new Emoji.Wpf.TextBlock { Text = "📋 剪贴板历史" },
                     Padding = new Thickness(8, 4, 8, 4),
                     MinHeight = 22,
                     Background = Brushes.Transparent,
@@ -7475,7 +7486,7 @@ namespace SideDesk.Controls
                 
                 "AIChat" => new Button
                 {
-                    Content = "🤖 AI 助手",
+                    Content = new Emoji.Wpf.TextBlock { Text = "🤖 AI 助手" },
                     Padding = new Thickness(8, 4, 8, 4),
                     MinHeight = 22,
                     Background = Brushes.Transparent,
@@ -7488,7 +7499,7 @@ namespace SideDesk.Controls
                 
                 "VoiceInput" => new Button
                 {
-                    Content = "🎤 语音输入",
+                    Content = new Emoji.Wpf.TextBlock { Text = "🎤 语音输入" },
                     Padding = new Thickness(8, 4, 8, 4),
                     MinHeight = 22,
                     Background = Brushes.Transparent,
@@ -8085,7 +8096,7 @@ namespace SideDesk.Controls
             var border = new Border
             {
                 Margin = new Thickness(0, 0, 0, 6),
-                Padding = new Thickness(10, 10, 10, 8),
+                Padding = new Thickness(3),
                 CornerRadius = new CornerRadius(6),
                 Background = (Brush)FindResource("BrushInputBG"),
                 BorderBrush = (Brush)FindResource("BrushBorder"),

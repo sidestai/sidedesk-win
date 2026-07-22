@@ -309,10 +309,12 @@ namespace SideDesk
         {
             try
             {
-                Dispatcher.Invoke(() =>
+                // 用 BeginInvoke 异步投递（非阻塞）：云同步后续在线程池线程回调，
+                // 若用 Invoke 会阻塞线程池线程等待 UI 线程，调试断点暂停 UI 线程时会卡死
+                Dispatcher.BeginInvoke(new Action(() =>
                 {
                     if (cloudSyncStatusText != null) cloudSyncStatusText.Text = msg;
-                });
+                }));
             }
             catch { }
         }

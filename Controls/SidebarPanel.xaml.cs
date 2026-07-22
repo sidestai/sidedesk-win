@@ -133,5 +133,12 @@ namespace SideDesk.Controls
 
         /// <summary>重新渲染原生模式面板（设置变更后调用）。</summary>
         public void RefreshNativePanels() => nativePanel.RefreshLayout();
+
+        /// <summary>清空内容区域，显示空白（所有小屏均不可见时调用）。</summary>
+        public void ClearContent()
+        {
+            webViewPanel.Visibility = Visibility.Collapsed;
+            nativePanel.Visibility = Visibility.Collapsed;
+        }
     }
 }

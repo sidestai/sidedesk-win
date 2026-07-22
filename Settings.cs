@@ -101,6 +101,9 @@ namespace SideDesk
         /// <summary>最近一次云同步成功的时间</summary>
         public DateTime? LastCloudSyncTime { get; set; }
 
+        /// <summary>云同步 localId -> serverId 映射表（本地 Id 不变，上传/同步时查此表）</summary>
+        public Dictionary<string, string> CloudIdMap { get; set; } = new();
+
         /// <summary>每个物理显示器的停靠配置（下标 = 主显示器优先排序后的显示器序号）</summary>
         public List<MonitorDockSettings> Monitors { get; set; } = new();
 

@@ -50,8 +50,10 @@ namespace SideDesk
                 Owner = owner
             };
             _dialog.Loaded += (s, e) => HideFromTaskbar(_dialog);
+            _dialog.SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(_dialog, App.IsCurrentThemeLight());
 
             _dialog.SetBinding(Window.BackgroundProperty, new System.Windows.Data.Binding("Background") { Source = owner });
+            _dialog.Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("BrushTextMain");
 
             var grid = new Grid();
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -66,7 +68,8 @@ namespace SideDesk
                 Width = 120,
                 Height = 26,
                 Margin = new Thickness(0, 0, 8, 0),
-                VerticalContentAlignment = VerticalAlignment.Center
+                VerticalContentAlignment = VerticalAlignment.Center,
+                Style = (Style)Application.Current.FindResource("GlobalComboBoxStyle")
             };
             foreach (var model in AIConfigManager.SupportedModels)
             {
@@ -101,8 +104,9 @@ namespace SideDesk
             {
                 Content = "设置",
                 Width = 50,
-                Height = 26,
-                Margin = new Thickness(0, 0, 0, 0)
+                MinHeight = 26,
+                Margin = new Thickness(0, 0, 0, 0),
+                Style = (Style)Application.Current.FindResource("StandardButtonStyle")
             };
             settingsBtn.Click += (s, ev) => ShowSettingsDialog();
             DockPanel.SetDock(settingsBtn, Dock.Right);
@@ -112,7 +116,7 @@ namespace SideDesk
             {
                 Text = "就绪",
                 VerticalAlignment = VerticalAlignment.Center,
-                Foreground = System.Windows.Media.Brushes.LightGray,
+                Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("BrushTextSec"),
                 Margin = new Thickness(8, 0, 0, 0)
             };
             headerPanel.Children.Add(_statusText);
@@ -138,8 +142,9 @@ namespace SideDesk
             {
                 Content = "发送",
                 Width = 60,
-                Height = 34,
-                Margin = new Thickness(5, 0, 0, 0)
+                MinHeight = 34,
+                Margin = new Thickness(5, 0, 0, 0),
+                Style = (Style)Application.Current.FindResource("PrimaryButtonStyle")
             };
             DockPanel.SetDock(sendBtn, Dock.Right);
             inputPanel.Children.Add(sendBtn);
@@ -149,7 +154,8 @@ namespace SideDesk
                 Height = 34,
                 FontSize = 14,
                 Padding = new Thickness(5, 3, 5, 3),
-                VerticalContentAlignment = VerticalAlignment.Center
+                VerticalContentAlignment = VerticalAlignment.Center,
+                Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle")
             };
             inputPanel.Children.Add(_inputBox);
             Grid.SetRow(inputPanel, 2);
@@ -289,13 +295,15 @@ namespace SideDesk
             var container = new DockPanel { Margin = new Thickness(0, 4, 0, 4) };
 
             System.Windows.Media.Brush bgBrush;
+            System.Windows.Media.Brush fgBrush = (System.Windows.Media.Brush)Application.Current.FindResource("BrushTextMain");
             HorizontalAlignment hAlign;
             string prefix = "";
 
             switch (role)
             {
                 case "user":
-                    bgBrush = System.Windows.Media.Brushes.DodgerBlue;
+                    bgBrush = (System.Windows.Media.Brush)Application.Current.FindResource("BrushAccent");
+                    fgBrush = System.Windows.Media.Brushes.White;
                     hAlign = HorizontalAlignment.Right;
                     prefix = "你: ";
                     break;
@@ -305,7 +313,8 @@ namespace SideDesk
                     prefix = "AI: ";
                     break;
                 default:
-                    bgBrush = System.Windows.Media.Brushes.DarkOrange;
+                    bgBrush = (System.Windows.Media.Brush)Application.Current.FindResource("BrushAccent");
+                    fgBrush = System.Windows.Media.Brushes.White;
                     hAlign = HorizontalAlignment.Center;
                     break;
             }
@@ -323,7 +332,7 @@ namespace SideDesk
             var msgText = new Emoji.Wpf.TextBlock
             {
                 Text = string.IsNullOrEmpty(message) ? "" : (prefix + message),
-                Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("BrushTextMain"),
+                Foreground = fgBrush,
                 TextWrapping = TextWrapping.Wrap
             };
 
@@ -399,9 +408,12 @@ namespace SideDesk
                 Height = 420,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 ResizeMode = ResizeMode.NoResize,
-                Owner = _dialog ?? _owner
+                Owner = _dialog ?? _owner,
+                Background = (System.Windows.Media.Brush)Application.Current.FindResource("BrushDialogBG"),
+                Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("BrushTextMain")
             };
             dialog.Loaded += (s, e) => HideFromTaskbar(dialog);
+            dialog.SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(dialog, App.IsCurrentThemeLight());
 
             var scrollViewer = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
             var mainPanel = new StackPanel { Margin = new Thickness(20) };
@@ -428,13 +440,13 @@ namespace SideDesk
             mainPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "选择你要使用的 AI 服务商，DeepSeek 和 OpenAI 使用官方接口。",
-                Foreground = System.Windows.Media.Brushes.LightGray,
+                Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("BrushTextSec"),
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 0, 0, 8)
             });
 
-            var modelCombo = new ComboBox { Height = 30, Margin = new Thickness(0, 0, 0, 15) };
+            var modelCombo = new ComboBox { Height = 30, Margin = new Thickness(0, 0, 0, 15), Style = (Style)Application.Current.FindResource("GlobalComboBoxStyle") };
             foreach (var model in AIConfigManager.SupportedModels)
             {
                 modelCombo.Items.Add(new ComboBoxItem { Content = model.Name, Tag = model.Id });
@@ -460,7 +472,7 @@ namespace SideDesk
             mainPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "从对应服务商官网获取 API Key 并粘贴到下方：\n  DeepSeek: https://platform.deepseek.com/api_keys\n  OpenAI: https://platform.openai.com/api-keys",
-                Foreground = System.Windows.Media.Brushes.LightGray,
+                Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("BrushTextSec"),
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 0, 0, 8)
@@ -471,7 +483,8 @@ namespace SideDesk
                 Height = 30,
                 Text = cfg.ApiKey ?? "",
                 Margin = new Thickness(0, 0, 0, 15),
-                VerticalContentAlignment = VerticalAlignment.Center
+                VerticalContentAlignment = VerticalAlignment.Center,
+                Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle")
             };
             mainPanel.Children.Add(keyBox);
 
@@ -486,7 +499,7 @@ namespace SideDesk
             mainPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "只有选择【自定义】模型时才需要填写。例如：gpt-4、deepseek-chat、claude-3-opus 等。",
-                Foreground = System.Windows.Media.Brushes.LightGray,
+                Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("BrushTextSec"),
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 0, 0, 8)
@@ -497,7 +510,8 @@ namespace SideDesk
                 Height = 30,
                 Text = cfg.CustomModelId ?? "",
                 Margin = new Thickness(0, 0, 0, 20),
-                VerticalContentAlignment = VerticalAlignment.Center
+                VerticalContentAlignment = VerticalAlignment.Center,
+                Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle")
             };
             mainPanel.Children.Add(customBox);
 
@@ -508,8 +522,8 @@ namespace SideDesk
                 HorizontalAlignment = HorizontalAlignment.Right,
                 Margin = new Thickness(0, 10, 0, 0)
             };
-            var saveBtn = new Button { Content = "保存", Width = 80, Height = 32, Margin = new Thickness(0, 0, 10, 0) };
-            var cancelBtn = new Button { Content = "取消", Width = 80, Height = 32 };
+            var saveBtn = new Button { Content = "保存", Width = 80, MinHeight = 32, Margin = new Thickness(0, 0, 10, 0), Style = (Style)Application.Current.FindResource("PrimaryButtonStyle") };
+            var cancelBtn = new Button { Content = "取消", Width = 80, MinHeight = 32, Style = (Style)Application.Current.FindResource("StandardButtonStyle") };
             btnPanel.Children.Add(saveBtn);
             btnPanel.Children.Add(cancelBtn);
             mainPanel.Children.Add(btnPanel);

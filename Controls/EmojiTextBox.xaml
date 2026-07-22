@@ -1,0 +1,62 @@
+<UserControl x:Class="SideDesk.Controls.EmojiTextBox"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:emoji="clr-namespace:Emoji.Wpf;assembly=Emoji.Wpf">
+    <UserControl.Resources>
+        <!-- 覆盖式细滚动条：滚动条悬浮在内容上方，不占布局宽度，
+             出现/消失不会引起内容宽度变化；主要靠滚轮滚动。 -->
+        <Style x:Key="OverlayScrollStyle" TargetType="ScrollViewer">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollViewer">
+                        <Grid>
+                            <ScrollContentPresenter x:Name="PART_ScrollContentPresenter"
+                                                    Content="{TemplateBinding Content}"
+                                                    ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                    CanContentScroll="{TemplateBinding CanContentScroll}"/>
+                            <ScrollBar x:Name="PART_VerticalScrollBar"
+                                       HorizontalAlignment="Right"
+                                       Width="6" MinWidth="6"
+                                       Opacity="0.5"
+                                       Orientation="Vertical"
+                                       Value="{TemplateBinding VerticalOffset}"
+                                       Maximum="{TemplateBinding ScrollableHeight}"
+                                       ViewportSize="{TemplateBinding ViewportHeight}"
+                                       Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}"/>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+    <Grid>
+        <!-- 主题外框：圆角/边框/输入背景。
+             注意：这里不能用 GlobalTextBoxStyle，它会整体覆盖 Template，
+             导致 Emoji.Wpf.TextBox 内部的 RichTextBox_INTERNAL 丢失、emoji 变黑白。 -->
+        <Border x:Name="wrapperBorder"
+                Background="{DynamicResource BrushInputBG}"
+                BorderBrush="{DynamicResource BrushBorder}"
+                BorderThickness="1"
+                CornerRadius="6"
+                Height="36">
+            <!-- Emoji.Wpf.TextBox：编辑框内彩色渲染 emoji -->
+            <emoji:TextBox x:Name="textBox"
+                           Background="Transparent"
+                           BorderThickness="0"
+                           VerticalContentAlignment="Center"
+                           TextChanged="TextBox_TextChanged"/>
+        </Border>
+
+        <!-- emoji 按钮：内嵌在输入框右侧 -->
+        <Button x:Name="emojiBtn"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Center"
+                Width="28" Height="28"
+                Margin="0,0,4,0"
+                Padding="0"
+                Style="{DynamicResource GhostButtonStyle}"
+                Click="EmojiBtn_Click">
+            <emoji:TextBlock Text="😀" FontSize="14"/>
+        </Button>
+    </Grid>
+</UserControl>
