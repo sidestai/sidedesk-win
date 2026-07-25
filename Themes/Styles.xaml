@@ -126,7 +126,7 @@
         <Setter Property="CaretBrush" Value="{DynamicResource BrushTextMain}" />
         <Setter Property="SelectionBrush" Value="{DynamicResource BrushAccent}" />
         <Setter Property="Height" Value="36" />
-        <Setter Property="Padding" Value="10,0" />
+        <Setter Property="Padding" Value="6,0" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="FontSize" Value="{DynamicResource FontSizeNormal}" />
         <Setter Property="Template">

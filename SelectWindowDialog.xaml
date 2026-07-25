@@ -21,6 +21,7 @@
                  Foreground="{DynamicResource BrushTextMain}"
                  BorderBrush="{DynamicResource BrushBorder}"
                  BorderThickness="1"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                  SelectionMode="Extended">
             <ListBox.ItemContainerStyle>
                 <Style TargetType="ListBoxItem">

@@ -56,8 +56,9 @@ public partial class TodoDialog : Window
 
     private void EnableTime_Changed(object sender, RoutedEventArgs e)
     {
+        // 未勾选「设置任务时间」时隐藏整个时间区域（日期/时间/提醒）
         if (timePanel != null)
-            timePanel.IsEnabled = enableTimeCheck.IsChecked == true;
+            timePanel.Visibility = enableTimeCheck.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void Ok_Click(object sender, RoutedEventArgs e)

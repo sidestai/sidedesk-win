@@ -10,7 +10,9 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using SideDesk.Models;
 using SideDesk.Windows;
@@ -551,10 +553,14 @@ namespace SideDesk.Services
             titleBar.Children.Add(titleText);
             outerPanel.Children.Add(titleBar);
 
-            // 内容区
+            // 显示模式：grid=大图标网格（默认）、list=单列列表、popup=弹出菜单
+            bool isList = group.DisplayMode == "list";
+            bool isPopup = group.DisplayMode == "popup";
+
+            // 内容区（列表模式强制单列）
             var contentPanel = new UniformGrid
             {
-                Columns = group.Columns,
+                Columns = isList ? 1 : group.Columns,
                 Visibility = group.IsExpanded ? Visibility.Visible : Visibility.Collapsed,
                 Tag = "content:" + group.Id,
                 AllowDrop = true
@@ -612,9 +618,17 @@ namespace SideDesk.Services
                 QuickGroupManager.UpdateGroup(group);
             };
 
-            foreach (var item in group.Items)
+            // 弹出菜单模式：用单个触发按钮（模块名）代替项目网格，点击后弹出全部项
+            if (isPopup)
             {
-                contentPanel.Children.Add(BuildItemButton(item, group.Id));
+                outerPanel.Children.Add(BuildPopupTriggerButton(group));
+            }
+            else
+            {
+                foreach (var item in group.Items)
+                {
+                    contentPanel.Children.Add(BuildItemButton(item, group.Id, listMode: isList, largeIcon: !isList));
+                }
             }
             
             // 渲染子模块（便签、计时器等）
@@ -716,10 +730,23 @@ namespace SideDesk.Services
                 {
                     int col = c;
                     var mi = new MenuItem { Header = $"{col} 列", IsChecked = (group.Columns == col) };
-                    mi.Click += (s2, ev2) => { group.Columns = col; contentPanel.Columns = col; QuickGroupManager.UpdateGroup(group); QuickGroupManager.Save(); };
+                    mi.Click += (s2, ev2) => { group.Columns = col; if (group.DisplayMode != "list") contentPanel.Columns = col; QuickGroupManager.UpdateGroup(group); QuickGroupManager.Save(); };
                     colItem.Items.Add(mi);
                 }
                 popup.Items.Add(colItem);
+
+                // 显示模式子菜单：大图标 / 列表 / 弹出菜单
+                var displayItem = new MenuItem { Header = "显示" };
+                var modeGrid = new MenuItem { Header = "大图标", IsCheckable = true, IsChecked = group.DisplayMode == "grid" };
+                modeGrid.Click += (s2, ev2) => SetDisplayMode(group, "grid");
+                displayItem.Items.Add(modeGrid);
+                var modeList = new MenuItem { Header = "列表", IsCheckable = true, IsChecked = group.DisplayMode == "list" };
+                modeList.Click += (s2, ev2) => SetDisplayMode(group, "list");
+                displayItem.Items.Add(modeList);
+                var modePopup = new MenuItem { Header = "弹出菜单", IsCheckable = true, IsChecked = group.DisplayMode == "popup" };
+                modePopup.Click += (s2, ev2) => SetDisplayMode(group, "popup");
+                displayItem.Items.Add(modePopup);
+                popup.Items.Add(displayItem);
                 popup.Items.Add(new Separator());
 
                 var tileItem = new MenuItem { Header = "平铺窗口" };
@@ -765,6 +792,97 @@ namespace SideDesk.Services
 
 
             return border;
+        }
+
+        /// <summary>弹出菜单模式：构建以分组名为文字的触发按钮，点击后弹出包含全部快捷项的浮层。</summary>
+        /// <remarks>WPF 默认 MenuItem 模板无法为每个菜单项干净地呈现自定义背景色，故改用 Popup + 真实按钮列表（类似菜单）。</remarks>
+        private FrameworkElement BuildPopupTriggerButton(QuickGroup group)
+        {
+            // 按钮内容：分组名 + 下拉箭头（提示可展开）
+            var triggerContent = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
+            triggerContent.Children.Add(new Emoji.Wpf.TextBlock { Text = group.Name, VerticalAlignment = VerticalAlignment.Center });
+            triggerContent.Children.Add(new Emoji.Wpf.TextBlock { Text = "▾", FontSize = 10, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 1, 0, 0), Opacity = 0.75 });
+
+            var triggerBtn = new Button
+            {
+                Content = triggerContent,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(2),
+                Padding = new Thickness(8, 5, 8, 5),
+                FontSize = 12,
+                FontWeight = FontWeights.SemiBold,
+                Background = (Brush)Application.Current.FindResource("BrushAccent"),
+                Foreground = Brushes.White,
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand
+            };
+
+            var itemPopup = new Popup
+            {
+                PlacementTarget = triggerBtn,
+                Placement = PlacementMode.Bottom,
+                StaysOpen = false,
+                AllowsTransparency = true
+            };
+
+            var popupStack = new StackPanel { Orientation = Orientation.Vertical };
+            foreach (var item in group.Items)
+            {
+                popupStack.Children.Add(BuildItemButton(item, group.Id, listMode: true, afterClick: () => itemPopup.IsOpen = false));
+            }
+
+            var popupScroll = new ScrollViewer
+            {
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                MaxHeight = 360,
+                Content = popupStack
+            };
+
+            var popupBorder = new Border
+            {
+                Background = (Brush)Application.Current.FindResource("BrushBG"),
+                BorderBrush = (Brush)Application.Current.FindResource("BrushBorder"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(4),
+                MinWidth = 160,
+                Child = popupScroll
+            };
+            itemPopup.Child = popupBorder;
+
+            triggerBtn.Click += (s, e) => { itemPopup.IsOpen = !itemPopup.IsOpen; };
+
+            return triggerBtn;
+        }
+
+        /// <summary>切换分组显示模式并重建视图。</summary>
+        private void SetDisplayMode(QuickGroup group, string mode)
+        {
+            group.DisplayMode = mode;
+            QuickGroupManager.UpdateGroup(group);
+            QuickGroupManager.Save();
+            RefreshGroupView();
+        }
+
+        /// <summary>重建当前分组视图（显示模式切换、增删项后使用）。</summary>
+        private void RefreshGroupView()
+        {
+            if (!string.IsNullOrEmpty(_boundGroupId)) LoadSingleGroup(_boundGroupId);
+            else LoadGroups();
+        }
+
+        /// <summary>将新增快捷项刷新到 UI：网格模式增量追加到 contentPanel，列表/弹出模式整体重建视图。</summary>
+        private void AddNewItemToUI(QuickItem newItem, string groupId, UniformGrid? contentPanel)
+        {
+            var group = QuickGroupManager.GetAll().FirstOrDefault(g => g.Id == groupId);
+            if ((group?.DisplayMode ?? "grid") == "grid" && contentPanel != null)
+            {
+                contentPanel.Children.Add(BuildItemButton(newItem, groupId));
+                return;
+            }
+            RefreshGroupView();
         }
 
         #endregion
@@ -1184,7 +1302,7 @@ namespace SideDesk.Services
         private FrameworkElement BuildFileAreaModule(PanelItem panel, string groupId) => WrapWithThemeBackground(new Emoji.Wpf.TextBlock { Text = "📁 文件区", Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), Margin = new Thickness(8) });
         private FrameworkElement BuildDataDashboardModule(PanelItem panel, string groupId) => WrapWithThemeBackground(new Emoji.Wpf.TextBlock { Text = "📈 数据看板", Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), Margin = new Thickness(8) });
 
-        private FrameworkElement BuildItemButton(QuickItem item, string groupId)
+        private FrameworkElement BuildItemButton(QuickItem item, string groupId, bool listMode = false, bool largeIcon = false, Action? afterClick = null)
         {
             var panel = new DockPanel { Margin = new Thickness(2), Tag = item.Id };
 
@@ -1204,31 +1322,24 @@ namespace SideDesk.Services
                 AllowDrop = true
             };
 
-            // 按钮内容：图标 + 名称
-            if (!string.IsNullOrEmpty(item.Icon))
+            // 按钮内容：大图标模式 = 桌面快捷方式风格（纯大图标在上、名称在下、无按钮背景）；列表模式左对齐；默认横向图标+名称
+            if (largeIcon)
             {
-                var contentPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Center };
-                contentPanel.Children.Add(new Emoji.Wpf.TextBlock
-                {
-                    Text = item.Icon,
-                    FontSize = 13,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(0, 0, 4, 0)
-                });
-                contentPanel.Children.Add(new Emoji.Wpf.TextBlock
-                {
-                    Text = item.Name,
-                    VerticalAlignment = VerticalAlignment.Center
-                });
-                btn.Content = contentPanel;
+                btn.Content = BuildLargeIconContent(item);
+                btn.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+                btn.Padding = new Thickness(2, 6, 2, 4);
+                // 纯图标风格：去掉按钮背景色，名称用主题文字色（同桌面快捷方式，无边框包裹）
+                btn.Background = Brushes.Transparent;
+                btn.Foreground = (Brush)Application.Current.FindResource("BrushTextMain");
             }
             else
             {
-                btn.Content = new Emoji.Wpf.TextBlock
+                btn.Content = BuildItemContent(item, listMode ? HorizontalAlignment.Left : HorizontalAlignment.Center);
+                if (listMode)
                 {
-                    Text = item.Name,
-                    VerticalAlignment = VerticalAlignment.Center
-                };
+                    btn.HorizontalContentAlignment = HorizontalAlignment.Left;
+                    btn.Padding = new Thickness(6, 3, 6, 3);
+                }
             }
 
             // 圆角样式（保留每项自定义背景色与拖拽高亮边框）
@@ -1332,7 +1443,7 @@ namespace SideDesk.Services
                 ev.Handled = true;
             };
             
-            btn.Click += (s, ev) => OpenQuickItem(item);
+            btn.Click += (s, ev) => { OpenQuickItem(item); afterClick?.Invoke(); };
 
             // 置顶标记：白色小圆点
             var pinDot = new System.Windows.Shapes.Ellipse
@@ -2046,10 +2157,9 @@ namespace SideDesk.Services
                                 ProfileId = result.ProfileId
                             };
                             QuickGroupManager.AddItem(groupId, newItem);
-                            contentPanel?.Children.Add(BuildItemButton(newItem, groupId));
                         }
                         QuickGroupManager.Save();
-                        if (contentPanel == null) LoadGroups();
+                        RefreshGroupView();
                     }
                     else if (shortcutDialog.SingleResult != null)
                     {
@@ -2069,10 +2179,7 @@ namespace SideDesk.Services
                         };
                         QuickGroupManager.AddItem(groupId, newItem);
                         QuickGroupManager.Save();
-                        if (contentPanel != null)
-                            contentPanel.Children.Add(BuildItemButton(newItem, groupId));
-                        else
-                            LoadGroups();
+                        AddNewItemToUI(newItem, groupId, contentPanel);
                     }
                 }
                 return;
@@ -2468,10 +2575,7 @@ namespace SideDesk.Services
                 };
                 QuickGroupManager.AddItem(groupId, newItem);
                 QuickGroupManager.Save();
-                if (contentPanel != null)
-                    contentPanel.Children.Add(BuildItemButton(newItem, groupId));
-                else
-                    LoadGroups();
+                AddNewItemToUI(newItem, groupId, contentPanel);
                 dialog.Close();
             };
             cancelBtn.Click += (s, ev2) => dialog.Close();
@@ -2510,16 +2614,18 @@ namespace SideDesk.Services
             var nameBox = new EmojiTextBox { Text = item.Name };
             rootPanel.Children.Add(nameBox);
 
-            // 图标
+            // 图标（支持 emoji 字符 或 文件路径；程序类项默认预填当前图标来源路径，可编辑）
+            string iconInitial = !string.IsNullOrEmpty(item.Icon) ? item.Icon : (item.Type == "program" ? item.Target : "");
             var iconDock = new DockPanel { Margin = new Thickness(0, 12, 0, 0) };
             var iconLabel = new Emoji.Wpf.TextBlock { Text = "图标：", Width = 50, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)Application.Current.FindResource("BrushTextMain") };
             DockPanel.SetDock(iconLabel, Dock.Left);
             iconDock.Children.Add(iconLabel);
-            var iconBox = new TextBox { Text = item.Icon ?? "", Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle"), Width = 80, MaxLength = 4 };
+            var iconPreviewHost = new ContentControl { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0), Content = BuildIconPreview(iconInitial) };
+            DockPanel.SetDock(iconPreviewHost, Dock.Right);
+            iconDock.Children.Add(iconPreviewHost);
+            var iconBox = new TextBox { Text = iconInitial, Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
+            iconBox.TextChanged += (s, ev) => iconPreviewHost.Content = BuildIconPreview(iconBox.Text.Trim());
             iconDock.Children.Add(iconBox);
-            var iconPreview = new Emoji.Wpf.TextBlock { Text = item.Icon ?? "", FontSize = 16, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
-            iconBox.TextChanged += (s, ev) => iconPreview.Text = iconBox.Text.Trim();
-            iconDock.Children.Add(iconPreview);
             rootPanel.Children.Add(iconDock);
 
             // 目标
@@ -2633,18 +2739,8 @@ namespace SideDesk.Services
                 // 更新按钮背景色
                 try { itemBtn.Background = (SolidColorBrush)new BrushConverter().ConvertFrom(item.BackgroundColor)!; }
                 catch { itemBtn.Background = Brushes.SteelBlue; }
-                // 更新按钮显示
-                if (!string.IsNullOrEmpty(item.Icon))
-                {
-                    var cp = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Center };
-                    cp.Children.Add(new Emoji.Wpf.TextBlock { Text = item.Icon, FontSize = 13, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) });
-                    cp.Children.Add(new Emoji.Wpf.TextBlock { Text = item.Name, VerticalAlignment = VerticalAlignment.Center });
-                    itemBtn.Content = cp;
-                }
-                else
-                {
-                    itemBtn.Content = new Emoji.Wpf.TextBlock { Text = item.Name, VerticalAlignment = VerticalAlignment.Center };
-                }
+                // 更新按钮显示（图标 + 名称，支持 emoji/路径图标）
+                itemBtn.Content = BuildItemContent(item);
                 dialog.Close();
             };
             cancelBtn.Click += (s, ev) => dialog.Close();
@@ -2735,6 +2831,95 @@ namespace SideDesk.Services
         #endregion
 
         #region Helpers
+
+        /// <summary>大图标模式内容：桌面快捷方式风格，纯大图标在上 + 名称在下（居中、单行超长省略），无按钮背景。</summary>
+        private object BuildLargeIconContent(QuickItem item)
+        {
+            BitmapSource? imgIcon = null;
+            string? emojiIcon = null;
+            if (!string.IsNullOrEmpty(item.Icon))
+            {
+                if (FaviconService.IsPathIcon(item.Icon))
+                    imgIcon = FaviconService.LoadFileIcon(item.Icon);
+                else
+                    emojiIcon = item.Icon;
+            }
+            // 程序/窗口类项未设图标时，自动从 Target 提取应用图标
+            if (imgIcon == null && emojiIcon == null && item.Type == "program")
+                imgIcon = FaviconService.LoadFileIcon(item.Target);
+
+            var panel = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Stretch };
+
+            FrameworkElement iconEl;
+            if (emojiIcon != null)
+                iconEl = new Emoji.Wpf.TextBlock { Text = emojiIcon, FontSize = 34 };
+            else if (imgIcon != null)
+                iconEl = new Image { Source = imgIcon, Width = 40, Height = 40 };
+            else
+                iconEl = new Emoji.Wpf.TextBlock { Text = "🔗", FontSize = 34 };
+            iconEl.HorizontalAlignment = HorizontalAlignment.Center;
+            iconEl.Margin = new Thickness(0, 0, 0, 4);
+            panel.Children.Add(iconEl);
+
+            panel.Children.Add(new Emoji.Wpf.TextBlock
+            {
+                Text = item.Name,
+                FontSize = 11,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                TextAlignment = TextAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis
+            });
+
+            return panel;
+        }
+
+        /// <summary>构建按钮内容（图标 + 名称）。图标优先级：emoji 字符 > 路径图标 > 程序项自动从 Target 提取。</summary>
+        private object BuildItemContent(QuickItem item, HorizontalAlignment align = HorizontalAlignment.Center)
+        {
+            BitmapSource? imgIcon = null;
+            string? emojiIcon = null;
+            if (!string.IsNullOrEmpty(item.Icon))
+            {
+                if (FaviconService.IsPathIcon(item.Icon))
+                    imgIcon = FaviconService.LoadFileIcon(item.Icon);   // 路径图标
+                else
+                    emojiIcon = item.Icon;              // emoji 图标
+            }
+            // 程序/窗口类项未设图标时，自动从 Target 提取应用图标
+            if (imgIcon == null && emojiIcon == null && item.Type == "program")
+                imgIcon = FaviconService.LoadFileIcon(item.Target);
+
+            var nameTb = new Emoji.Wpf.TextBlock { Text = item.Name, VerticalAlignment = VerticalAlignment.Center };
+
+            if (emojiIcon != null)
+            {
+                var panel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = align };
+                panel.Children.Add(new Emoji.Wpf.TextBlock { Text = emojiIcon, FontSize = 13, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) });
+                panel.Children.Add(nameTb);
+                return panel;
+            }
+            if (imgIcon != null)
+            {
+                var panel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = align };
+                panel.Children.Add(new Image { Source = imgIcon, Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) });
+                panel.Children.Add(nameTb);
+                return panel;
+            }
+            return nameTb;
+        }
+
+        /// <summary>构建图标预览元素：路径显示提取的图标，其余显示 emoji 文本。</summary>
+        private static FrameworkElement BuildIconPreview(string text)
+        {
+            if (FaviconService.IsPathIcon(text))
+            {
+                var src = FaviconService.LoadFileIcon(text);
+                if (src != null)
+                    return new Image { Source = src, Width = 20, Height = 20, VerticalAlignment = VerticalAlignment.Center };
+                return new TextBlock { Text = "?", FontSize = 14, Foreground = Brushes.Gray, VerticalAlignment = VerticalAlignment.Center };
+            }
+            return new Emoji.Wpf.TextBlock { Text = text, FontSize = 16, VerticalAlignment = VerticalAlignment.Center };
+        }
 
         private class ItemButtonRef
         {

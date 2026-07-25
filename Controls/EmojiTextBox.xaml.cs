@@ -69,7 +69,7 @@ namespace SideDesk.Controls
             double lineH = _internalRtb.FontFamily.LineSpacing * _internalRtb.FontSize;
             double innerH = wrapperBorder.Height - wrapperBorder.BorderThickness.Top - wrapperBorder.BorderThickness.Bottom;
             double vPad = Math.Max(0, (innerH - lineH) / 2);
-            _internalRtb.Padding = new Thickness(10, vPad, 34, 0);
+            _internalRtb.Padding = new Thickness(6, vPad, 34, 0);
             _internalRtb.VerticalContentAlignment = VerticalAlignment.Center;
 
             // 防御：模板应用后若内部 RTB 为空、而外层已有初始文本，手动回填一次

@@ -620,13 +620,16 @@ namespace SideDesk.Controls
             grip.MouseEnter += (s, e) => line.Opacity = 0.8;
             grip.MouseLeave += (s, e) => line.Opacity = 0.35;
 
-            bool dragging = false;
+            bool dragging = false, moved = false;
             double startY = 0, startHeight = 0;
             grip.MouseLeftButtonDown += (s, e) =>
             {
                 if (e.ClickCount == 2)
                 {
                     host.ClearValue(FrameworkElement.HeightProperty);
+                    // 同时清除内容的 MinHeight 绑定（固定高度时曾绑定到视口高度），否则模块仍被钉在原高度无法收缩
+                    if (host.Content is FrameworkElement contentFe)
+                        System.Windows.Data.BindingOperations.ClearBinding(contentFe, FrameworkElement.MinHeightProperty);
                     item.PanelHeight = null;
                     _configManager?.Save();
                     dragging = false;
@@ -636,6 +639,7 @@ namespace SideDesk.Controls
                     return;
                 }
                 dragging = true;
+                moved = false;
                 _resizingModule = true;
                 startY = e.GetPosition(this).Y;
                 startHeight = (double.IsNaN(host.Height) || host.Height <= 0) ? host.ActualHeight : host.Height;
@@ -645,7 +649,10 @@ namespace SideDesk.Controls
             grip.MouseMove += (s, e) =>
             {
                 if (!dragging) return;
-                double h = startHeight + (e.GetPosition(this).Y - startY);
+                double dy = e.GetPosition(this).Y - startY;
+                if (!moved && Math.Abs(dy) < 3) return;  // 微小位移视为单击，不改变高度
+                moved = true;
+                double h = startHeight + dy;
                 if (h < MinHeight) h = MinHeight;
                 host.Height = h;
             };
@@ -655,8 +662,11 @@ namespace SideDesk.Controls
                 dragging = false;
                 _resizingModule = false;
                 grip.ReleaseMouseCapture();
-                item.PanelHeight = host.Height;
-                _configManager?.Save();
+                if (moved)  // 仅真实拖拽才持久化高度，避免单击误将高度固定
+                {
+                    item.PanelHeight = host.Height;
+                    _configManager?.Save();
+                }
                 e.Handled = true;
             };
             grip.LostMouseCapture += (s, e) => { _resizingModule = false; };
@@ -786,7 +796,8 @@ namespace SideDesk.Controls
             var container = new StackPanel();
 
             // 标题栏（展开/收起箭头 + 分组名）
-            var titleBar = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
+            // 底边距仅用于展开时与内容分隔，收起时归零，避免出现多余的底部空白
+            var titleBar = new DockPanel { Margin = new Thickness(0, 0, 0, item.IsExpanded ? 6 : 0) };
             titleBar.Uid = PanelHeaderUid;
             // 编辑模式下，标题栏作为拖拽手柄
             if (_isEditMode)
@@ -797,11 +808,11 @@ namespace SideDesk.Controls
             var arrowBtn = new Button
             {
                 Content = item.IsExpanded ? "▼" : "▶",
-                Width = 22, Height = 22,
+                Width = 16, Height = 16,
                 Background = Brushes.Transparent,
                 Foreground = (Brush)FindResource("BrushTextMuted"),
                 BorderThickness = new Thickness(0),
-                FontSize = 10,
+                FontSize = 9,
                 Padding = new Thickness(0),
                 Cursor = Cursors.Hand
             };
@@ -813,7 +824,7 @@ namespace SideDesk.Controls
                 Text = string.IsNullOrEmpty(item.Title) ? "分组" : item.Title,
                 FontSize = 13,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(6, 0, 0, 0),
+                Margin = new Thickness(2, 0, 0, 0),
                 Foreground = (Brush)FindResource("BrushTextMain"),
                 Cursor = _isEditMode ? Cursors.Hand : Cursors.Arrow
             };
@@ -938,6 +949,7 @@ namespace SideDesk.Controls
                 item.IsExpanded = !item.IsExpanded;
                 contentPanel.Visibility = item.IsExpanded ? Visibility.Visible : Visibility.Collapsed;
                 arrowBtn.Content = item.IsExpanded ? "▼" : "▶";
+                titleBar.Margin = new Thickness(0, 0, 0, item.IsExpanded ? 6 : 0);
                 _configManager?.Save();
             };
 
@@ -2773,9 +2785,10 @@ namespace SideDesk.Controls
             };
 
             // 开始/停止圆钮（放在标题右侧）
+            // 默认按钮模板的背景是矩形且不会被外层 Border 裁剪，故自定义圆形模板让背景真正圆角
             var toggleBtn = new Button
             {
-                Content = timer.IsRunning ? "⏹" : "▶",
+                Content = timer.IsRunning ? BuildStopIcon() : BuildPlayIcon(),
                 Width = 22,
                 Height = 22,
                 FontSize = 10,
@@ -2783,14 +2796,10 @@ namespace SideDesk.Controls
                 Foreground = Brushes.White,
                 BorderThickness = new Thickness(0),
                 Cursor = Cursors.Hand,
-                Padding = new Thickness(0)
+                Padding = new Thickness(0),
+                Template = BuildCircleButtonTemplate()
             };
-            var toggleBtnBorder = new Border
-            {
-                CornerRadius = new CornerRadius(11),
-                Child = toggleBtn
-            };
-            DockPanel.SetDock(toggleBtnBorder, Dock.Right);
+            DockPanel.SetDock(toggleBtn, Dock.Right);
 
             // 如果计时器正在运行，启动更新
             if (timer.IsRunning)
@@ -2806,7 +2815,7 @@ namespace SideDesk.Controls
                     timer.StartTime = DateTime.Now;
                     _configManager?.Save();
                     StartTimerUpdate(timer, timeDisplay, panelItem, toggleBtn);
-                    toggleBtn.Content = "";
+                    toggleBtn.Content = BuildStopIcon();
                     toggleBtn.Background = Brushes.IndianRed;
                 }
                 else
@@ -2838,7 +2847,7 @@ namespace SideDesk.Controls
             editBtn.Click += (s, e) => ShowTimerEditDialog(timer, panelItem);
 
             headerPanel.Children.Add(editBtn);
-            headerPanel.Children.Add(toggleBtnBorder);
+            headerPanel.Children.Add(toggleBtn);
             headerPanel.Children.Add(nameBlock);
 
             mainStack.Children.Add(headerPanel);
@@ -2861,6 +2870,46 @@ namespace SideDesk.Controls
 
             card.Child = mainStack;
             return card;
+        }
+
+        /// <summary>圆形按钮模板：默认按钮模板背景为矩形无法圆角，自定义带 CornerRadius 的模板</summary>
+        private static ControlTemplate BuildCircleButtonTemplate()
+        {
+            var template = new ControlTemplate(typeof(Button));
+            var border = new FrameworkElementFactory(typeof(Border));
+            border.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(Control.BackgroundProperty));
+            border.SetValue(Border.CornerRadiusProperty, new CornerRadius(11));
+            var presenter = new FrameworkElementFactory(typeof(ContentPresenter));
+            presenter.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+            presenter.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
+            border.AppendChild(presenter);
+            template.VisualTree = border;
+            return template;
+        }
+
+        /// <summary>播放图标：白色右指三角形。三角形质心在包围盒中心左侧 4/3px（平底边在左、尖端在右），
+        /// 放包围盒居中后视觉仍偏左，故用 RenderTransform 右移该偏移量实现光学居中。</summary>
+        private static UIElement BuildPlayIcon()
+        {
+            return new System.Windows.Shapes.Polygon
+            {
+                Points = new PointCollection { new Point(0, 0), new Point(0, 10), new Point(8, 5) },
+                Fill = Brushes.White,
+                Width = 8,
+                Height = 10,
+                RenderTransform = new TranslateTransform(1.33, 0)
+            };
+        }
+
+        /// <summary>停止图标：白色方块（用几何形状代替字符，确保圆钮内精确居中）</summary>
+        private static UIElement BuildStopIcon()
+        {
+            return new System.Windows.Shapes.Rectangle
+            {
+                Width = 8,
+                Height = 8,
+                Fill = Brushes.White
+            };
         }
 
         /// <summary>

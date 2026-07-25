@@ -1,7 +1,10 @@
+using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using SideDesk.Services;
 
 namespace SideDesk;
 
@@ -38,8 +41,40 @@ public partial class AddShortcutDialog : Window
         // 初始化颜色选择器
         InitColorPicker();
 
-        // 图标预览
-        iconBox.TextChanged += (s, e) => iconPreview.Text = iconBox.Text.Trim();
+        // 图标预览（emoji 或路径图标）
+        iconBox.TextChanged += (s, e) => UpdateIconPreview();
+
+        // 输入网址后自动获取 favicon 填充图标字段（图标已有内容时不覆盖；缓存命中立即返回）
+        urlBox.LostFocus += async (s, e) =>
+        {
+            var url = urlBox.Text?.Trim() ?? "";
+            if (url == "https://" || string.IsNullOrEmpty(url)) return;
+            if (!string.IsNullOrWhiteSpace(iconBox.Text)) return;
+            try
+            {
+                var fav = await Task.Run(() => FaviconService.FetchFaviconAsync(url));
+                if (!string.IsNullOrEmpty(fav) && string.IsNullOrWhiteSpace(iconBox.Text))
+                    iconBox.Text = fav;
+            }
+            catch { }
+        };
+    }
+
+    private void UpdateIconPreview()
+    {
+        string val = iconBox.Text.Trim();
+        if (FaviconService.IsPathIcon(val))
+        {
+            var src = FaviconService.LoadFileIcon(val);
+            if (src != null)
+                iconPreview.Content = new Image { Source = src, Width = 20, Height = 20, VerticalAlignment = VerticalAlignment.Center };
+            else
+                iconPreview.Content = new TextBlock { Text = "?", FontSize = 14, Foreground = Brushes.Gray, VerticalAlignment = VerticalAlignment.Center };
+        }
+        else
+        {
+            iconPreview.Content = new Emoji.Wpf.TextBlock { Text = val, FontSize = 16, VerticalAlignment = VerticalAlignment.Center };
+        }
     }
 
     private void InitColorPicker()
@@ -195,7 +230,7 @@ public partial class AddShortcutDialog : Window
         }
     }
 
-    private void Ok_Click(object sender, RoutedEventArgs e)
+    private async void Ok_Click(object sender, RoutedEventArgs e)
     {
         if (_isBatchMode)
         {
@@ -247,6 +282,17 @@ public partial class AddShortcutDialog : Window
         {
             var url = urlBox.Text?.Trim() ?? "";
             if (url == "https://") url = "";
+
+            // 图标为空且网址有效时，自动获取 favicon 填充（缓存命中立即返回）
+            if (string.IsNullOrWhiteSpace(iconBox.Text) && !string.IsNullOrEmpty(url))
+            {
+                try
+                {
+                    var fav = await Task.Run(() => FaviconService.FetchFaviconAsync(url));
+                    if (!string.IsNullOrEmpty(fav)) iconBox.Text = fav;
+                }
+                catch { }
+            }
 
             // 获取选中的浏览器 ID
             string? browserId = null;

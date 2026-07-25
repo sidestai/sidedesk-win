@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
+using System.Windows.Media.Imaging;
 
 namespace SideDesk;
 
@@ -30,13 +32,53 @@ public partial class SelectWindowDialog : Window
         foreach (var c in candidates)
         {
             string display = string.IsNullOrEmpty(c.ProcessName) ? c.Title : $"[{c.ProcessName}] {c.Title}";
-            var lbItem = new ListBoxItem 
-            { 
-                Content = display, 
-                Tag = c 
-            };
+            var lbItem = new ListBoxItem { Tag = c };
+
+            // 图标 + 文字（标题占满剩余宽度，超长时省略号截断，悬停看全名）
+            var dock = new DockPanel { LastChildFill = true };
+            var iconSrc = GetExeIconSafe(c.ExePath);
+            if (iconSrc != null)
+            {
+                var img = new Image
+                {
+                    Source = iconSrc,
+                    Width = 16, Height = 16,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 6, 0)
+                };
+                DockPanel.SetDock(img, Dock.Left);
+                dock.Children.Add(img);
+            }
+            dock.Children.Add(new TextBlock
+            {
+                Text = display,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                ToolTip = display
+            });
+            lbItem.Content = dock;
+
             windowListBox.Items.Add(lbItem);
         }
+    }
+
+    /// <summary>从 exe 路径提取应用图标（本地文件 IO，不跨进程，不会卡）。</summary>
+    private static BitmapSource? GetExeIconSafe(string? exePath)
+    {
+        if (string.IsNullOrEmpty(exePath)) return null;
+        try
+        {
+            using (var icon = System.Drawing.Icon.ExtractAssociatedIcon(exePath))
+            {
+                if (icon == null) return null;
+                var src = Imaging.CreateBitmapSourceFromHIcon(
+                    icon.Handle, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+                if (src.CanFreeze) src.Freeze();
+                return src;
+            }
+        }
+        catch { }
+        return null;
     }
 
     private void Ok_Click(object sender, RoutedEventArgs e)

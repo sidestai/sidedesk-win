@@ -34,16 +34,15 @@
                     <controls:EmojiTextBox x:Name="nameBox"/>
                 </DockPanel>
                 <DockPanel Margin="0,0,0,10" LastChildFill="True">
-                    <TextBlock DockPanel.Dock="Left" Text="图标：" Width="60" VerticalAlignment="Center"
-                               FontSize="{DynamicResource FontSizeNormal}" Foreground="{DynamicResource BrushTextMain}"/>
-                    <TextBox x:Name="iconBox" Style="{StaticResource GlobalTextBoxStyle}" Width="80" MaxLength="4"/>
-                    <TextBlock x:Name="iconPreview" FontSize="16" VerticalAlignment="Center" Margin="8,0,0,0"
-                               Foreground="{DynamicResource BrushTextMain}"/>
-                </DockPanel>
-                <DockPanel Margin="0,0,0,10" LastChildFill="True">
                     <TextBlock DockPanel.Dock="Left" Text="网址：" Width="60" VerticalAlignment="Center"
                                FontSize="{DynamicResource FontSizeNormal}" Foreground="{DynamicResource BrushTextMain}"/>
                     <TextBox x:Name="urlBox" Text="https://" Style="{StaticResource GlobalTextBoxStyle}"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,10" LastChildFill="True">
+                    <TextBlock DockPanel.Dock="Left" Text="图标：" Width="60" VerticalAlignment="Center"
+                               FontSize="{DynamicResource FontSizeNormal}" Foreground="{DynamicResource BrushTextMain}"/>
+                    <ContentControl x:Name="iconPreview" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                    <TextBox x:Name="iconBox" Style="{StaticResource GlobalTextBoxStyle}"/>
                 </DockPanel>
                 <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                     <CheckBox x:Name="appModeCheck" Style="{StaticResource RaycastSwitchStyle}" IsChecked="True"/>
