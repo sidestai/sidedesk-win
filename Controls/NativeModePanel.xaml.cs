@@ -10,6 +10,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Shapes;
 using System.Windows.Threading;
 using System.Diagnostics;
 using System.Threading.Tasks;
@@ -414,7 +415,7 @@ namespace SideDesk.Controls
                 {
                     Margin = new Thickness(0, 0, 0, 6),
                     Padding = new Thickness(0),
-                    Background = Brushes.Transparent,
+                    Background = ApplyDashColor(item.BGColor, "BrushInputBG"),
                     BorderThickness = new Thickness(0),
                     Child = bareStack
                 };
@@ -2323,7 +2324,7 @@ namespace SideDesk.Controls
                 {
                     Margin = new Thickness(0, 0, 0, 8),
                     Padding = new Thickness(0),
-                    Background = Brushes.Transparent,
+                    Background = ApplyDashColor(item.BGColor, "BrushInputBG"),
                     BorderThickness = new Thickness(0),
                     Child = mainStack
                 };
@@ -2580,7 +2581,7 @@ namespace SideDesk.Controls
                 {
                     Margin = new Thickness(0, 0, 0, 8),
                     Padding = new Thickness(0),
-                    Background = Brushes.Transparent,
+                    Background = ApplyDashColor(item.BGColor, "BrushInputBG"),
                     BorderThickness = new Thickness(0),
                     Child = mainStack
                 };
@@ -2771,6 +2772,14 @@ namespace SideDesk.Controls
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, 3, 0, 3)
             };
+            // 用 Viewbox 包裹实现自适应缩放：时间超长时自动缩小字号以完整显示
+            var timeBox = new Viewbox
+            {
+                Stretch = Stretch.Uniform,
+                StretchDirection = StretchDirection.DownOnly,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Child = timeDisplay
+            };
 
             // 标题行：名称 + 开始/停止圆钮 + 编辑按钮
             var headerPanel = new DockPanel();
@@ -2851,7 +2860,7 @@ namespace SideDesk.Controls
             headerPanel.Children.Add(nameBlock);
 
             mainStack.Children.Add(headerPanel);
-            mainStack.Children.Add(timeDisplay);
+            mainStack.Children.Add(timeBox);
 
             // 今日统计
             var today = DateTime.Now.ToString("yyyy-MM-dd");
@@ -2958,17 +2967,7 @@ namespace SideDesk.Controls
 
                 timer.ElapsedTime = DateTime.Now - timer.StartTime.Value;
                 timeDisplay.Text = FormatTimeSpan(timer.ElapsedTime);
-
-                // 检查超时
-                if (timer.ElapsedTime.TotalSeconds >= timer.TimeoutSeconds)
-                {
-                    dispatcherTimer.Stop();
-                    timer.IsRunning = false;
-                    AccumulateToDailyRecord(timer);
-                    _configManager?.Save();
-                    RenderPanels();
-                    MessageBox.Show($"计时器“{timer.Name}”已达到设定时长！", "计时完成", MessageBoxButton.OK, MessageBoxImage.Information);
-                }
+                // 不再在到达预设时长时弹窗提醒/自动停止，计时器持续计时直到手动停止
             };
 
             dispatcherTimer.Start();
@@ -3160,7 +3159,18 @@ namespace SideDesk.Controls
             dropZone.DragLeave += (s, e) => HandleFileDragLeave(s, e, dropZone);
             dropZone.Drop += (s, e) => { dropZone.BorderBrush = (Brush)FindResource("BrushBorder"); HandleFileDrop(s, e); };
 
-            if (item.FileItems.Count == 0)
+            if (item.FileAreaLayout == "Popup")
+            {
+                // ===== 弹出显示布局：仅显示一个文件夹图标+label，点击弹出浮层列出所有文件项 =====
+                // 弹出布局本质紧凑，直接清除固定高度设置，使其随内容自动缩放
+                if (item.PanelHeight.HasValue)
+                {
+                    item.PanelHeight = null;
+                    _configManager?.Save();
+                }
+                container.Children.Add(BuildFileAreaPopupContent(item));
+            }
+            else if (item.FileItems.Count == 0)
             {
                 dropZone.Child = new Emoji.Wpf.TextBlock
                 {
@@ -3230,6 +3240,7 @@ namespace SideDesk.Controls
                 {
                     string filePath = fileItem.Path;
                     bool isFolder = fileItem.IsFolder;
+                    bool isCloud = fileItem.IsCloudFile;
                     var capturedFileItem = fileItem;
 
                     if (isIconLayout)
@@ -3248,14 +3259,17 @@ namespace SideDesk.Controls
                             Tag = isFolder ? "__folder__" : null
                         };
 
-                        // 图标
-                        var iconText = new Emoji.Wpf.TextBlock
-                        {
-                            Text = isFolder ? "📁" : "📄",
-                            FontSize = iconSize,
-                            HorizontalAlignment = HorizontalAlignment.Center
-                        };
-                        iconStack.Children.Add(iconText);
+                        // 图标（云文件/云目录带云标记；云项保留 Grid 引用供上传进度环叠加）
+                        Grid? cloudIconGrid = isCloud ? BuildCloudIcon(isFolder, iconSize) : null;
+                        FrameworkElement iconElement = cloudIconGrid != null
+                            ? cloudIconGrid
+                            : new Emoji.Wpf.TextBlock
+                            {
+                                Text = isFolder ? "📁" : "📄",
+                                FontSize = iconSize,
+                                HorizontalAlignment = HorizontalAlignment.Center
+                            };
+                        iconStack.Children.Add(iconElement);
 
                         // 名称
                         var nameText = new Emoji.Wpf.TextBlock
@@ -3267,7 +3281,7 @@ namespace SideDesk.Controls
                             TextWrapping = TextWrapping.Wrap,
                             MaxHeight = isLarge ? 32 : 16,
                             Foreground = (Brush)FindResource("BrushTextMain"),
-                            ToolTip = fileItem.Path,
+                            ToolTip = isCloud ? BuildCloudToolTip(fileItem) : fileItem.Path,
                             HorizontalAlignment = HorizontalAlignment.Center
                         };
                         iconStack.Children.Add(nameText);
@@ -3275,6 +3289,7 @@ namespace SideDesk.Controls
                         // 点击打开
                         iconStack.MouseLeftButtonUp += (s, e) =>
                         {
+                            if (isCloud) { OpenCloudFile(capturedFileItem); return; }
                             try
                             {
                                 if (isFolder)
@@ -3285,9 +3300,17 @@ namespace SideDesk.Controls
                             catch { }
                         };
 
-                        // 右键菜单（调用资源管理器原生右键菜单）
+                        // 右键菜单（云文件用自定义菜单，本地文件调用资源管理器原生右键菜单）
                         iconStack.MouseRightButtonDown += (s, e) =>
                         {
+                            if (isCloud)
+                            {
+                                var cloudMenu = BuildCloudFileContextMenu(capturedFileItem, item);
+                                cloudMenu.PlacementTarget = iconStack;
+                                cloudMenu.IsOpen = true;
+                                e.Handled = true;
+                                return;
+                            }
                             iconStack.Opacity = 0.7;
                             var hwnd = new System.Windows.Interop.WindowInteropHelper(Window.GetWindow(this)).Handle;
                             var pt = System.Windows.Forms.Cursor.Position;
@@ -3362,7 +3385,7 @@ namespace SideDesk.Controls
                             iconStack.Drop += (s, e) =>
                             {
                                 iconStack.Opacity = 1.0;
-                                HandleDropOnFolder(s, e, filePath, item);
+                                HandleDropOnFolder(s, e, capturedFileItem, item, cloudIconGrid);
                             };
                         }
                     }
@@ -3401,24 +3424,42 @@ namespace SideDesk.Controls
                         };
                         openBtn.Click += (s, e) =>
                         {
+                            if (isCloud) { OpenCloudFile(capturedFileItem); return; }
                             try { Process.Start(new ProcessStartInfo(filePath) { UseShellExecute = true }); }
                             catch { }
                         };
 
-                        // 图标 + 名称
-                        var icon = isFolder ? "📁" : "📄";
+                        // 图标 + 名称（云文件/云目录带云标记）
                         var nameBlock = new Emoji.Wpf.TextBlock
                         {
-                            Text = $"{icon} {fileItem.Name}",
+                            Text = fileItem.Name,
                             VerticalAlignment = VerticalAlignment.Center,
                             TextTrimming = TextTrimming.CharacterEllipsis,
                             Foreground = (Brush)FindResource("BrushTextMain"),
-                            ToolTip = fileItem.Path,
+                            ToolTip = isCloud ? BuildCloudToolTip(fileItem) : fileItem.Path
+                        };
+                        var iconNamePanel = new StackPanel
+                        {
+                            Orientation = Orientation.Horizontal,
+                            VerticalAlignment = VerticalAlignment.Center,
                             Cursor = Cursors.Hand
                         };
+                        Grid? cloudIconGrid = isCloud ? BuildCloudIcon(isFolder, 15) : null;
+                        FrameworkElement iconEl = cloudIconGrid != null
+                            ? cloudIconGrid
+                            : new Emoji.Wpf.TextBlock
+                            {
+                                Text = isFolder ? "📁" : "📄",
+                                FontSize = 15,
+                                VerticalAlignment = VerticalAlignment.Center,
+                                Margin = new Thickness(0, 0, 5, 0)
+                            };
+                        iconNamePanel.Children.Add(iconEl);
+                        iconNamePanel.Children.Add(nameBlock);
 
-                        nameBlock.MouseLeftButtonUp += (s, e) =>
+                        iconNamePanel.MouseLeftButtonUp += (s, e) =>
                         {
+                            if (isCloud) { OpenCloudFile(capturedFileItem); return; }
                             try
                             {
                                 if (isFolder)
@@ -3433,12 +3474,20 @@ namespace SideDesk.Controls
                         DockPanel.SetDock(openBtn, Dock.Right);
                         row.Children.Add(delBtn);
                         row.Children.Add(openBtn);
-                        row.Children.Add(nameBlock);
+                        row.Children.Add(iconNamePanel);
 
-                        // 右键菜单（调用资源管理器原生右键菜单）
+                        // 右键菜单（云文件用自定义菜单，本地文件调用资源管理器原生右键菜单）
                         var highlightBrush = (Brush)FindResource("BrushListViewItemMouseOver");
                         row.MouseRightButtonDown += (s, e) =>
                         {
+                            if (isCloud)
+                            {
+                                var cloudMenu = BuildCloudFileContextMenu(capturedFileItem, item);
+                                cloudMenu.PlacementTarget = row;
+                                cloudMenu.IsOpen = true;
+                                e.Handled = true;
+                                return;
+                            }
                             row.Background = highlightBrush;
                             var hwnd = new System.Windows.Interop.WindowInteropHelper(Window.GetWindow(this)).Handle;
                             var pt = System.Windows.Forms.Cursor.Position;
@@ -3484,7 +3533,7 @@ namespace SideDesk.Controls
                             row.Drop += (s, e) =>
                             {
                                 row.Background = Brushes.Transparent;
-                                HandleDropOnFolder(s, e, filePath, item);
+                                HandleDropOnFolder(s, e, capturedFileItem, item, cloudIconGrid);
                             };
                         }
 
@@ -3548,6 +3597,10 @@ namespace SideDesk.Controls
             addFolderMi.Click += (s, e) => AddFolderToArea(item);
             dropMenu.Items.Add(addFolderMi);
 
+            var addCloudFileMi = new MenuItem { Header = "☁️ 添加云文件" };
+            addCloudFileMi.Click += (s, e) => AddCloudFileToArea(item);
+            dropMenu.Items.Add(addCloudFileMi);
+
             dropMenu.Items.Add(new Separator());
 
             // 布局子菜单
@@ -3561,6 +3614,9 @@ namespace SideDesk.Controls
             var listMi = new MenuItem { Header = "列表", IsCheckable = true, IsChecked = item.FileAreaLayout == "List" };
             listMi.Click += (s, e) => { item.FileAreaLayout = "List"; _configManager?.Save(); RenderPanels(); };
             layoutMenu.Items.Add(listMi);
+            var popupMi = new MenuItem { Header = "弹出显示", IsCheckable = true, IsChecked = item.FileAreaLayout == "Popup" };
+            popupMi.Click += (s, e) => { item.FileAreaLayout = "Popup"; _configManager?.Save(); RenderPanels(); };
+            layoutMenu.Items.Add(popupMi);
             dropMenu.Items.Add(layoutMenu);
 
             // 列数子菜单
@@ -3704,6 +3760,94 @@ namespace SideDesk.Controls
             }
         }
 
+        /// <summary>弹出云文件导入对话框，选择云盘或输入云文件ID导入</summary>
+        private void AddCloudFileToArea(PanelItem item)
+        {
+            var dialog = new AddCloudFileDialog { Owner = Window.GetWindow(this) };
+            if (dialog.ShowDialog() == true && dialog.Results is { Count: > 0 })
+            {
+                item.FileItems ??= new List<FileAreaItem>();
+                item.FileItems.AddRange(dialog.Results);
+                _configManager?.Save();
+                RenderPanels();
+            }
+        }
+
+        /// <summary>云文件 ToolTip：云盘名 + 文件ID/链接</summary>
+        private static string BuildCloudToolTip(FileAreaItem fileItem)
+        {
+            string space = string.IsNullOrEmpty(fileItem.CloudSpaceName) ? "网络文件" : fileItem.CloudSpaceName;
+            string target = fileItem.CloudFileId ?? fileItem.CloudUrl ?? fileItem.Path;
+            return $"☁️ {space}：{target}";
+        }
+
+        /// <summary>打开云文件：云目录直接用云盘查看器打开并定位；链接用浏览器打开；纯ID（非网址）复制到剪贴板</summary>
+        private void OpenCloudFile(FileAreaItem fileItem)
+        {
+            // 云目录：直接打开云盘查看器并定位到该目录
+            if (fileItem.IsFolder && !string.IsNullOrEmpty(fileItem.CloudFileId))
+            {
+                new CloudDriveWindow(fileItem.CloudFileId, fileItem.Name).Show();
+                return;
+            }
+
+            try
+            {
+                string url = fileItem.CloudUrl ?? "";
+                if (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                 || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                {
+                    Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+                }
+                else if (!string.IsNullOrEmpty(fileItem.CloudFileId))
+                {
+                    // 纯ID（非链接）：复制到剪贴板，方便粘贴到对应云盘客户端
+                    Clipboard.SetText(fileItem.CloudFileId);
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>云文件右键菜单：打开 / 复制链接 / 复制文件ID / 删除</summary>
+        private ContextMenu BuildCloudFileContextMenu(FileAreaItem fileItem, PanelItem panelItem)
+        {
+            var ctx = new ContextMenu();
+
+            var openMi = new MenuItem { Header = "打开" };
+            openMi.Click += (s, e) => OpenCloudFile(fileItem);
+            ctx.Items.Add(openMi);
+
+            var copyLinkMi = new MenuItem { Header = "复制链接" };
+            copyLinkMi.Click += (s, e) =>
+            {
+                try { Clipboard.SetText(fileItem.CloudUrl ?? fileItem.Path); } catch { }
+            };
+            ctx.Items.Add(copyLinkMi);
+
+            if (!string.IsNullOrEmpty(fileItem.CloudFileId))
+            {
+                var copyIdMi = new MenuItem { Header = "复制文件ID" };
+                copyIdMi.Click += (s, e) =>
+                {
+                    try { Clipboard.SetText(fileItem.CloudFileId); } catch { }
+                };
+                ctx.Items.Add(copyIdMi);
+            }
+
+            ctx.Items.Add(new Separator());
+
+            var delMi = new MenuItem { Header = "删除" };
+            delMi.Click += (s, e) =>
+            {
+                panelItem.FileItems?.Remove(fileItem);
+                _configManager?.Save();
+                RenderPanels();
+            };
+            ctx.Items.Add(delMi);
+
+            return ctx;
+        }
+
         /// <summary>打开文件或文件夹</summary>
         private void OpenFileOrFolder(string path, bool isFolder)
         {
@@ -3837,9 +3981,17 @@ namespace SideDesk.Controls
             return ctx;
         }
 
-        /// <summary>处理文件拖拽到文件夹</summary>
-        private void HandleDropOnFolder(object sender, DragEventArgs e, string folderPath, PanelItem panelItem)
+        /// <summary>处理文件拖拽到文件夹（本地目录执行复制；云目录则上传到对应云盘目录）</summary>
+        private void HandleDropOnFolder(object sender, DragEventArgs e, FileAreaItem folderItem, PanelItem panelItem, Grid? cloudIconGrid = null)
         {
+            // 云目录：上传到对应云盘目录
+            if (folderItem.IsCloudFile)
+            {
+                HandleDropOnCloudFolder(e, folderItem, cloudIconGrid);
+                return;
+            }
+
+            string folderPath = folderItem.Path;
             if (e.Data.GetDataPresent(DataFormats.FileDrop))
             {
                 var files = (string[])e.Data.GetData(DataFormats.FileDrop);
@@ -3887,6 +4039,318 @@ namespace SideDesk.Controls
                 _configManager?.Save();
                 RenderPanels();
                 e.Handled = true;
+            }
+        }
+
+        /// <summary>构建云文件/云目录图标：基础图标 + 右下角云标记</summary>
+        private static Grid BuildCloudIcon(bool isFolder, double iconSize)
+        {
+            var grid = new Grid
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+            grid.Children.Add(new Emoji.Wpf.TextBlock
+            {
+                Text = isFolder ? "📁" : "📄",
+                FontSize = iconSize,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+            grid.Children.Add(new Emoji.Wpf.TextBlock
+            {
+                Text = "☁️",
+                FontSize = Math.Max(8, iconSize * 0.45),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Bottom
+            });
+            return grid;
+        }
+
+        /// <summary>弹出显示布局：文件夹图标+label 触发按钮，点击弹出浮层列出所有文件项（参考快捷组弹出菜单效果）</summary>
+        private UIElement BuildFileAreaPopupContent(PanelItem item)
+        {
+            // label：取模块标题（去掉开头 emoji 避免与文件夹图标重复）并附加项数
+            string title = string.IsNullOrEmpty(item.Title) ? "文件区" : item.Title;
+            string label = StripLeadingEmoji(title);
+            if (label.Length == 0) label = "文件区";
+            label = $"{label}（{item.FileItems.Count}）";
+
+            // 竖排：上方大图标 + 下方 label（桌面快捷方式风格）
+            var triggerContent = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Center };
+            triggerContent.Children.Add(new Emoji.Wpf.TextBlock
+            {
+                Text = "📁",
+                FontSize = 30,
+                HorizontalAlignment = HorizontalAlignment.Center
+            });
+            triggerContent.Children.Add(new Emoji.Wpf.TextBlock
+            {
+                Text = label,
+                FontSize = 11,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 3, 0, 0),
+                MaxWidth = 120,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Foreground = (Brush)FindResource("BrushTextMain")
+            });
+
+            var triggerBtn = new Button
+            {
+                Content = triggerContent,
+                Style = (Style)FindResource("GhostButtonStyle"),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(2),
+                Padding = new Thickness(10, 4, 10, 4)
+            };
+
+            var itemPopup = new Popup
+            {
+                PlacementTarget = triggerBtn,
+                Placement = PlacementMode.Bottom,
+                StaysOpen = false,
+                AllowsTransparency = true
+            };
+
+            var popupStack = new StackPanel { Orientation = Orientation.Vertical };
+            if (item.FileItems.Count == 0)
+            {
+                popupStack.Children.Add(new Emoji.Wpf.TextBlock
+                {
+                    Text = "暂无文件，可在右上角菜单中添加",
+                    FontSize = 12,
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
+                    Margin = new Thickness(10, 8, 10, 8),
+                    Opacity = 0.7
+                });
+            }
+            else
+            {
+                foreach (var fileItem in item.FileItems.OrderByDescending(f => f.AddedAt))
+                    popupStack.Children.Add(BuildFileAreaPopupItem(fileItem, item, itemPopup));
+            }
+
+            var popupScroll = new ScrollViewer
+            {
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                MaxHeight = 360,
+                Content = popupStack
+            };
+
+            var popupBorder = new Border
+            {
+                Background = (Brush)FindResource("BrushBG"),
+                BorderBrush = (Brush)FindResource("BrushBorder"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(4),
+                MinWidth = 190,
+                Child = popupScroll
+            };
+            itemPopup.Child = popupBorder;
+
+            triggerBtn.Click += (s, e) => { itemPopup.IsOpen = !itemPopup.IsOpen; };
+
+            return triggerBtn;
+        }
+
+        /// <summary>弹出显示布局浮层内的文件项：图标+名称，点击打开，云文件支持右键菜单</summary>
+        private UIElement BuildFileAreaPopupItem(FileAreaItem fileItem, PanelItem panelItem, Popup popup)
+        {
+            bool isFolder = fileItem.IsFolder;
+            bool isCloud = fileItem.IsCloudFile;
+            string filePath = fileItem.Path;
+
+            var row = new Border
+            {
+                Padding = new Thickness(8, 5, 8, 5),
+                CornerRadius = new CornerRadius(4),
+                Background = Brushes.Transparent,
+                Cursor = Cursors.Hand
+            };
+            var sp = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+
+            Grid? cloudIconGrid = isCloud ? BuildCloudIcon(isFolder, 15) : null;
+            FrameworkElement iconEl = cloudIconGrid != null
+                ? cloudIconGrid
+                : new Emoji.Wpf.TextBlock
+                {
+                    Text = isFolder ? "📁" : "📄",
+                    FontSize = 15,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 7, 0)
+                };
+            sp.Children.Add(iconEl);
+            sp.Children.Add(new Emoji.Wpf.TextBlock
+            {
+                Text = fileItem.Name,
+                FontSize = 12,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                ToolTip = isCloud ? BuildCloudToolTip(fileItem) : fileItem.Path
+            });
+            row.Child = sp;
+
+            var hoverBrush = (Brush)FindResource("BrushListViewItemMouseOver");
+            row.MouseEnter += (s, e) => row.Background = hoverBrush;
+            row.MouseLeave += (s, e) => row.Background = Brushes.Transparent;
+
+            // 点击打开（并关闭浮层）：文件夹用资源管理器打开，文件直接打开，云文件走云逻辑
+            row.MouseLeftButtonUp += (s, e) =>
+            {
+                popup.IsOpen = false;
+                if (isCloud) { OpenCloudFile(fileItem); return; }
+                try
+                {
+                    if (isFolder)
+                        Process.Start(new ProcessStartInfo("explorer.exe", filePath) { UseShellExecute = false });
+                    else
+                        Process.Start(new ProcessStartInfo(filePath) { UseShellExecute = true });
+                }
+                catch { }
+            };
+
+            // 云文件右键菜单
+            row.MouseRightButtonDown += (s, e) =>
+            {
+                if (isCloud)
+                {
+                    var cloudMenu = BuildCloudFileContextMenu(fileItem, panelItem);
+                    cloudMenu.PlacementTarget = row;
+                    cloudMenu.IsOpen = true;
+                    e.Handled = true;
+                }
+            };
+
+            return row;
+        }
+
+        /// <summary>去掉标题开头的 emoji/符号（如“📁 文件区”→“文件区”）</summary>
+        private static string StripLeadingEmoji(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            int i = 0;
+            while (i < s.Length)
+            {
+                char c = s[i];
+                if (char.IsSurrogate(c)) { i += 2; continue; }                    // emoji 代理对
+                if (c == '\uFE0F' || char.IsWhiteSpace(c)) { i++; continue; }     // 变体选择符/空白
+                var cat = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(s, i);
+                if (cat == System.Globalization.UnicodeCategory.OtherSymbol) { i++; continue; }
+                break;
+            }
+            return s.Substring(i).Trim();
+        }
+
+        /// <summary>拖拽文件到云目录：上传到对应云盘目录，并在目录图标上显示环形进度条</summary>
+        private async void HandleDropOnCloudFolder(DragEventArgs e, FileAreaItem folderItem, Grid? iconGrid)
+        {
+            if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
+            e.Handled = true;
+
+            var files = (string[])e.Data.GetData(DataFormats.FileDrop);
+            var localFiles = files.Where(System.IO.File.Exists).ToList();
+            if (localFiles.Count == 0) return;
+            string parentId = folderItem.CloudFileId ?? "";
+            if (string.IsNullOrEmpty(parentId)) return;
+
+            // 在云目录图标上挂载环形进度条
+            RingProgress? ring = null;
+            if (iconGrid != null)
+            {
+                double size = iconGrid.ActualWidth > 0 ? Math.Max(iconGrid.ActualWidth, iconGrid.ActualHeight) : 32;
+                ring = new RingProgress(size);
+                iconGrid.Children.Add(ring.Root);
+            }
+
+            int total = localFiles.Count;
+            int done = 0;
+            foreach (var path in localFiles)
+            {
+                var ringRef = ring;
+                int doneRef = done;
+                bool success = await Task.Run(() => CloudDriveService.Instance.UploadFileAsync(path, parentId, pct =>
+                {
+                    double frac = (doneRef + pct / 100.0) / total;
+                    Dispatcher.BeginInvoke(new Action(() => ringRef?.SetProgress(frac)));
+                }));
+                if (success) done++;
+                ring?.SetProgress((double)done / total);
+            }
+
+            // 短暂停留满格状态后移除进度条
+            if (ring != null && iconGrid != null)
+            {
+                ring.SetProgress(1);
+                await Task.Delay(500);
+                iconGrid.Children.Remove(ring.Root);
+            }
+        }
+
+        /// <summary>环形进度条：叠加在图标上显示上传进度</summary>
+        private sealed class RingProgress
+        {
+            public Grid Root { get; }
+            private readonly Path _arc;
+            private readonly double _center;
+            private readonly double _radius;
+
+            public RingProgress(double size)
+            {
+                double thickness = Math.Max(2.5, size * 0.09);
+                _center = size / 2;
+                _radius = (size - thickness) / 2;
+
+                Root = new Grid
+                {
+                    Width = size,
+                    Height = size,
+                    IsHitTestVisible = false,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                // 轨道（整环，半透明灰）
+                Root.Children.Add(new Ellipse
+                {
+                    Stroke = new SolidColorBrush(Color.FromArgb(90, 128, 128, 128)),
+                    StrokeThickness = thickness
+                });
+                // 进度弧（主题色）
+                _arc = new Path
+                {
+                    Stroke = (Application.Current.TryFindResource("BrushAccent") as Brush) ?? Brushes.DodgerBlue,
+                    StrokeThickness = thickness,
+                    StrokeStartLineCap = PenLineCap.Round,
+                    StrokeEndLineCap = PenLineCap.Round
+                };
+                Root.Children.Add(_arc);
+            }
+
+            /// <summary>设置进度（0~1）</summary>
+            public void SetProgress(double fraction)
+            {
+                _arc.Data = fraction <= 0.001 ? Geometry.Empty : BuildArc(fraction);
+            }
+
+            private Geometry BuildArc(double fraction)
+            {
+                fraction = Math.Clamp(fraction, 0, 0.9999);
+                double angle = fraction * 2 * Math.PI;
+                double endX = _center + _radius * Math.Sin(angle);
+                double endY = _center - _radius * Math.Cos(angle);
+                var figure = new PathFigure { StartPoint = new Point(_center, _center - _radius) };
+                figure.Segments.Add(new ArcSegment
+                {
+                    Point = new Point(endX, endY),
+                    Size = new Size(_radius, _radius),
+                    IsLargeArc = fraction > 0.5,
+                    SweepDirection = SweepDirection.Clockwise
+                });
+                var geo = new PathGeometry();
+                geo.Figures.Add(figure);
+                return geo;
             }
         }
 
@@ -4542,7 +5006,7 @@ namespace SideDesk.Controls
                 {
                     Margin = new Thickness(0, 0, 0, 8),
                     Padding = new Thickness(0),
-                    Background = Brushes.Transparent,
+                    Background = ApplyDashColor(item.BGColor, "BrushInputBG"),
                     BorderThickness = new Thickness(0),
                     Child = mainStack
                 };
@@ -6477,7 +6941,7 @@ namespace SideDesk.Controls
                 {
                     Margin = new Thickness(0, 0, 0, 8),
                     Padding = new Thickness(0),
-                    Background = Brushes.Transparent,
+                    Background = ApplyDashColor(item.BGColor, "BrushInputBG"),
                     BorderThickness = new Thickness(0),
                     Child = contentPanel,
                     ContextMenu = bareMenu

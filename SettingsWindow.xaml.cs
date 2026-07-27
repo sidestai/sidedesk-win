@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -90,6 +92,7 @@ namespace SideDesk
 
             titleLockSwitch.IsChecked = _app.AppSettings.EnableTitleLock;
             windowSwitchHotkeySwitch.IsChecked = _app.AppSettings.EnableWindowSwitchHotkey;
+            mcpServerSwitch.IsChecked = _app.AppSettings.EnableMcpServer;
 
             // 账户 / 云同步
             RefreshAccountUI();
@@ -100,11 +103,13 @@ namespace SideDesk
         private void Nav_Changed(object sender, SelectionChangedEventArgs e)
         {
             if (_isLoading) return;
-            if (pageGeneral == null || pageAccount == null || pageAppearance == null || pageProgramManager == null || pageExtensions == null || pageTools == null || pageModules == null || pageShortcuts == null || pageAbout == null) return;
+            if (pageGeneral == null || pageAccount == null || pageCloudSpaces == null || pageTeams == null || pageAppearance == null || pageProgramManager == null || pageExtensions == null || pageTools == null || pageModules == null || pageShortcuts == null || pageAbout == null) return;
                     
             // 隐藏所有页面
             pageGeneral.Visibility = Visibility.Collapsed;
             pageAccount.Visibility = Visibility.Collapsed;
+            pageCloudSpaces.Visibility = Visibility.Collapsed;
+            pageTeams.Visibility = Visibility.Collapsed;
             pageAppearance.Visibility = Visibility.Collapsed;
             pageProgramManager.Visibility = Visibility.Collapsed;
             pageExtensions.Visibility = Visibility.Collapsed;
@@ -118,13 +123,15 @@ namespace SideDesk
             {
                 case 0: pageGeneral.Visibility = Visibility.Visible; break;
                 case 1: pageAccount.Visibility = Visibility.Visible; RefreshAccountUI(); break;
-                case 2: pageAppearance.Visibility = Visibility.Visible; break;
-                case 3: pageProgramManager.Visibility = Visibility.Visible; break;
-                case 4: pageExtensions.Visibility = Visibility.Visible; break;
-                case 5: pageTools.Visibility = Visibility.Visible; break;
-                case 6: pageModules.Visibility = Visibility.Visible; RefreshTemplateList(); break;
-                case 7: pageShortcuts.Visibility = Visibility.Visible; break;
-                case 8: pageAbout.Visibility = Visibility.Visible; break;
+                case 2: pageTeams.Visibility = Visibility.Visible; _ = RefreshTeamListAsync(); break;
+                case 3: pageCloudSpaces.Visibility = Visibility.Visible; RefreshCloudSpaceList(); break;
+                case 4: pageAppearance.Visibility = Visibility.Visible; break;
+                case 5: pageProgramManager.Visibility = Visibility.Visible; break;
+                case 6: pageExtensions.Visibility = Visibility.Visible; break;
+                case 7: pageTools.Visibility = Visibility.Visible; break;
+                case 8: pageModules.Visibility = Visibility.Visible; RefreshTemplateList(); break;
+                case 9: pageShortcuts.Visibility = Visibility.Visible; break;
+                case 10: pageAbout.Visibility = Visibility.Visible; break;
             }
         }
 
@@ -317,6 +324,416 @@ namespace SideDesk
                 }));
             }
             catch { }
+        }
+
+        #endregion
+
+        #region 云空间管理
+
+        private void RefreshCloudSpaceList()
+        {
+            cloudSpaceListPanel.Children.Clear();
+            var spaces = CloudSpaceManager.GetAll();
+
+            if (spaces.Count == 0)
+            {
+                cloudSpaceListPanel.Children.Add(new Emoji.Wpf.TextBlock
+                {
+                    Text = "（暂无云空间，可点击“恢复内置”或手动添加）",
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
+                    FontSize = (double)FindResource("FontSizeSmall"),
+                    Margin = new Thickness(4)
+                });
+                return;
+            }
+
+            foreach (var space in spaces)
+            {
+                var row = new Grid { Margin = new Thickness(0, 4, 0, 4) };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                // 图标
+                var icon = new Emoji.Wpf.TextBlock
+                {
+                    Text = space.Icon, FontSize = 18,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(4, 0, 10, 0)
+                };
+                Grid.SetColumn(icon, 0);
+                row.Children.Add(icon);
+
+                // 名称 + 网址
+                var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                var nameRow = new StackPanel { Orientation = Orientation.Horizontal };
+                nameRow.Children.Add(new Emoji.Wpf.TextBlock
+                {
+                    Text = space.Name,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = (Brush)FindResource("BrushTextMain"),
+                    FontSize = (double)FindResource("FontSizeNormal")
+                });
+                if (space.IsBuiltin)
+                {
+                    nameRow.Children.Add(new TextBlock
+                    {
+                        Text = "内置", FontSize = 10,
+                        Foreground = (Brush)FindResource("BrushTextMuted"),
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Margin = new Thickness(6, 0, 0, 0), Opacity = 0.7
+                    });
+                }
+                info.Children.Add(nameRow);
+                info.Children.Add(new TextBlock
+                {
+                    Text = space.Url,
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
+                    FontSize = (double)FindResource("FontSizeTiny"),
+                    TextTrimming = TextTrimming.CharacterEllipsis
+                });
+                Grid.SetColumn(info, 1);
+                row.Children.Add(info);
+
+                // 操作按钮
+                var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+                var openBtn = new Button
+                {
+                    Content = "打开", Style = (Style)FindResource("GhostButtonStyle"),
+                    Padding = new Thickness(8, 2, 8, 2), FontSize = 11, Margin = new Thickness(0, 0, 6, 0)
+                };
+                if (space.IsBuiltin)
+                {
+                    // 内置云空间（元桌云盘）：打开专用文件管理窗口，不可编辑/删除
+                    openBtn.Click += (s, e) => { new CloudDriveWindow().Show(); };
+                    btnPanel.Children.Add(openBtn);
+                }
+                else
+                {
+                    var spaceUrl = space.Url;
+                    openBtn.Click += (s, e) => { try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(spaceUrl) { UseShellExecute = true }); } catch { } };
+                    btnPanel.Children.Add(openBtn);
+
+                    var editBtn = new Button
+                    {
+                        Content = "编辑", Style = (Style)FindResource("GhostButtonStyle"),
+                        Padding = new Thickness(8, 2, 8, 2), FontSize = 11, Margin = new Thickness(0, 0, 6, 0)
+                    };
+                    var editTarget = space;
+                    editBtn.Click += (s, e) => ShowCloudSpaceEditDialog(editTarget);
+                    btnPanel.Children.Add(editBtn);
+
+                    var delBtn = new Button
+                    {
+                        Content = "✕", Style = (Style)FindResource("GhostButtonStyle"),
+                        Padding = new Thickness(6, 2, 6, 2), FontSize = 11
+                    };
+                    var delId = space.Id;
+                    var delName = space.Name;
+                    delBtn.Click += (s, e) =>
+                    {
+                        if (MessageBox.Show($"确定删除云空间“{delName}”？", "删除确认", MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK)
+                        {
+                            CloudSpaceManager.Delete(delId);
+                            RefreshCloudSpaceList();
+                        }
+                    };
+                    btnPanel.Children.Add(delBtn);
+                }
+
+                Grid.SetColumn(btnPanel, 2);
+                row.Children.Add(btnPanel);
+
+                cloudSpaceListPanel.Children.Add(row);
+            }
+        }
+
+        private void AddCloudSpace_Click(object sender, RoutedEventArgs e)
+        {
+            ShowCloudSpaceEditDialog(null);
+        }
+
+        private void RestoreBuiltinSpaces_Click(object sender, RoutedEventArgs e)
+        {
+            CloudSpaceManager.RestoreBuiltins();
+            RefreshCloudSpaceList();
+        }
+
+        /// <summary>云空间编辑对话框（space=null 表示新建）</summary>
+        private void ShowCloudSpaceEditDialog(CloudSpace? space)
+        {
+            bool isNew = space == null;
+            var editing = space ?? new CloudSpace();
+
+            var dialog = new Window
+            {
+                Title = isNew ? "添加云空间" : "编辑云空间",
+                Width = 380, Height = 310,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this, ResizeMode = ResizeMode.NoResize,
+                Background = (Brush)FindResource("BrushBG")
+            };
+
+            var root = new StackPanel { Margin = new Thickness(16) };
+
+            root.Children.Add(new TextBlock { Text = "图标（emoji）", Foreground = (Brush)FindResource("BrushTextMain"), FontSize = 12, Margin = new Thickness(0, 0, 0, 4) });
+            var iconBox = new TextBox { Text = editing.Icon, Width = 60, HorizontalAlignment = HorizontalAlignment.Left, Style = (Style)FindResource("GlobalTextBoxStyle") };
+            root.Children.Add(iconBox);
+
+            root.Children.Add(new TextBlock { Text = "名称", Foreground = (Brush)FindResource("BrushTextMain"), FontSize = 12, Margin = new Thickness(0, 10, 0, 4) });
+            var nameBox = new TextBox { Text = editing.Name, Style = (Style)FindResource("GlobalTextBoxStyle") };
+            root.Children.Add(nameBox);
+
+            root.Children.Add(new TextBlock { Text = "网址", Foreground = (Brush)FindResource("BrushTextMain"), FontSize = 12, Margin = new Thickness(0, 10, 0, 4) });
+            var urlBox = new TextBox { Text = editing.Url, Style = (Style)FindResource("GlobalTextBoxStyle") };
+            root.Children.Add(urlBox);
+
+            root.Children.Add(new TextBlock { Text = "备注（可选）", Foreground = (Brush)FindResource("BrushTextMain"), FontSize = 12, Margin = new Thickness(0, 10, 0, 4) });
+            var noteBox = new TextBox { Text = editing.Note ?? "", Style = (Style)FindResource("GlobalTextBoxStyle") };
+            root.Children.Add(noteBox);
+
+            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
+            var okBtn = new Button { Content = "确定", Width = 70, IsDefault = true, Style = (Style)FindResource("PrimaryButtonStyle"), Margin = new Thickness(0, 0, 8, 0) };
+            var cancelBtn = new Button { Content = "取消", Width = 70, IsCancel = true, Style = (Style)FindResource("StandardButtonStyle") };
+            okBtn.Click += (s, e) =>
+            {
+                string name = nameBox.Text.Trim();
+                string url = urlBox.Text.Trim();
+                if (string.IsNullOrEmpty(name)) { MessageBox.Show("请输入名称"); return; }
+                if (string.IsNullOrEmpty(url)) { MessageBox.Show("请输入网址"); return; }
+                if (!url.StartsWith("http://") && !url.StartsWith("https://")) url = "https://" + url;
+
+                editing.Name = name;
+                editing.Url = url;
+                editing.Icon = string.IsNullOrWhiteSpace(iconBox.Text) ? "☁️" : iconBox.Text.Trim();
+                editing.Note = string.IsNullOrWhiteSpace(noteBox.Text) ? null : noteBox.Text.Trim();
+
+                if (isNew) CloudSpaceManager.Add(editing);
+                else CloudSpaceManager.Update(editing);
+
+                RefreshCloudSpaceList();
+                dialog.Close();
+            };
+            btnPanel.Children.Add(okBtn);
+            btnPanel.Children.Add(cancelBtn);
+            root.Children.Add(btnPanel);
+
+            dialog.Content = root;
+            dialog.ShowDialog();
+        }
+
+        #endregion
+
+        #region 团队管理
+
+        /// <summary>头像下载专用 HttpClient（共享复用）</summary>
+        private static readonly System.Net.Http.HttpClient _avatarHttp = new() { Timeout = TimeSpan.FromSeconds(8) };
+
+        /// <summary>刷新团队列表（异步加载，失败优雅降级）</summary>
+        private async Task RefreshTeamListAsync()
+        {
+            if (teamListPanel == null) return;
+            teamListPanel.Children.Clear();
+
+            // 未登录提示
+            if (string.IsNullOrEmpty(_app.AppSettings.AccountToken))
+            {
+                teamListPanel.Children.Add(BuildTeamHintText("请先登录后再查看团队"));
+                return;
+            }
+
+            teamListPanel.Children.Add(BuildTeamHintText("正在加载..."));
+            var teams = await TeamService.Instance.ListTeamsAsync();
+
+            teamListPanel.Children.Clear();
+            if (teams == null)
+            {
+                teamListPanel.Children.Add(BuildTeamHintText("加载失败，请重试"));
+                return;
+            }
+            if (teams.Count == 0)
+            {
+                teamListPanel.Children.Add(BuildTeamHintText("（暂无团队，可点击下方添加）"));
+                return;
+            }
+
+            foreach (var team in teams)
+                teamListPanel.Children.Add(BuildTeamRow(team));
+        }
+
+        /// <summary>构建团队提示文本（加载/空/失败）</summary>
+        private TextBlock BuildTeamHintText(string text)
+        {
+            return new TextBlock
+            {
+                Text = text,
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                FontSize = (double)FindResource("FontSizeSmall"),
+                Margin = new Thickness(4)
+            };
+        }
+
+        /// <summary>构建单个团队行：团队名 + 成员头像堆叠 + 成员数</summary>
+        private UIElement BuildTeamRow(Team team)
+        {
+            var row = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(4, 6, 4, 6)
+            };
+
+            // 团队名
+            row.Children.Add(new Emoji.Wpf.TextBlock
+            {
+                Text = team.Name,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                FontSize = (double)FindResource("FontSizeNormal"),
+                VerticalAlignment = VerticalAlignment.Center
+            });
+
+            // 成员头像堆叠（最多 5 个，超出显示 +N）
+            var members = team.Members ?? new List<TeamMember>();
+            const int maxAvatars = 5;
+            var avatarStack = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(14, 0, 0, 0)
+            };
+            int shown = Math.Min(members.Count, maxAvatars);
+            for (int i = 0; i < shown; i++)
+            {
+                var avatar = BuildAvatarCircle(members[i].Name, members[i].Avatar, 26);
+                if (i > 0) avatar.Margin = new Thickness(-8, 0, 0, 0); // 负边距堆叠
+                avatarStack.Children.Add(avatar);
+            }
+            if (members.Count > maxAvatars)
+            {
+                var more = BuildAvatarCircle("+" + (members.Count - maxAvatars), null, 26, isMore: true);
+                more.Margin = new Thickness(-8, 0, 0, 0);
+                avatarStack.Children.Add(more);
+            }
+            row.Children.Add(avatarStack);
+
+            // 成员数
+            row.Children.Add(new TextBlock
+            {
+                Text = $"{members.Count} 人",
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                FontSize = (double)FindResource("FontSizeSmall"),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(10, 0, 0, 0)
+            });
+
+            return row;
+        }
+
+        /// <summary>
+        /// 构建圆形头像：有头像 URL 时后台下载并替换为图片，否则显示名称首字占位圆。
+        /// isMore 表示“+N”省略圆（灰色背景）。
+        /// </summary>
+        private Border BuildAvatarCircle(string name, string? avatarUrl, double size, bool isMore = false)
+        {
+            var border = new Border
+            {
+                Width = size,
+                Height = size,
+                CornerRadius = new CornerRadius(size / 2),
+                BorderBrush = (Brush)FindResource("BrushInputBG"), // 与面板背景同色，堆叠时形成间隔
+                BorderThickness = new Thickness(1.5),
+                ClipToBounds = true,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            // 占位内容：首字（或 +N）
+            var placeholder = new TextBlock
+            {
+                Text = isMore ? name : GetInitial(name),
+                Foreground = Brushes.White,
+                FontSize = size * 0.45,
+                FontWeight = FontWeights.SemiBold,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            border.Background = isMore
+                ? (Brush)FindResource("BrushTextMuted")
+                : new SolidColorBrush(HashToColor(name));
+            border.Child = placeholder;
+
+            // 有头像 URL 时后台下载，成功后切回 UI 线程替换为图片
+            if (!isMore && !string.IsNullOrEmpty(avatarUrl))
+            {
+                string url = avatarUrl;
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        byte[] bytes = await _avatarHttp.GetByteArrayAsync(url);
+                        if (bytes.Length == 0) return;
+                        var bi = new System.Windows.Media.Imaging.BitmapImage();
+                        using (var ms = new System.IO.MemoryStream(bytes))
+                        {
+                            bi.BeginInit();
+                            bi.StreamSource = ms;
+                            bi.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                            bi.EndInit();
+                        }
+                        if (bi.CanFreeze) bi.Freeze();
+                        await Dispatcher.InvokeAsync(() =>
+                        {
+                            border.Background = new ImageBrush(bi);
+                            border.Child = null;
+                        });
+                    }
+                    catch { /* 下载失败保留占位圆 */ }
+                });
+            }
+
+            return border;
+        }
+
+        /// <summary>取名称首字（用于头像占位，兼容 emoji 代理对）</summary>
+        private static string GetInitial(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return "?";
+            string s = name.Trim();
+            return char.IsSurrogatePair(s, 0) ? s.Substring(0, 2) : s.Substring(0, 1);
+        }
+
+        /// <summary>根据名称哈希生成稳定的头像背景色</summary>
+        private static Color HashToColor(string name)
+        {
+            Color[] palette =
+            {
+                Color.FromRgb(0x5B, 0x8F, 0xF5), // 蓝
+                Color.FromRgb(0x52, 0xC4, 0x7B), // 绿
+                Color.FromRgb(0xF5, 0x8B, 0x5B), // 橙
+                Color.FromRgb(0x9B, 0x6B, 0xF0), // 紫
+                Color.FromRgb(0xF0, 0x6B, 0x9B), // 粉
+                Color.FromRgb(0x3B, 0xC4, 0xC4), // 青
+            };
+            int hash = 0;
+            foreach (char c in name) hash = hash * 31 + c;
+            return palette[Math.Abs(hash) % palette.Length];
+        }
+
+        /// <summary>添加团队：弹出输入框，调用创建接口</summary>
+        private async void AddTeam_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new RenameDialog("新建团队", "");
+            if (dlg.ShowDialog() != true) return;
+            string name = dlg.NewName;
+            if (string.IsNullOrWhiteSpace(name)) return;
+
+            var team = await TeamService.Instance.CreateTeamAsync(name);
+            if (team == null)
+            {
+                MessageBox.Show("创建团队失败，请重试", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            await RefreshTeamListAsync();
         }
 
         #endregion
@@ -1127,6 +1544,25 @@ namespace SideDesk
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[GlobalHotkey] 切换启停失败: {ex.Message}");
+            }
+        }
+
+        private void McpServerSwitch_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_isLoading) return;
+            _app.AppSettings.EnableMcpServer = mcpServerSwitch.IsChecked == true;
+            _app.AppSettings.Save();
+
+            try
+            {
+                if (_app.AppSettings.EnableMcpServer)
+                    Services.McpServerService.Instance.Start();
+                else
+                    Services.McpServerService.Instance.Stop();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Settings] MCP Server 启停异常: {ex.Message}");
             }
         }
 

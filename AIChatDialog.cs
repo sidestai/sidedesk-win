@@ -8,7 +8,9 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using SideDesk.Models;
+using SideDesk.Services;
 
 namespace SideDesk
 {
@@ -189,7 +191,7 @@ namespace SideDesk
 
                 try
                 {
-                    string response = await CallApiAsync(cfg, _messages);
+                    string response = await CallApiWithToolsAsync(cfg, assistantMsg);
                     _messages.Add(new Dictionary<string, string> { { "role", "assistant" }, { "content", response } });
                     UpdateMessage(assistantMsg, response);
                     _statusText.Text = "就绪";
@@ -362,6 +364,112 @@ namespace SideDesk
             _chatScrollViewer?.ScrollToBottom();
         }
 
+        private async Task<string> CallApiWithToolsAsync(AIConfig config, TextBlock statusBlock)
+        {
+            const int MaxToolRounds = 8;
+            var modelInfo = AIConfigManager.GetSelectedModel();
+            string apiBase = modelInfo.ApiBaseUrl;
+            string modelId = config.CustomModelId;
+            if (string.IsNullOrEmpty(modelId))
+                modelId = modelInfo.DefaultModelId;
+
+            string url = apiBase + "/v1/chat/completions";
+            var tools = AIToolService.GetToolDefinitions();
+
+            System.Diagnostics.Debug.WriteLine($"[AIChat] 请求: POST {url}");
+            System.Diagnostics.Debug.WriteLine($"[AIChat] 模型: {modelId}, ApiKey: {(string.IsNullOrEmpty(config.ApiKey) ? "(空)" : config.ApiKey.Substring(0, Math.Min(6, config.ApiKey.Length)) + "***")}");
+
+            // 构建带 system prompt 的消息列表
+            var apiMessages = new List<Dictionary<string, object>>();
+            apiMessages.Add(new Dictionary<string, object>
+            {
+                { "role", "system" },
+                { "content", "你是元桌小屏(SideDesk)的内置AI助手。你可以通过工具调用来操作小屏应用，包括查看状态、切换主题、管理便签等。当用户请求操作应用时，请主动调用对应工具。删除便签时必须先向用户展示便签内容并获得确认，确认后才用 confirm=\"true\" 执行删除。回复请用中文。" }
+            });
+            foreach (var msg in _messages)
+                apiMessages.Add(new Dictionary<string, object> { { "role", msg["role"] }, { "content", msg["content"] } });
+
+            for (int round = 0; round < MaxToolRounds; round++)
+            {
+                var requestBody = new Dictionary<string, object>
+                {
+                    { "model", modelId },
+                    { "messages", apiMessages },
+                    { "temperature", 0.7 },
+                    { "max_tokens", 2048 },
+                    { "tools", tools }
+                };
+
+                string json = JsonConvert.SerializeObject(requestBody);
+                var request = new HttpRequestMessage(HttpMethod.Post, url);
+                request.Headers.Add("Authorization", "Bearer " + config.ApiKey);
+                request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                HttpResponseMessage response = await _httpClient.SendAsync(request);
+                string responseJson = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[AIChat] 请求失败: {(int)response.StatusCode} {response.StatusCode}");
+                    System.Diagnostics.Debug.WriteLine($"[AIChat] 响应体: {responseJson}");
+                    throw new Exception($"{(int)response.StatusCode} {response.StatusCode} - {TruncateForDisplay(responseJson)}");
+                }
+
+                System.Diagnostics.Debug.WriteLine($"[AIChat] 响应成功, 长度: {responseJson.Length}");
+                var responseObj = JObject.Parse(responseJson);
+                var choice = responseObj["choices"]?[0];
+                var message = choice?["message"];
+
+                if (message == null)
+                    return "无响应内容";
+
+                var toolCalls = message["tool_calls"] as JArray;
+
+                // 无工具调用 → 返回最终文本
+                if (toolCalls == null || toolCalls.Count == 0)
+                {
+                    return message["content"]?.ToString() ?? "";
+                }
+
+                // 有工具调用：把 assistant 消息（含 tool_calls）加入上下文
+                apiMessages.Add(new Dictionary<string, object>
+                {
+                    { "role", "assistant" },
+                    { "content", message["content"]?.ToString() ?? "" },
+                    { "tool_calls", toolCalls }
+                });
+
+                // 逐个执行工具
+                foreach (var tc in toolCalls)
+                {
+                    var toolCallId = tc["id"]?.ToString() ?? "";
+                    var funcName = tc["function"]?["name"]?.ToString() ?? "";
+                    var funcArgs = tc["function"]?["arguments"]?.ToString() ?? "{}";
+
+                    // UI 反馈
+                    if (_statusText != null)
+                        _statusText.Text = $"调用工具: {funcName}";
+                    System.Diagnostics.Debug.WriteLine($"[AIChat] 工具调用: {funcName}({funcArgs})");
+
+                    // 执行工具
+                    string toolResult = AIToolService.ExecuteTool(funcName, funcArgs);
+
+                    // 把工具结果加入上下文
+                    apiMessages.Add(new Dictionary<string, object>
+                    {
+                        { "role", "tool" },
+                        { "tool_call_id", toolCallId },
+                        { "content", toolResult }
+                    });
+                }
+
+                if (_statusText != null)
+                    _statusText.Text = "思考中...";
+            }
+
+            return "工具调用轮次超过上限，已停止。";
+        }
+
         private async Task<string> CallApiAsync(AIConfig config, List<Dictionary<string, string>> messages)
         {
             var modelInfo = AIConfigManager.GetSelectedModel();
@@ -371,6 +479,7 @@ namespace SideDesk
                 modelId = modelInfo.DefaultModelId;
 
             string url = apiBase + "/v1/chat/completions";
+            System.Diagnostics.Debug.WriteLine($"[AIChat] CallApiAsync 请求: POST {url}, 模型: {modelId}");
 
             var requestBody = new
             {
@@ -386,9 +495,15 @@ namespace SideDesk
             request.Content = new StringContent(json, Encoding.UTF8, "application/json");
 
             HttpResponseMessage response = await _httpClient.SendAsync(request);
-            response.EnsureSuccessStatusCode();
-
             string responseJson = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                System.Diagnostics.Debug.WriteLine($"[AIChat] CallApiAsync 请求失败: {(int)response.StatusCode} {response.StatusCode}");
+                System.Diagnostics.Debug.WriteLine($"[AIChat] 响应体: {responseJson}");
+                throw new Exception($"{(int)response.StatusCode} {response.StatusCode} - {TruncateForDisplay(responseJson)}");
+            }
+
             var responseObj = JsonConvert.DeserializeObject<dynamic>(responseJson);
 
             if (responseObj.choices != null && responseObj.choices.Count > 0)
@@ -471,7 +586,7 @@ namespace SideDesk
             });
             mainPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = "从对应服务商官网获取 API Key 并粘贴到下方：\n  DeepSeek: https://platform.deepseek.com/api_keys\n  OpenAI: https://platform.openai.com/api-keys",
+                Text = "从对应服务商官网获取 API Key 并粘贴到下方：\n  DeepSeek: https://platform.deepseek.com/api_keys\n  OpenAI: https://platform.openai.com/api-keys\n  通义千问: https://dashscope.console.aliyun.com/apiKey",
                 Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("BrushTextSec"),
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
@@ -563,6 +678,13 @@ namespace SideDesk
             };
 
             dialog.ShowDialog();
+        }
+
+        /// <summary>截断过长的错误信息用于UI显示</summary>
+        private static string TruncateForDisplay(string text, int maxLen = 200)
+        {
+            if (string.IsNullOrEmpty(text)) return "(无响应内容)";
+            return text.Length <= maxLen ? text : text.Substring(0, maxLen) + "...";
         }
     }
 }

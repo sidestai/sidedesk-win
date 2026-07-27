@@ -109,6 +109,17 @@ namespace SideDesk
                 System.Diagnostics.Debug.WriteLine($"[WebSocketServer] 启动异常: {ex.Message}");
             }
 
+            // 启动 MCP Server (127.0.0.1:19192)，仅在开启时
+            try
+            {
+                if (AppSettings.EnableMcpServer)
+                    Services.McpServerService.Instance.Start();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[McpServer] 启动异常: {ex.Message}");
+            }
+
             // 启动全局窗口切换热键（Ctrl+1~9），仅在开启时
             try
             {
@@ -275,6 +286,13 @@ namespace SideDesk
             _screenMemory[(desktopId, monitorIndex, side)] = screen;
         }
 
+        /// <summary>重新渲染所有停靠窗口的原生面板（数据变更后调用）。</summary>
+        public void RefreshAllNativePanels()
+        {
+            foreach (var w in _windows)
+                w.RefreshNativePanels();
+        }
+
         public void CloseAll()
         {
             SaveState();
@@ -297,6 +315,9 @@ namespace SideDesk
                 WebSocketServerService.Instance.Stop();
             }
             catch { }
+
+            // 停止 MCP Server
+            try { Services.McpServerService.Instance.Stop(); } catch { }
 
             // 停止全局窗口切换热键
             try { GlobalHotkeyService.Instance.Stop(); } catch { }
@@ -782,8 +803,6 @@ namespace SideDesk
             }
 
             var settings = new SettingsWindow();
-            var owner = _windows.FirstOrDefault();
-            if (owner != null) settings.Owner = owner;
             settings.Show();
             settings.Activate();
         }

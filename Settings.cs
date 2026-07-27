@@ -84,6 +84,9 @@ namespace SideDesk
         // 全局窗口切换热键（Ctrl+1~9），默认关闭以避免与浏览器等应用的 Ctrl+数字切标签冲突
         public bool EnableWindowSwitchHotkey { get; set; } = false;
 
+        /// <summary>是否开启 MCP Server（HTTP/SSE，端口 19192）</summary>
+        public bool EnableMcpServer { get; set; } = false;
+
         // ========== 账户 / 云同步 ==========
 
         /// <summary>登录后保存的账户 token（用于云同步鉴权；非空即视为已登录）</summary>

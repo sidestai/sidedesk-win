@@ -319,7 +319,6 @@ namespace SideDesk
             if (_settingsWindow == null || !_settingsWindow.IsVisible)
             {
                 _settingsWindow = new SettingsWindow();
-                _settingsWindow.Owner = this;
                 _settingsWindow.Closed += (s, ev) => _settingsWindow = null;
             }
             _settingsWindow.Show();

@@ -31,6 +31,8 @@
                          Padding="8,0">
                     <ListBoxItem Content="常规" IsSelected="True"/>
                     <ListBoxItem Content="账户"/>
+                    <ListBoxItem Content="团队"/>
+                    <ListBoxItem Content="云空间"/>
                     <ListBoxItem Content="外观"/>
                     <ListBoxItem Content="程序管理"/>
                     <ListBoxItem Content="扩展管理"/>
@@ -205,6 +207,57 @@
                     </Border>
                 </StackPanel>
                 
+                <!-- 云空间页面 -->
+                <StackPanel x:Name="pageCloudSpaces" Visibility="Collapsed" Margin="0,0,0,20">
+                    <TextBlock Text="云空间"
+                               FontSize="{DynamicResource FontSizeSubtitle}"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource BrushTextMain}"
+                               Margin="0,0,0,8"/>
+                    <TextBlock Text="管理常用网盘/云存储入口，系统已内置常见云盘，可自由添加或删除"
+                               Foreground="{DynamicResource BrushTextMuted}"
+                               FontSize="{DynamicResource FontSizeSmall}"
+                               Margin="0,0,0,16"/>
+
+                    <Border Background="{DynamicResource BrushInputBG}"
+                            BorderBrush="{DynamicResource BrushBorder}"
+                            BorderThickness="1" CornerRadius="6"
+                            Padding="12" Margin="0,0,0,8">
+                        <StackPanel x:Name="cloudSpaceListPanel"/>
+                    </Border>
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="+ 添加云空间" Click="AddCloudSpace_Click"
+                                Style="{StaticResource GhostButtonStyle}" Padding="12,6" Margin="0,0,8,0"/>
+                        <Button Content="恢复内置" Click="RestoreBuiltinSpaces_Click"
+                                Style="{StaticResource GhostButtonStyle}" Padding="12,6"
+                                ToolTip="将缺失的内置云盘预设补回列表"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- 团队页面 -->
+                <StackPanel x:Name="pageTeams" Visibility="Collapsed" Margin="0,0,0,20">
+                    <TextBlock Text="团队"
+                               FontSize="{DynamicResource FontSizeSubtitle}"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource BrushTextMain}"
+                               Margin="0,0,0,8"/>
+                    <TextBlock Text="管理所属团队，查看团队成员"
+                               Foreground="{DynamicResource BrushTextMuted}"
+                               FontSize="{DynamicResource FontSizeSmall}"
+                               Margin="0,0,0,16"/>
+
+                    <Border Background="{DynamicResource BrushInputBG}"
+                            BorderBrush="{DynamicResource BrushBorder}"
+                            BorderThickness="1" CornerRadius="6"
+                            Padding="12" Margin="0,0,0,8">
+                        <StackPanel x:Name="teamListPanel"/>
+                    </Border>
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="+ 添加团队" Click="AddTeam_Click"
+                                Style="{StaticResource GhostButtonStyle}" Padding="12,6" Margin="0,0,8,0"/>
+                    </StackPanel>
+                </StackPanel>
+
                 <!-- 外观页面 -->
                 <StackPanel x:Name="pageAppearance" Visibility="Collapsed">
                     <TextBlock Text="外观" 
@@ -401,6 +454,29 @@
                                 <TextBlock Text="锁定指定窗口在任务栏显示的标题文字，开启后启动时自动恢复" 
                                            Foreground="{DynamicResource BrushTextMuted}"
                                            FontSize="{DynamicResource FontSizeTiny}"/>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+
+                    <!-- MCP 服务器 -->
+                    <Border Background="{DynamicResource BrushInputBG}" 
+                            BorderBrush="{DynamicResource BrushBorder}" 
+                            BorderThickness="1" CornerRadius="8" 
+                            Padding="16" Margin="0,0,0,12">
+                        <DockPanel>
+                            <CheckBox x:Name="mcpServerSwitch" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                      Style="{StaticResource RaycastSwitchStyle}"
+                                      Checked="McpServerSwitch_Changed" 
+                                      Unchecked="McpServerSwitch_Changed"/>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="MCP 服务器" 
+                                           Foreground="{DynamicResource BrushTextMain}"
+                                           FontSize="{DynamicResource FontSizeNormal}"
+                                           FontWeight="SemiBold"/>
+                                <TextBlock Text="开启后在 127.0.0.1:19192 提供 MCP 协议接口，供 AI 助手调用" 
+                                           Foreground="{DynamicResource BrushTextMuted}"
+                                           FontSize="{DynamicResource FontSizeTiny}"
+                                           Margin="0,2,0,0"/>
                             </StackPanel>
                         </DockPanel>
                     </Border>

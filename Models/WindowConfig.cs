@@ -77,6 +77,14 @@ public class FileAreaItem
     public string Name { get; set; } = "";      // 显示名称
     public bool IsFolder { get; set; }          // 是否为文件夹
     public DateTime AddedAt { get; set; } = DateTime.Now;
+
+    // ===== 云文件相关（IsCloudFile=true 时有效）=====
+    public bool IsCloudFile { get; set; }       // 是否为云文件（云盘导入）
+    public string? CloudSpaceId { get; set; }   // 所属云空间 Id（CloudSpaceManager）
+    public string? CloudSpaceName { get; set; } // 云空间名称快照（如"百度网盘"）
+    public string? CloudSpaceIcon { get; set; } // 云空间图标快照（emoji）
+    public string? CloudFileId { get; set; }    // 云文件ID / 分享链接 / 提取码
+    public string? CloudUrl { get; set; }       // 实际打开的链接（分享链接优先，否则云空间主页）
 }
 
 public class ClipboardSavedItem

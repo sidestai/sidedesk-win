@@ -15,6 +15,7 @@
   <ItemGroup>
     <PackageReference Include="Emoji.Wpf" Version="0.3.4" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.*" />
+    <PackageReference Include="MinimalMcp" Version="0.1.0-alpha" />
     <PackageReference Include="Newtonsoft.Json" Version="13.*" />
     <PackageReference Include="gong-wpf-dragdrop" Version="3.*" />
     <PackageReference Include="Slions.VirtualDesktop" Version="6.9.2" />

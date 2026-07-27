@@ -44,6 +44,13 @@ namespace SideDesk.Models
             },
             new AIModelInfo
             {
+                Id = "qwen",
+                Name = "通义千问",
+                ApiBaseUrl = "https://dashscope.aliyuncs.com/compatible-mode",
+                DefaultModelId = "qwen-plus"
+            },
+            new AIModelInfo
+            {
                 Id = "custom",
                 Name = "自定义",
                 ApiBaseUrl = "",

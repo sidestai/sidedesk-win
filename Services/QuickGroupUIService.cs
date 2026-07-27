@@ -464,14 +464,12 @@ namespace SideDesk.Services
 
             var border = new Border
             {
-                Background = group.HideFrame ? Brushes.Transparent : null,
                 CornerRadius = new CornerRadius(group.HideFrame ? 0 : 4),
                 Margin = new Thickness(0, 0, 0, group.HideFrame ? 8 : 5),
                 Padding = new Thickness(group.HideFrame ? 0 : 2),
                 Tag = group.Id
             };
-            if (!group.HideFrame)
-                ApplyModuleBackground(border);
+            ApplyModuleBackground(border);
 
             var outerPanel = new StackPanel();
 
@@ -1054,6 +1052,14 @@ namespace SideDesk.Services
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, 3, 0, 3)
             };
+            // 用 Viewbox 包裹实现自适应缩放：时间超长时自动缩小字号以完整显示
+            var timeBox = new Viewbox
+            {
+                Stretch = Stretch.Uniform,
+                StretchDirection = StretchDirection.DownOnly,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Child = timeDisplay
+            };
             
             // 标题行
             var titleRow = new DockPanel();
@@ -1132,7 +1138,7 @@ namespace SideDesk.Services
             titleRow.Children.Add(editBtn);
             
             mainStack.Children.Add(titleRow);
-            mainStack.Children.Add(timeDisplay);
+            mainStack.Children.Add(timeBox);
             
             // 今日统计
             var today = DateTime.Now.ToString("yyyy-MM-dd");
@@ -1322,7 +1328,7 @@ namespace SideDesk.Services
                 AllowDrop = true
             };
 
-            // 按钮内容：大图标模式 = 桌面快捷方式风格（纯大图标在上、名称在下、无按钮背景）；列表模式左对齐；默认横向图标+名称
+            // 按钮内容：大图标模式 = 桌面快捷方式风格（纯大图标在上、名称在下、无按钮背景）；列表模式水平居中；默认横向图标+名称
             if (largeIcon)
             {
                 btn.Content = BuildLargeIconContent(item);
@@ -1334,10 +1340,10 @@ namespace SideDesk.Services
             }
             else
             {
-                btn.Content = BuildItemContent(item, listMode ? HorizontalAlignment.Left : HorizontalAlignment.Center);
+                btn.Content = BuildItemContent(item, HorizontalAlignment.Center);
                 if (listMode)
                 {
-                    btn.HorizontalContentAlignment = HorizontalAlignment.Left;
+                    btn.HorizontalContentAlignment = HorizontalAlignment.Center;
                     btn.Padding = new Thickness(6, 3, 6, 3);
                 }
             }

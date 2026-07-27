@@ -1,0 +1,114 @@
+<Window x:Class="SideDesk.AddCloudFileDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:emoji="clr-namespace:Emoji.Wpf;assembly=Emoji.Wpf"
+        Title="添加云文件" SizeToContent="Height" MinHeight="200" Width="400"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False"
+        Background="{DynamicResource BrushDialogBG}" Foreground="{DynamicResource BrushTextMain}">
+    <Window.Resources>
+        <!-- 页签样式：透明底、选中/悬停高亮，融入主题 -->
+        <Style TargetType="TabItem">
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="tabBorder" Padding="16,6" Margin="0,0,4,0"
+                                Background="Transparent" CornerRadius="6" Cursor="Hand">
+                            <ContentPresenter ContentSource="Header"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="False">
+                                <Setter TargetName="tabBorder" Property="TextElement.Foreground"
+                                        Value="{DynamicResource BrushTextMuted}"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="tabBorder" Property="Background"
+                                        Value="{DynamicResource BrushInputBG}"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="tabBorder" Property="Background"
+                                        Value="{DynamicResource BrushInputBG}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- 标题 -->
+        <emoji:TextBlock Grid.Row="0" Text="☁️ 添加云文件" FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
+                         Foreground="{DynamicResource BrushTextMain}" Margin="0,0,0,10"/>
+
+        <!-- 顶部页签：两种导入方式 -->
+        <TabControl x:Name="modeTabs" Grid.Row="1" Background="Transparent" BorderThickness="0"
+                    Padding="0" SelectedIndex="0" Margin="-2,0,0,12">
+            <!-- 方式一：来自云盘 -->
+            <TabItem>
+                <TabItem.Header>
+                    <emoji:TextBlock Text="☁️ 来自云盘" FontSize="{DynamicResource FontSizeNormal}"/>
+                </TabItem.Header>
+                <StackPanel Margin="2,8,2,2">
+                    <DockPanel Margin="0,0,0,12">
+                        <TextBlock DockPanel.Dock="Left" Text="云盘：" Width="70" VerticalAlignment="Center"
+                                   FontSize="{DynamicResource FontSizeNormal}" Foreground="{DynamicResource BrushTextMain}"/>
+                        <ComboBox x:Name="cloudSpaceCombo" Height="30"
+                                  Style="{StaticResource GlobalComboBoxStyle}"/>
+                    </DockPanel>
+                    <DockPanel Margin="0,0,0,10">
+                        <Button x:Name="pickFromDriveBtn" Content="📂 从云盘选择文件..." DockPanel.Dock="Right"
+                                Style="{StaticResource StandardButtonStyle}" Padding="12,5" Margin="8,0,0,0"
+                                Click="PickFromDrive_Click"/>
+                        <TextBlock Text="从所选云盘中浏览并勾选文件/目录（可多选）"
+                                   FontSize="{DynamicResource FontSizeSmall}" Foreground="{DynamicResource BrushTextMuted}"
+                                   VerticalAlignment="Center" TextWrapping="Wrap"/>
+                    </DockPanel>
+                </StackPanel>
+            </TabItem>
+
+            <!-- 方式二：文件ID（网络文件） -->
+            <TabItem>
+                <TabItem.Header>
+                    <emoji:TextBlock Text="🔗 文件ID" FontSize="{DynamicResource FontSizeNormal}"/>
+                </TabItem.Header>
+                <StackPanel Margin="2,8,2,2">
+                    <DockPanel Margin="0,0,0,8">
+                        <TextBlock DockPanel.Dock="Left" Text="文件ID：" Width="70" VerticalAlignment="Center"
+                                   FontSize="{DynamicResource FontSizeNormal}" Foreground="{DynamicResource BrushTextMain}"/>
+                        <TextBox x:Name="netFileIdBox" Style="{StaticResource GlobalTextBoxStyle}"
+                                 ToolTip="从他人处获取的网络文件ID或分享链接"/>
+                    </DockPanel>
+                    <TextBlock Text="粘贴从他人处获取的网络文件ID或分享链接；若为网址则可直接打开，否则点击时自动复制ID。"
+                               FontSize="{DynamicResource FontSizeSmall}" Foreground="{DynamicResource BrushTextMuted}"
+                               TextWrapping="Wrap" Margin="70,0,0,0"/>
+                </StackPanel>
+            </TabItem>
+        </TabControl>
+
+        <!-- 显示名称（两种方式通用） -->
+        <DockPanel Grid.Row="2" Margin="0,0,0,0">
+            <TextBlock DockPanel.Dock="Left" Text="名称：" Width="70" VerticalAlignment="Center"
+                       FontSize="{DynamicResource FontSizeNormal}" Foreground="{DynamicResource BrushTextMain}"/>
+            <TextBox x:Name="nameBox" Style="{StaticResource GlobalTextBoxStyle}"
+                     ToolTip="留空则自动命名"/>
+        </DockPanel>
+
+        <!-- 按钮 -->
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+            <Button Content="导入" Width="75" Margin="0,0,10,0" Click="OkButton_Click" IsDefault="True"
+                    Style="{StaticResource PrimaryButtonStyle}"/>
+            <Button Content="取消" Width="75" Click="CancelButton_Click" IsCancel="True"
+                    Style="{StaticResource StandardButtonStyle}"/>
+        </StackPanel>
+    </Grid>
+</Window>
