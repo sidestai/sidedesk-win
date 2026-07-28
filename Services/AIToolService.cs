@@ -30,7 +30,11 @@ namespace SideDesk.Services
                 new { type = "function", function = new { name = "list_notes", description = "获取所有便签列表（含全局便签和模块内便签）", parameters = new { type = "object", properties = new { }, required = new string[] { } } } },
                 new { type = "function", function = new { name = "search_notes", description = "根据关键词搜索便签内容（模糊匹配）", parameters = new { type = "object", properties = new { keyword = new { type = "string", description = "搜索关键词" } }, required = new[] { "keyword" } } } },
                 new { type = "function", function = new { name = "add_note", description = "新建一条便签。可指定目标窗口和便签模块（名称或序号），不指定则创建全局便签", parameters = new { type = "object", properties = new { content = new { type = "string", description = "便签内容" }, window = new { type = "string", description = "目标窗口名称、序号或方位（可选，如'主页'、'1'、'左侧'、'右侧'）" }, panel = new { type = "string", description = "目标便签模块标题或序号（可选，如'便签'或'1'）" } }, required = new[] { "content" } } } },
-                new { type = "function", function = new { name = "delete_note", description = "删除便签（两步确认）：第一次调用返回匹配便签的预览，用户确认后用 confirm=true 再次调用才真正删除", parameters = new { type = "object", properties = new { target = new { type = "string", description = "便签序号（按 list_notes 顺序，1-based）或内容关键词" }, window = new { type = "string", description = "限定窗口范围（可选，名称/序号/方位）" }, confirm = new { type = "string", description = "是否确认删除：'true' 表示用户已确认，立即执行删除", @enum = new[] { "true", "false" } } }, required = new[] { "target" } } } }
+                new { type = "function", function = new { name = "delete_note", description = "删除便签（两步确认）：第一次调用返回匹配便签的预览，用户确认后用 confirm=true 再次调用才真正删除", parameters = new { type = "object", properties = new { target = new { type = "string", description = "便签序号（按 list_notes 顺序，1-based）或内容关键词" }, window = new { type = "string", description = "限定窗口范围（可选，名称/序号/方位）" }, confirm = new { type = "string", description = "是否确认删除：'true' 表示用户已确认，立即执行删除", @enum = new[] { "true", "false" } } }, required = new[] { "target" } } } },
+                new { type = "function", function = new { name = "list_clipboard_history", description = "获取最近的剪贴板历史记录（最多100条复制记录，含文本/图片/文件）", parameters = new { type = "object", properties = new { }, required = new string[] { } } } },
+                new { type = "function", function = new { name = "search_clipboard_history", description = "根据关键词搜索剪贴板历史记录（模糊匹配，含文件路径）", parameters = new { type = "object", properties = new { keyword = new { type = "string", description = "搜索关键词" } }, required = new[] { "keyword" } } } },
+                new { type = "function", function = new { name = "list_clipboard_favorites", description = "获取所有剪贴板收藏内容（用户手动保存的剪贴板信息）", parameters = new { type = "object", properties = new { }, required = new string[] { } } } },
+                new { type = "function", function = new { name = "search_clipboard_favorites", description = "根据关键词搜索剪贴板收藏内容（模糊匹配）", parameters = new { type = "object", properties = new { keyword = new { type = "string", description = "搜索关键词" } }, required = new[] { "keyword" } } } }
             };
         }
 
@@ -58,6 +62,10 @@ namespace SideDesk.Services
                     "search_notes" => Tool_SearchNotes(args["keyword"]?.ToString() ?? ""),
                     "add_note" => Tool_AddNote(args["content"]?.ToString() ?? "", args["window"]?.ToString(), args["panel"]?.ToString()),
                     "delete_note" => Tool_DeleteNote(args["target"]?.ToString() ?? "", args["window"]?.ToString(), args["confirm"]?.ToString() == "true"),
+                    "list_clipboard_history" => Tool_ListClipboardHistory(),
+                    "search_clipboard_history" => Tool_SearchClipboardHistory(args["keyword"]?.ToString() ?? ""),
+                    "list_clipboard_favorites" => Tool_ListClipboardFavorites(),
+                    "search_clipboard_favorites" => Tool_SearchClipboardFavorites(args["keyword"]?.ToString() ?? ""),
                     _ => new { error = $"未知工具: {toolName}" }
                 };
 
@@ -255,6 +263,114 @@ namespace SideDesk.Services
             }
 
             return new { keyword = kw, matchCount = result.Count, notes = result };
+        }
+
+        // ═══════════ 剪贴板历史 / 收藏工具 ═══════════
+
+        /// <summary>获取最近的剪贴板历史记录（最多 100 条复制记录）</summary>
+        public static object Tool_ListClipboardHistory()
+        {
+            var svc = EnsureClipboardService();
+            var items = svc.ClipboardHistory.Select((e, i) => new
+            {
+                index = i + 1,
+                content = e.Text,
+                type = e.ContentType.ToString(),
+                filePaths = e.FilePaths ?? new List<string>(),
+                time = e.Time.ToString("yyyy-MM-dd HH:mm:ss")
+            }).ToList();
+            return new { total = items.Count, capacity = ClipboardService.MaxItems, items };
+        }
+
+        /// <summary>根据关键词搜索剪贴板历史记录（文本与文件路径均参与匹配）</summary>
+        public static object Tool_SearchClipboardHistory(string keyword)
+        {
+            if (string.IsNullOrWhiteSpace(keyword))
+                return new { keyword = "", matchCount = 0, items = new List<object>() };
+
+            var svc = EnsureClipboardService();
+            var kw = keyword.Trim();
+            var items = new List<object>();
+            int index = 0;
+            foreach (var e in svc.ClipboardHistory)
+            {
+                index++;
+                bool match = e.Text.Contains(kw, StringComparison.OrdinalIgnoreCase)
+                    || (e.FilePaths != null && e.FilePaths.Any(f => f.Contains(kw, StringComparison.OrdinalIgnoreCase)));
+                if (match)
+                    items.Add(new { index, content = e.Text, type = e.ContentType.ToString(), filePaths = e.FilePaths ?? new List<string>(), time = e.Time.ToString("yyyy-MM-dd HH:mm:ss") });
+            }
+            return new { keyword = kw, matchCount = items.Count, total = svc.ClipboardHistory.Count, items };
+        }
+
+        /// <summary>获取所有剪贴板收藏内容（用户手动保存的剪贴板信息）</summary>
+        public static object Tool_ListClipboardFavorites()
+        {
+            var app = (App)System.Windows.Application.Current;
+            var items = CollectClipboardFavoriteItems(app)
+                .Select(t => new { id = t.item.Id, content = t.item.Content, type = t.item.ContentType, source = t.source, savedAt = t.item.SavedAt.ToString("yyyy-MM-dd HH:mm:ss") })
+                .ToList();
+            return new { total = items.Count, items };
+        }
+
+        /// <summary>根据关键词搜索剪贴板收藏内容</summary>
+        public static object Tool_SearchClipboardFavorites(string keyword)
+        {
+            if (string.IsNullOrWhiteSpace(keyword))
+                return new { keyword = "", matchCount = 0, items = new List<object>() };
+
+            var app = (App)System.Windows.Application.Current;
+            var kw = keyword.Trim();
+            var items = CollectClipboardFavoriteItems(app)
+                .Where(t => t.item.Content.Contains(kw, StringComparison.OrdinalIgnoreCase))
+                .Select(t => new { id = t.item.Id, content = t.item.Content, type = t.item.ContentType, source = t.source, savedAt = t.item.SavedAt.ToString("yyyy-MM-dd HH:mm:ss") })
+                .ToList();
+            return new { keyword = kw, matchCount = items.Count, items };
+        }
+
+        /// <summary>收集所有窗口的剪贴板收藏条目（含分组子模块）</summary>
+        private static IEnumerable<(ClipboardSavedItem item, string source)> CollectClipboardFavoriteItems(App app)
+        {
+            foreach (var w in app.WindowConfigs.Windows)
+            {
+                foreach (var p in w.Panels)
+                {
+                    if (p.ClipboardItems != null)
+                        foreach (var ci in p.ClipboardItems)
+                            yield return (ci, $"panel:{p.Title ?? p.Type.ToString()}@{w.Name}");
+                    if (p.Type == PanelType.Group && p.ChildPanels != null)
+                        foreach (var c in p.ChildPanels.Where(c => c.ClipboardItems != null))
+                            foreach (var ci in c.ClipboardItems!)
+                                yield return (ci, $"panel:{c.Title ?? c.Type.ToString()}@{w.Name}");
+                }
+            }
+        }
+
+        /// <summary>获取剪贴板历史服务单例；未启动时在 UI 线程自动启动监控，确保 MCP/AI 始终可访问最近复制历史</summary>
+        private static ClipboardService EnsureClipboardService()
+        {
+            var svc = ClipboardService.Instance;
+            if (!svc.IsRunning)
+            {
+                try
+                {
+                    System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                    {
+                        if (svc.IsRunning) return;
+                        IntPtr hwnd = IntPtr.Zero;
+                        try
+                        {
+                            var mw = System.Windows.Application.Current?.MainWindow;
+                            if (mw != null)
+                                hwnd = new System.Windows.Interop.WindowInteropHelper(mw).EnsureHandle();
+                        }
+                        catch { }
+                        svc.Start(hwnd);
+                    });
+                }
+                catch { }
+            }
+            return svc;
         }
 
         public static object Tool_AddNote(string content, string? window = null, string? panel = null)

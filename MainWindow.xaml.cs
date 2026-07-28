@@ -93,10 +93,7 @@ namespace SideDesk
             // 设置主窗口引用
             sidebarPanel.SetMainWindow(this);
 
-            // 初始化 SidebarPanel（默认 WebView2 模式）
-            sidebarPanel.InitializeWebView();
-
-            // 如果已设置窗口配置，切换到当前活动窗口
+            // 如果已设置窗口配置，切换到当前活动窗口（WebView2 仅在切换到 WebView 窗口时才懒初始化）
             if (_dockState != null && _dockState.WindowIds.Count > 0)
             {
                 SwitchToWindowByIndex(_dockState.ActiveIndex);
@@ -332,6 +329,12 @@ namespace SideDesk
         {
             var window = new TitleLockPickerWindow { Owner = this };
             window.ShowDialog();
+        }
+
+        private void PluginEditor_Click(object sender, RoutedEventArgs e)
+        {
+            var window = new Windows.PluginEditorWindow();
+            window.Show();
         }
 
         private void CloseWindow_Click(object sender, RoutedEventArgs e)
@@ -582,6 +585,9 @@ namespace SideDesk
                 _configManager.Save();
                 RefreshWindowTabs();
                 WindowTab_Click(_dockState.WindowIds.Count - 1);
+
+                // 已登录且开启云同步时，调用专用接口只提交新建的窗口（避免全量同步副作用；未登录/未开启时方法内部会跳过）
+                _ = Services.CloudSyncService.Instance.CreateBarOnServerAsync(dialog.Result);
             }
         }
 

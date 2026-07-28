@@ -44,6 +44,9 @@ namespace SideDesk.Services
 
         private TeamService() { }
 
+        /// <summary>最近一次请求是否因认证失败（401/403），供 UI 层判断是否需要刷新登录状态</summary>
+        public bool LastAuthFailed { get; private set; } = false;
+
         private static string GetToken()
         {
             var app = (SideDesk.App)System.Windows.Application.Current;
@@ -62,10 +65,26 @@ namespace SideDesk.Services
         {
             string json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
             System.Diagnostics.Debug.WriteLine($"[Team] {(int)resp.StatusCode}: {json}");
-            if (!resp.IsSuccessStatusCode) return null;
+            if (!resp.IsSuccessStatusCode)
+            {
+                // HTTP 层失败（极少见，后端通常统一返回 200）
+                if ((int)resp.StatusCode == 401 || (int)resp.StatusCode == 403)
+                    Instance.LastAuthFailed = true;
+                return null;
+            }
 
             var root = JObject.Parse(json);
-            if (root["code"]?.Value<int>() != 200) return null;
+            int bizCode = root["code"]?.Value<int>() ?? 0;
+
+            // 业务层认证失败（后端将 401/403 包装为 HTTP 200 + code:401/403）
+            if (bizCode == 401 || bizCode == 403)
+            {
+                Instance.LastAuthFailed = true;
+                return null;
+            }
+            Instance.LastAuthFailed = false;
+
+            if (bizCode != 200) return null;
             return root["data"];
         }
 

@@ -111,6 +111,16 @@ namespace SideDesk.Services
 
             mcp.AddTool("delete_note", "删除便签（两步确认）：第一次调用返回匹配便签的预览，用户确认后用 confirm=true 再次调用才真正删除", (string target, string window, string confirm) => AIToolService.Tool_DeleteNote(target, window, confirm == "true"));
 
+            // ═══════════ 剪贴板历史 / 收藏 ═══════════
+
+            mcp.AddTool("list_clipboard_history", "获取最近的剪贴板历史记录（最多100条复制记录，含文本/图片/文件）", () => AIToolService.Tool_ListClipboardHistory());
+
+            mcp.AddTool("search_clipboard_history", "根据关键词搜索剪贴板历史记录（模糊匹配，含文件路径）", (string keyword) => AIToolService.Tool_SearchClipboardHistory(keyword));
+
+            mcp.AddTool("list_clipboard_favorites", "获取所有剪贴板收藏内容（用户手动保存的剪贴板信息）", () => AIToolService.Tool_ListClipboardFavorites());
+
+            mcp.AddTool("search_clipboard_favorites", "根据关键词搜索剪贴板收藏内容（模糊匹配）", (string keyword) => AIToolService.Tool_SearchClipboardFavorites(keyword));
+
             // ═══════════ Resources ═══════════
 
             mcp.AddResource("sidedesk://status", "SideDesk Status", "SideDesk 应用运行状态", () =>

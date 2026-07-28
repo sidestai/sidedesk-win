@@ -1,0 +1,13 @@
+{
+  "id": "system-cleaner",
+  "name": "系统清理",
+  "version": "1.0.0",
+  "description": "实时监控系统内存和 CPU 使用率，支持一键清理内存",
+  "author": "SideDesk",
+  "entry": "SystemCleaner.dll",
+  "pluginClass": "SystemCleaner.SystemCleanerPlugin",
+  "xaml": null,
+  "icon": "🧹",
+  "minHostVersion": "1.0.0",
+  "enabled": true
+}

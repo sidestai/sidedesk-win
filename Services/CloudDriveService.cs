@@ -93,8 +93,20 @@ namespace SideDesk.Services
         public static CloudDriveService Instance => _lazy.Value;
 
         private const string BaseUrl = "http://localhost:3007";
-        /// <summary>企业 ID</summary>
-        private const string CorpId = "123";
+        /// <summary>企业 ID（动态读取：选中团队时用团队 ID，否则用默认个人 ID）</summary>
+        private static string CorpId
+        {
+            get
+            {
+                try
+                {
+                    var app = (SideDesk.App)System.Windows.Application.Current;
+                    var selected = app?.AppSettings?.SelectedCorpId;
+                    return string.IsNullOrEmpty(selected) ? "123" : selected;
+                }
+                catch { return "123"; }
+            }
+        }
         /// <summary>Agent ID（可选）</summary>
         private const string AgentId = "";
 

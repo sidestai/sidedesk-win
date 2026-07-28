@@ -19,6 +19,8 @@ namespace SideDesk.Controls
         private string _originalContent = null;
         private Window _owner = null;
         private Action _onSaved = null;
+        private Action<StickyNote> _onCommitNew = null;  // 新便签提交回调：非 null 表示这是一条尚未入库的新便签
+        private bool _isNewNote = false;                  // 是否为尚未提交入库的新便签
 
         [ComImport, Guid("56FDF342-FD6D-11d0-958A-006097C9A090"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
         private interface ITaskbarList
@@ -37,10 +39,8 @@ namespace SideDesk.Controls
         /// </summary>
         /// <param name="onSaved">保存后的回调（用于刷新侧边栏列表）</param>
         public void Show(Window owner, double left, double top, double width, double height,
-            StickyNote note, Action onSaved = null)
+            StickyNote note, Action onSaved = null, Action<StickyNote> onCommitNew = null)
         {
-            _onSaved = onSaved;
-
             // 如果已打开且是同一条便签，仅激活
             if (IsOpen && _currentNote?.Id == note.Id)
             {
@@ -48,10 +48,13 @@ namespace SideDesk.Controls
                 return;
             }
 
-            // 如果打开的是不同便签，先保存旧的再关闭
+            // 如果打开的是不同便签，先保存旧的再关闭（仍使用旧便签的提交状态）
             if (IsOpen)
                 SaveAndClose();
 
+            _onSaved = onSaved;
+            _onCommitNew = onCommitNew;
+            _isNewNote = onCommitNew != null;
             _owner = owner;
             _currentNote = note;
             _originalContent = note.Content;
@@ -86,7 +89,7 @@ namespace SideDesk.Controls
                 else if (e.Key == Key.S &&
                     (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
                 {
-                    SaveIfChanged();
+                    ExplicitSave();
                     e.Handled = true;
                 }
             };
@@ -227,6 +230,17 @@ namespace SideDesk.Controls
                 CaretBrush = (Brush)Application.Current.FindResource("BrushTextMain"),
                 VerticalAlignment = VerticalAlignment.Stretch
             };
+            // 新便签：首次输入内容时正式提交入库（不输入则不产生空便签）
+            _contentBox.TextChanged += (s, e) =>
+            {
+                if (_isNewNote && _currentNote != null && !string.IsNullOrWhiteSpace(_contentBox.Text))
+                {
+                    _currentNote.Content = _contentBox.Text;
+                    CommitNewNote();
+                    _originalContent = _contentBox.Text;
+                    _onSaved?.Invoke();
+                }
+            };
             contentPanel.Children.Add(_contentBox);
 
             // 底部按钮栏
@@ -245,7 +259,7 @@ namespace SideDesk.Controls
             };
             saveBtn.Click += (s, e) =>
             {
-                SaveIfChanged();
+                ExplicitSave();
             };
             DockPanel.SetDock(saveBtn, Dock.Left);
             footerPanel.Children.Add(saveBtn);
@@ -277,6 +291,25 @@ namespace SideDesk.Controls
         {
             if (_currentNote == null || _contentBox == null) return;
             string newContent = _contentBox.Text;
+
+            // 新便签在关闭/切换场景：仅当内容非空才提交入库，空的新便签直接丢弃（避免留下空便签）
+            if (_isNewNote)
+            {
+                if (!string.IsNullOrWhiteSpace(newContent))
+                {
+                    _currentNote.Content = newContent;
+                    CommitNewNote();
+                    _originalContent = newContent;
+                    _onSaved?.Invoke();
+                }
+                else
+                {
+                    _isNewNote = false;
+                    _onCommitNew = null;
+                }
+                return;
+            }
+
             if (newContent == _originalContent) return;
 
             _currentNote.Content = newContent;
@@ -284,6 +317,32 @@ namespace SideDesk.Controls
             _originalContent = newContent;
 
             _onSaved?.Invoke();
+        }
+
+        /// <summary>显式保存（保存按钮 / Ctrl+S）：新便签即使内容为空也提交入库（用户明确意图）</summary>
+        private void ExplicitSave()
+        {
+            if (_currentNote == null || _contentBox == null) return;
+
+            if (_isNewNote)
+            {
+                _currentNote.Content = _contentBox.Text;
+                CommitNewNote();
+                _originalContent = _contentBox.Text;
+                _onSaved?.Invoke();
+                return;
+            }
+
+            SaveIfChanged();
+        }
+
+        /// <summary>将新便签正式提交入库（调用调用方的提交回调，如插入便签列表）</summary>
+        private void CommitNewNote()
+        {
+            _isNewNote = false;
+            var handler = _onCommitNew;
+            _onCommitNew = null;
+            handler?.Invoke(_currentNote);
         }
 
         private void SaveAndClose()

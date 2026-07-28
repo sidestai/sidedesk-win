@@ -22,6 +22,12 @@ namespace SideDesk
         {
             InitializeComponent();
             SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(this);
+
+            // 标题栏显示当前团队名（个人模式不显示）
+            var app = (App)Application.Current;
+            var corpName = app.AppSettings.SelectedCorpName;
+            corpNameText.Text = string.IsNullOrEmpty(corpName) ? "" : corpName;
+
             Loaded += async (_, _) => await LoadFilesAsync(updateCapacity: true);
         }
 

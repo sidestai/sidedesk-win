@@ -33,7 +33,15 @@ namespace SideDesk.Services
     public class ClipboardService
     {
         private const int WM_CLIPBOARDUPDATE = 0x031D;
-        private const int MAX_CLIPBOARD_ITEMS = 10;
+
+        /// <summary>历史记录保留上限（最近 100 条复制记录）</summary>
+        public const int MaxItems = 100;
+
+        private static readonly Lazy<ClipboardService> _instance = new(() => new ClipboardService());
+        /// <summary>全局单例：剪贴板历史面板与 MCP / AI 工具共享同一份历史数据</summary>
+        public static ClipboardService Instance => _instance.Value;
+
+        private ClipboardService() { }
         private static readonly IntPtr HWND_MESSAGE = new IntPtr(-3);
 
         private readonly List<ClipboardEntry> _clipboardHistory = new();
@@ -43,7 +51,10 @@ namespace SideDesk.Services
         private IntPtr _listenerHwnd;
         private bool _isRunning = false;
 
-        /// <summary>剪贴板收藏记录（只读访问）</summary>
+        /// <summary>剪贴板监控是否正在运行</summary>
+        public bool IsRunning => _isRunning;
+
+        /// <summary>剪贴板历史记录（只读访问，最新在前，最多 <see cref="MaxItems"/> 条）</summary>
         public IReadOnlyList<ClipboardEntry> ClipboardHistory => _clipboardHistory;
 
         /// <summary>从历史记录中移除指定条目，并触发刷新</summary>
@@ -197,7 +208,7 @@ namespace SideDesk.Services
                         FilePaths = filePaths
                     });
 
-                    if (_clipboardHistory.Count > MAX_CLIPBOARD_ITEMS)
+                    if (_clipboardHistory.Count > MaxItems)
                         _clipboardHistory.RemoveAt(_clipboardHistory.Count - 1);
 
                     ClipboardChanged?.Invoke();
@@ -273,8 +284,8 @@ namespace SideDesk.Services
                     FilePaths = null
                 });
 
-                // 保持最多10条
-                if (_clipboardHistory.Count > MAX_CLIPBOARD_ITEMS)
+                // 保持最多 MaxItems 条
+                if (_clipboardHistory.Count > MaxItems)
                     _clipboardHistory.RemoveAt(_clipboardHistory.Count - 1);
 
                 ClipboardChanged?.Invoke();

@@ -87,6 +87,9 @@ namespace SideDesk
         /// <summary>是否开启 MCP Server（HTTP/SSE，端口 19192）</summary>
         public bool EnableMcpServer { get; set; } = false;
 
+        /// <summary>数据模块连接方式："extension" = 浏览器插件（启动 WS 19191），"cdp" = 直连 CDP（需 Chrome 146+）</summary>
+        public string DataConnectionMode { get; set; } = "extension";
+
         // ========== 账户 / 云同步 ==========
 
         /// <summary>登录后保存的账户 token（用于云同步鉴权；非空即视为已登录）</summary>
@@ -101,11 +104,22 @@ namespace SideDesk
         /// <summary>是否开启云同步（开启后定时把本地全部配置备份到服务器）</summary>
         public bool EnableCloudSync { get; set; } = false;
 
+        // ========== 团队（Corp）切换 ==========
+
+        /// <summary>当前选中的团队 ID（null 或空表示"个人"，传给后台的 corpid）</summary>
+        public string? SelectedCorpId { get; set; }
+
+        /// <summary>当前选中的团队名称（用于 UI 显示）</summary>
+        public string? SelectedCorpName { get; set; }
+
         /// <summary>最近一次云同步成功的时间</summary>
         public DateTime? LastCloudSyncTime { get; set; }
 
         /// <summary>云同步 localId -> serverId 映射表（本地 Id 不变，上传/同步时查此表）</summary>
         public Dictionary<string, string> CloudIdMap { get; set; } = new();
+
+        /// <summary>用户手动禁用的插件 ID 集合（在设置-插件中关闭）</summary>
+        public HashSet<string> DisabledPlugins { get; set; } = new();
 
         /// <summary>每个物理显示器的停靠配置（下标 = 主显示器优先排序后的显示器序号）</summary>
         public List<MonitorDockSettings> Monitors { get; set; } = new();

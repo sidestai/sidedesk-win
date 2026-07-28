@@ -14,12 +14,21 @@
         <Border Grid.Column="0" Background="{DynamicResource BrushInputBG}" 
                 BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,1,0">
             <DockPanel>
-                <!-- 顶部标题 -->
-                <TextBlock DockPanel.Dock="Top" Text="设置" 
-                           FontSize="{DynamicResource FontSizeTitle}" 
-                           FontWeight="Bold"
-                           Foreground="{DynamicResource BrushTextMain}"
-                           Margin="20,20,20,20"/>
+                <!-- 顶部标题 + 团队切换 -->
+                <StackPanel DockPanel.Dock="Top" Margin="20,20,12,20">
+                    <DockPanel>
+                        <TextBlock Text="设置" 
+                                   FontSize="{DynamicResource FontSizeTitle}" 
+                                   FontWeight="Bold"
+                                   Foreground="{DynamicResource BrushTextMain}"
+                                   VerticalAlignment="Center"/>
+                        <ComboBox x:Name="corpSelectorCombo" DockPanel.Dock="Right"
+                                  Style="{StaticResource GlobalComboBoxStyle}"
+                                  Width="90" Margin="8,0,0,0"
+                                  VerticalAlignment="Center"
+                                  SelectionChanged="CorpSelector_Changed"/>
+                    </DockPanel>
+                </StackPanel>
                 
                 <!-- 导航列表 -->
                 <ListBox x:Name="navList" 
@@ -30,12 +39,14 @@
                          SelectionChanged="Nav_Changed"
                          Padding="8,0">
                     <ListBoxItem Content="常规" IsSelected="True"/>
+                    <ListBoxItem Content="小屏窗口"/>
                     <ListBoxItem Content="账户"/>
                     <ListBoxItem Content="团队"/>
                     <ListBoxItem Content="云空间"/>
                     <ListBoxItem Content="外观"/>
                     <ListBoxItem Content="程序管理"/>
                     <ListBoxItem Content="扩展管理"/>
+                    <ListBoxItem Content="插件"/>
                     <ListBoxItem Content="工具"/>
                     <ListBoxItem Content="模块"/>
                     <ListBoxItem Content="快捷键"/>
@@ -419,6 +430,21 @@
                     </StackPanel>
                 </StackPanel>
                 
+                <!-- 插件管理页面 -->
+                <StackPanel x:Name="pagePlugins" Visibility="Collapsed" Margin="0,0,0,20">
+                    <TextBlock Text="插件" 
+                               FontSize="{DynamicResource FontSizeSubtitle}" 
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource BrushTextMain}"
+                               Margin="0,0,0,8"/>
+                    <TextBlock Text="管理插件目录下的插件，关闭后不再加载" 
+                               Foreground="{DynamicResource BrushTextMuted}" 
+                               FontSize="{DynamicResource FontSizeSmall}" 
+                               Margin="0,0,0,16"/>
+                    
+                    <StackPanel x:Name="pluginListPanel"/>
+                </StackPanel>
+                
                 <!-- 工具页面 -->
                 <StackPanel x:Name="pageTools" Visibility="Collapsed" Margin="0,0,0,20">
                     <TextBlock Text="工具" 
@@ -494,6 +520,33 @@
                                FontSize="{DynamicResource FontSizeSmall}" 
                                Margin="0,0,0,20"/>
                     
+                    <!-- 数据模块连接方式 -->
+                    <Border Background="{DynamicResource BrushInputBG}" 
+                            BorderBrush="{DynamicResource BrushBorder}" 
+                            BorderThickness="1" CornerRadius="8" 
+                            Padding="16" Margin="0,0,0,12">
+                        <DockPanel>
+                            <CheckBox x:Name="dataConnectionModeSwitch" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                      Style="{StaticResource RaycastSwitchStyle}"
+                                      Checked="DataConnectionMode_Changed" 
+                                      Unchecked="DataConnectionMode_Changed"/>
+                            <StackPanel VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="浏览器插件模式" 
+                                               Foreground="{DynamicResource BrushTextMain}"
+                                               FontSize="{DynamicResource FontSizeNormal}"/>
+                                    <TextBlock Text=" ❓" FontSize="12" Cursor="Help" VerticalAlignment="Center"
+                                               ToolTip="开启：通过浏览器插件 + WebSocket(19191) 获取数据&#x0a;关闭：直连 CDP 模式（需要 Chrome 146 以上版本，&#x0a;通过 --remote-debugging-port 启动参数连接浏览器）"
+                                               Foreground="{DynamicResource BrushTextMuted}"/>
+                                </StackPanel>
+                                <TextBlock Text="开启后启动 WebSocket 端口(19191)与浏览器插件通信；关闭则使用 CDP 直连" 
+                                           Foreground="{DynamicResource BrushTextMuted}" 
+                                           FontSize="{DynamicResource FontSizeSmall}" 
+                                           Margin="0,4,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+                    
                     <!-- 数据模版 -->
                     <Grid Margin="0,0,0,8">
                         <Grid.ColumnDefinitions>
@@ -566,6 +619,26 @@
                             </StackPanel>
                         </DockPanel>
                     </Border>
+                </StackPanel>
+
+                <!-- 小屏窗口管理页面 -->
+                <StackPanel x:Name="pageWindows" Visibility="Collapsed">
+                    <TextBlock Text="小屏窗口" 
+                               FontSize="{DynamicResource FontSizeSubtitle}" 
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource BrushTextMain}"
+                               Margin="0,0,0,24"/>
+
+                    <!-- 操作按钮栏 -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <Button Content="📥 导入窗口" Style="{StaticResource GhostButtonStyle}" 
+                                Padding="12,6" Click="ImportWindow_Click" Margin="0,0,8,0"/>
+                        <Button Content="🔗 我的分享" Style="{StaticResource GhostButtonStyle}" 
+                                Padding="12,6" Click="MyShares_Click"/>
+                    </StackPanel>
+
+                    <!-- 窗口列表（代码动态生成） -->
+                    <StackPanel x:Name="windowListPanel"/>
                 </StackPanel>
 
                 <!-- 关于页面 -->

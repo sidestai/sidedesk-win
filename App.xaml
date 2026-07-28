@@ -268,9 +268,17 @@
                 <Setter Property="Margin" Value="2,0,2,2" />
                 <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
                 <Setter Property="VerticalScrollBarVisibility" Value="Hidden" />
+                <!-- 点击内容区时不获取焦点、不显示默认虚线焦点框 -->
+                <Setter Property="Focusable" Value="False" />
+                <Setter Property="FocusVisualStyle" Value="{x:Null}" />
                 <Style.Resources>
                     <Style TargetType="{x:Type ScrollBar}" BasedOn="{StaticResource MinScrollBar}" />
                 </Style.Resources>
+            </Style>
+
+            <!-- 全局隐式样式：为未显式指定样式的 ScrollViewer（代码动态创建的模块滚动区、弹出滚动列表等）移除默认虚线焦点框 -->
+            <Style TargetType="ScrollViewer">
+                <Setter Property="FocusVisualStyle" Value="{x:Null}" />
             </Style>
 
             <!-- ===== Window Button (from FlatStyle - blue themed) ===== -->

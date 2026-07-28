@@ -17,6 +17,7 @@ using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 using SideDesk.Models;
 using SideDesk.Services;
+using SideDesk.Services.Plugins;
 using SideDesk.Windows;
 using SideDesk.Framework;
 
@@ -170,6 +171,12 @@ namespace SideDesk.Controls
             dynamicContent.DragLeave += DynamicContent_DragLeave;
             dynamicContent.Drop += DynamicContent_Drop;
 
+            // 置顶区拖放（编辑模式下拖入/拖出置顶区、区内调序），只订阅一次
+            pinnedContent.AllowDrop = true;
+            pinnedContent.DragOver += PinnedContent_DragOver;
+            pinnedContent.DragLeave += PinnedContent_DragLeave;
+            pinnedContent.Drop += PinnedContent_Drop;
+
             // 今日待办到点提醒（每 30 秒检查一次）
             _todoReminderTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
             _todoReminderTimer.Tick += TodoReminderTick;
@@ -217,6 +224,7 @@ namespace SideDesk.Controls
         private void RenderPanels()
         {
             dynamicContent.Children.Clear();
+            pinnedContent.Children.Clear();
 
             // 重置快捷分组服务引用：避免切换到「无快捷分组面板」的窗口时，
             // 面板级拖放仍使用上一个窗口遗留的服务，导致文件被拖到其他窗口的分组。
@@ -225,11 +233,16 @@ namespace SideDesk.Controls
             _quickGroupUIService = null;
             _groupPanel = null;
 
-            if (_currentWindowConfig == null) return;
+            if (_currentWindowConfig == null)
+            {
+                pinnedArea.Visibility = Visibility.Collapsed;
+                return;
+            }
 
             // 确保每个「快捷方式」面板 1:1 绑定到唯一分组，避免多个面板渲染同一份数据
             EnsureQuickGroupBindings();
 
+            bool hasPinned = false;
             foreach (var panel in _currentWindowConfig.Panels)
             {
                 var widget = CreatePanelWidget(panel);
@@ -242,8 +255,34 @@ namespace SideDesk.Controls
                     // 编辑模式下，为每个顶层面板挂载拖拽排序手柄
                     if (_isEditMode && widget is FrameworkElement fe)
                         AttachPanelDragHandlers(fe, panel);
-                    dynamicContent.Children.Add(widget);
+
+                    // 置顶模块渲染到置顶区（压缩下方滚动区高度），其余渲染到滚动区
+                    if (panel.IsPinned)
+                    {
+                        pinnedContent.Children.Add(widget);
+                        hasPinned = true;
+                    }
+                    else
+                    {
+                        dynamicContent.Children.Add(widget);
+                    }
                 }
+            }
+
+            // 置顶区：有置顶模块时显示；编辑模式下始终显示，方便将模块拖入置顶
+            pinnedArea.Visibility = (hasPinned || _isEditMode) ? Visibility.Visible : Visibility.Collapsed;
+            // 编辑模式且置顶区为空时显示占位提示（无 Tag，不参与拖拽索引计算）
+            if (_isEditMode && !hasPinned)
+            {
+                pinnedContent.Children.Add(new Emoji.Wpf.TextBlock
+                {
+                    Text = "📌 拖拽模块到此处可置顶",
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 4, 0, 2),
+                    FontSize = 12,
+                    Opacity = 0.6
+                });
             }
 
             // 空窗口提示
@@ -375,6 +414,7 @@ namespace SideDesk.Controls
                 PanelType.Friend => BuildFriendWidget(item),
                 PanelType.ImageCarousel => BuildImageCarouselWidget(item),
                 PanelType.DailyActivity => BuildDailyActivityWidget(item),
+                PanelType.Plugin => BuildPluginWidget(item),
                 PanelType.Group => BuildGroupWidget(item),
                 _ => null
             };
@@ -428,6 +468,7 @@ namespace SideDesk.Controls
                     var m = new ContextMenu();
                     m.Items.Add(BuildSettingsMenuItem(item, defaultTitle));
                     m.Items.Add(BuildHideFrameMenuItem());
+                    m.Items.Add(BuildPinMenuItem(item));
                     var del = new MenuItem { Header = "删除模块" };
                     del.Click += (s, e) => RemovePanel(item);
                     m.Items.Add(del);
@@ -539,6 +580,7 @@ namespace SideDesk.Controls
             var moduleMenu = new ContextMenu();
             moduleMenu.Items.Add(BuildSettingsMenuItem(item, defaultTitle));
             moduleMenu.Items.Add(BuildHideFrameMenuItem());
+            moduleMenu.Items.Add(BuildPinMenuItem(item));
             var deleteModuleItem = new MenuItem { Header = "删除模块" };
             deleteModuleItem.Click += (s, e) => RemovePanel(item);
             moduleMenu.Items.Add(deleteModuleItem);
@@ -546,6 +588,24 @@ namespace SideDesk.Controls
 
             border.Uid = "wrapHandled";
             return border;
+        }
+
+        /// <summary>构建「置顶显示」可勾选菜单项：勾选后模块固定渲染在滚动区上方的置顶区，压缩滚动区高度</summary>
+        private MenuItem BuildPinMenuItem(PanelItem item)
+        {
+            var mi = new MenuItem
+            {
+                Header = "置顶显示",
+                IsCheckable = true,
+                IsChecked = item.IsPinned
+            };
+            mi.Click += (s, e) =>
+            {
+                item.IsPinned = mi.IsChecked;
+                _configManager?.Save();
+                RenderPanels();
+            };
+            return mi;
         }
 
         /// <summary>
@@ -860,6 +920,7 @@ namespace SideDesk.Controls
             var copyGroupMi = new MenuItem { Header = "复制分组" };
             copyGroupMi.Click += (s, e) => DuplicateGroup(item);
             groupDropMenu.Items.Add(copyGroupMi);
+            groupDropMenu.Items.Add(BuildPinMenuItem(item));
             groupDropMenu.Items.Add(new Separator());
             var delGroupMi = new MenuItem { Header = "删除分组" };
             delGroupMi.Click += (s, e) => ConfirmRemoveGroup(item);
@@ -896,6 +957,39 @@ namespace SideDesk.Controls
                 mi.Click += (s, ev) => AddModuleToGroup(item, panelType);
                 addSubMenu.Items.Add(mi);
             }
+            // 插件子菜单（分组内添加插件）
+            var groupPluginSub = new MenuItem { Header = "插件" };
+            groupPluginSub.SubmenuOpened += (s, ev) =>
+            {
+                groupPluginSub.Items.Clear();
+                var plugins = PluginLoaderService.Instance.Plugins;
+                if (plugins.Count == 0)
+                {
+                    groupPluginSub.Items.Add(new MenuItem { Header = "(无已加载插件)", IsEnabled = false });
+                    return;
+                }
+                foreach (var p in plugins)
+                {
+                    var pmi = new MenuItem { Header = $"{p.Config.Icon} {p.Config.Name}" };
+                    var pid = p.Config.Id;
+                    var capturedGroup = item;
+                    pmi.Click += (s2, ev2) =>
+                    {
+                        capturedGroup.ChildPanels ??= new List<PanelItem>();
+                        capturedGroup.ChildPanels.Add(new PanelItem
+                        {
+                            Type = PanelType.Plugin,
+                            PluginId = pid,
+                            Title = $"{p.Config.Icon} {p.Config.Name}"
+                        });
+                        _configManager?.Save();
+                        RenderPanels();
+                    };
+                    groupPluginSub.Items.Add(pmi);
+                }
+            };
+            addSubMenu.Items.Add(new Separator());
+            addSubMenu.Items.Add(groupPluginSub);
             // 添加数据块：子菜单展开时加载设置中的数据项（模版）
             var groupDataBlockSub = new MenuItem { Header = "添加数据块" };
             groupDataBlockSub.Items.Add(new MenuItem { Header = "(加载中...)", IsEnabled = false });
@@ -925,6 +1019,7 @@ namespace SideDesk.Controls
             var copyGroupCtxMi = new MenuItem { Header = "复制分组" };
             copyGroupCtxMi.Click += (s, ev) => DuplicateGroup(item);
             groupContextMenu.Items.Add(copyGroupCtxMi);
+            groupContextMenu.Items.Add(BuildPinMenuItem(item));
             var deleteGroupItem = new MenuItem { Header = "删除分组" };
             deleteGroupItem.Click += (s, ev) => ConfirmRemoveGroup(item);
             groupContextMenu.Items.Add(deleteGroupItem);
@@ -1322,11 +1417,9 @@ namespace SideDesk.Controls
             // 添加便签逻辑（用于 WrapWidget 的 onAddClick 回调）
             void AddNote()
             {
+                // 新建便签不立即写入存储：输入内容或显式保存时才正式提交记录（避免留下空便签）
                 var note = new StickyNote();
-                item.StickyNotes.Insert(0, note);
-                _configManager?.Save();
-                RefreshPanelStickyNotes(notePanel, item);
-                OpenPanelStickyNoteEditor(note, notePanel, item);
+                OpenPanelStickyNoteEditor(note, notePanel, item, n => item.StickyNotes.Insert(0, n));
             }
 
             return WrapWidget("📝 便签", container, item, _isEditMode ? null : AddNote);
@@ -2297,6 +2390,7 @@ namespace SideDesk.Controls
             dropMenu.Items.Add(hideFrameMi);
         
             // 删除模块
+            dropMenu.Items.Add(BuildPinMenuItem(item));
             var delModuleMi = new MenuItem { Header = "删除模块" };
             delModuleMi.Click += (s, e) => RemovePanel(item);
             dropMenu.Items.Add(delModuleMi);
@@ -2333,6 +2427,7 @@ namespace SideDesk.Controls
                 var bareHideMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
                 bareHideMi.Click += (s, e) => { item.HideFrame = bareHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
                 bareMenu.Items.Add(bareHideMi);
+                bareMenu.Items.Add(BuildPinMenuItem(item));
                 var bareDelMi = new MenuItem { Header = "删除模块" };
                 bareDelMi.Click += (s, e) => RemovePanel(item);
                 bareMenu.Items.Add(bareDelMi);
@@ -2363,6 +2458,7 @@ namespace SideDesk.Controls
             var hideFrameMi2 = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
             hideFrameMi2.Click += (s, e) => { item.HideFrame = hideFrameMi2.IsChecked; _configManager?.Save(); RenderPanels(); };
             moduleMenu.Items.Add(hideFrameMi2);
+            moduleMenu.Items.Add(BuildPinMenuItem(item));
             var delMi2 = new MenuItem { Header = "删除模块" };
             delMi2.Click += (s, e) => RemovePanel(item);
             moduleMenu.Items.Add(delMi2);
@@ -2559,6 +2655,7 @@ namespace SideDesk.Controls
             var hideFrameMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
             hideFrameMi.Click += (s, e) => { item.HideFrame = hideFrameMi.IsChecked; _configManager?.Save(); RenderPanels(); };
             dropMenu.Items.Add(hideFrameMi);
+            dropMenu.Items.Add(BuildPinMenuItem(item));
             var delModuleMi = new MenuItem { Header = "删除模块" };
             delModuleMi.Click += (s, e) => RemovePanel(item);
             dropMenu.Items.Add(delModuleMi);
@@ -2593,6 +2690,7 @@ namespace SideDesk.Controls
                 var bareHideMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
                 bareHideMi.Click += (s, e) => { item.HideFrame = bareHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
                 bareMenu.Items.Add(bareHideMi);
+                bareMenu.Items.Add(BuildPinMenuItem(item));
                 var bareDelMi = new MenuItem { Header = "删除模块" };
                 bareDelMi.Click += (s, e) => RemovePanel(item);
                 bareMenu.Items.Add(bareDelMi);
@@ -2623,6 +2721,7 @@ namespace SideDesk.Controls
             var mHideMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
             mHideMi.Click += (s, e) => { item.HideFrame = mHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
             moduleMenu.Items.Add(mHideMi);
+            moduleMenu.Items.Add(BuildPinMenuItem(item));
             var mDelMi = new MenuItem { Header = "删除模块" };
             mDelMi.Click += (s, e) => RemovePanel(item);
             moduleMenu.Items.Add(mDelMi);
@@ -2754,6 +2853,7 @@ namespace SideDesk.Controls
             var cardHideMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = panelItem.HideFrame };
             cardHideMi.Click += (s, e) => { panelItem.HideFrame = cardHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
             cardMenu.Items.Add(cardHideMi);
+            cardMenu.Items.Add(BuildPinMenuItem(panelItem));
             var cardDelModuleMi = new MenuItem { Header = "删除模块" };
             cardDelModuleMi.Click += (s, e) => RemovePanel(panelItem);
             cardMenu.Items.Add(cardDelModuleMi);
@@ -3641,6 +3741,7 @@ namespace SideDesk.Controls
             dropMenu.Items.Add(hideFrameMi);
 
             // 删除模块
+            dropMenu.Items.Add(BuildPinMenuItem(item));
             var delModuleMi = new MenuItem { Header = "删除模块" };
             delModuleMi.Click += (s, e) => RemovePanel(item);
             dropMenu.Items.Add(delModuleMi);
@@ -3677,6 +3778,7 @@ namespace SideDesk.Controls
                 var bareHideMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
                 bareHideMi.Click += (s, e) => { item.HideFrame = bareHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
                 bareMenu.Items.Add(bareHideMi);
+                bareMenu.Items.Add(BuildPinMenuItem(item));
                 var bareDelMi = new MenuItem { Header = "删除模块" };
                 bareDelMi.Click += (s, e) => RemovePanel(item);
                 bareMenu.Items.Add(bareDelMi);
@@ -3707,6 +3809,7 @@ namespace SideDesk.Controls
             var hideFrameMi2 = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
             hideFrameMi2.Click += (s, e) => { item.HideFrame = hideFrameMi2.IsChecked; _configManager?.Save(); RenderPanels(); };
             moduleMenu.Items.Add(hideFrameMi2);
+            moduleMenu.Items.Add(BuildPinMenuItem(item));
             var delMi2 = new MenuItem { Header = "删除模块" };
             delMi2.Click += (s, e) => RemovePanel(item);
             moduleMenu.Items.Add(delMi2);
@@ -4388,7 +4491,8 @@ namespace SideDesk.Controls
         {
             if (_clipboardService != null) return;
 
-            _clipboardService = new ClipboardService();
+            // 使用全局单例，与 MCP / AI 工具共享同一份剪贴板历史数据
+            _clipboardService = ClipboardService.Instance;
             _clipboardService.ClipboardChanged += () =>
             {
                 Dispatcher.BeginInvoke((Action)RefreshClipboardHistoryUI,
@@ -4687,6 +4791,45 @@ namespace SideDesk.Controls
         private void AddClipboardHistoryPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.ClipboardHistory);
         private void AddImageCarouselPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.ImageCarousel);
         private void AddDailyActivityPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.DailyActivity);
+
+        /// <summary>插件子菜单展开时动态填充已加载的插件列表</summary>
+        private void AddPluginMenu_SubmenuOpened(object sender, RoutedEventArgs e)
+        {
+            var menu = sender as MenuItem;
+            if (menu == null) return;
+            menu.Items.Clear();
+
+            var plugins = PluginLoaderService.Instance.Plugins;
+            if (plugins.Count == 0)
+            {
+                menu.Items.Add(new MenuItem { Header = "(无已加载插件)", IsEnabled = false });
+                return;
+            }
+
+            foreach (var p in plugins)
+            {
+                var mi = new MenuItem { Header = $"{p.Config.Icon} {p.Config.Name}" };
+                var pluginId = p.Config.Id;
+                mi.Click += (s, ev) => AddPluginPanel(pluginId);
+                menu.Items.Add(mi);
+            }
+        }
+
+        /// <summary>添加插件面板到当前窗口</summary>
+        private void AddPluginPanel(string pluginId)
+        {
+            if (_currentWindowConfig == null || _configManager == null) return;
+            var plugin = PluginLoaderService.Instance.GetPlugin(pluginId);
+            var newPanel = new PanelItem
+            {
+                Type = PanelType.Plugin,
+                PluginId = pluginId,
+                Title = plugin != null ? $"{plugin.Config.Icon} {plugin.Config.Name}" : null
+            };
+            AddPanelToGroupOrTop(newPanel);
+            _configManager.Save();
+            RenderPanels();
+        }
         private void AddDataDashboard_Click(object sender, RoutedEventArgs e)
         {
             if (_currentWindowConfig == null || _configManager == null) return;
@@ -4982,6 +5125,7 @@ namespace SideDesk.Controls
             hideFrameMi.Click += (s, e) => { item.HideFrame = hideFrameMi.IsChecked; _configManager?.Save(); RenderPanels(); };
             dropMenu.Items.Add(hideFrameMi);
 
+            dropMenu.Items.Add(BuildPinMenuItem(item));
             var delModuleMi = new MenuItem { Header = "删除模块" };
             delModuleMi.Click += (s, e) => RemovePanel(item);
             dropMenu.Items.Add(delModuleMi);
@@ -5015,6 +5159,7 @@ namespace SideDesk.Controls
                 var bareHideMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
                 bareHideMi.Click += (s, e) => { item.HideFrame = bareHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
                 bareMenu.Items.Add(bareHideMi);
+                bareMenu.Items.Add(BuildPinMenuItem(item));
                 var bareDelMi = new MenuItem { Header = "删除模块" };
                 bareDelMi.Click += (s, e) => RemovePanel(item);
                 bareMenu.Items.Add(bareDelMi);
@@ -5044,6 +5189,7 @@ namespace SideDesk.Controls
             var hideFrameMi2 = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
             hideFrameMi2.Click += (s, e) => { item.HideFrame = hideFrameMi2.IsChecked; _configManager?.Save(); RenderPanels(); };
             moduleMenu.Items.Add(hideFrameMi2);
+            moduleMenu.Items.Add(BuildPinMenuItem(item));
             var delMi2 = new MenuItem { Header = "删除模块" };
             delMi2.Click += (s, e) => RemovePanel(item);
             moduleMenu.Items.Add(delMi2);
@@ -5440,6 +5586,52 @@ namespace SideDesk.Controls
             actionMenu.Items.Add(refreshMi);
 
             return WrapWidget("每日活跃", root, item, actionMenu: actionMenu);
+        }
+
+        // ==================== 插件模块 ====================
+
+        /// <summary>构建外部插件模块 UI</summary>
+        private UIElement BuildPluginWidget(PanelItem item)
+        {
+            var pluginId = item.PluginId;
+            if (string.IsNullOrEmpty(pluginId))
+            {
+                return WrapWidget("🧩 插件", new TextBlock
+                {
+                    Text = "未指定插件",
+                    Opacity = 0.6,
+                    Margin = new Thickness(8)
+                }, item);
+            }
+
+            var loader = PluginLoaderService.Instance;
+            var plugin = loader.GetPlugin(pluginId);
+            if (plugin == null)
+            {
+                return WrapWidget("🧩 插件", new TextBlock
+                {
+                    Text = $"插件未加载: {pluginId}",
+                    Opacity = 0.6,
+                    Margin = new Thickness(8)
+                }, item);
+            }
+
+            var ui = loader.CreatePluginUI(pluginId);
+            if (ui == null)
+            {
+                return WrapWidget($"{plugin.Config.Icon} {plugin.Config.Name}", new TextBlock
+                {
+                    Text = "插件 UI 创建失败",
+                    Opacity = 0.6,
+                    Margin = new Thickness(8)
+                }, item);
+            }
+
+            var title = string.IsNullOrEmpty(item.Title)
+                ? $"{plugin.Config.Icon} {plugin.Config.Name}"
+                : item.Title;
+
+            return WrapWidget(title, ui, item);
         }
 
         #endregion
@@ -6056,7 +6248,7 @@ namespace SideDesk.Controls
             return row;
         }
 
-        private void OpenPanelStickyNoteEditor(StickyNote note, StackPanel container, PanelItem item)
+        private void OpenPanelStickyNoteEditor(StickyNote note, StackPanel container, PanelItem item, Action<StickyNote> onCommitNew = null)
         {
             if (_stickyNotePanelDialog == null)
                 _stickyNotePanelDialog = new StickyNotePanel();
@@ -6078,7 +6270,8 @@ namespace SideDesk.Controls
                         note.UpdatedAt = DateTime.Now;
                         _configManager?.Save();
                         RefreshPanelStickyNotes(container, item);
-                    });
+                    },
+                    onCommitNew);
             }
         }
 
@@ -6221,7 +6414,7 @@ namespace SideDesk.Controls
                     ready = false;
                     var data = new DataObject("PanelItemId", item.Id);
                     try { DragDrop.DoDragDrop(fe, data, DragDropEffects.Move); }
-                    finally { HidePanelDragIndicator(); }
+                    finally { HidePanelDragIndicator(); HidePinnedDragIndicator(); }
                 }
             };
             fe.PreviewMouseLeftButtonUp += (s, e) => { ready = false; };
@@ -6268,21 +6461,54 @@ namespace SideDesk.Controls
             e.Handled = true;
         }
 
+        // ===== 置顶区拖放（编辑模式）：拖入置顶区 = 自动置顶，拖回滚动区 = 取消置顶 =====
+
+        private void PinnedContent_DragOver(object sender, DragEventArgs e)
+        {
+            if (!_isEditMode || !e.Data.GetDataPresent("PanelItemId")) { HidePinnedDragIndicator(); return; }
+            e.Effects = DragDropEffects.Move;
+            e.Handled = true;
+            var (_, y) = GetPinnedDrop(e);
+            ShowPinnedDragIndicator(y);
+        }
+
+        private void PinnedContent_DragLeave(object sender, DragEventArgs e) => HidePinnedDragIndicator();
+
+        private void PinnedContent_Drop(object sender, DragEventArgs e)
+        {
+            HidePinnedDragIndicator();
+            if (!_isEditMode || !e.Data.GetDataPresent("PanelItemId")) return;
+            string draggedId = (string)e.Data.GetData("PanelItemId");
+            MovePanelToPinnedIndex(draggedId, GetPinnedDrop(e).index);
+            e.Handled = true;
+        }
+
         /// <summary>根据拖放的 Y 坐标计算目标插入位置（数据层面板索引）</summary>
         private int GetPanelDropIndex(DragEventArgs e) => GetPanelDrop(e).index;
 
-        /// <summary>根据 dynamicContent 内容坐标系中的位置计算顶层面板插入索引（以各模块中线为界）</summary>
+        /// <summary>根据 dynamicContent 内容坐标系中的位置计算顶层面板插入位置（以各模块中线为界）。
+        /// 返回 Panels 列表索引（供 AddPanelToGroupOrTop 使用）：存在置顶模块时，滚动区可视索引需换算为列表索引。</summary>
         private int GetPanelInsertIndexAt(Point pos)
         {
-            double y = 0; int panelIdx = 0;
+            double y = 0; int visIdx = 0;
             foreach (UIElement uie in dynamicContent.Children)
             {
                 if (uie is not FrameworkElement fe || fe.Tag is not string) continue;
                 double h = fe.ActualHeight + fe.Margin.Top + fe.Margin.Bottom;
-                if (pos.Y < y + h / 2) return panelIdx;
-                y += h; panelIdx++;
+                if (pos.Y < y + h / 2) return UnpinnedVisualIndexToPanelIndex(visIdx);
+                y += h; visIdx++;
             }
-            return panelIdx;
+            return UnpinnedVisualIndexToPanelIndex(visIdx);
+        }
+
+        /// <summary>滚动区可视索引（未置顶模块子集序号）→ Panels 列表索引</summary>
+        private int UnpinnedVisualIndexToPanelIndex(int visIdx)
+        {
+            if (_currentWindowConfig == null) return visIdx;
+            var panels = _currentWindowConfig.Panels;
+            var unpinned = panels.Where(p => !p.IsPinned).ToList();
+            if (visIdx >= unpinned.Count) return panels.Count;
+            return panels.IndexOf(unpinned[visIdx]);
         }
 
         /// <summary>同时返回插入索引与该边界在 dynamicContent 内容坐标系中的 Y 位置</summary>
@@ -6291,6 +6517,21 @@ namespace SideDesk.Controls
             Point pos = e.GetPosition(dynamicContent);
             double y = 0; int panelIdx = 0;
             foreach (UIElement uie in dynamicContent.Children)
+            {
+                if (uie is not FrameworkElement fe || fe.Tag is not string) continue;
+                double h = fe.ActualHeight + fe.Margin.Top + fe.Margin.Bottom;
+                if (pos.Y < y + h / 2) return (panelIdx, y);
+                y += h; panelIdx++;
+            }
+            return (panelIdx, y);
+        }
+
+        /// <summary>同时返回置顶区插入索引与该边界在 pinnedContent 内容坐标系中的 Y 位置</summary>
+        private (int index, double y) GetPinnedDrop(DragEventArgs e)
+        {
+            Point pos = e.GetPosition(pinnedContent);
+            double y = 0; int panelIdx = 0;
+            foreach (UIElement uie in pinnedContent.Children)
             {
                 if (uie is not FrameworkElement fe || fe.Tag is not string) continue;
                 double h = fe.ActualHeight + fe.Margin.Top + fe.Margin.Bottom;
@@ -6315,7 +6556,22 @@ namespace SideDesk.Controls
             panelDropIndicator.Visibility = Visibility.Collapsed;
         }
 
-        /// <summary>将指定面板移动到目标位置并持久化</summary>
+        /// <summary>将置顶区指示器定位到指定边界并显示（不改变布局）</summary>
+        private void ShowPinnedDragIndicator(double contentY)
+        {
+            double top = pinnedContent.Margin.Top + contentY - pinnedDropIndicator.Height / 2;
+            if (top < 0) top = 0;
+            pinnedDropIndicator.Margin = new Thickness(0, top, 0, 0);
+            pinnedDropIndicator.Visibility = Visibility.Visible;
+        }
+
+        private void HidePinnedDragIndicator()
+        {
+            pinnedDropIndicator.Visibility = Visibility.Collapsed;
+        }
+
+        /// <summary>将指定面板拖入滚动区目标位置并持久化（拖入滚动区即取消置顶）。
+        /// insertIdx 为滚动区可视索引（未置顶模块子集序号，含拖拽项自身）。</summary>
         private void MovePanelToIndex(string draggedId, int insertIdx)
         {
             if (_currentWindowConfig == null || _configManager == null) return;
@@ -6323,11 +6579,59 @@ namespace SideDesk.Controls
             int oldIdx = panels.FindIndex(p => p.Id == draggedId);
             if (oldIdx < 0) return;
             var item = panels[oldIdx];
+            bool wasPinned = item.IsPinned;
+
+            // 拖拽项本身未置顶时，可视索引中包含自身占位，需先扣除；置顶项拖入滚动区则无需扣除
+            if (!wasPinned)
+            {
+                int draggedVisIdx = panels.Where(p => !p.IsPinned).ToList().IndexOf(item);
+                if (draggedVisIdx >= 0 && insertIdx > draggedVisIdx) insertIdx--;
+            }
+
             panels.RemoveAt(oldIdx);
-            int newIdx = insertIdx > oldIdx ? insertIdx - 1 : insertIdx;
-            if (newIdx < 0) newIdx = 0;
-            if (newIdx > panels.Count) newIdx = panels.Count;
-            if (newIdx == oldIdx) { panels.Insert(oldIdx, item); return; }
+            item.IsPinned = false; // 拖入滚动区即取消置顶
+
+            var unpinned = panels.Where(p => !p.IsPinned).ToList();
+            if (insertIdx < 0) insertIdx = 0;
+            if (insertIdx > unpinned.Count) insertIdx = unpinned.Count;
+            // 可视索引 → 列表索引：末尾追加到列表尾部，否则定位到对应未置顶模块之前
+            int newIdx = insertIdx == unpinned.Count ? panels.Count : panels.IndexOf(unpinned[insertIdx]);
+            // 未置顶且位置未变时无需刷新；置顶项状态已变化，必须保存并重渲染
+            if (!wasPinned && newIdx == oldIdx) { panels.Insert(oldIdx, item); return; }
+            panels.Insert(newIdx, item);
+            _configManager.Save();
+            RenderPanels();
+        }
+
+        /// <summary>将指定面板拖入置顶区目标位置并持久化（拖入置顶区即自动置顶）。
+        /// insertIdx 为置顶区可视索引（置顶模块子集序号，含拖拽项自身）。</summary>
+        private void MovePanelToPinnedIndex(string draggedId, int insertIdx)
+        {
+            if (_currentWindowConfig == null || _configManager == null) return;
+            var panels = _currentWindowConfig.Panels;
+            int oldIdx = panels.FindIndex(p => p.Id == draggedId);
+            if (oldIdx < 0) return;
+            var item = panels[oldIdx];
+            bool wasPinned = item.IsPinned;
+
+            // 拖拽项本身已置顶时，可视索引中包含自身占位，需先扣除
+            if (wasPinned)
+            {
+                int draggedVisIdx = panels.Where(p => p.IsPinned).ToList().IndexOf(item);
+                if (draggedVisIdx >= 0 && insertIdx > draggedVisIdx) insertIdx--;
+            }
+
+            panels.RemoveAt(oldIdx);
+            item.IsPinned = true; // 拖入置顶区即自动置顶
+
+            var pinned = panels.Where(p => p.IsPinned).ToList();
+            if (insertIdx < 0) insertIdx = 0;
+            if (insertIdx > pinned.Count) insertIdx = pinned.Count;
+            // 置顶区末尾 → 插入到最后一个置顶模块之后（无置顶模块时为列表最前）；否则定位到对应置顶模块之前
+            int newIdx = insertIdx == pinned.Count
+                ? (pinned.Count > 0 ? panels.IndexOf(pinned[pinned.Count - 1]) + 1 : 0)
+                : panels.IndexOf(pinned[insertIdx]);
+            if (wasPinned && newIdx == oldIdx) { panels.Insert(oldIdx, item); return; }
             panels.Insert(newIdx, item);
             _configManager.Save();
             RenderPanels();
@@ -6933,6 +7237,7 @@ namespace SideDesk.Controls
                 var bareHideMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
                 bareHideMi.Click += (s, e) => { item.HideFrame = bareHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
                 bareMenu.Items.Add(bareHideMi);
+                bareMenu.Items.Add(BuildPinMenuItem(item));
                 var bareDelMi = new MenuItem { Header = "删除模块" };
                 bareDelMi.Click += (s, e) => RemovePanel(item);
                 bareMenu.Items.Add(bareDelMi);
@@ -7031,6 +7336,7 @@ namespace SideDesk.Controls
             dropMenu.Items.Add(hideFrameItem);
 
             // 删除模块
+            dropMenu.Items.Add(BuildPinMenuItem(item));
             var delModuleItem = new MenuItem { Header = "删除模块" };
             delModuleItem.Click += (s, e) => RemovePanel(item);
             dropMenu.Items.Add(delModuleItem);
@@ -7071,6 +7377,7 @@ namespace SideDesk.Controls
             var dashHideMi = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = item.HideFrame };
             dashHideMi.Click += (s, e) => { item.HideFrame = dashHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
             dashMenu.Items.Add(dashHideMi);
+            dashMenu.Items.Add(BuildPinMenuItem(item));
             var dashDelMi = new MenuItem { Header = "删除模块" };
             dashDelMi.Click += (s, e) => RemovePanel(item);
             dashMenu.Items.Add(dashDelMi);
@@ -7819,6 +8126,7 @@ namespace SideDesk.Controls
                 new { Key = "VoiceInput", Header = "🎤 语音输入", Action = (Action)ShowVoiceInputTool, IsCheckable = true },
                 new { Key = "WindowTeleport", Header = "🚀 窗口瞬移", Action = (Action)ShowWindowTeleportTool, IsCheckable = false },
                 new { Key = "TitleLock", Header = "🔒 窗口标题锁定器", Action = (Action)ShowTitleLockTool, IsCheckable = false },
+                new { Key = "PluginEditor", Header = "🧩 插件编辑器", Action = (Action)ShowPluginEditorTool, IsCheckable = false },
                 // 后续可以在这里添加更多工具
             };
 
@@ -7954,6 +8262,12 @@ namespace SideDesk.Controls
             if (_mainWindow != null)
                 window.Owner = _mainWindow;
             window.ShowDialog();
+        }
+
+        private void ShowPluginEditorTool()
+        {
+            var window = new SideDesk.Windows.PluginEditorWindow();
+            window.Show();
         }
 
         /// <summary>

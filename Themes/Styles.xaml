@@ -2,6 +2,12 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:emoji="clr-namespace:Emoji.Wpf;assembly=Emoji.Wpf">
 
+    <!-- ===== 主题化弹出菜单（ContextMenu / MenuItem / Separator）=====
+         隐式（无 Key）样式会自动应用到全应用所有弹出菜单
+         （含 XAML 声明与代码动态创建的），并随深色/浅色主题切换。
+         MenuItem / Separator 的子样式放在 ContextMenu 的 Style.Resources 中，
+         只影响菜单内部，不会波及其他控件。 -->
+
     <!-- 全局 MenuItem 样式：用 Emoji.Wpf.TextBlock 渲染 Header，使所有菜单项支持彩色 emoji -->
     <Style TargetType="MenuItem">
         <Setter Property="HeaderTemplate">
@@ -14,6 +20,156 @@
             </Setter.Value>
         </Setter>
     </Style>
+
+    <!-- 隐式 ContextMenu 样式：圆角、阴影、主题背景 -->
+    <Style TargetType="ContextMenu">
+        <Setter Property="Background" Value="{DynamicResource BrushContextMenuBG}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushContextMenuBorder}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="4" />
+        <Setter Property="MinWidth" Value="130" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ContextMenu">
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="8"
+                            Padding="{TemplateBinding Padding}"
+                            Margin="0,2,10,10"
+                            SnapsToDevicePixels="True">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="20" ShadowDepth="4" Opacity="0.35" Color="Black" />
+                        </Border.Effect>
+                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle" />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style.Resources>
+            <!-- 菜单分隔线（同时覆盖隐式查找与 Menu/ContextMenu 为 Separator 指定的 SeparatorStyleKey） -->
+            <ControlTemplate x:Key="MenuSeparatorTemplate" TargetType="Separator">
+                <Rectangle Height="1" Margin="10,4" Fill="{DynamicResource BrushSeparator}" SnapsToDevicePixels="True" />
+            </ControlTemplate>
+            <Style TargetType="Separator">
+                <Setter Property="Template" Value="{StaticResource MenuSeparatorTemplate}" />
+            </Style>
+            <Style x:Key="{x:Static MenuItem.SeparatorStyleKey}" TargetType="Separator">
+                <Setter Property="Template" Value="{StaticResource MenuSeparatorTemplate}" />
+            </Style>
+
+            <!-- 菜单项样式：悬停高亮、子菜单箭头+弹出、可勾选对号、禁用态、emoji 标题 -->
+            <Style TargetType="MenuItem">
+                <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="Padding" Value="12,7" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="HeaderTemplate">
+                    <Setter.Value>
+                        <DataTemplate>
+                            <emoji:TextBlock Text="{Binding}"
+                                             Foreground="{Binding Path=Foreground, RelativeSource={RelativeSource AncestorType=MenuItem}}"
+                                             VerticalAlignment="Center" />
+                        </DataTemplate>
+                    </Setter.Value>
+                </Setter>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="MenuItem">
+                            <Grid>
+                                <Border x:Name="Root"
+                                        Background="{TemplateBinding Background}"
+                                        CornerRadius="5"
+                                        Padding="{TemplateBinding Padding}"
+                                        Margin="2,1"
+                                        SnapsToDevicePixels="True">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="18" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <!-- 可勾选项的对号 -->
+                                        <Path x:Name="CheckMark"
+                                              Data="M0,4.5 L3.5,8 L9.5,0"
+                                              Stroke="{DynamicResource BrushAccent}"
+                                              StrokeThickness="1.6"
+                                              Stretch="None"
+                                              VerticalAlignment="Center"
+                                              Visibility="Collapsed" />
+                                        <ContentPresenter Grid.Column="1"
+                                                          ContentSource="Header"
+                                                          VerticalAlignment="Center"
+                                                          RecognizesAccessKey="True" />
+                                        <!-- 子菜单箭头 -->
+                                        <Path x:Name="Arrow"
+                                              Grid.Column="2"
+                                              Data="M0,0 L4,4 L0,8 Z"
+                                              Fill="{DynamicResource BrushTextSec}"
+                                              Stretch="None"
+                                              VerticalAlignment="Center"
+                                              Margin="10,0,0,0"
+                                              Visibility="Collapsed" />
+                                    </Grid>
+                                </Border>
+                                <!-- 子菜单弹出层 -->
+                                <Popup x:Name="PART_Popup"
+                                       AllowsTransparency="True"
+                                       Focusable="False"
+                                       Placement="Right"
+                                       HorizontalOffset="-6"
+                                       VerticalOffset="-9"
+                                       PopupAnimation="Fade"
+                                       IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}">
+                                    <Border Background="{DynamicResource BrushContextMenuBG}"
+                                            BorderBrush="{DynamicResource BrushContextMenuBorder}"
+                                            BorderThickness="1"
+                                            CornerRadius="8"
+                                            Padding="4"
+                                            Margin="0,2,10,10"
+                                            SnapsToDevicePixels="True">
+                                        <Border.Effect>
+                                            <DropShadowEffect BlurRadius="20" ShadowDepth="4" Opacity="0.35" Color="Black" />
+                                        </Border.Effect>
+                                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle" />
+                                    </Border>
+                                </Popup>
+                            </Grid>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushMenuItemHighlightBG}" />
+                                </Trigger>
+                                <Trigger Property="IsHighlighted" Value="True">
+                                    <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushMenuItemHighlightBG}" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushListViewItemSelectedBG}" />
+                                </Trigger>
+                                <Trigger Property="IsSubmenuOpen" Value="True">
+                                    <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushMenuItemHighlightBG}" />
+                                </Trigger>
+                                <Trigger Property="IsChecked" Value="True">
+                                    <Setter TargetName="CheckMark" Property="Visibility" Value="Visible" />
+                                </Trigger>
+                                <Trigger Property="Role" Value="SubmenuHeader">
+                                    <Setter TargetName="Arrow" Property="Visibility" Value="Visible" />
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Opacity" Value="0.45" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+        </Style.Resources>
+    </Style>
+
+    <!-- 兼容旧用法：显式设置 DarkContextMenuStyle / DarkMenuItemStyle 仍获得主题化菜单 -->
+    <Style x:Key="DarkContextMenuStyle" TargetType="ContextMenu" BasedOn="{StaticResource {x:Type ContextMenu}}" />
+    <Style x:Key="DarkMenuItemStyle" TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}" />
 
     <!-- Ghost Button (Transparent with hover effect) -->
     <Style x:Key="GhostButtonStyle" TargetType="Button">

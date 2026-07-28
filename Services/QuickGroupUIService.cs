@@ -910,6 +910,8 @@ namespace SideDesk.Services
                     return BuildFileAreaModule(panel, groupId);
                 case PanelType.DataDashboard:
                     return BuildDataDashboardModule(panel, groupId);
+                case PanelType.Plugin:
+                    return BuildPluginModule(panel, groupId);
                 default:
                     return null;
             }
@@ -1307,6 +1309,22 @@ namespace SideDesk.Services
         private FrameworkElement BuildSystemMonitorModule(PanelItem panel, string groupId) => WrapWithThemeBackground(new Emoji.Wpf.TextBlock { Text = "💻 系统信息", Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), Margin = new Thickness(8) });
         private FrameworkElement BuildFileAreaModule(PanelItem panel, string groupId) => WrapWithThemeBackground(new Emoji.Wpf.TextBlock { Text = "📁 文件区", Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), Margin = new Thickness(8) });
         private FrameworkElement BuildDataDashboardModule(PanelItem panel, string groupId) => WrapWithThemeBackground(new Emoji.Wpf.TextBlock { Text = "📈 数据看板", Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), Margin = new Thickness(8) });
+
+        private FrameworkElement BuildPluginModule(PanelItem panel, string groupId)
+        {
+            var pluginId = panel.PluginId;
+            if (string.IsNullOrEmpty(pluginId))
+                return WrapWithThemeBackground(new TextBlock { Text = "未指定插件", Opacity = 0.6, Margin = new Thickness(8) });
+
+            var loader = Plugins.PluginLoaderService.Instance;
+            var ui = loader.CreatePluginUI(pluginId);
+            if (ui == null)
+                return WrapWithThemeBackground(new TextBlock { Text = $"插件未加载: {pluginId}", Opacity = 0.6, Margin = new Thickness(8) });
+
+            // UIElement 包装为 FrameworkElement
+            var host = ui as FrameworkElement ?? new ContentControl { Content = ui };
+            return WrapWithThemeBackground(host);
+        }
 
         private FrameworkElement BuildItemButton(QuickItem item, string groupId, bool listMode = false, bool largeIcon = false, Action? afterClick = null)
         {

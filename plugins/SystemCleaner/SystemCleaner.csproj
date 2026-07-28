@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <OutputType>Library</OutputType>
+    <RootNamespace>SystemCleaner</RootNamespace>
+    <AssemblyName>SystemCleaner</AssemblyName>
+    <!-- 输出到主项目的 plugins 目录 -->
+    <OutputPath>..\..\bin\$(Configuration)\net10.0-windows10.0.19041\plugins\SystemCleaner\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 引用宿主项目以获取 ISideDeskPlugin 接口（仅编译时引用，不复制到输出） -->
+    <ProjectReference Include="..\..\SideDesk.csproj">
+      <Private>false</Private>
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </ProjectReference>
+  </ItemGroup>
+
+  <PropertyGroup>
+    <!-- 不复制传递依赖，插件运行时从宿主解析 -->
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Update="plugin.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

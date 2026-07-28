@@ -21,6 +21,9 @@ namespace SideDesk
         public ExtensionManager Extensions { get; private set; } = new();
         public Services.VirtualDesktopService? VirtualDesktop { get; private set; }
 
+        /// <summary>启动时 Token 验证失败的提示信息（非空表示登录已过期，设置页显示提示）</summary>
+        public static string? AccountTokenExpiredMessage { get; set; }
+
         public string ScreenAUrl { get; set; } = "https://www.baidu.com";
         public string ScreenBUrl { get; set; } = "https://www.bing.com";
 
@@ -74,6 +77,16 @@ namespace SideDesk
             // 加载扩展管理器
             Extensions = ExtensionManager.Load();
 
+            // 加载外部插件
+            try
+            {
+                Services.Plugins.PluginLoaderService.Instance.LoadAllPlugins(AppSettings.DisabledPlugins);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[PluginLoader] 启动加载异常: {ex.Message}");
+            }
+
             // 应用主题
             ApplyTheme(AppSettings.ThemeMode);
 
@@ -98,11 +111,12 @@ namespace SideDesk
             // 初始化系统托盘图标
             InitNotifyIcon();
 
-            // 启动本地 WebSocket 服务端 (127.0.0.1:19191)
+            // 启动本地 WebSocket 服务端 (127.0.0.1:19191)，仅在浏览器插件模式下启动
             try
             {
                 WebSocketServerService.Instance.MessageReceived += OnWebSocketMessageReceived;
-                WebSocketServerService.Instance.Start();
+                if (AppSettings.DataConnectionMode == "extension")
+                    WebSocketServerService.Instance.Start();
             }
             catch (Exception ex)
             {
@@ -156,6 +170,9 @@ namespace SideDesk
                 System.Diagnostics.Debug.WriteLine($"[CloudSync] 启动异常: {ex.Message}");
             }
 
+            // 启动时验证 Token 有效性（延迟 2 秒，避免阻塞启动流程）
+            _ = ValidateTokenOnStartupAsync();
+
             // 【已禁用】启动 5 秒后静默检查更新 - 2026-06-09 禁用，解决程序自动重启问题
             // 如果以后需要启用，请取消下面的注释
             //_ = Task.Delay(5000).ContinueWith(async _ =>
@@ -169,6 +186,71 @@ namespace SideDesk
             //        System.Diagnostics.Debug.WriteLine($"Silent update check error: {ex.Message}");
             //    }
             //}, TaskScheduler.Default);
+        }
+
+        /// <summary>启动时验证 Token 有效性：调用后端 /auth/userinfo 接口，若服务器明确拒绝则清除本地 Token 并记录提示。</summary>
+        private async Task ValidateTokenOnStartupAsync()
+        {
+            try
+            {
+                // 延迟 2 秒，避免与其他启动任务争抢网络
+                await Task.Delay(2000);
+
+                var token = AppSettings.AccountToken;
+                if (string.IsNullOrEmpty(token)) return;
+
+                using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+                using var req = new System.Net.Http.HttpRequestMessage(
+                    System.Net.Http.HttpMethod.Get, "http://localhost:3007/api/auth/userinfo");
+                req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
+
+                using var resp = await http.SendAsync(req);
+                string body = await resp.Content.ReadAsStringAsync();
+                System.Diagnostics.Debug.WriteLine($"[Auth] Token 验证响应 ({(int)resp.StatusCode}): {body}");
+
+                // 后端统一返回 HTTP 200，真实状态码在 JSON 的 code 字段中
+                int bizCode = 0;
+                try
+                {
+                    using var doc = System.Text.Json.JsonDocument.Parse(body);
+                    bizCode = doc.RootElement.TryGetProperty("code", out var c) ? c.GetInt32() : 0;
+                }
+                catch { /* JSON 解析失败时 bizCode 保持 0 */ }
+
+                if (bizCode == 200)
+                {
+                    // Token 有效，清除过期提示，更新最后登录时间
+                    AccountTokenExpiredMessage = null;
+                    AppSettings.AccountLoginTime = DateTime.Now;
+                    AppSettings.Save();
+                    return;
+                }
+
+                // code=401/403 表示 Token 明确无效（过期/被踢）
+                if (bizCode == 401 || bizCode == 403)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[Auth] Token 验证失败 (code={bizCode})，清除本地登录状态");
+                    AccountTokenExpiredMessage = "登录已过期，请重新登录";
+
+                    // 清除本地登录状态
+                    AppSettings.AccountToken = null;
+                    AppSettings.AccountName = null;
+                    AppSettings.AccountLoginTime = null;
+                    AppSettings.EnableCloudSync = false;
+                    AppSettings.SelectedCorpId = null;
+                    AppSettings.SelectedCorpName = null;
+                    AppSettings.Save();
+
+                    // 停止云同步
+                    try { Services.CloudSyncService.Instance.Stop(); } catch { }
+                }
+                // 其他 code（如 500、0=解析失败）不做处理，避免服务器临时故障时误清除
+            }
+            catch (Exception ex)
+            {
+                // 网络不可达等异常：不做任何处理（服务器可能未启动）
+                System.Diagnostics.Debug.WriteLine($"[Auth] 启动时 Token 验证跳过: {ex.Message}");
+            }
         }
 
         public string GetUrlForScreen(ScreenType screen)
@@ -390,6 +472,48 @@ namespace SideDesk
                         System.Diagnostics.Debug.WriteLine($"[App] register: uniqid={uniqId}, title={title}, url={url}, tabId={tabId}");
                         return; // register 不弹窗
                     }
+
+                    // ========== 插件编辑器桥接消息 ==========
+                    if (msgType == "pluginBuild")
+                    {
+                        HandlePluginBuild(clientId, obj);
+                        return;
+                    }
+                    if (msgType == "pluginList")
+                    {
+                        HandlePluginList(clientId);
+                        return;
+                    }
+                    if (msgType == "pluginLoad")
+                    {
+                        HandlePluginLoad(clientId, obj);
+                        return;
+                    }
+                    if (msgType == "pluginUnload")
+                    {
+                        HandlePluginUnload(clientId, obj);
+                        return;
+                    }
+                    if (msgType == "pluginTest")
+                    {
+                        HandlePluginTest(obj);
+                        return;
+                    }
+                    if (msgType == "pluginSave")
+                    {
+                        HandlePluginSave(clientId, obj);
+                        return;
+                    }
+                    if (msgType == "pluginDevList")
+                    {
+                        HandlePluginDevList(clientId);
+                        return;
+                    }
+                    if (msgType == "pluginDevLoad")
+                    {
+                        HandlePluginDevLoad(clientId, obj);
+                        return;
+                    }
                 }
                 catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[App] WS消息解析异常: {ex.Message}"); }
 
@@ -406,6 +530,316 @@ namespace SideDesk
             var payload = Newtonsoft.Json.JsonConvert.SerializeObject(new { type = "closeTab" });
             await Services.WebSocketServerService.Instance.SendAsync(clientId, payload);
         }
+
+        #region 插件编辑器桥接
+
+        /// <summary>处理插件编译请求</summary>
+        private async void HandlePluginBuild(Guid clientId, Newtonsoft.Json.Linq.JObject obj)
+        {
+            var request = new Services.Plugins.PluginBuildRequest
+            {
+                PluginId = (string?)obj["pluginId"] ?? "",
+                PluginName = (string?)obj["pluginName"] ?? "",
+                Code = (string?)obj["code"] ?? "",
+                Xaml = (string?)obj["xaml"],
+                ConfigJson = (string?)obj["configJson"],
+                PluginClass = (string?)obj["pluginClass"] ?? ""
+            };
+
+            // 编译前先卸载同名插件（必须在 UI 线程执行，因为要从可视化树移除插件 UI）
+            await Dispatcher.InvokeAsync(() =>
+            {
+                Services.Plugins.PluginLoaderService.Instance.UnloadPlugin(request.PluginId);
+            });
+            // Unload 是异步的，触发 GC 并等待文件锁释放
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            await Task.Delay(300);
+
+            // 在线程池执行编译，避免阻塞 UI
+            var result = await Task.Run(() => Services.Plugins.PluginBuildService.Instance.Build(request));
+
+            var response = Newtonsoft.Json.JsonConvert.SerializeObject(new
+            {
+                type = "pluginBuildResult",
+                success = result.Success,
+                outputPath = result.OutputPath,
+                errors = result.Errors,
+                warnings = result.Warnings
+            });
+            await Services.WebSocketServerService.Instance.SendAsync(clientId, response);
+
+            // 编译成功后从临时目录加载插件（供测试运行）
+            if (result.Success && result.OutputPath != null)
+            {
+                var pluginDir = System.IO.Path.GetDirectoryName(result.OutputPath)!;
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    Services.Plugins.PluginLoaderService.Instance.LoadDevPlugin(pluginDir);
+                });
+            }
+        }
+
+        /// <summary>处理插件列表请求</summary>
+        private async void HandlePluginList(Guid clientId)
+        {
+            var plugins = Services.Plugins.PluginLoaderService.Instance.Plugins
+                .Select(p => new
+                {
+                    id = p.Config.Id,
+                    name = p.Config.Name,
+                    version = p.Config.Version,
+                    description = p.Config.Description,
+                    author = p.Config.Author,
+                    icon = p.Config.Icon,
+                    enabled = p.Config.Enabled,
+                    directory = p.PluginDirectory
+                }).ToList();
+
+            var response = Newtonsoft.Json.JsonConvert.SerializeObject(new
+            {
+                type = "pluginListResult",
+                plugins
+            });
+            await Services.WebSocketServerService.Instance.SendAsync(clientId, response);
+        }
+
+        /// <summary>处理插件加载请求</summary>
+        private async void HandlePluginLoad(Guid clientId, Newtonsoft.Json.Linq.JObject obj)
+        {
+            var pluginId = (string?)obj["pluginId"] ?? "";
+            Services.Plugins.PluginLoaderService.Instance.LoadAllPlugins(AppSettings.DisabledPlugins);
+            var plugin = Services.Plugins.PluginLoaderService.Instance.GetPlugin(pluginId);
+
+            var response = Newtonsoft.Json.JsonConvert.SerializeObject(new
+            {
+                type = "pluginLoadResult",
+                success = plugin != null,
+                pluginId,
+                message = plugin != null ? $"插件 {plugin.Config.Name} 已加载" : $"插件 {pluginId} 加载失败"
+            });
+            await Services.WebSocketServerService.Instance.SendAsync(clientId, response);
+        }
+
+        /// <summary>处理插件卸载请求</summary>
+        private async void HandlePluginUnload(Guid clientId, Newtonsoft.Json.Linq.JObject obj)
+        {
+            var pluginId = (string?)obj["pluginId"] ?? "";
+            // 当前简化处理：重新加载所有插件（待实现单独卸载）
+            Services.Plugins.PluginLoaderService.Instance.LoadAllPlugins(AppSettings.DisabledPlugins);
+
+            var response = Newtonsoft.Json.JsonConvert.SerializeObject(new
+            {
+                type = "pluginUnloadResult",
+                success = true,
+                pluginId,
+                message = $"插件 {pluginId} 已卸载"
+            });
+            await Services.WebSocketServerService.Instance.SendAsync(clientId, response);
+        }
+
+        /// <summary>处理插件测试运行请求：弹出独立窗口展示插件 UI</summary>
+        private void HandlePluginTest(Newtonsoft.Json.Linq.JObject obj)
+        {
+            var pluginId = (string?)obj["pluginId"] ?? "";
+            if (string.IsNullOrEmpty(pluginId)) return;
+
+            Dispatcher.InvokeAsync(() =>
+            {
+                var loader = Services.Plugins.PluginLoaderService.Instance;
+
+                // 插件未加载时（如测试窗口关闭后 DLL 已卸载），自动从 plugin_dev 目录重新加载
+                if (loader.GetPlugin(pluginId) == null)
+                {
+                    var assemblyName = pluginId.Replace("-", "_").Replace(" ", "_");
+                    var devDir = System.IO.Path.Combine(
+                        Services.Plugins.PluginBuildService.Instance.PluginsOutputDir, assemblyName);
+                    if (System.IO.Directory.Exists(devDir))
+                        loader.LoadDevPlugin(devDir);
+                }
+
+                var window = new Windows.PluginTestWindow(pluginId);
+                window.Show();
+            });
+        }
+
+        /// <summary>处理插件保存请求：将临时目录中的插件打包为 zip 导出</summary>
+        private async void HandlePluginSave(Guid clientId, Newtonsoft.Json.Linq.JObject obj)
+        {
+            var pluginId = (string?)obj["pluginId"] ?? "";
+            if (string.IsNullOrEmpty(pluginId)) return;
+
+            var assemblyName = pluginId.Replace("-", "_").Replace(" ", "_");
+            var pluginDir = System.IO.Path.Combine(
+                Services.Plugins.PluginBuildService.Instance.PluginsOutputDir, assemblyName);
+
+            if (!System.IO.Directory.Exists(pluginDir))
+            {
+                var errResponse = Newtonsoft.Json.JsonConvert.SerializeObject(new
+                {
+                    type = "pluginSaveResult",
+                    success = false,
+                    message = "插件尚未编译，请先编译构建"
+                });
+                await Services.WebSocketServerService.Instance.SendAsync(clientId, errResponse);
+                return;
+            }
+
+            // 在 UI 线程弹出保存对话框
+            string? savePath = null;
+            await Dispatcher.InvokeAsync(() =>
+            {
+                var dlg = new Microsoft.Win32.SaveFileDialog
+                {
+                    Title = "保存插件",
+                    Filter = "插件包 (*.zip)|*.zip",
+                    FileName = $"{assemblyName}.zip",
+                    InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Desktop)
+                };
+                if (dlg.ShowDialog() == true)
+                    savePath = dlg.FileName;
+            });
+
+            if (string.IsNullOrEmpty(savePath))
+            {
+                var cancelResponse = Newtonsoft.Json.JsonConvert.SerializeObject(new
+                {
+                    type = "pluginSaveResult",
+                    success = false,
+                    message = "已取消保存"
+                });
+                await Services.WebSocketServerService.Instance.SendAsync(clientId, cancelResponse);
+                return;
+            }
+
+            try
+            {
+                // 打包为 zip
+                if (System.IO.File.Exists(savePath))
+                    System.IO.File.Delete(savePath);
+                System.IO.Compression.ZipFile.CreateFromDirectory(pluginDir, savePath);
+
+                var okResponse = Newtonsoft.Json.JsonConvert.SerializeObject(new
+                {
+                    type = "pluginSaveResult",
+                    success = true,
+                    message = $"插件已保存: {savePath}",
+                    path = savePath
+                });
+                await Services.WebSocketServerService.Instance.SendAsync(clientId, okResponse);
+            }
+            catch (Exception ex)
+            {
+                var failResponse = Newtonsoft.Json.JsonConvert.SerializeObject(new
+                {
+                    type = "pluginSaveResult",
+                    success = false,
+                    message = $"保存失败: {ex.Message}"
+                });
+                await Services.WebSocketServerService.Instance.SendAsync(clientId, failResponse);
+            }
+        }
+
+        /// <summary>处理开发项目列表请求：扫描 plugin_dev 目录</summary>
+        private async void HandlePluginDevList(Guid clientId)
+        {
+            var devDir = Services.Plugins.PluginBuildService.Instance.PluginsOutputDir;
+            var projects = new System.Collections.Generic.List<object>();
+
+            if (System.IO.Directory.Exists(devDir))
+            {
+                foreach (var dir in System.IO.Directory.GetDirectories(devDir))
+                {
+                    var configPath = System.IO.Path.Combine(dir, "plugin.json");
+                    if (!System.IO.File.Exists(configPath)) continue;
+                    try
+                    {
+                        var json = System.IO.File.ReadAllText(configPath);
+                        var cfg = Newtonsoft.Json.JsonConvert.DeserializeObject<Services.Plugins.PluginConfig>(json);
+                        if (cfg == null || string.IsNullOrEmpty(cfg.Id)) continue;
+                        projects.Add(new
+                        {
+                            id = cfg.Id,
+                            name = cfg.Name,
+                            version = cfg.Version,
+                            description = cfg.Description,
+                            icon = cfg.Icon,
+                            dirName = System.IO.Path.GetFileName(dir)
+                        });
+                    }
+                    catch { /* 忽略解析失败的项目 */ }
+                }
+            }
+
+            var response = Newtonsoft.Json.JsonConvert.SerializeObject(new
+            {
+                type = "pluginDevListResult",
+                projects
+            });
+            await Services.WebSocketServerService.Instance.SendAsync(clientId, response);
+        }
+
+        /// <summary>处理加载开发项目请求：读取源码文件返回给前端</summary>
+        private async void HandlePluginDevLoad(Guid clientId, Newtonsoft.Json.Linq.JObject obj)
+        {
+            var dirName = (string?)obj["dirName"] ?? "";
+            if (string.IsNullOrEmpty(dirName)) return;
+
+            var devDir = Services.Plugins.PluginBuildService.Instance.PluginsOutputDir;
+            var projectDir = System.IO.Path.Combine(devDir, dirName);
+
+            if (!System.IO.Directory.Exists(projectDir))
+            {
+                var errResp = Newtonsoft.Json.JsonConvert.SerializeObject(new
+                {
+                    type = "pluginDevLoadResult",
+                    success = false,
+                    message = "项目目录不存在"
+                });
+                await Services.WebSocketServerService.Instance.SendAsync(clientId, errResp);
+                return;
+            }
+
+            // 读取 plugin.json
+            string? configJson = null;
+            var configPath = System.IO.Path.Combine(projectDir, "plugin.json");
+            if (System.IO.File.Exists(configPath))
+                configJson = System.IO.File.ReadAllText(configPath);
+
+            // 读取 C# 源码（{dirName}.cs）
+            string? code = null;
+            var csPath = System.IO.Path.Combine(projectDir, $"{dirName}.cs");
+            if (System.IO.File.Exists(csPath))
+                code = System.IO.File.ReadAllText(csPath);
+
+            // 读取 XAML（从 config 解析文件名，默认 ui.xaml）
+            string? xaml = null;
+            var xamlFileName = "ui.xaml";
+            if (configJson != null)
+            {
+                try
+                {
+                    var cfg = Newtonsoft.Json.JsonConvert.DeserializeObject<Services.Plugins.PluginConfig>(configJson);
+                    if (!string.IsNullOrEmpty(cfg?.Xaml)) xamlFileName = cfg.Xaml;
+                }
+                catch { }
+            }
+            var xamlPath = System.IO.Path.Combine(projectDir, xamlFileName);
+            if (System.IO.File.Exists(xamlPath))
+                xaml = System.IO.File.ReadAllText(xamlPath);
+
+            var response = Newtonsoft.Json.JsonConvert.SerializeObject(new
+            {
+                type = "pluginDevLoadResult",
+                success = true,
+                configJson,
+                code,
+                xaml
+            });
+            await Services.WebSocketServerService.Instance.SendAsync(clientId, response);
+        }
+
+        #endregion
 
         /// <summary>
         /// 全局热键触发：切换当前活动 MainWindow 的窗口标签到指定序号。

@@ -24,6 +24,13 @@
                 <TextBox x:Name="nameBox" Text="新窗口" Style="{StaticResource GlobalTextBoxStyle}"/>
             </DockPanel>
 
+            <!-- 归属选择 -->
+            <DockPanel Margin="0,0,0,12">
+                <TextBlock DockPanel.Dock="Left" Text="归属：" Width="60" VerticalAlignment="Center"
+                           FontSize="{DynamicResource FontSizeNormal}" Foreground="{DynamicResource BrushTextMain}"/>
+                <ComboBox x:Name="ownerCombo" Style="{StaticResource GlobalComboBoxStyle}" SelectedIndex="0"/>
+            </DockPanel>
+
             <!-- 模式选择 -->
             <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                 <TextBlock Text="模式：" Width="60" VerticalAlignment="Center"

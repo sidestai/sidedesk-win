@@ -14,6 +14,24 @@ public partial class AddWindowDialog : Window
         SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(this);
         // 初始同步一次：此时控件已构造，不依赖 XAML 默认可见性
         UpdateUrlPanel();
+        _ = LoadOwnerOptionsAsync();
+    }
+
+    /// <summary>加载归属选项：个人 + 团队列表</summary>
+    private async System.Threading.Tasks.Task LoadOwnerOptionsAsync()
+    {
+        ownerCombo.Items.Clear();
+        ownerCombo.Items.Add(new ComboBoxItem { Content = "个人", Tag = null });
+        ownerCombo.SelectedIndex = 0;
+
+        var app = (App)Application.Current;
+        if (string.IsNullOrEmpty(app.AppSettings.AccountToken)) return; // 未登录只有个人
+
+        var teams = await Services.TeamService.Instance.ListTeamsAsync();
+        if (teams == null || ownerCombo == null) return;
+
+        foreach (var team in teams)
+            ownerCombo.Items.Add(new ComboBoxItem { Content = team.Name, Tag = team.Id });
     }
 
     private void ModeChanged(object sender, RoutedEventArgs e)
@@ -41,12 +59,18 @@ public partial class AddWindowDialog : Window
             return;
         }
 
+        // 归属：个人 / 团队
+        string? corpId = (ownerCombo.SelectedItem as ComboBoxItem)?.Tag as string;
+        bool isTeam = !string.IsNullOrEmpty(corpId);
+
         Result = new WindowConfig
         {
             Name = string.IsNullOrWhiteSpace(nameBox.Text) ? "新窗口" : nameBox.Text.Trim(),
             Type = isWebView ? WindowType.WebView : WindowType.Native,
             Url = isWebView ? url : null,
-            IsAppMode = false
+            IsAppMode = false,
+            OwnerType = isTeam ? "team" : "personal",
+            CorpId = corpId
         };
         DialogResult = true;
         Close();

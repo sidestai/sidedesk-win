@@ -23,7 +23,8 @@ public enum PanelType
     DigitalEmployee, // 数字员工
     Friend,          // 好友
     ImageCarousel,   // 图片轮播
-    DailyActivity    // 每日活跃
+    DailyActivity,   // 每日活跃
+    Plugin           // 外部插件
 }
 
 public class PanelItem
@@ -45,6 +46,7 @@ public class PanelItem
     public List<TodoItem>? TodoItems { get; set; } // 今日待办数据（per-panel）
     public bool SkipWrapper { get; set; } = false;     // 是否跳过外层容器包装
     public bool HideFrame { get; set; } = false;       // 单个模块独立隐藏外框（边框/标题/背景/内边距）
+    public bool IsPinned { get; set; } = false;        // 是否置顶（渲染在滚动区上方的置顶区，压缩滚动区高度）
     public int DashboardColumns { get; set; } = 1;     // 数据看板每排列数（1~4）
     public List<SignalLightItem>? SignalLights { get; set; } // 信号灯数据
     public bool SignalLightVertical { get; set; } = false; // 信号灯纵向排列
@@ -68,6 +70,7 @@ public class PanelItem
     public string CarouselStretch { get; set; } = "Uniform";     // 图片轮播：填充方式 Uniform/UniformToFill/Fill
     public double CarouselHeight { get; set; } = 140;            // 图片轮播：显示区高度（px）
     public bool CarouselAutoPlay { get; set; } = true;           // 图片轮播：自动播放
+    public string? PluginId { get; set; }                        // 插件模块：插件 ID（对应 plugin.json 中的 id）
 }
 
 public class FileAreaItem
@@ -167,6 +170,14 @@ public class WindowConfig
     public List<string> EnabledTools { get; set; } = new();
     /// <summary>是否显示在顶部标签列表中（小屏管理中勾选才显示）</summary>
     public bool ShowInTabs { get; set; } = true;
+    /// <summary>归属类型: personal=个人, team=团队</summary>
+    public string OwnerType { get; set; } = "personal";
+    /// <summary>所属团队 ID（OwnerType=team 时有值）</summary>
+    public string? CorpId { get; set; }
+    /// <summary>分享导入模式: null=本地创建, copy=复制, reference=引用</summary>
+    public string? ShareMode { get; set; }
+    /// <summary>引用模式时指向源窗口的 serverId</summary>
+    public string? SourceBarId { get; set; }
 }
 
 public class DockWindowState

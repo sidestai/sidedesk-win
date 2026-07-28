@@ -37,6 +37,8 @@ namespace SideDesk.Services
         private const string SyncEndpoint = "http://localhost:3007/api/sidebar/sync";
         // 删除接口：软删除 bar/item（JSON Body 传 type + serverId）
         private const string DeleteEndpoint = "http://localhost:3007/api/sidebar/sync/delete";
+        // 新增单个窗口接口：只提交新建的 bar（含 items），不触碰其他窗口
+        private const string CreateBarEndpoint = "http://localhost:3007/api/sidebar/sync/bar";
 
         private const int IntervalMinutes = 30;
 
@@ -161,6 +163,48 @@ namespace SideDesk.Services
         /// <summary>通知服务器删除 item（Group 类型连带软删除其子 items）。</summary>
         public Task<bool> DeleteItemOnServerAsync(string serverId) => DeleteOnServerAsync("item", serverId);
 
+        /// <summary>
+        /// 将单个新建窗口（含其模块）提交到服务器专用接口，不做全量同步。
+        /// 仅在已登录且开启云同步时发起；成功后回写 localId -> serverId 映射。返回是否成功。
+        /// </summary>
+        public async Task<bool> CreateBarOnServerAsync(WindowConfig win)
+        {
+            var app = (SideDesk.App)System.Windows.Application.Current;
+            var settings = app.AppSettings;
+            if (!settings.EnableCloudSync || string.IsNullOrEmpty(settings.AccountToken)) return false;
+
+            try
+            {
+                var payload = new
+                {
+                    app = "SideDesk",
+                    machine = Environment.MachineName,
+                    corpId = settings.SelectedCorpId,
+                    bar = BuildSyncBar(win)
+                };
+                string json = NJson.JsonConvert.SerializeObject(payload, NJson.Formatting.None, _syncPayloadSettings);
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] 新增窗口请求 POST {CreateBarEndpoint}: {json}");
+
+                using var content = new StringContent(json, Encoding.UTF8, "application/json");
+                using var req = new HttpRequestMessage(HttpMethod.Post, CreateBarEndpoint) { Content = content };
+                req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + settings.AccountToken);
+
+                using var resp = await _http.SendAsync(req).ConfigureAwait(false);
+                string responseJson = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] 新增窗口响应: {responseJson}");
+                if (!resp.IsSuccessStatusCode) return false;
+
+                // 响应格式与全量同步一致，复用映射回写逻辑
+                ApplyServerIdMappings(responseJson, settings, app.WindowConfigs);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] 新增窗口提交失败: {ex.Message}");
+                return false;
+            }
+        }
+
         #region 云同步结构化载荷
 
         /// <summary>云同步上传的 bar（窗口）DTO</summary>
@@ -191,7 +235,7 @@ namespace SideDesk.Services
         };
 
         /// <summary>
-        /// 构建云同步结构化上传载荷：{ app, machine, syncedAt, bars[] }。
+        /// 构建云同步结构化上传载荷：{ app, machine, corpId, syncedAt, bars[] }。
         /// bar 含 localId/name/bgColor/items；item 含 localId/type/title/bgColor/data，
         /// group 类型的 item 额外带一层子项（items）。
         /// </summary>
@@ -199,23 +243,37 @@ namespace SideDesk.Services
         {
             var bars = new List<SyncBar>();
             foreach (var win in mgr.Windows)
+                bars.Add(BuildSyncBar(win));
+
+            // 当前选中的团队 ID（个人模式为 null，由后端自行处理）
+            string? corpId = null;
+            try
             {
-                var bar = new SyncBar { LocalId = win.Id, ServerId = win.ServerId, Name = win.Name, BGColor = win.BGColor };
-                foreach (var p in win.Panels)
-                    bar.Items.Add(BuildSyncItem(p, isInsideGroup: false));
-                bars.Add(bar);
+                var app = (SideDesk.App)System.Windows.Application.Current;
+                corpId = app?.AppSettings?.SelectedCorpId;
             }
+            catch { }
 
             var payload = new
             {
                 app = "SideDesk",
                 machine = Environment.MachineName,
+                corpId,
                 syncedAt = DateTime.Now.ToString("o"),
                 bars
             };
             return NJson.JsonConvert.SerializeObject(payload,
                 indented ? NJson.Formatting.Indented : NJson.Formatting.None,
                 _syncPayloadSettings);
+        }
+
+        /// <summary>将单个窗口配置转为 SyncBar（含其全部模块）。</summary>
+        private static SyncBar BuildSyncBar(WindowConfig win)
+        {
+            var bar = new SyncBar { LocalId = win.Id, ServerId = win.ServerId, Name = win.Name, BGColor = win.BGColor };
+            foreach (var p in win.Panels)
+                bar.Items.Add(BuildSyncItem(p, isInsideGroup: false));
+            return bar;
         }
 
         /// <summary>将单个模块转为 SyncItem；group 的子项仅展开一层（group 内不再嵌套 group）。</summary>
