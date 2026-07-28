@@ -1,3 +1,4 @@
 <Solution>
+  <Project Path="plugins/SystemCleaner/SystemCleaner.csproj" Id="eae0c89c-84f2-4a19-8164-1f4ab79fcd4e" />
   <Project Path="SideDesk.csproj" />
 </Solution>

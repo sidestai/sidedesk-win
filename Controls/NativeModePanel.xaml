@@ -32,6 +32,10 @@
                 <MenuItem Header="每日活跃" Click="AddDailyActivityPanel_Click"/>
                 <MenuItem Header="数字员工" Click="AddDigitalEmployeePanel_Click"/>
                 <MenuItem Header="好友" Click="AddFriendPanel_Click"/>
+                <Separator/>
+                <MenuItem x:Name="addPluginMenu" Header="插件" SubmenuOpened="AddPluginMenu_SubmenuOpened">
+                    <MenuItem Header="(加载中...)" IsEnabled="False"/>
+                </MenuItem>
             </MenuItem>
             <Separator />
             <MenuItem Header="布局" x:Name="LayoutMenu">
@@ -73,6 +77,20 @@
             </StackPanel>
         </Border>
         
+        <!-- 置顶区：置顶模块固定显示在滚动区上方，压缩下方 ScrollViewer 的可用高度 -->
+        <Border x:Name="pinnedArea" DockPanel.Dock="Top" Visibility="Collapsed"
+                BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1"
+                Margin="2,2,2,0" Padding="0,2,0,4">
+            <Grid>
+                <StackPanel x:Name="pinnedContent" Margin="0,2,0,0"/>
+                <!-- 置顶区拖拽调序指示器（常驻叠加层） -->
+                <Border x:Name="pinnedDropIndicator" Height="3" Background="DodgerBlue"
+                        VerticalAlignment="Top" HorizontalAlignment="Stretch"
+                        CornerRadius="1.5" IsHitTestVisible="False"
+                        Visibility="Collapsed"/>
+            </Grid>
+        </Border>
+
         <!-- 动态内容区 -->
         <ScrollViewer VerticalScrollBarVisibility="Hidden" Style="{StaticResource ContentView}">
             <Grid>
