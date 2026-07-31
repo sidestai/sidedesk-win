@@ -898,6 +898,8 @@ namespace SideDesk.Services
                     return BuildStickyNotesModule(panel, groupId);
                 case PanelType.Timer:
                     return BuildTimerModule(panel, groupId);
+                case PanelType.Countdown:
+                    return BuildCountdownModule(panel, groupId);
                 case PanelType.Clipboard:
                     return BuildClipboardModule(panel, groupId);
                 case PanelType.UsageStats:
@@ -1027,6 +1029,40 @@ namespace SideDesk.Services
             foreach (var timer in panel.TimerItems)
             {
                 container.Children.Add(BuildTimerCard(timer, panel));
+            }
+
+            return WrapWithThemeBackground(container);
+        }
+
+        private FrameworkElement BuildCountdownModule(PanelItem panel, string groupId)
+        {
+            panel.CountdownItems ??= new List<CountdownItem>();
+
+            var container = new StackPanel();
+
+            if (panel.CountdownItems.Count == 0)
+            {
+                container.Children.Add(new Emoji.Wpf.TextBlock
+                {
+                    Text = "暂无倒计时（在主面板中使用完整功能）",
+                    Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
+                    FontSize = 11,
+                    Opacity = 0.7,
+                    Margin = new Thickness(4)
+                });
+            }
+
+            foreach (var cd in panel.CountdownItems)
+            {
+                var remaining = cd.GetRemaining();
+                var status = cd.IsFinished ? "✔ 已到期" : cd.IsRunning ? "▶ 进行中" : "⏸ 待开始";
+                container.Children.Add(new Emoji.Wpf.TextBlock
+                {
+                    Text = $"{cd.Name}  {(int)remaining.TotalHours:D2}:{remaining.Minutes:D2}:{remaining.Seconds:D2}  {status}",
+                    Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
+                    FontSize = 12,
+                    Margin = new Thickness(4, 2, 4, 2)
+                });
             }
 
             return WrapWithThemeBackground(container);

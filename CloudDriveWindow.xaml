@@ -29,7 +29,7 @@
                     FontSize="11" Foreground="{DynamicResource BrushTextMuted}"
                     VerticalAlignment="Center" Margin="0,0,6,0"/>
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <emoji:TextBlock Text="☁️ 元桌云盘"
+                <emoji:TextBlock x:Name="titleText" Text="☁️ 元桌云盘"
                            FontSize="{DynamicResource FontSizeSubtitle}"
                            FontWeight="Bold"
                            Foreground="{DynamicResource BrushTextMain}"

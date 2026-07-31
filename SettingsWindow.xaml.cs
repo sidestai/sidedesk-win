@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Microsoft.Win32;
 using SideDesk.Models;
 using SideDesk.Services;
@@ -67,6 +68,9 @@ namespace SideDesk
             // 隐藏模块外框时同时隐藏标题
             hideModuleTitleSwitch.IsChecked = Framework.AppSettings.Instance.HideModuleTitle;
 
+            // 显示通知条
+            showNotificationStripSwitch.IsChecked = _app.AppSettings.ShowNotificationStrip;
+
             // 虚拟桌面开关
             perVirtualDesktopSwitch.IsChecked = _app.AppSettings.EnablePerVirtualDesktop;
             if (_app.AppSettings.EnablePerVirtualDesktop && _app.VirtualDesktop != null && _app.VirtualDesktop.IsAvailable)
@@ -93,6 +97,7 @@ namespace SideDesk
             titleLockSwitch.IsChecked = _app.AppSettings.EnableTitleLock;
             windowSwitchHotkeySwitch.IsChecked = _app.AppSettings.EnableWindowSwitchHotkey;
             mcpServerSwitch.IsChecked = _app.AppSettings.EnableMcpServer;
+            usageStatsSwitch.IsChecked = Framework.AppSettings.Instance.ShowUsageStats;
 
             // 账户 / 云同步
             RefreshAccountUI();
@@ -106,13 +111,14 @@ namespace SideDesk
         private void Nav_Changed(object sender, SelectionChangedEventArgs e)
         {
             if (_isLoading) return;
-            if (pageGeneral == null || pageAccount == null || pageCloudSpaces == null || pageTeams == null || pageAppearance == null || pageProgramManager == null || pageExtensions == null || pagePlugins == null || pageTools == null || pageModules == null || pageWindows == null || pageShortcuts == null || pageAbout == null) return;
+            if (pageGeneral == null || pageAccount == null || pageCloudSpaces == null || pageTeams == null || pageFriends == null || pageAppearance == null || pageProgramManager == null || pageExtensions == null || pagePlugins == null || pageTools == null || pageModules == null || pageWindows == null || pageShortcuts == null || pageAbout == null) return;
                     
             // 隐藏所有页面
             pageGeneral.Visibility = Visibility.Collapsed;
             pageAccount.Visibility = Visibility.Collapsed;
             pageCloudSpaces.Visibility = Visibility.Collapsed;
             pageTeams.Visibility = Visibility.Collapsed;
+            pageFriends.Visibility = Visibility.Collapsed;
             pageAppearance.Visibility = Visibility.Collapsed;
             pageProgramManager.Visibility = Visibility.Collapsed;
             pageExtensions.Visibility = Visibility.Collapsed;
@@ -130,16 +136,35 @@ namespace SideDesk
                 case 1: pageWindows.Visibility = Visibility.Visible; _ = RefreshWindowListAsync(); break;
                 case 2: pageAccount.Visibility = Visibility.Visible; RefreshAccountUI(); break;
                 case 3: pageTeams.Visibility = Visibility.Visible; _ = RefreshTeamListAsync(); break;
-                case 4: pageCloudSpaces.Visibility = Visibility.Visible; RefreshCloudSpaceList(); break;
-                case 5: pageAppearance.Visibility = Visibility.Visible; break;
-                case 6: pageProgramManager.Visibility = Visibility.Visible; break;
-                case 7: pageExtensions.Visibility = Visibility.Visible; break;
-                case 8: pagePlugins.Visibility = Visibility.Visible; RefreshPluginList(); break;
-                case 9: pageTools.Visibility = Visibility.Visible; break;
-                case 10: pageModules.Visibility = Visibility.Visible; RefreshModulesPage(); break;
-                case 11: pageShortcuts.Visibility = Visibility.Visible; break;
-                case 12: pageAbout.Visibility = Visibility.Visible; break;
+                case 4: pageFriends.Visibility = Visibility.Visible; _ = RefreshFriendsPageAsync(); break;
+                case 5: pageCloudSpaces.Visibility = Visibility.Visible; RefreshCloudSpaceList(); break;
+                case 6: pageAppearance.Visibility = Visibility.Visible; break;
+                case 7: pageProgramManager.Visibility = Visibility.Visible; break;
+                case 8: pageExtensions.Visibility = Visibility.Visible; break;
+                case 9: pagePlugins.Visibility = Visibility.Visible; RefreshPluginList(); break;
+                case 10: pageTools.Visibility = Visibility.Visible; break;
+                case 11: pageModules.Visibility = Visibility.Visible; RefreshModulesPage(); break;
+                case 12: pageShortcuts.Visibility = Visibility.Visible; break;
+                case 13: pageAbout.Visibility = Visibility.Visible; break;
             }
+        }
+
+        /// <summary>切换到好友页（供外部导航调用，如好友模块圆加号）</summary>
+        public void SwitchToFriendsPage()
+        {
+            if (navList.SelectedIndex == 4)
+                Nav_Changed(this, null!); // 已在好友页：手动触发以确保显示并刷新
+            else
+                navList.SelectedIndex = 4; // 触发 Nav_Changed 显示好友页
+        }
+
+        /// <summary>切换到账户页（供外部导航调用，如掉线通知点击）</summary>
+        public void SwitchToAccountPage()
+        {
+            if (navList.SelectedIndex == 2)
+                Nav_Changed(this, null!); // 已在账户页：手动触发以确保显示并刷新
+            else
+                navList.SelectedIndex = 2; // 触发 Nav_Changed 显示账户页
         }
 
         #region 账户 / 云同步
@@ -175,13 +200,126 @@ namespace SideDesk
             _isLoading = false;
             cloudSyncSwitch.IsEnabled = loggedIn;
             syncNowBtn.IsEnabled = loggedIn;
+            encryptSyncSwitch.IsChecked = s.SyncEncryptEnabled && loggedIn;
+            encryptSyncSwitch.IsEnabled = loggedIn && s.EnableCloudSync;
+            restoreSettingsBtn.IsEnabled = loggedIn;
+
+            // 个人资料详情：仅登录后显示
+            accountProfileSection.Visibility = loggedIn ? Visibility.Visible : Visibility.Collapsed;
 
             if (s.LastCloudSyncTime.HasValue)
                 cloudSyncStatusText.Text = $"上次同步：{s.LastCloudSyncTime:yyyy-MM-dd HH:mm}";
             else
                 cloudSyncStatusText.Text = loggedIn ? "尚未同步" : "登录后可同步";
 
+            UpdateAccountProfileUI();
             RefreshBackupUI();
+        }
+
+        /// <summary>刷新账户页"个人资料"区域（昵称输入框 + 头像预览）</summary>
+        private void UpdateAccountProfileUI()
+        {
+            if (nicknameBox == null) return;
+            var s = _app.AppSettings;
+
+            _isLoading = true;
+            nicknameBox.Text = s.AccountName ?? "";
+            _isLoading = false;
+
+            // 兜底头像文字：取昵称首字符
+            accountAvatarFallbackText.Text = string.IsNullOrWhiteSpace(s.AccountName)
+                ? "?"
+                : s.AccountName!.Trim().Substring(0, 1).ToUpper();
+
+            if (!string.IsNullOrWhiteSpace(s.AccountAvatar))
+            {
+                try
+                {
+                    var bytes = Convert.FromBase64String(s.AccountAvatar);
+                    var bmp = new System.Windows.Media.Imaging.BitmapImage();
+                    bmp.BeginInit();
+                    bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                    bmp.StreamSource = new System.IO.MemoryStream(bytes);
+                    bmp.EndInit();
+                    bmp.Freeze();
+                    accountAvatarImageBrush.ImageSource = bmp;
+                    accountAvatarImageHost.Visibility = Visibility.Visible;
+                    accountAvatarFallbackText.Visibility = Visibility.Collapsed;
+                    return;
+                }
+                catch { }
+            }
+            accountAvatarImageBrush.ImageSource = null;
+            accountAvatarImageHost.Visibility = Visibility.Collapsed;
+            accountAvatarFallbackText.Visibility = Visibility.Visible;
+        }
+
+        /// <summary>点击头像 → 触发选择头像</summary>
+        private void AccountAvatar_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            ChooseAccountAvatar();
+        }
+
+        /// <summary>选择图片文件并压缩为 base64 存入配置</summary>
+        private void ChooseAccountAvatar()
+        {
+            var dlg = new OpenFileDialog
+            {
+                Title = "选择头像图片",
+                Filter = "图片文件|*.png;*.jpg;*.jpeg;*.bmp;*.gif|所有文件|*.*"
+            };
+            if (dlg.ShowDialog(this) != true) return;
+            try
+            {
+                var s = _app.AppSettings;
+                s.AccountAvatar = ImageFileToAvatarBase64(dlg.FileName);
+                s.Save();
+                UpdateAccountProfileUI();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("头像加载失败：" + ex.Message, "头像", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        /// <summary>保存昵称</summary>
+        private void SaveNickname_Click(object sender, RoutedEventArgs e)
+        {
+            var s = _app.AppSettings;
+            var name = (nicknameBox.Text ?? "").Trim();
+            s.AccountName = string.IsNullOrEmpty(name) ? null : name;
+            s.Save();
+            RefreshAccountUI();
+            RefreshCorpSelector();
+        }
+
+        /// <summary>把图片文件缩放为不超过 256px 的 JPEG 并转为 base64 字符串</summary>
+        private static string ImageFileToAvatarBase64(string path)
+        {
+            var src = new System.Windows.Media.Imaging.BitmapImage();
+            src.BeginInit();
+            src.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+            src.UriSource = new Uri(path);
+            src.EndInit();
+            src.Freeze();
+
+            const double maxSize = 256.0;
+            double scale = Math.Min(maxSize / src.PixelWidth, maxSize / src.PixelHeight);
+            if (scale > 1.0) scale = 1.0;
+            double w = src.PixelWidth * scale;
+            double h = src.PixelHeight * scale;
+
+            var resized = new System.Windows.Media.Imaging.TransformedBitmap(
+                src,
+                new System.Windows.Media.ScaleTransform(w / src.PixelWidth, h / src.PixelHeight));
+
+            var encoder = new System.Windows.Media.Imaging.JpegBitmapEncoder();
+            encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(resized));
+            using (var ms = new System.IO.MemoryStream())
+            {
+                encoder.Save(ms);
+                return Convert.ToBase64String(ms.ToArray());
+            }
         }
 
         /// <summary>检测到 Token 已失效时，清除本地登录状态并刷新相关 UI</summary>
@@ -198,6 +336,7 @@ namespace SideDesk
 
             App.AccountTokenExpiredMessage = message;
             try { Services.CloudSyncService.Instance.Stop(); } catch { }
+            try { Services.BackendWebSocketService.Instance.Stop(); } catch { }
 
             RefreshAccountUI();
             RefreshCorpSelector();
@@ -289,6 +428,7 @@ namespace SideDesk
                 s.SelectedCorpName = null;
                 s.Save();
                 try { Services.CloudSyncService.Instance.Stop(); } catch { }
+                try { Services.BackendWebSocketService.Instance.Stop(); } catch { }
                 RefreshAccountUI();
                 RefreshCorpSelector();
                 return;
@@ -302,6 +442,7 @@ namespace SideDesk
                 s.AccountToken = LoginWindow.LastToken;
                 s.AccountName = LoginWindow.LastUserName;
                 s.AccountLoginTime = DateTime.Now;
+                s.HasLoggedInBefore = true; // 记录会员身份：曾经登录过
                 // 登录成功后，若团队选择为空则默认切到"个人"(corpId='')
                 if (string.IsNullOrWhiteSpace(s.SelectedCorpId))
                 {
@@ -310,8 +451,18 @@ namespace SideDesk
                 }
                 s.Save();
                 App.AccountTokenExpiredMessage = null; // 清除过期提示
+
+                // 登录成功 → 启动后端 WebSocket 长连接
+                try { Services.BackendWebSocketService.Instance.Start(s.AccountToken!); } catch { }
+
                 RefreshAccountUI();
                 RefreshCorpSelector();
+
+                // 拉取用户详情（昵称、头像）并刷新个人资料区
+                _ = _app.FetchAndSaveUserInfoAsync(s.AccountToken!).ContinueWith(t =>
+                {
+                    Dispatcher.Invoke(() => UpdateAccountProfileUI());
+                }, System.Threading.Tasks.TaskScheduler.FromCurrentSynchronizationContext());
             }
         }
 
@@ -349,6 +500,69 @@ namespace SideDesk
             await Services.CloudSyncService.Instance.SyncNowAsync(silent: false);
             syncNowBtn.IsEnabled = !string.IsNullOrEmpty(_app.AppSettings.AccountToken);
             RefreshAccountUI();
+        }
+
+        /// <summary>加密同步开关切换</summary>
+        private void EncryptSyncSwitch_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_isLoading) return;
+            var s = _app.AppSettings;
+            bool on = encryptSyncSwitch.IsChecked == true;
+
+            if (on)
+            {
+                // 首次开启需要输入密码派生密钥
+                if (string.IsNullOrEmpty(s.SyncDerivedKey))
+                {
+                    if (s.AccountUserId == null || s.AccountUserId == 0)
+                    {
+                        ThemedMessageBox.Show(this, "无法获取用户 ID，请重新登录后再试", "提示");
+                        _isLoading = true;
+                        encryptSyncSwitch.IsChecked = false;
+                        _isLoading = false;
+                        return;
+                    }
+
+                    var dlg = new SyncPasswordDialog { Owner = this };
+                    if (dlg.ShowDialog() != true)
+                    {
+                        _isLoading = true;
+                        encryptSyncSwitch.IsChecked = false;
+                        _isLoading = false;
+                        return;
+                    }
+
+                    // 派生密钥并用 DPAPI 保护后存本地
+                    byte[] key = Services.SyncEncryption.DeriveKey(dlg.Password, s.AccountUserId.Value);
+                    s.SyncDerivedKey = Services.SyncEncryption.ProtectKeyForLocal(key);
+                }
+
+                s.SyncEncryptEnabled = true;
+            }
+            else
+            {
+                s.SyncEncryptEnabled = false;
+            }
+
+            s.Save();
+        }
+
+        /// <summary>从云端恢复设置</summary>
+        private async void RestoreSettings_Click(object sender, RoutedEventArgs e)
+        {
+            if (!ThemedMessageBox.Confirm(this, "将从服务器拉取已同步的设置覆盖本地当前配置，是否继续？", "恢复设置"))
+                return;
+
+            restoreSettingsBtn.IsEnabled = false;
+            int count = await Services.CloudSyncService.Instance.RestoreSettingsAsync();
+            restoreSettingsBtn.IsEnabled = true;
+
+            if (count > 0)
+                ThemedMessageBox.Show(this, $"已恢复 {count} 项设置", "完成");
+            else if (count == 0)
+                ThemedMessageBox.Show(this, "服务器上没有已同步的设置项", "提示");
+            else
+                ThemedMessageBox.Show(this, "恢复失败，请检查网络连接或登录状态", "失败");
         }
 
         /// <summary>云同步状态变化回调：更新提示文本</summary>
@@ -444,8 +658,11 @@ namespace SideDesk
                 };
                 if (space.IsBuiltin)
                 {
-                    // 内置云空间（元桌云盘）：打开专用文件管理窗口，不可编辑/删除
-                    openBtn.Click += (s, e) => { new CloudDriveWindow().Show(); };
+                    // 内置云空间：打开对应文件管理窗口，不可编辑/删除
+                    if (space.Name == "百度网盘")
+                        openBtn.Click += (s, e) => { new BaiduPanWindow().Show(); };
+                    else
+                        openBtn.Click += (s, e) => { new CloudDriveWindow().Show(); };
                     btnPanel.Children.Add(openBtn);
                 }
                 else
@@ -490,7 +707,21 @@ namespace SideDesk
 
         private void AddCloudSpace_Click(object sender, RoutedEventArgs e)
         {
-            ShowCloudSpaceEditDialog(null);
+            // 提供预设选项：百度网盘 / 自定义
+            var menu = new System.Windows.Controls.ContextMenu();
+            var baiduItem = new System.Windows.Controls.MenuItem { Header = "🅱️ 百度网盘" };
+            baiduItem.Click += (_, _) =>
+            {
+                // 打开百度网盘窗口进行 OAuth 绑定，授权成功后自动添加到云空间列表
+                new BaiduPanWindow().Show();
+            };
+            var customItem = new System.Windows.Controls.MenuItem { Header = "➕ 自定义云空间" };
+            customItem.Click += (_, _) => ShowCloudSpaceEditDialog(null);
+            menu.Items.Add(baiduItem);
+            menu.Items.Add(customItem);
+            menu.PlacementTarget = (UIElement)sender;
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            menu.IsOpen = true;
         }
 
         private void RestoreBuiltinSpaces_Click(object sender, RoutedEventArgs e)
@@ -932,6 +1163,426 @@ namespace SideDesk
 
         #endregion
 
+        #region 好友管理
+
+        /// <summary>刷新好友页面（好友列表 + 请求 + 好友码）</summary>
+        private async Task RefreshFriendsPageAsync()
+        {
+            bool loggedIn = !string.IsNullOrEmpty(_app.AppSettings.AccountToken);
+            ApplyFriendLoginState(loggedIn);
+            if (!loggedIn) return; // 未登录不请求接口
+
+            _ = RefreshFriendListAsync();
+            _ = RefreshFriendRequestsAsync();
+            _ = RefreshMyFriendCodeAsync();
+            await Task.CompletedTask;
+        }
+
+        /// <summary>根据登录状态启用/禁用好友面板控件并更新提示</summary>
+        private void ApplyFriendLoginState(bool loggedIn)
+        {
+            friendSearchBox.IsEnabled = loggedIn;
+            friendSearchBtn.IsEnabled = loggedIn;
+            refreshFriendCodeBtn.IsEnabled = loggedIn;
+            copyFriendCodeBtn.IsEnabled = loggedIn;
+            allowFriendSearchSwitch.IsEnabled = loggedIn;
+
+            if (!loggedIn)
+            {
+                friendPageSubtitle.Text = "请先登录后使用好友功能（搜索、添加、好友码等）";
+                myFriendCodeText.Text = "请先登录";
+                friendListPanel.Children.Clear();
+                friendRequestPanel.Children.Clear();
+                friendRequestSection.Visibility = Visibility.Collapsed;
+                friendSearchResultPanel.Children.Clear();
+            }
+            else
+            {
+                friendPageSubtitle.Text = "通过用户名、邮箱、手机号或好友码搜索添加好友";
+            }
+        }
+
+        /// <summary>刷新好友列表</summary>
+        private async Task RefreshFriendListAsync()
+        {
+            var friends = await Services.FriendService.Instance.GetFriendListAsync();
+            friendListPanel.Children.Clear();
+
+            if (friends == null || friends.Count == 0)
+            {
+                friendListPanel.Children.Add(new TextBlock
+                {
+                    Text = "还没有好友，通过上方搜索添加",
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
+                    FontSize = 12,
+                    Margin = new Thickness(0, 4, 0, 4)
+                });
+                return;
+            }
+
+            foreach (var f in friends)
+            {
+                friendListPanel.Children.Add(BuildFriendRow(f));
+            }
+        }
+
+        /// <summary>构建好友列表行：头像 + 昵称 + 在线状态点，右键删除</summary>
+        private UIElement BuildFriendRow(Services.FriendUser f)
+        {
+            var row = new DockPanel { Margin = new Thickness(0, 4, 0, 4) };
+
+            // 头像
+            row.Children.Add(BuildAvatarCircle(f.NickName, f.Avatar, 30));
+
+            // 在线状态点
+            bool online = f.IsOnline == 1;
+            var dot = new System.Windows.Shapes.Ellipse
+            {
+                Width = 8,
+                Height = 8,
+                Fill = online ? new SolidColorBrush(Color.FromRgb(0x4C, 0xAF, 0x50)) : new SolidColorBrush(Color.FromRgb(0x9E, 0x9E, 0x9E)),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(8, 0, 0, 0),
+                ToolTip = online ? "在线" : "离线"
+            };
+            DockPanel.SetDock(dot, Dock.Right);
+            row.Children.Add(dot);
+
+            // 昵称 + 用户名
+            var info = new StackPanel { Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+            info.Children.Add(new TextBlock
+            {
+                Text = f.NickName,
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                FontSize = 13,
+                FontWeight = FontWeights.Medium
+            });
+            info.Children.Add(new TextBlock
+            {
+                Text = $"@{f.UserName}",
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                FontSize = 11
+            });
+            row.Children.Add(info);
+
+            // 右键删除好友
+            var menu = new ContextMenu();
+            var removeMi = new MenuItem { Header = "删除好友" };
+            removeMi.Click += async (s, e) =>
+            {
+                if (!ThemedMessageBox.Confirm(this, $"确定删除好友「{f.NickName}」吗？", "确认")) return;
+                var (ok, msg) = await Services.FriendService.Instance.RemoveFriendAsync(f.UserId);
+                if (ok)
+                    await RefreshFriendListAsync();
+                else
+                    ThemedMessageBox.Show(this, string.IsNullOrEmpty(msg) ? "删除失败" : msg, "提示");
+            };
+            menu.Items.Add(removeMi);
+            row.ContextMenu = menu;
+
+            return row;
+        }
+
+        /// <summary>刷新好友请求列表</summary>
+        private async Task RefreshFriendRequestsAsync()
+        {
+            var requests = await Services.FriendService.Instance.GetRequestsAsync();
+            friendRequestPanel.Children.Clear();
+
+            if (requests == null || requests.Count == 0)
+            {
+                friendRequestSection.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            friendRequestSection.Visibility = Visibility.Visible;
+            foreach (var r in requests)
+            {
+                if (r.FromUser == null) continue;
+                friendRequestPanel.Children.Add(BuildRequestRow(r));
+            }
+        }
+
+        /// <summary>构建好友请求行：头像 + 昵称 + 同意/拒绝按钮</summary>
+        private UIElement BuildRequestRow(Services.FriendRequest r)
+        {
+            var row = new DockPanel { Margin = new Thickness(0, 4, 0, 4) };
+            var user = r.FromUser!;
+
+            row.Children.Add(BuildAvatarCircle(user.NickName, user.Avatar, 30));
+
+            // 同意/拒绝按钮
+            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            DockPanel.SetDock(btnPanel, Dock.Right);
+
+            var acceptBtn = new Button
+            {
+                Content = "同意",
+                Style = (Style)FindResource("GhostButtonStyle"),
+                Padding = new Thickness(12, 4, 12, 4),
+                Margin = new Thickness(6, 0, 0, 0)
+            };
+            acceptBtn.Click += async (s, e) =>
+            {
+                var (ok, msg) = await Services.FriendService.Instance.HandleRequestAsync(r.Id, "accept");
+                if (ok)
+                {
+                    await RefreshFriendRequestsAsync();
+                    await RefreshFriendListAsync();
+                }
+                else
+                    ThemedMessageBox.Show(this, string.IsNullOrEmpty(msg) ? "操作失败" : msg, "提示");
+            };
+            btnPanel.Children.Add(acceptBtn);
+
+            var rejectBtn = new Button
+            {
+                Content = "拒绝",
+                Style = (Style)FindResource("GhostButtonStyle"),
+                Padding = new Thickness(12, 4, 12, 4),
+                Margin = new Thickness(6, 0, 0, 0),
+                Opacity = 0.7
+            };
+            rejectBtn.Click += async (s, e) =>
+            {
+                var (ok, msg) = await Services.FriendService.Instance.HandleRequestAsync(r.Id, "reject");
+                if (ok)
+                    await RefreshFriendRequestsAsync();
+                else
+                    ThemedMessageBox.Show(this, string.IsNullOrEmpty(msg) ? "操作失败" : msg, "提示");
+            };
+            btnPanel.Children.Add(rejectBtn);
+            row.Children.Add(btnPanel);
+
+            // 昵称 + 用户名
+            var info = new StackPanel { Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+            info.Children.Add(new TextBlock
+            {
+                Text = user.NickName,
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                FontSize = 13,
+                FontWeight = FontWeights.Medium
+            });
+            info.Children.Add(new TextBlock
+            {
+                Text = $"@{user.UserName} 请求添加你为好友",
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                FontSize = 11
+            });
+            row.Children.Add(info);
+
+            return row;
+        }
+
+        /// <summary>刷新我的好友码</summary>
+        private async Task RefreshMyFriendCodeAsync()
+        {
+            var (code, allowSearch) = await Services.FriendService.Instance.GetMyCodeAsync();
+
+            // 初始化开关状态（避免触发 Changed 事件）
+            allowFriendSearchSwitch.Checked -= AllowFriendSearch_Changed;
+            allowFriendSearchSwitch.Unchecked -= AllowFriendSearch_Changed;
+            allowFriendSearchSwitch.IsChecked = allowSearch;
+            allowFriendSearchSwitch.Checked += AllowFriendSearch_Changed;
+            allowFriendSearchSwitch.Unchecked += AllowFriendSearch_Changed;
+
+            // 关闭被搜索时不显示好友码
+            if (!allowSearch)
+            {
+                myFriendCodeText.Text = "已关闭被搜索";
+                return;
+            }
+            myFriendCodeText.Text = string.IsNullOrEmpty(code) ? "获取失败" : code;
+        }
+
+        /// <summary>切换是否允许被搜索添加好友</summary>
+        private async void AllowFriendSearch_Changed(object sender, RoutedEventArgs e)
+        {
+            var allow = allowFriendSearchSwitch.IsChecked ?? false;
+
+            // 关闭时二次确认（会清空好友码）
+            if (!allow)
+            {
+                if (!ThemedMessageBox.Confirm(this, "关闭后别人将无法搜索到你，同时会清空你的好友码。\n确定关闭吗？", "关闭被搜索"))
+                {
+                    // 恢复勾选（临时移除事件避免递归）
+                    allowFriendSearchSwitch.Checked -= AllowFriendSearch_Changed;
+                    allowFriendSearchSwitch.IsChecked = true;
+                    allowFriendSearchSwitch.Checked += AllowFriendSearch_Changed;
+                    return;
+                }
+            }
+
+            allowFriendSearchSwitch.IsEnabled = false;
+            try
+            {
+                var (ok, msg) = await Services.FriendService.Instance.SetSearchableAsync(allow);
+                if (!ok)
+                {
+                    ThemedMessageBox.Show(this, string.IsNullOrEmpty(msg) ? "设置失败" : msg, "提示");
+                    // 恢复原状态
+                    allowFriendSearchSwitch.Checked -= AllowFriendSearch_Changed;
+                    allowFriendSearchSwitch.Unchecked -= AllowFriendSearch_Changed;
+                    allowFriendSearchSwitch.IsChecked = !allow;
+                    allowFriendSearchSwitch.Checked += AllowFriendSearch_Changed;
+                    allowFriendSearchSwitch.Unchecked += AllowFriendSearch_Changed;
+                    return;
+                }
+
+                // 刷新好友码显示
+                await RefreshMyFriendCodeAsync();
+            }
+            finally
+            {
+                allowFriendSearchSwitch.IsEnabled = true;
+            }
+        }
+
+        /// <summary>搜索好友</summary>
+        private async void FriendSearch_Click(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrEmpty(_app.AppSettings.AccountToken))
+            {
+                ThemedMessageBox.Show(this, "请先登录后再搜索好友。", "提示");
+                return;
+            }
+
+            var keyword = friendSearchBox.Text.Trim();
+            if (string.IsNullOrEmpty(keyword)) return;
+
+            friendSearchBtn.IsEnabled = false;
+            friendSearchResultPanel.Children.Clear();
+
+            try
+            {
+                var users = await Services.FriendService.Instance.SearchUserAsync(keyword);
+
+                if (users == null || users.Count == 0)
+                {
+                    friendSearchResultPanel.Children.Add(new TextBlock
+                    {
+                        Text = "未找到相关用户",
+                        Foreground = (Brush)FindResource("BrushTextMuted"),
+                        FontSize = 12,
+                        Margin = new Thickness(0, 4, 0, 4)
+                    });
+                    return;
+                }
+
+                foreach (var u in users)
+                {
+                    friendSearchResultPanel.Children.Add(BuildSearchResultRow(u));
+                }
+            }
+            finally
+            {
+                friendSearchBtn.IsEnabled = true;
+            }
+        }
+
+        /// <summary>构建搜索结果行：头像 + 昵称 + 在线状态 + 添加按钮</summary>
+        private UIElement BuildSearchResultRow(Services.FriendUser u)
+        {
+            var row = new DockPanel { Margin = new Thickness(0, 4, 0, 4) };
+
+            row.Children.Add(BuildAvatarCircle(u.NickName, u.Avatar, 30));
+
+            // 添加按钮
+            var addBtn = new Button
+            {
+                Content = "+ 添加",
+                Style = (Style)FindResource("GhostButtonStyle"),
+                Padding = new Thickness(12, 4, 12, 4),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            DockPanel.SetDock(addBtn, Dock.Right);
+            addBtn.Click += async (s, e) =>
+            {
+                addBtn.IsEnabled = false;
+                var (ok, msg) = await Services.FriendService.Instance.AddFriendAsync(u.UserId);
+                ThemedMessageBox.Show(this, string.IsNullOrEmpty(msg) ? (ok ? "好友请求已发送" : "发送失败") : msg, "提示");
+                addBtn.IsEnabled = true;
+            };
+            row.Children.Add(addBtn);
+
+            // 在线状态点
+            bool online = u.IsOnline == 1;
+            var dot = new System.Windows.Shapes.Ellipse
+            {
+                Width = 8,
+                Height = 8,
+                Fill = online ? new SolidColorBrush(Color.FromRgb(0x4C, 0xAF, 0x50)) : new SolidColorBrush(Color.FromRgb(0x9E, 0x9E, 0x9E)),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(8, 0, 0, 0)
+            };
+            DockPanel.SetDock(dot, Dock.Right);
+            row.Children.Add(dot);
+
+            // 昵称 + 用户名
+            var info = new StackPanel { Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+            info.Children.Add(new TextBlock
+            {
+                Text = u.NickName,
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                FontSize = 13,
+                FontWeight = FontWeights.Medium
+            });
+            info.Children.Add(new TextBlock
+            {
+                Text = $"@{u.UserName}",
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                FontSize = 11
+            });
+            row.Children.Add(info);
+
+            return row;
+        }
+
+        /// <summary>搜索框回车触发搜索</summary>
+        private void FriendSearchBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+                FriendSearch_Click(sender, e);
+        }
+
+        /// <summary>复制好友码</summary>
+        private void CopyFriendCode_Click(object sender, RoutedEventArgs e)
+        {
+            var code = myFriendCodeText.Text;
+            if (string.IsNullOrEmpty(code) || code == "获取失败" || code == "加载中...") return;
+            try
+            {
+                Clipboard.SetText(code);
+                copyFriendCodeBtn.Content = "已复制";
+                var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
+                timer.Tick += (s, args) => { timer.Stop(); copyFriendCodeBtn.Content = "复制"; };
+                timer.Start();
+            }
+            catch { }
+        }
+
+        /// <summary>更换好友码（旧码失效）</summary>
+        private async void RefreshFriendCode_Click(object sender, RoutedEventArgs e)
+        {
+            if (!ThemedMessageBox.Confirm(this, "更换后旧好友码将立即失效，别人无法再通过旧码搜索到你。\n确定更换吗？", "更换好友码")) return;
+
+            refreshFriendCodeBtn.IsEnabled = false;
+            try
+            {
+                var newCode = await Services.FriendService.Instance.RefreshCodeAsync();
+                if (!string.IsNullOrEmpty(newCode))
+                    myFriendCodeText.Text = newCode;
+                else
+                    ThemedMessageBox.Show(this, "更换失败，请重试", "提示");
+            }
+            finally
+            {
+                refreshFriendCodeBtn.IsEnabled = true;
+            }
+        }
+
+        #endregion
+
         private void ThemeMode_Changed(object sender, SelectionChangedEventArgs e)
         {
             if (_isLoading) return;
@@ -958,6 +1609,19 @@ namespace SideDesk
             {
                 if (window is MainWindow mw)
                     mw.RefreshNativePanels();
+            }
+        }
+
+        private void ShowNotificationStripSwitch_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_isLoading) return;
+            _app.AppSettings.ShowNotificationStrip = showNotificationStripSwitch.IsChecked ?? false;
+            _app.AppSettings.Save();
+            // 即时应用所有主窗口的通知条显隐
+            foreach (Window window in Application.Current.Windows)
+            {
+                if (window is MainWindow mw)
+                    mw.ApplyNotificationStrip();
             }
         }
 
@@ -1153,7 +1817,7 @@ namespace SideDesk
                 if (_isLoading) return;
                 var c = ResolveMonitorConfig(monitorIndex);
                 int cur = side == DockEdge.Left ? c.LeftPanelWidth : c.RightPanelWidth;
-                if (!int.TryParse(widthBox.Text, out int w) || w < 50 || w > 500)
+                if (!int.TryParse(widthBox.Text, out int w) || w < 5 || w > 500)
                 {
                     widthBox.Text = cur.ToString();
                     return;
@@ -1167,7 +1831,7 @@ namespace SideDesk
             }
             widthBox.LostFocus += (s, e) => ApplyWidth();
             widthBox.KeyDown += (s, e) => { if (e.Key == Key.Enter) ApplyWidth(); };
-            panel.Children.Add(BuildInputRow("侧边栏宽度", "侧边栏停靠宽度（50-500）", widthBox, "px", new Thickness(0, 0, 0, 12)));
+            panel.Children.Add(BuildInputRow("侧边栏宽度", "侧边栏停靠宽度（5-500）", widthBox, "px", new Thickness(0, 0, 0, 12)));
 
             // 开启浮动
             var hoverCheck = new CheckBox
@@ -1695,6 +2359,12 @@ namespace SideDesk
 
         #region 插件管理
 
+        /// <summary>刷新插件列表按钮</summary>
+        private void RefreshPluginList_Click(object sender, RoutedEventArgs e)
+        {
+            RefreshPluginList();
+        }
+
         /// <summary>刷新插件列表（扫描插件目录，展示所有插件及启用状态）</summary>
         private void RefreshPluginList()
         {
@@ -1742,6 +2412,22 @@ namespace SideDesk
                 toggle.Unchecked += PluginToggle_Changed;
                 DockPanel.SetDock(toggle, Dock.Right);
                 dock.Children.Add(toggle);
+
+                // 右侧删除按钮
+                var delBtn = new Button
+                {
+                    Content = "删除",
+                    Style = (Style)FindResource("GhostButtonStyle"),
+                    Padding = new Thickness(8, 3, 8, 3),
+                    FontSize = 11,
+                    Margin = new Thickness(0, 0, 10, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    ToolTip = "卸载并删除该插件文件夹"
+                };
+                var pluginCfg = cfg;
+                delBtn.Click += (s, e) => DeletePlugin(pluginCfg);
+                DockPanel.SetDock(delBtn, Dock.Right);
+                dock.Children.Add(delBtn);
 
                 // 左侧信息
                 var info = new StackPanel { Margin = new Thickness(0, 0, 12, 0) };
@@ -1796,6 +2482,42 @@ namespace SideDesk
             // 重新加载插件（卸载旧的 + 加载新的）
             Services.Plugins.PluginLoaderService.Instance.UnloadAll();
             Services.Plugins.PluginLoaderService.Instance.LoadAllPlugins(disabled);
+        }
+
+        /// <summary>删除插件：卸载并删除插件文件夹</summary>
+        private void DeletePlugin(Services.Plugins.PluginConfig cfg)
+        {
+            var msg = $"确定删除插件「{cfg.Name}」吗？\n将卸载并删除其文件夹，此操作不可恢复。";
+            var result = MessageBox.Show(msg, "删除插件", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
+            if (result != MessageBoxResult.OK) return;
+
+            var loader = Services.Plugins.PluginLoaderService.Instance;
+
+            // 先卸载已加载的插件实例（释放 DLL 文件锁）
+            try { loader.UnloadPlugin(cfg.Id); } catch { }
+
+            // 从禁用列表中移除
+            var disabled = _app.AppSettings.DisabledPlugins;
+            if (disabled.Contains(cfg.Id))
+            {
+                disabled.Remove(cfg.Id);
+                _app.AppSettings.Save();
+            }
+
+            // 删除插件文件夹
+            if (!string.IsNullOrEmpty(cfg.SourceDirectory) && System.IO.Directory.Exists(cfg.SourceDirectory))
+            {
+                try
+                {
+                    System.IO.Directory.Delete(cfg.SourceDirectory, true);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"删除插件文件夹失败：{ex.Message}\n请确认没有文件被占用后重试。", "删除失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+
+            RefreshPluginList();
         }
 
         #endregion
@@ -1867,6 +2589,23 @@ namespace SideDesk
             }
         }
 
+        private void UsageStatsSwitch_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_isLoading) return;
+            bool enabled = usageStatsSwitch.IsChecked == true;
+            Framework.AppSettings.Instance.ShowUsageStats = enabled;
+            Framework.AppSettings.Instance.Save();
+
+            try
+            {
+                Services.WindowUsageService.Instance.ApplyEnabled(enabled);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Settings] 窗口使用时长采集启停异常: {ex.Message}");
+            }
+        }
+
         #endregion
 
         #region 模块 - 数据模版管理
@@ -1874,18 +2613,235 @@ namespace SideDesk
         /// <summary>刷新模块页面（连接方式开关 + 模版列表）</summary>
         private void RefreshModulesPage()
         {
-            // 初始化连接方式开关状态
-            dataConnectionModeSwitch.IsChecked = _app.AppSettings.DataConnectionMode == "extension";
+            // 初始化连接方式 RadioButton 状态
+            var mode = _app.AppSettings.DataConnectionMode;
+            rbModeExtension.IsChecked = mode == "extension";
+            rbModeCdp.IsChecked = mode == "cdp";
+            cdpPortSection.Visibility = mode == "cdp" ? Visibility.Visible : Visibility.Collapsed;
+            cdpPortBox.Text = _app.AppSettings.CdpDebugPort.ToString();
+
+            // 初始化隐藏浏览器模式下拉框
+            var hbMode = _app.AppSettings.HiddenBrowserMode;
+            hiddenBrowserModeCombo.SelectedIndex = hbMode == "hidden" ? 1 : 0;
+
+            RefreshDashboardItemList();
             RefreshTemplateList();
         }
 
-        /// <summary>数据模块连接方式切换</summary>
-        private void DataConnectionMode_Changed(object sender, RoutedEventArgs e)
+        /// <summary>隐藏浏览器模式切换</summary>
+        private void HiddenBrowserMode_Changed(object sender, SelectionChangedEventArgs e)
         {
-            if (dataConnectionModeSwitch == null) return;
-            var mode = dataConnectionModeSwitch.IsChecked == true ? "extension" : "cdp";
+            if (_isLoading || hiddenBrowserModeCombo == null) return;
+            var mode = (hiddenBrowserModeCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "headless";
+            _app.AppSettings.HiddenBrowserMode = mode;
+            _app.AppSettings.Save();
+        }
+
+        /// <summary>添加后台数据项（不在面板显示，仅后台轮询）</summary>
+        private void AddBackgroundDashItem_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new Window
+            {
+                Title = "添加后台数据项",
+                Width = 420,
+                SizeToContent = SizeToContent.Height,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this,
+                ResizeMode = ResizeMode.NoResize,
+                Background = (Brush)FindResource("BrushDialogBG"),
+                Foreground = (Brush)FindResource("BrushTextMain")
+            };
+            dialog.SourceInitialized += (s, ev) => App.UpdateWindowDwmTheme(dialog);
+
+            var root = new StackPanel { Margin = new Thickness(20) };
+            var labelBrush = (Brush)FindResource("BrushTextSec");
+            var smallFont = (double)FindResource("FontSizeSmall");
+
+            root.Children.Add(new Emoji.Wpf.TextBlock { Text = "名称", Foreground = labelBrush, FontSize = smallFont, Margin = new Thickness(0, 0, 0, 4) });
+            var nameBox = new TextBox { Style = (Style)FindResource("GlobalTextBoxStyle"), Margin = new Thickness(0, 0, 0, 12) };
+            root.Children.Add(nameBox);
+
+            root.Children.Add(new Emoji.Wpf.TextBlock { Text = "目标网址", Foreground = labelBrush, FontSize = smallFont, Margin = new Thickness(0, 0, 0, 4) });
+            var urlBox = new TextBox { Style = (Style)FindResource("GlobalTextBoxStyle"), Margin = new Thickness(0, 0, 0, 12) };
+            root.Children.Add(urlBox);
+
+            root.Children.Add(new Emoji.Wpf.TextBlock { Text = "选择器 (CSS Selector 或 XPath)", Foreground = labelBrush, FontSize = smallFont, Margin = new Thickness(0, 0, 0, 4) });
+            var selectorBox = new TextBox { Style = (Style)FindResource("GlobalTextBoxStyle"), Margin = new Thickness(0, 0, 0, 12) };
+            root.Children.Add(selectorBox);
+
+            root.Children.Add(new Emoji.Wpf.TextBlock { Text = "刷新间隔(秒)", Foreground = labelBrush, FontSize = smallFont, Margin = new Thickness(0, 0, 0, 4) });
+            var intervalBox = new TextBox { Style = (Style)FindResource("GlobalTextBoxStyle"), Text = "60", Margin = new Thickness(0, 0, 0, 16) };
+            root.Children.Add(intervalBox);
+
+            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            var okBtn = new Button { Content = "确定", Width = 70, IsDefault = true, Style = (Style)FindResource("PrimaryButtonStyle"), Margin = new Thickness(0, 0, 8, 0) };
+            var cancelBtn = new Button { Content = "取消", Width = 70, IsCancel = true, Style = (Style)FindResource("StandardButtonStyle") };
+
+            okBtn.Click += (s, ev) =>
+            {
+                string name = nameBox.Text.Trim();
+                string url = urlBox.Text.Trim();
+                string selector = selectorBox.Text.Trim();
+                if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(url) || string.IsNullOrEmpty(selector))
+                {
+                    MessageBox.Show("请填写名称、目标网址和选择器", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                int interval = int.TryParse(intervalBox.Text.Trim(), out var iv) && iv >= 10 ? iv : 60;
+
+                var item = new Models.DataDashboardItem
+                {
+                    Label = name,
+                    TargetUrl = url,
+                    Selector = selector,
+                    RefreshIntervalSeconds = interval
+                };
+                _app.WindowConfigs.BackgroundDashboardItems.Add(item);
+                _app.WindowConfigs.Save();
+
+                // 同步到轮询服务
+                Services.DataPollingService.Instance.SyncFromConfigs(_app.WindowConfigs);
+                dialog.Close();
+                RefreshDashboardItemList();
+            };
+            cancelBtn.Click += (s, ev) => dialog.Close();
+            btnPanel.Children.Add(okBtn);
+            btnPanel.Children.Add(cancelBtn);
+            root.Children.Add(btnPanel);
+
+            dialog.Content = root;
+            dialog.ShowDialog();
+        }
+
+        /// <summary>刷新“我的数据看板”列表（遍历所有窗口/面板的 DashboardItems）</summary>
+        private void RefreshDashboardItemList()
+        {
+            dashboardItemListPanel.Children.Clear();
+
+            var polling = Services.DataPollingService.Instance;
+            var allItems = new List<(string source, Models.DataDashboardItem item)>();
+
+            // 面板数据项
+            foreach (var win in _app.WindowConfigs.Windows)
+            {
+                foreach (var panel in win.Panels)
+                {
+                    if (panel.DashboardItems == null || panel.DashboardItems.Count == 0) continue;
+                    var panelTitle = panel.Title ?? panel.Type.ToString();
+                    foreach (var item in panel.DashboardItems)
+                        allItems.Add(($"{win.Name} / {panelTitle}", item));
+                }
+            }
+
+            // 后台数据项
+            foreach (var item in _app.WindowConfigs.BackgroundDashboardItems)
+                allItems.Add(("后台轮询", item));
+
+            if (allItems.Count == 0)
+            {
+                dashboardItemListPanel.Children.Add(new TextBlock
+                {
+                    Text = "暂无数据看板项，请在侧边栏“数据看板”模块中添加，或点击下方“+ 添加后台数据项”",
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
+                    FontSize = (double)FindResource("FontSizeSmall")
+                });
+                return;
+            }
+
+            foreach (var (source, item) in allItems)
+            {
+                var row = new Grid { Margin = new Thickness(0, 4, 0, 4) };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });   // 状态点
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // 信息
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });   // 按钮
+
+                // 连接状态点
+                var state = polling.GetItemState(item);
+                var dotColor = state switch
+                {
+                    Services.ConnectionState.Connected => System.Windows.Media.Brushes.LimeGreen,
+                    Services.ConnectionState.Connecting => System.Windows.Media.Brushes.Gold,
+                    Services.ConnectionState.Error => System.Windows.Media.Brushes.IndianRed,
+                    _ => System.Windows.Media.Brushes.Gray
+                };
+                var dot = new System.Windows.Shapes.Ellipse
+                {
+                    Width = 8, Height = 8, Fill = dotColor,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 8, 0),
+                    ToolTip = state.ToString()
+                };
+                Grid.SetColumn(dot, 0);
+                row.Children.Add(dot);
+
+                // 信息区
+                var info = new StackPanel();
+                info.Children.Add(new Emoji.Wpf.TextBlock
+                {
+                    Text = $"{item.Label}  =  {item.Value}",
+                    Foreground = (Brush)FindResource("BrushTextMain"),
+                    FontSize = (double)FindResource("FontSizeNormal"),
+                    FontWeight = FontWeights.SemiBold
+                });
+                info.Children.Add(new Emoji.Wpf.TextBlock
+                {
+                    Text = $"目标: {item.TargetUrl}  |  刷新: {item.RefreshIntervalSeconds}s  |  所属: {source}",
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
+                    FontSize = (double)FindResource("FontSizeTiny"),
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    Margin = new Thickness(0, 2, 0, 0)
+                });
+                Grid.SetColumn(info, 1);
+                row.Children.Add(info);
+
+                // 按钮区：刷新 + 断开
+                var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+
+                var refreshBtn = new Button
+                {
+                    Content = "↻", Style = (Style)FindResource("GhostButtonStyle"),
+                    Padding = new Thickness(6, 2, 6, 2), FontSize = 11, Margin = new Thickness(0, 0, 4, 0),
+                    ToolTip = "立即刷新"
+                };
+                var capturedItem = item;
+                refreshBtn.Click += async (s, e) =>
+                {
+                    try { await polling.RefreshItemAsync(capturedItem); RefreshDashboardItemList(); }
+                    catch { }
+                };
+                btnPanel.Children.Add(refreshBtn);
+
+                var connKey = polling.GetConnectionKey(item);
+                var conn = polling.GetConnection(connKey);
+                if (conn != null)
+                {
+                    var disconnectBtn = new Button
+                    {
+                        Content = "断开", Style = (Style)FindResource("GhostButtonStyle"),
+                        Padding = new Thickness(6, 2, 6, 2), FontSize = 10,
+                        ToolTip = conn.IsSelfLaunched ? "断开并关闭自启动的隐藏浏览器" : "断开 CDP 连接（不关闭浏览器）"
+                    };
+                    var capturedKey = connKey;
+                    disconnectBtn.Click += (s, e) => { polling.DisconnectConnection(capturedKey); RefreshDashboardItemList(); };
+                    btnPanel.Children.Add(disconnectBtn);
+                }
+
+                Grid.SetColumn(btnPanel, 2);
+                row.Children.Add(btnPanel);
+
+                dashboardItemListPanel.Children.Add(row);
+            }
+        }
+
+        /// <summary>数据模块连接方式切换（RadioButton）</summary>
+        private void DataFetchMode_Changed(object sender, RoutedEventArgs e)
+        {
+            if (rbModeExtension == null || rbModeCdp == null) return;
+            var mode = rbModeCdp.IsChecked == true ? "cdp" : "extension";
             _app.AppSettings.DataConnectionMode = mode;
             _app.AppSettings.Save();
+
+            cdpPortSection.Visibility = mode == "cdp" ? Visibility.Visible : Visibility.Collapsed;
 
             if (mode == "extension")
             {
@@ -1906,6 +2862,99 @@ namespace SideDesk
                 }
                 catch { /* ignore */ }
             }
+        }
+
+        /// <summary>CDP 端口修改</summary>
+        private void CdpPort_LostFocus(object sender, RoutedEventArgs e)
+        {
+            if (int.TryParse(cdpPortBox.Text.Trim(), out int port) && port > 0 && port <= 65535)
+            {
+                _app.AppSettings.CdpDebugPort = port;
+                _app.AppSettings.Save();
+            }
+            else
+            {
+                cdpPortBox.Text = _app.AppSettings.CdpDebugPort.ToString();
+            }
+        }
+
+        /// <summary>测试 CDP 连接：列出浏览器所有标签页</summary>
+        private async void TestCdpConnection_Click(object sender, RoutedEventArgs e)
+        {
+            int port = _app.AppSettings.CdpDebugPort;
+            if (int.TryParse(cdpPortBox.Text.Trim(), out int p) && p > 0) port = p;
+
+            string resultText;
+            try
+            {
+                // 复用已缓存的 WebSocket CDP 连接（避免重复新建连接触发浏览器弹窗）
+                var client = await Services.CdpBrowserService.Instance.GetOrConnectBrowserAsync(port);
+                if (client == null)
+                {
+                    resultText = $"WebSocket CDP 连接失败（127.0.0.1:{port}）。\n\n请确认：\n1. 浏览器已开启远程调试（edge://inspect 或 --remote-debugging-port={port}）\n2. 没有防火墙/安全软件拦截本地连接";
+                }
+                else
+                {
+                    // 通过 Target.getTargets 获取所有标签页
+                    var targets = await client.SendCommandAsync(ChromeProtocol.Domains.Target.GetTargets());
+                    var pages = targets.TargetInfos.Where(t => t.Type == "page").ToList();
+
+                    if (pages.Count == 0)
+                    {
+                        resultText = $"连接成功（ws://127.0.0.1:{port}），但没有打开的页面标签页。";
+                    }
+                    else
+                    {
+                        var sb = new System.Text.StringBuilder();
+                        sb.AppendLine($"WebSocket CDP 连接成功（127.0.0.1:{port}），共 {pages.Count} 个页面标签页：");
+                        sb.AppendLine(new string('─', 40));
+                        int idx = 1;
+                        foreach (var tab in pages)
+                        {
+                            var title = string.IsNullOrEmpty(tab.Title) ? "(无标题)" : tab.Title;
+                            sb.AppendLine($"{idx}. {title}");
+                            sb.AppendLine($"   {tab.Url}");
+                            idx++;
+                        }
+                        resultText = sb.ToString();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                resultText = $"连接失败：{ex.Message}\n\n请确认浏览器已开启远程调试（edge://inspect 或 --remote-debugging-port={port}）";
+            }
+
+            // 弹出对话框显示结果
+            var dialog = new Window
+            {
+                Title = "CDP 连接测试",
+                Width = 520,
+                Height = 400,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this,
+                Background = (Brush)FindResource("BrushDialogBG"),
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                ResizeMode = ResizeMode.CanResize
+            };
+            dialog.SourceInitialized += (s, ev) => App.UpdateWindowDwmTheme(dialog, App.IsCurrentThemeLight());
+
+            var textBox = new TextBox
+            {
+                Text = resultText,
+                IsReadOnly = true,
+                TextWrapping = TextWrapping.Wrap,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                FontFamily = new System.Windows.Media.FontFamily("Consolas, Microsoft YaHei"),
+                FontSize = 12,
+                Padding = new Thickness(12),
+                BorderThickness = new Thickness(0),
+                Background = Brushes.Transparent,
+                Foreground = (Brush)FindResource("BrushTextMain")
+            };
+
+            dialog.Content = textBox;
+            dialog.ShowDialog();
         }
 
         private void RefreshTemplateList()
@@ -1931,14 +2980,28 @@ namespace SideDesk
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
                 var info = new StackPanel();
-                var nameBlock = new Emoji.Wpf.TextBlock
+                // 名称 + 团队标签
+                var nameRow = new StackPanel { Orientation = Orientation.Horizontal };
+                nameRow.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = tpl.Name,
                     Foreground = (Brush)FindResource("BrushTextMain"),
                     FontSize = (double)FindResource("FontSizeNormal"),
                     FontWeight = FontWeights.SemiBold
-                };
-                info.Children.Add(nameBlock);
+                });
+                if (!string.IsNullOrEmpty(tpl.TeamName))
+                {
+                    nameRow.Children.Add(new TextBlock
+                    {
+                        Text = $" {tpl.TeamName}",
+                        Foreground = (Brush)FindResource("BrushTextMuted"),
+                        FontSize = 10,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Margin = new Thickness(6, 0, 0, 0),
+                        Opacity = 0.8
+                    });
+                }
+                info.Children.Add(nameRow);
 
                 var descText = string.IsNullOrEmpty(tpl.Category) ? tpl.Description : $"[{tpl.Category}] {tpl.Description}";
                 info.Children.Add(new Emoji.Wpf.TextBlock
@@ -1983,8 +3046,12 @@ namespace SideDesk
             win.Show();
         }
 
-        private void AddTemplate_Click(object sender, RoutedEventArgs e)
+        private async void AddTemplate_Click(object sender, RoutedEventArgs e)
         {
+            // 预加载团队列表
+            List<Services.Team>? teams = null;
+            try { teams = await Services.TeamService.Instance.ListTeamsAsync(); } catch { }
+
             var dialog = new Window
             {
                 Title = "新建数据模版",
@@ -2023,6 +3090,18 @@ namespace SideDesk
             panel.Children.Add(new Emoji.Wpf.TextBlock { Text = "分类", Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
             var categoryBox = new TextBox { Style = (Style)FindResource("GlobalTextBoxStyle"), Margin = new Thickness(0, 0, 0, 12) };
             panel.Children.Add(categoryBox);
+
+            // 所属团队
+            panel.Children.Add(new Emoji.Wpf.TextBlock { Text = "所属团队", Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
+            var teamCombo = new ComboBox { Style = (Style)FindResource("GlobalComboBoxStyle"), Margin = new Thickness(0, 0, 0, 12) };
+            teamCombo.Items.Add(new ComboBoxItem { Content = "个人", Tag = null });
+            if (teams != null)
+            {
+                foreach (var t in teams)
+                    teamCombo.Items.Add(new ComboBoxItem { Content = t.Name, Tag = t.Id });
+            }
+            teamCombo.SelectedIndex = 0;
+            panel.Children.Add(teamCombo);
 
             // 目标网址
             panel.Children.Add(new Emoji.Wpf.TextBlock { Text = "目标网址", Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
@@ -2197,7 +3276,9 @@ namespace SideDesk
                     DefaultBrowserId = browserCombo.SelectedIndex > 0 ? _registry.Browsers[browserCombo.SelectedIndex - 1].Id : null,
                     DefaultProfileId = (browserCombo.SelectedIndex > 0 && profileCombo.SelectedIndex > 0)
                         ? _registry.Browsers[browserCombo.SelectedIndex - 1].Profiles[profileCombo.SelectedIndex - 1].Id
-                        : null
+                        : null,
+                    TeamId = (teamCombo.SelectedItem as ComboBoxItem)?.Tag as string,
+                    TeamName = teamCombo.SelectedIndex > 0 ? (teamCombo.SelectedItem as ComboBoxItem)?.Content?.ToString() : null
                 };
 
                 var manager = DataTemplateManager.Load();
@@ -2232,6 +3313,55 @@ namespace SideDesk
                 catch { }
             }
             RefreshTemplateList();
+        }
+
+        /// <summary>从已有数据看板项导入为模板（去重：同 URL+Selector 不重复导入）</summary>
+        private void ImportFromDashboard_Click(object sender, RoutedEventArgs e)
+        {
+            var manager = DataTemplateManager.Load();
+            int imported = 0;
+
+            foreach (var win in _app.WindowConfigs.Windows)
+            {
+                foreach (var panel in win.Panels)
+                {
+                    if (panel.DashboardItems == null || panel.DashboardItems.Count == 0) continue;
+                    foreach (var item in panel.DashboardItems)
+                    {
+                        // 去重：同 URL + Selector 已存在则跳过
+                        bool exists = manager.Templates.Any(t =>
+                            string.Equals(t.TargetUrl, item.TargetUrl, StringComparison.OrdinalIgnoreCase) &&
+                            t.Selector == item.Selector);
+                        if (exists) continue;
+
+                        var template = new Models.DataTemplate
+                        {
+                            Id = Guid.NewGuid().ToString(),
+                            Name = item.Label,
+                            Description = $"从数据看板导入（{win.Name}）",
+                            Category = "自定义",
+                            TargetUrl = item.TargetUrl,
+                            Selector = item.Selector,
+                            RefreshIntervalSeconds = item.RefreshIntervalSeconds,
+                            DefaultBrowserId = item.BrowserId,
+                            DefaultProfileId = item.ProfileId
+                        };
+                        manager.SaveUserTemplate(template);
+                        manager.Templates.Add(template);
+                        imported++;
+                    }
+                }
+            }
+
+            if (imported > 0)
+            {
+                RefreshTemplateList();
+                MessageBox.Show($"已导入 {imported} 个数据看板项为模板", "导入成功", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            else
+            {
+                MessageBox.Show("没有新的数据看板项可导入（已存在相同 URL+选择器 的模板）", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
         }
 
         #endregion

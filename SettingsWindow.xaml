@@ -42,6 +42,7 @@
                     <ListBoxItem Content="小屏窗口"/>
                     <ListBoxItem Content="账户"/>
                     <ListBoxItem Content="团队"/>
+                    <ListBoxItem Content="好友"/>
                     <ListBoxItem Content="云空间"/>
                     <ListBoxItem Content="外观"/>
                     <ListBoxItem Content="程序管理"/>
@@ -117,27 +118,73 @@
                                Foreground="{DynamicResource BrushTextMain}"
                                Margin="0,0,0,24"/>
 
-                    <!-- 登录状态卡片 -->
+                    <!-- 个人资料卡片（含登录状态） -->
                     <Border Background="{DynamicResource BrushInputBG}"
                             BorderBrush="{DynamicResource BrushBorder}"
                             BorderThickness="1" CornerRadius="8"
                             Padding="16" Margin="0,0,0,16">
-                        <DockPanel>
-                            <Button x:Name="accountActionBtn" DockPanel.Dock="Right" Content="登录"
-                                    Click="AccountAction_Click"
-                                    Style="{DynamicResource PrimaryButtonStyle}"
-                                    Padding="16,6" Height="32" VerticalAlignment="Center"/>
-                            <StackPanel VerticalAlignment="Center">
-                                <TextBlock x:Name="accountStatusText" Text="未登录"
+                        <StackPanel>
+                            <!-- 个人资料详情（仅登录后显示） -->
+                            <StackPanel x:Name="accountProfileSection" Visibility="Collapsed">
+                                <TextBlock Text="个人资料"
                                            Foreground="{DynamicResource BrushTextMain}"
                                            FontSize="{DynamicResource FontSizeNormal}"
                                            FontWeight="SemiBold"/>
-                                <TextBlock x:Name="accountSubText" Text="登录后可开启云同步备份"
-                                           Foreground="{DynamicResource BrushTextMuted}"
-                                           FontSize="{DynamicResource FontSizeSmall}"
-                                           Margin="0,4,0,0"/>
+                                <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,12,0,12"/>
+                                <DockPanel>
+                                    <!-- 头像（点击更换） -->
+                                    <Border Width="64" Height="64" CornerRadius="32"
+                                            Background="{DynamicResource BrushAccent}"
+                                            DockPanel.Dock="Left" Margin="0,0,16,0"
+                                            Cursor="Hand" MouseLeftButtonUp="AccountAvatar_Click"
+                                            ToolTip="点击更换头像">
+                                        <Grid>
+                                            <TextBlock x:Name="accountAvatarFallbackText" Text="?"
+                                                       Foreground="White" FontSize="26"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            <Border x:Name="accountAvatarImageHost" CornerRadius="32" Visibility="Collapsed">
+                                                <Border.Background>
+                                                    <ImageBrush x:Name="accountAvatarImageBrush" Stretch="UniformToFill"/>
+                                                </Border.Background>
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+                                    <!-- 昵称编辑 -->
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="昵称"
+                                                   Foreground="{DynamicResource BrushTextMuted}"
+                                                   FontSize="{DynamicResource FontSizeSmall}" Margin="0,0,0,6"/>
+                                        <DockPanel>
+                                            <Button x:Name="saveNicknameBtn" Content="保存" DockPanel.Dock="Right"
+                                                    Click="SaveNickname_Click"
+                                                    Style="{DynamicResource PrimaryButtonStyle}"
+                                                    Padding="14,6" Height="30" Margin="8,0,0,0"/>
+                                            <TextBox x:Name="nicknameBox"
+                                                     Style="{StaticResource GlobalTextBoxStyle}"
+                                                     Height="30" VerticalContentAlignment="Center"/>
+                                        </DockPanel>
+                                    </StackPanel>
+                                </DockPanel>
+                                <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,12,0,12"/>
                             </StackPanel>
-                        </DockPanel>
+                            <!-- 登录状态 -->
+                            <DockPanel>
+                                <Button x:Name="accountActionBtn" DockPanel.Dock="Right" Content="登录"
+                                        Click="AccountAction_Click"
+                                        Style="{DynamicResource PrimaryButtonStyle}"
+                                        Padding="16,6" Height="32" VerticalAlignment="Center"/>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock x:Name="accountStatusText" Text="未登录"
+                                               Foreground="{DynamicResource BrushTextMain}"
+                                               FontSize="{DynamicResource FontSizeNormal}"
+                                               FontWeight="SemiBold"/>
+                                    <TextBlock x:Name="accountSubText" Text="登录后可开启云同步备份"
+                                               Foreground="{DynamicResource BrushTextMuted}"
+                                               FontSize="{DynamicResource FontSizeSmall}"
+                                               Margin="0,4,0,0"/>
+                                </StackPanel>
+                            </DockPanel>
+                        </StackPanel>
                     </Border>
 
                     <!-- 云同步卡片 -->
@@ -176,6 +223,40 @@
                                         Style="{StaticResource GhostButtonStyle}"
                                         Padding="14,6" Height="30"/>
                             </Grid>
+                            <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,12,0,12"/>
+                            <!-- 加密同步 -->
+                            <DockPanel>
+                                <CheckBox x:Name="encryptSyncSwitch" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                          Style="{StaticResource RaycastSwitchStyle}"
+                                          Checked="EncryptSyncSwitch_Changed"
+                                          Unchecked="EncryptSyncSwitch_Changed"/>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="加密同步"
+                                               Foreground="{DynamicResource BrushTextMain}"
+                                               FontSize="{DynamicResource FontSizeNormal}"/>
+                                    <TextBlock Text="敏感设置（云盘密钥、Token）加密后再上传，基于登录密码派生密钥"
+                                               Foreground="{DynamicResource BrushTextMuted}"
+                                               FontSize="{DynamicResource FontSizeTiny}"
+                                               TextWrapping="Wrap" Margin="0,2,8,0"/>
+                                </StackPanel>
+                            </DockPanel>
+                            <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,12,0,12"/>
+                            <!-- 恢复设置 -->
+                            <DockPanel>
+                                <Button x:Name="restoreSettingsBtn" DockPanel.Dock="Right" Content="从云端恢复"
+                                        Click="RestoreSettings_Click"
+                                        Style="{StaticResource GhostButtonStyle}"
+                                        Padding="14,6" Height="30"/>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="恢复设置"
+                                               Foreground="{DynamicResource BrushTextMain}"
+                                               FontSize="{DynamicResource FontSizeNormal}"/>
+                                    <TextBlock Text="从服务器拉取已同步的设置覆盖本地（换电脑后使用）"
+                                               Foreground="{DynamicResource BrushTextMuted}"
+                                               FontSize="{DynamicResource FontSizeTiny}"
+                                               TextWrapping="Wrap" Margin="0,2,8,0"/>
+                                </StackPanel>
+                            </DockPanel>
                         </StackPanel>
                     </Border>
 
@@ -269,6 +350,106 @@
                     </StackPanel>
                 </StackPanel>
 
+                <!-- 好友页面 -->
+                <StackPanel x:Name="pageFriends" Visibility="Collapsed" Margin="0,0,0,20">
+                    <TextBlock Text="好友"
+                               FontSize="{DynamicResource FontSizeSubtitle}"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource BrushTextMain}"
+                               Margin="0,0,0,8"/>
+                    <TextBlock x:Name="friendPageSubtitle" Text="通过用户名、邮箱、手机号或好友码搜索添加好友"
+                               Foreground="{DynamicResource BrushTextMuted}"
+                               FontSize="{DynamicResource FontSizeSmall}"
+                               Margin="0,0,0,16"/>
+
+                    <!-- 搜索添加区 -->
+                    <Border Background="{DynamicResource BrushInputBG}"
+                            BorderBrush="{DynamicResource BrushBorder}"
+                            BorderThickness="1" CornerRadius="6"
+                            Padding="12" Margin="0,0,0,12">
+                        <StackPanel>
+                            <TextBlock Text="添加好友" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource BrushTextMain}" Margin="0,0,0,8"/>
+                            <DockPanel>
+                                <Button x:Name="friendSearchBtn" Content="搜索" DockPanel.Dock="Right"
+                                        Style="{StaticResource GhostButtonStyle}" Padding="14,6" Margin="8,0,0,0"
+                                        Click="FriendSearch_Click"/>
+                                <TextBox x:Name="friendSearchBox"
+                                         Style="{StaticResource GlobalTextBoxStyle}"
+                                         KeyDown="FriendSearchBox_KeyDown"/>
+                            </DockPanel>
+                            <StackPanel x:Name="friendSearchResultPanel" Margin="0,8,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 好友请求区 -->
+                    <Border x:Name="friendRequestSection" Background="{DynamicResource BrushInputBG}"
+                            BorderBrush="{DynamicResource BrushBorder}"
+                            BorderThickness="1" CornerRadius="6"
+                            Padding="12" Margin="0,0,0,12" Visibility="Collapsed">
+                        <StackPanel>
+                            <TextBlock Text="好友请求" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource BrushTextMain}" Margin="0,0,0,8"/>
+                            <StackPanel x:Name="friendRequestPanel"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 好友列表区 -->
+                    <Border Background="{DynamicResource BrushInputBG}"
+                            BorderBrush="{DynamicResource BrushBorder}"
+                            BorderThickness="1" CornerRadius="6"
+                            Padding="12" Margin="0,0,0,12">
+                        <StackPanel>
+                            <TextBlock Text="我的好友" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource BrushTextMain}" Margin="0,0,0,8"/>
+                            <StackPanel x:Name="friendListPanel"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 允许被搜索添加好友 -->
+                    <Border Background="{DynamicResource BrushInputBG}"
+                            BorderBrush="{DynamicResource BrushBorder}"
+                            BorderThickness="1" CornerRadius="6"
+                            Padding="12">
+                        <DockPanel>
+                            <CheckBox x:Name="allowFriendSearchSwitch" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                      Style="{StaticResource RaycastSwitchStyle}"
+                                      Checked="AllowFriendSearch_Changed"
+                                      Unchecked="AllowFriendSearch_Changed"/>
+                            <StackPanel>
+                                <TextBlock Text="允许被搜索添加好友" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource BrushTextMain}"/>
+                                <TextBlock Text="关闭后别人无法搜索到你，同时清空好友码"
+                                           FontSize="12" Foreground="{DynamicResource BrushTextMuted}" Margin="0,4,0,0"/>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+
+                    <!-- 我的好友码 -->
+                    <Border Background="{DynamicResource BrushInputBG}"
+                            BorderBrush="{DynamicResource BrushBorder}"
+                            BorderThickness="1" CornerRadius="6"
+                            Padding="12" Margin="0,12,0,0">
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                <Button x:Name="refreshFriendCodeBtn" Content="换一换"
+                                        Style="{StaticResource GhostButtonStyle}" Padding="14,6" Margin="8,0,0,0"
+                                        Click="RefreshFriendCode_Click"/>
+                                <Button x:Name="copyFriendCodeBtn" Content="复制"
+                                        Style="{StaticResource GhostButtonStyle}" Padding="14,6" Margin="8,0,0,0"
+                                        Click="CopyFriendCode_Click"/>
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Text="我的好友码" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource BrushTextMain}"/>
+                                <TextBlock x:Name="myFriendCodeText" Text="加载中..."
+                                           FontSize="16" FontWeight="Bold" FontFamily="Consolas"
+                                           Foreground="{DynamicResource BrushAccent}" Margin="0,4,0,0"/>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+                </StackPanel>
+
                 <!-- 外观页面 -->
                 <StackPanel x:Name="pageAppearance" Visibility="Collapsed">
                     <TextBlock Text="外观" 
@@ -333,6 +514,24 @@
                                   Style="{StaticResource RaycastSwitchStyle}"
                                   Checked="HideModuleTitleSwitch_Changed"
                                   Unchecked="HideModuleTitleSwitch_Changed"/>
+                    </Grid>
+
+                    <!-- 显示通知条 -->
+                    <Grid Margin="0,0,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="显示通知条" Foreground="{DynamicResource BrushTextMain}"
+                                       FontSize="{DynamicResource FontSizeNormal}"/>
+                            <TextBlock Text="在窗口最右侧显示约 5px 宽的通知条，展示各种颜色的通知提醒" Foreground="{DynamicResource BrushTextMuted}"
+                                       FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0"/>
+                        </StackPanel>
+                        <CheckBox x:Name="showNotificationStripSwitch" Grid.Column="1" VerticalAlignment="Center"
+                                  Style="{StaticResource RaycastSwitchStyle}"
+                                  Checked="ShowNotificationStripSwitch_Changed"
+                                  Unchecked="ShowNotificationStripSwitch_Changed"/>
                     </Grid>
                 </StackPanel>
                 
@@ -442,6 +641,11 @@
                                FontSize="{DynamicResource FontSizeSmall}" 
                                Margin="0,0,0,16"/>
                     
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                        <Button Content="↻ 刷新列表" Click="RefreshPluginList_Click"
+                                Style="{StaticResource GhostButtonStyle}" Padding="12,6"/>
+                    </StackPanel>
+
                     <StackPanel x:Name="pluginListPanel"/>
                 </StackPanel>
                 
@@ -506,6 +710,29 @@
                             </StackPanel>
                         </DockPanel>
                     </Border>
+
+                    <!-- 窗口使用时长统计 -->
+                    <Border Background="{DynamicResource BrushInputBG}"
+                            BorderBrush="{DynamicResource BrushBorder}"
+                            BorderThickness="1" CornerRadius="8"
+                            Padding="16" Margin="0,0,0,12">
+                        <DockPanel>
+                            <CheckBox x:Name="usageStatsSwitch" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                      Style="{StaticResource RaycastSwitchStyle}"
+                                      Checked="UsageStatsSwitch_Changed"
+                                      Unchecked="UsageStatsSwitch_Changed"/>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="窗口使用时长统计"
+                                           Foreground="{DynamicResource BrushTextMain}"
+                                           FontSize="{DynamicResource FontSizeNormal}"
+                                           FontWeight="SemiBold"/>
+                                <TextBlock Text="开启后在后台记录各应用的使用时长，可在小屏「使用时长分析」中查看"
+                                           Foreground="{DynamicResource BrushTextMuted}"
+                                           FontSize="{DynamicResource FontSizeTiny}"
+                                           Margin="0,2,0,0"/>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
                 </StackPanel>
                 
                 <!-- 模块页面 -->
@@ -525,28 +752,76 @@
                             BorderBrush="{DynamicResource BrushBorder}" 
                             BorderThickness="1" CornerRadius="8" 
                             Padding="16" Margin="0,0,0,12">
-                        <DockPanel>
-                            <CheckBox x:Name="dataConnectionModeSwitch" DockPanel.Dock="Right" VerticalAlignment="Center"
-                                      Style="{StaticResource RaycastSwitchStyle}"
-                                      Checked="DataConnectionMode_Changed" 
-                                      Unchecked="DataConnectionMode_Changed"/>
-                            <StackPanel VerticalAlignment="Center">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="浏览器插件模式" 
-                                               Foreground="{DynamicResource BrushTextMain}"
-                                               FontSize="{DynamicResource FontSizeNormal}"/>
-                                    <TextBlock Text=" ❓" FontSize="12" Cursor="Help" VerticalAlignment="Center"
-                                               ToolTip="开启：通过浏览器插件 + WebSocket(19191) 获取数据&#x0a;关闭：直连 CDP 模式（需要 Chrome 146 以上版本，&#x0a;通过 --remote-debugging-port 启动参数连接浏览器）"
-                                               Foreground="{DynamicResource BrushTextMuted}"/>
-                                </StackPanel>
-                                <TextBlock Text="开启后启动 WebSocket 端口(19191)与浏览器插件通信；关闭则使用 CDP 直连" 
-                                           Foreground="{DynamicResource BrushTextMuted}" 
-                                           FontSize="{DynamicResource FontSizeSmall}" 
-                                           Margin="0,4,0,0" TextWrapping="Wrap"/>
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <TextBlock Text="Web 数据获取方式" 
+                                           Foreground="{DynamicResource BrushTextMain}"
+                                           FontSize="{DynamicResource FontSizeNormal}"/>
+                                <TextBlock Text=" ❓" FontSize="12" Cursor="Help" VerticalAlignment="Center"
+                                           ToolTip="浏览器插件模式：通过浏览器插件 + WebSocket(19191) 获取数据&#x0a;CDP 连接模式：直连已运行的浏览器（需开启 --remote-debugging-port）"
+                                           Foreground="{DynamicResource BrushTextMuted}"/>
                             </StackPanel>
-                        </DockPanel>
+                            <RadioButton x:Name="rbModeExtension" Content="浏览器插件模式" GroupName="DataFetchMode"
+                                         Foreground="{DynamicResource BrushTextMain}" FontSize="13"
+                                         Margin="0,0,0,6" Checked="DataFetchMode_Changed"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <RadioButton x:Name="rbModeCdp" Content="CDP 连接模式" GroupName="DataFetchMode"
+                                             Foreground="{DynamicResource BrushTextMain}" FontSize="13"
+                                             VerticalAlignment="Center" Checked="DataFetchMode_Changed"/>
+                                <Button Content="测试连接" Click="TestCdpConnection_Click"
+                                        Style="{StaticResource GhostButtonStyle}" Padding="8,3"
+                                        FontSize="11" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <!-- CDP 端口配置（仅 CDP 模式显示） -->
+                            <StackPanel x:Name="cdpPortSection" Orientation="Horizontal" Visibility="Collapsed" Margin="20,0,0,0">
+                                <TextBlock Text="调试端口：" Foreground="{DynamicResource BrushTextSec}" 
+                                           FontSize="12" VerticalAlignment="Center"/>
+                                <TextBox x:Name="cdpPortBox" Width="70" FontSize="12" Padding="4,3"
+                                         Text="9222" LostFocus="CdpPort_LostFocus"/>
+                                <TextBlock Text="（浏览器启动参数 --remote-debugging-port）" 
+                                           Foreground="{DynamicResource BrushTextMuted}" 
+                                           FontSize="11" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                            </StackPanel>
+                        </StackPanel>
                     </Border>
                     
+                    <!-- 我的数据看板 -->
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="我的数据看板" 
+                                       FontSize="{DynamicResource FontSizeNormal}" 
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource BrushTextMain}"/>
+                            <TextBlock Text="统一轮询数据源（面板组件仅展示，可添加不在面板显示的后台数据项）" 
+                                       Foreground="{DynamicResource BrushTextMuted}" 
+                                       FontSize="{DynamicResource FontSizeSmall}" 
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="隐藏浏览器:" Foreground="{DynamicResource BrushTextSec}" 
+                                       FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <ComboBox x:Name="hiddenBrowserModeCombo" Width="90" FontSize="11"
+                                      SelectionChanged="HiddenBrowserMode_Changed">
+                                <ComboBoxItem Content="无头模式" Tag="headless"/>
+                                <ComboBoxItem Content="隐藏窗口" Tag="hidden"/>
+                            </ComboBox>
+                        </StackPanel>
+                    </Grid>
+                    <Border Background="{DynamicResource BrushInputBG}" 
+                            BorderBrush="{DynamicResource BrushBorder}" 
+                            BorderThickness="1" CornerRadius="6" 
+                            Padding="12" Margin="0,0,0,8">
+                        <StackPanel x:Name="dashboardItemListPanel"/>
+                    </Border>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <Button Content="+ 添加后台数据项" Click="AddBackgroundDashItem_Click"
+                                Style="{StaticResource GhostButtonStyle}" Padding="12,6"/>
+                    </StackPanel>
+
                     <!-- 数据模版 -->
                     <Grid Margin="0,0,0,8">
                         <Grid.ColumnDefinitions>
@@ -577,6 +852,8 @@
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,0">
                         <Button Content="+ 新建模版" Click="AddTemplate_Click"
                                 Style="{StaticResource GhostButtonStyle}" Padding="12,6"/>
+                        <Button Content="⬇ 从数据看板导入" Click="ImportFromDashboard_Click"
+                                Style="{StaticResource GhostButtonStyle}" Padding="12,6" Margin="10,0,0,0"/>
                     </StackPanel>
                 </StackPanel>
                 

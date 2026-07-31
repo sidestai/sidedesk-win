@@ -24,7 +24,10 @@ public enum PanelType
     Friend,          // 好友
     ImageCarousel,   // 图片轮播
     DailyActivity,   // 每日活跃
-    Plugin           // 外部插件
+    Calendar,        // 日历
+    Plugin,          // 外部插件
+    ScreenTime,      // 屏幕时长
+    Countdown        // 倒计时器
 }
 
 public class PanelItem
@@ -38,6 +41,7 @@ public class PanelItem
     public List<FileAreaItem>? FileItems { get; set; } // 文件区数据
     public List<DataDashboardItem>? DashboardItems { get; set; } // 数据看板项
     public List<TimerItem>? TimerItems { get; set; } // 计时器数据
+    public List<CountdownItem>? CountdownItems { get; set; } // 倒计时器数据
     public List<PanelItem>? ChildPanels { get; set; } // 分组子面板
     public bool IsExpanded { get; set; } = true;      // 分组是否展开
     public string? GroupBGColor { get; set; }              // 分组自定义背景色（hex字符串，null=跟随主题）
@@ -63,6 +67,7 @@ public class PanelItem
     public string? FriendStatusText { get; set; }                // 好友模块：状态文字
     public string FriendOnlineStatus { get; set; } = "online";   // 好友模块：在线状态 online/away/busy/offline
     public string FriendDisplayMode { get; set; } = "HorizontalSmall"; // 好友模块：显示方式 HorizontalSmall/VerticalLarge
+    public List<int>? FriendUserIds { get; set; }                // 好友模块：展示的好友 userId 列表（引用后端真实好友，与实际数据分离的显示副本）
     public string? CarouselFolder { get; set; }                  // 图片轮播：图片所在目录
     public int CarouselIntervalSeconds { get; set; } = 5;        // 图片轮播：切换间隔（秒）
     public bool CarouselRandom { get; set; } = false;            // 图片轮播：随机播放（否则顺序）
@@ -71,6 +76,7 @@ public class PanelItem
     public double CarouselHeight { get; set; } = 140;            // 图片轮播：显示区高度（px）
     public bool CarouselAutoPlay { get; set; } = true;           // 图片轮播：自动播放
     public string? PluginId { get; set; }                        // 插件模块：插件 ID（对应 plugin.json 中的 id）
+    public string ScreenTimeStyle { get; set; } = "List";        // 屏幕时长组件展示风格：List/Pie/Category/Window
 }
 
 public class FileAreaItem
@@ -123,6 +129,36 @@ public class TimerItem
         if (IsRunning && StartTime.HasValue)
             return ElapsedTime + (DateTime.Now - StartTime.Value);
         return ElapsedTime;
+    }
+}
+
+/// <summary>
+/// 倒计时项
+/// </summary>
+public class CountdownItem
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string Name { get; set; } = "新倒计时";
+    public int TotalSeconds { get; set; } = 3600;        // 倒计时总时长（秒）
+    public double RemainingSeconds { get; set; } = 3600; // 剩余秒数（暂停时保存进度）
+    public bool IsRunning { get; set; } = false;
+    public DateTime? StartTime { get; set; }             // 本次启动的时刻（运行中用于计算已消耗时间）
+    public bool IsFinished { get; set; } = false;        // 是否已到期
+
+    // 到时提醒方式
+    public bool RemindFlash { get; set; } = true;        // 闪烁窗口
+    public bool RemindPopup { get; set; } = true;        // 弹出提示窗口
+    public string RemindAction { get; set; } = "None";   // 到时操作：None/Hibernate/Shutdown
+
+    /// <summary>获取当前剩余时间（含运行中的实时计算）</summary>
+    public TimeSpan GetRemaining()
+    {
+        if (IsRunning && StartTime.HasValue)
+        {
+            var remaining = RemainingSeconds - (DateTime.Now - StartTime.Value).TotalSeconds;
+            return TimeSpan.FromSeconds(Math.Max(0, remaining));
+        }
+        return TimeSpan.FromSeconds(Math.Max(0, RemainingSeconds));
     }
 }
 
@@ -195,6 +231,8 @@ public class WindowConfigManager
     public List<WindowConfig> Windows { get; set; } = new();
     public DockWindowState LeftDock { get; set; } = new();
     public DockWindowState RightDock { get; set; } = new();
+    /// <summary>全局后台数据看板项（不绑定任何面板，仅后台轮询）</summary>
+    public List<DataDashboardItem> BackgroundDashboardItems { get; set; } = new();
 
     public static WindowConfigManager Load()
     {

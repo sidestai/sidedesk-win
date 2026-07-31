@@ -39,6 +39,9 @@ namespace SideDesk.Services
         private const string DeleteEndpoint = "http://localhost:3007/api/sidebar/sync/delete";
         // 新增单个窗口接口：只提交新建的 bar（含 items），不触碰其他窗口
         private const string CreateBarEndpoint = "http://localhost:3007/api/sidebar/sync/bar";
+        // 用户设置同步接口
+        private const string SettingSyncEndpoint = "http://localhost:3007/api/sidebar/setting/sync";
+        private const string SettingListEndpoint = "http://localhost:3007/api/sidebar/setting/list";
 
         private const int IntervalMinutes = 30;
 
@@ -105,6 +108,10 @@ namespace SideDesk.Services
 
                     settings.LastCloudSyncTime = DateTime.Now;
                     settings.Save();
+
+                    // 窗口同步成功后，追加设置项同步
+                    await SyncSettingsAsync(settings).ConfigureAwait(false);
+
                     StatusChanged?.Invoke(CloudSyncState.Success, $"已同步 · {settings.LastCloudSyncTime:yyyy-MM-dd HH:mm}");
                     return true;
                 }
@@ -394,6 +401,189 @@ namespace SideDesk.Services
                 }
             }
             return null;
+        }
+
+        #endregion
+
+        #region 设置项云同步
+
+        /// <summary>需要同步的设置项白名单（key = 上传标识, category, isSensitive）</summary>
+        private static readonly (string Key, string Category, bool Sensitive)[] SettingWhitelist =
+        {
+            // general
+            ("general.theme_mode",        "general", false),
+            ("general.background_opacity","general", false),
+            ("general.show_notification", "general", false),
+            ("general.enable_auto_update","general", false),
+            ("general.enable_mcp_server", "general", false),
+            ("general.data_connection",   "general", false),
+            // cloud_drive
+            ("baidu_pan.access_token",    "cloud_drive", true),
+            ("baidu_pan.refresh_token",   "cloud_drive", true),
+            ("baidu_pan.token_expiry",    "cloud_drive", false),
+        };
+
+        /// <summary>从 Settings 对象提取指定 key 的值</summary>
+        private static string? GetSettingValue(Settings s, string key)
+        {
+            return key switch
+            {
+                "general.theme_mode"         => s.ThemeMode,
+                "general.background_opacity" => s.BackgroundOpacity.ToString(),
+                "general.show_notification"  => s.ShowNotificationStrip.ToString(),
+                "general.enable_auto_update" => s.EnableAutoUpdate.ToString(),
+                "general.enable_mcp_server"  => s.EnableMcpServer.ToString(),
+                "general.data_connection"    => s.DataConnectionMode,
+                "baidu_pan.access_token"     => s.BaiduPanAccessToken,
+                "baidu_pan.refresh_token"    => s.BaiduPanRefreshToken,
+                "baidu_pan.token_expiry"     => s.BaiduPanTokenExpiry?.ToString("o"),
+                _ => null
+            };
+        }
+
+        /// <summary>将服务器拉取的设置值写回本地 Settings</summary>
+        private static void ApplySettingValue(Settings s, string key, string? value)
+        {
+            switch (key)
+            {
+                case "general.theme_mode":         s.ThemeMode = value ?? "Dark"; break;
+                case "general.background_opacity": if (double.TryParse(value, out var op)) s.BackgroundOpacity = op; break;
+                case "general.show_notification":  s.ShowNotificationStrip = value == "True"; break;
+                case "general.enable_auto_update": s.EnableAutoUpdate = value == "True"; break;
+                case "general.enable_mcp_server":  s.EnableMcpServer = value == "True"; break;
+                case "general.data_connection":    s.DataConnectionMode = value ?? "extension"; break;
+                case "baidu_pan.access_token":     s.BaiduPanAccessToken = value; break;
+                case "baidu_pan.refresh_token":    s.BaiduPanRefreshToken = value; break;
+                case "baidu_pan.token_expiry":
+                    s.BaiduPanTokenExpiry = DateTime.TryParse(value, out var exp) ? exp : null;
+                    break;
+            }
+        }
+
+        /// <summary>获取当前加密密钥（若已启用加密同步且本地有缓存密钥）</summary>
+        private static byte[]? GetEncryptionKey(Settings settings)
+        {
+            if (!settings.SyncEncryptEnabled || string.IsNullOrEmpty(settings.SyncDerivedKey))
+                return null;
+            try
+            {
+                return SyncEncryption.UnprotectKeyFromLocal(settings.SyncDerivedKey);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 将本地设置项同步到服务器。敏感字段在启用加密同步时加密后上传。
+        /// </summary>
+        private async Task SyncSettingsAsync(Settings settings)
+        {
+            try
+            {
+                byte[]? encKey = GetEncryptionKey(settings);
+                var items = new List<object>();
+
+                foreach (var (key, category, sensitive) in SettingWhitelist)
+                {
+                    string? rawValue = GetSettingValue(settings, key);
+                    if (rawValue == null) continue;
+
+                    int isEncrypted = 0;
+                    string uploadValue = rawValue;
+
+                    if (sensitive && encKey != null)
+                    {
+                        uploadValue = SyncEncryption.Encrypt(rawValue, encKey);
+                        isEncrypted = 1;
+                    }
+
+                    items.Add(new { key, value = uploadValue, isEncrypted, category });
+                }
+
+                if (items.Count == 0) return;
+
+                var payload = new { settings = items };
+                string json = NJson.JsonConvert.SerializeObject(payload);
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] 设置同步 POST {SettingSyncEndpoint}");
+
+                using var content = new StringContent(json, Encoding.UTF8, "application/json");
+                using var req = new HttpRequestMessage(HttpMethod.Post, SettingSyncEndpoint) { Content = content };
+                req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + settings.AccountToken);
+
+                using var resp = await _http.SendAsync(req).ConfigureAwait(false);
+                if (resp.IsSuccessStatusCode)
+                {
+                    settings.LastSettingsSyncTime = DateTime.Now;
+                    settings.Save();
+                    System.Diagnostics.Debug.WriteLine("[CloudSync] 设置同步成功");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"[CloudSync] 设置同步失败: HTTP {(int)resp.StatusCode}");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] 设置同步异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 从服务器拉取设置并写回本地（用于“恢复设置”功能）。
+        /// 加密字段自动解密。返回恢复的设置项数，-1 表示失败。
+        /// </summary>
+        public async Task<int> RestoreSettingsAsync()
+        {
+            var app = (SideDesk.App)System.Windows.Application.Current;
+            var settings = app.AppSettings;
+
+            if (string.IsNullOrEmpty(settings.AccountToken)) return -1;
+
+            try
+            {
+                using var req = new HttpRequestMessage(HttpMethod.Get, SettingListEndpoint);
+                req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + settings.AccountToken);
+
+                using var resp = await _http.SendAsync(req).ConfigureAwait(false);
+                if (!resp.IsSuccessStatusCode) return -1;
+
+                string responseJson = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                var root = JObject.Parse(responseJson);
+                if (root["code"]?.Value<int>() != 200) return -1;
+                if (root["data"] is not JArray dataArr) return -1;
+
+                byte[]? encKey = GetEncryptionKey(settings);
+                int count = 0;
+
+                foreach (var entry in dataArr.OfType<JObject>())
+                {
+                    string? key = entry["key"]?.ToString();
+                    string? value = entry["value"]?.ToString();
+                    int isEncrypted = entry["isEncrypted"]?.Value<int>() ?? 0;
+
+                    if (string.IsNullOrEmpty(key) || value == null) continue;
+
+                    // 解密敏感字段
+                    if (isEncrypted == 1 && encKey != null && SyncEncryption.IsEncrypted(value))
+                    {
+                        try { value = SyncEncryption.Decrypt(value, encKey); }
+                        catch { continue; } // 解密失败跳过该项
+                    }
+
+                    ApplySettingValue(settings, key, value);
+                    count++;
+                }
+
+                if (count > 0) settings.Save();
+                return count;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] 恢复设置失败: {ex.Message}");
+                return -1;
+            }
         }
 
         #endregion

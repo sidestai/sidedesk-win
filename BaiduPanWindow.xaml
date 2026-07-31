@@ -1,0 +1,165 @@
+<Window x:Class="SideDesk.BaiduPanWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:emoji="clr-namespace:Emoji.Wpf;assembly=Emoji.Wpf"
+        Title="百度网盘" Height="560" Width="780"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource BrushBG}"
+        Foreground="{DynamicResource BrushTextMain}">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- 标题栏 -->
+        <DockPanel Grid.Row="0" Margin="0,0,0,10" LastChildFill="True">
+            <Button x:Name="uploadBtn" Content="⬆ 上传文件" DockPanel.Dock="Right"
+                    Style="{StaticResource PrimaryButtonStyle}" Padding="12,6"
+                    Click="Upload_Click" Margin="8,0,0,0"/>
+            <Button Content="📁 新建文件夹" DockPanel.Dock="Right"
+                    Style="{StaticResource GhostButtonStyle}" Padding="12,6"
+                    Click="NewFolder_Click" Margin="8,0,0,0"/>
+            <Button x:Name="refreshBtn" Content="🔄" DockPanel.Dock="Right"
+                    Style="{StaticResource GhostButtonStyle}" Padding="6,4" FontSize="13"
+                    Click="Refresh_Click" Margin="8,0,0,0" ToolTip="刷新"/>
+            <emoji:TextBlock x:Name="quotaText" DockPanel.Dock="Right" Text=""
+                    FontSize="11" Foreground="{DynamicResource BrushTextMuted}"
+                    VerticalAlignment="Center" Margin="0,0,6,0"/>
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <emoji:TextBlock Text="☁️ 百度网盘"
+                           FontSize="{DynamicResource FontSizeSubtitle}"
+                           FontWeight="Bold"
+                           Foreground="{DynamicResource BrushTextMain}"
+                           VerticalAlignment="Center"/>
+            </StackPanel>
+        </DockPanel>
+
+        <!-- 面包屑路径导航 -->
+        <Border Grid.Row="1" Background="{DynamicResource BrushInputBG}" CornerRadius="6" Padding="10,6" Margin="0,0,0,10">
+            <StackPanel x:Name="breadcrumbPanel" Orientation="Horizontal"/>
+        </Border>
+
+        <!-- 未授权提示 -->
+        <StackPanel x:Name="notAuthPanel" Grid.Row="2" VerticalAlignment="Center" HorizontalAlignment="Center" Visibility="Collapsed">
+            <emoji:TextBlock Text="🔗" FontSize="36" HorizontalAlignment="Center" Margin="0,0,0,10"/>
+            <TextBlock Text="尚未授权百度网盘，点击下方按钮登录授权"
+                       FontSize="{DynamicResource FontSizeNormal}"
+                       Foreground="{DynamicResource BrushTextMuted}"
+                       HorizontalAlignment="Center" Margin="0,0,0,12"/>
+            <Button Content="授权登录百度网盘" Style="{StaticResource PrimaryButtonStyle}" Padding="20,8"
+                    HorizontalAlignment="Center" Click="Authorize_Click"/>
+        </StackPanel>
+
+        <!-- 加载中提示 -->
+        <TextBlock x:Name="loadingText" Grid.Row="2" Text="正在加载..."
+                   FontSize="{DynamicResource FontSizeNormal}"
+                   Foreground="{DynamicResource BrushTextMuted}"
+                   VerticalAlignment="Center" HorizontalAlignment="Center"
+                   Visibility="Collapsed"/>
+
+        <!-- 空目录提示 -->
+        <emoji:TextBlock x:Name="emptyText" Grid.Row="2" Text="📂 此文件夹为空，点击右上角「上传文件」添加内容"
+                   FontSize="{DynamicResource FontSizeNormal}"
+                   Foreground="{DynamicResource BrushTextMuted}"
+                   VerticalAlignment="Center" HorizontalAlignment="Center"
+                   Visibility="Collapsed"/>
+
+        <!-- 加载失败提示 -->
+        <StackPanel x:Name="errorPanel" Grid.Row="2" VerticalAlignment="Center" HorizontalAlignment="Center" Visibility="Collapsed">
+            <emoji:TextBlock Text="⚠️ 加载失败，请检查网络或稍后重试"
+                       FontSize="{DynamicResource FontSizeNormal}"
+                       Foreground="{DynamicResource BrushTextMuted}"
+                       HorizontalAlignment="Center"/>
+            <Button Content="重试" Style="{StaticResource GhostButtonStyle}" Padding="16,6"
+                    HorizontalAlignment="Center" Margin="0,10,0,0" Click="Refresh_Click"/>
+        </StackPanel>
+
+        <!-- 文件列表 -->
+        <ListView x:Name="fileListView" Grid.Row="2"
+                  Background="Transparent" BorderThickness="0"
+                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                  MouseDoubleClick="FileList_MouseDoubleClick">
+            <ListView.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="下载" Click="Download_Click"/>
+                    <MenuItem Header="删除" Click="Delete_Click"/>
+                </ContextMenu>
+            </ListView.ContextMenu>
+            <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem">
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                    <Setter Property="Margin" Value="0,1"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ListViewItem">
+                                <Border x:Name="rowBorder" CornerRadius="6" Padding="10,8" Background="Transparent">
+                                    <ContentPresenter/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="rowBorder" Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}"/>
+                                    </Trigger>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter TargetName="rowBorder" Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </ListView.ItemContainerStyle>
+            <ListView.ItemTemplate>
+                <DataTemplate>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <!-- 图标 -->
+                        <emoji:TextBlock Grid.Column="0" Text="{Binding TypeIcon}" FontSize="20"
+                                   VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        <!-- 名称 -->
+                        <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="13"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource BrushTextMain}"
+                                   TextTrimming="CharacterEllipsis"/>
+                        <!-- 大小 -->
+                        <TextBlock Grid.Column="2" Text="{Binding SizeText}" FontSize="12"
+                                   Foreground="{DynamicResource BrushTextMuted}"
+                                   VerticalAlignment="Center" Margin="16,0,0,0" MinWidth="70" TextAlignment="Right"/>
+                        <!-- 类型 -->
+                        <TextBlock Grid.Column="3" Text="{Binding MetaText}" FontSize="12"
+                                   Foreground="{DynamicResource BrushTextMuted}"
+                                   VerticalAlignment="Center" Margin="16,0,0,0" MinWidth="60" TextAlignment="Right"/>
+                    </Grid>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+
+        <!-- 底部状态栏 -->
+        <Border Grid.Row="3" Margin="0,10,0,0">
+            <DockPanel>
+                <TextBlock x:Name="statusText" Text="" DockPanel.Dock="Left"
+                           Foreground="{DynamicResource BrushTextMuted}"
+                           FontSize="{DynamicResource FontSizeTiny}"
+                           VerticalAlignment="Center"/>
+                <Grid x:Name="progressPanel" Visibility="Collapsed" Margin="20,0,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <ProgressBar x:Name="uploadProgress" Grid.Column="0" Height="14" Minimum="0" Maximum="100" Value="0"/>
+                    <TextBlock x:Name="uploadProgressText" Grid.Column="1" Text=""
+                               Foreground="{DynamicResource BrushTextMuted}"
+                               FontSize="{DynamicResource FontSizeTiny}"
+                               VerticalAlignment="Center" Margin="8,0,0,0" MinWidth="120"/>
+                </Grid>
+            </DockPanel>
+        </Border>
+    </Grid>
+</Window>

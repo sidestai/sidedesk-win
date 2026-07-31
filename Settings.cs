@@ -79,6 +79,9 @@ namespace SideDesk
         public string ThemeName { get; set; } = "";
         public string ThemeMode { get; set; } = "Dark"; // 支持 "Dark", "Light", "System"
         public double BackgroundOpacity { get; set; } = 50; // 背景透明度 0-100%
+
+        /// <summary>是否显示通知条（窗口最右侧约 5px 宽的竖条，展示各种颜色的通知提醒）</summary>
+        public bool ShowNotificationStrip { get; set; } = true;
         public bool EnableTitleLock { get; set; } = false;
         public bool EnableAutoUpdate { get; set; } = true;
         // 全局窗口切换热键（Ctrl+1~9），默认关闭以避免与浏览器等应用的 Ctrl+数字切标签冲突
@@ -87,8 +90,17 @@ namespace SideDesk
         /// <summary>是否开启 MCP Server（HTTP/SSE，端口 19192）</summary>
         public bool EnableMcpServer { get; set; } = false;
 
-        /// <summary>数据模块连接方式："extension" = 浏览器插件（启动 WS 19191），"cdp" = 直连 CDP（需 Chrome 146+）</summary>
+        /// <summary>数据模块连接方式："extension" = 浏览器插件（启动 WS 19191），"cdp" = 直连 CDP（需浏览器开启 --remote-debugging-port）</summary>
         public string DataConnectionMode { get; set; } = "extension";
+
+        /// <summary>CDP 模式连接的浏览器调试端口（浏览器需以 --remote-debugging-port=此端口 启动）</summary>
+        public int CdpDebugPort { get; set; } = 9222;
+
+        /// <summary>隐藏浏览器启动模式: "headless" = 无头模式, "hidden" = 隐藏窗口</summary>
+        public string HiddenBrowserMode { get; set; } = "headless";
+
+        /// <summary>是否启用自动启动隐藏浏览器（找不到匹配 tab 时）</summary>
+        public bool EnableAutoLaunchHiddenBrowser { get; set; } = true;
 
         // ========== 账户 / 云同步 ==========
 
@@ -98,11 +110,40 @@ namespace SideDesk
         /// <summary>账户显示名称</summary>
         public string? AccountName { get; set; }
 
+        /// <summary>账户头像（base64 编码的图片数据，空表示使用默认头像）</summary>
+        public string? AccountAvatar { get; set; }
+
         /// <summary>最近一次登录时间</summary>
         public DateTime? AccountLoginTime { get; set; }
 
+        /// <summary>用户是否曾经登录过（会员身份标记；一旦置 true 不再清除，用于掉线提示判断）</summary>
+        public bool HasLoggedInBefore { get; set; } = false;
+
         /// <summary>是否开启云同步（开启后定时把本地全部配置备份到服务器）</summary>
         public bool EnableCloudSync { get; set; } = false;
+
+        /// <summary>是否启用加密同步（敏感设置项加密后再上传）</summary>
+        public bool SyncEncryptEnabled { get; set; } = false;
+
+        /// <summary>DPAPI 加密后的派生密钥（base64，仅本机可解）</summary>
+        public string? SyncDerivedKey { get; set; }
+
+        /// <summary>最近一次设置同步成功的时间</summary>
+        public DateTime? LastSettingsSyncTime { get; set; }
+
+        /// <summary>用户 ID（登录后从 token 解析或接口获取，用于密钥派生 salt）</summary>
+        public int? AccountUserId { get; set; }
+
+        // ========== 百度网盘 ==========
+
+        /// <summary>百度网盘 OAuth access_token</summary>
+        public string? BaiduPanAccessToken { get; set; }
+
+        /// <summary>百度网盘 OAuth refresh_token（有效期10年，用于刷新 access_token）</summary>
+        public string? BaiduPanRefreshToken { get; set; }
+
+        /// <summary>百度网盘 access_token 过期时间</summary>
+        public DateTime? BaiduPanTokenExpiry { get; set; }
 
         // ========== 团队（Corp）切换 ==========
 

@@ -46,6 +46,8 @@ public class DataTemplate
     public int RefreshIntervalSeconds { get; set; } = 60;
     public string? DefaultBrowserId { get; set; }    // 可选默认浏览器
     public string? DefaultProfileId { get; set; }     // 可选默认Profile
+    public string? TeamId { get; set; }              // 所属团队ID（null=个人）
+    public string? TeamName { get; set; }            // 团队名称快照（显示用）
 }
 
 /// <summary>

@@ -50,6 +50,10 @@ public class PluginConfig
     /// <summary>是否启用</summary>
     [JsonProperty("enabled")]
     public bool Enabled { get; set; } = true;
+
+    /// <summary>插件所在目录（扫描时填充，不参与序列化）</summary>
+    [JsonIgnore]
+    public string? SourceDirectory { get; set; }
 }
 
 /// <summary>

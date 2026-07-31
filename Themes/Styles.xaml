@@ -962,4 +962,45 @@
             </Setter.Value>
         </Setter>
     </Style>
+
+    <!-- ===== 模块基础组件公共样式 ===== -->
+
+    <!-- 模块外框 Border 样式 -->
+    <Style x:Key="ModuleBorder" TargetType="Border">
+        <Setter Property="Margin" Value="0,0,0,6" />
+        <Setter Property="Padding" Value="3" />
+        <Setter Property="CornerRadius" Value="6" />
+        <Setter Property="Background" Value="{DynamicResource BrushInputBG}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}" />
+        <Setter Property="BorderThickness" Value="1" />
+    </Style>
+
+    <!-- 模块标题 TextBlock 样式 -->
+    <Style x:Key="ModuleHeaderTitle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
+    </Style>
+
+    <!-- 模块右上角菜单按钮样式 -->
+    <Style x:Key="ModuleMenuButton" TargetType="Button">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Padding" Value="4,0,4,0" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextMuted}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="HorizontalAlignment" Value="Right" />
+    </Style>
+
+    <!-- 模块底部拖拽手柄样式 -->
+    <Style x:Key="ModuleResizeGrip" TargetType="Border">
+        <Setter Property="Height" Value="6" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Cursor" Value="SizeNS" />
+        <Setter Property="Margin" Value="0,1,0,0" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="ToolTip" Value="拖拽调整模块高度（双击恢复自动高度）" />
+    </Style>
+
 </ResourceDictionary>

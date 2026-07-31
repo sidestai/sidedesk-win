@@ -20,6 +20,7 @@
                 <MenuItem Header="剪贴板收藏" Click="AddClipboardPanel_Click"/>
                 <MenuItem Header="系统信息" Click="AddSystemMonitorPanel_Click"/>
                 <MenuItem Header="使用统计" Click="AddUsageStatsPanel_Click"/>
+                <MenuItem Header="屏幕时长" Click="AddScreenTimePanel_Click"/>
                 <MenuItem Header="AI 对话" Click="AddAIChatPanel_Click"/>
                 <MenuItem Header="文件区" Click="AddFileAreaPanel_Click"/>
                 <MenuItem Header="数据看板" Click="AddDataDashboard_Click"/>
@@ -27,9 +28,11 @@
                     <MenuItem Header="(加载中...)" IsEnabled="False"/>
                 </MenuItem>
                 <MenuItem Header="计时器" Click="AddTimerPanel_Click"/>
+                <MenuItem Header="倒计时" Click="AddCountdownPanel_Click"/>
                 <MenuItem Header="信号灯" Click="AddSignalLightPanel_Click"/>
                 <MenuItem Header="图片轮播" Click="AddImageCarouselPanel_Click"/>
                 <MenuItem Header="每日活跃" Click="AddDailyActivityPanel_Click"/>
+                <MenuItem Header="日历" Click="AddCalendarPanel_Click"/>
                 <MenuItem Header="数字员工" Click="AddDigitalEmployeePanel_Click"/>
                 <MenuItem Header="好友" Click="AddFriendPanel_Click"/>
                 <Separator/>
@@ -80,9 +83,9 @@
         <!-- 置顶区：置顶模块固定显示在滚动区上方，压缩下方 ScrollViewer 的可用高度 -->
         <Border x:Name="pinnedArea" DockPanel.Dock="Top" Visibility="Collapsed"
                 BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1"
-                Margin="2,2,2,0" Padding="0,2,0,4">
+                Margin="2,0,2,0" Padding="0">
             <Grid>
-                <StackPanel x:Name="pinnedContent" Margin="0,2,0,0"/>
+                <StackPanel x:Name="pinnedContent" Margin="0,0,0,-4"/>
                 <!-- 置顶区拖拽调序指示器（常驻叠加层） -->
                 <Border x:Name="pinnedDropIndicator" Height="3" Background="DodgerBlue"
                         VerticalAlignment="Top" HorizontalAlignment="Stretch"

@@ -102,7 +102,10 @@ public class PluginLoaderService
                 var json = File.ReadAllText(configPath);
                 var config = JsonConvert.DeserializeObject<PluginConfig>(json);
                 if (config != null && !string.IsNullOrEmpty(config.Id))
+                {
+                    config.SourceDirectory = dir;
                     configs.Add(config);
+                }
             }
             catch { /* 忽略解析失败的插件 */ }
         }

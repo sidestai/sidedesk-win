@@ -284,14 +284,15 @@ namespace SideDesk.Windows
         }
 
         /// <summary>
-        /// 格式化 TimeSpan 为可读字符串，如 "2h 15m" 或 "3m 20s"
+        /// 格式化 TimeSpan 为可读字符串，如 "2h 15m" 或 "3m 20s"。
+        /// showSeconds=false 时省略秒数（分钟级显示为 "3m"），用于窄宽场景。
         /// </summary>
-        public static string FormatDuration(TimeSpan ts)
+        public static string FormatDuration(TimeSpan ts, bool showSeconds = true)
         {
             if (ts.TotalHours >= 1)
                 return $"{(int)ts.TotalHours}h {ts.Minutes}m";
             if (ts.TotalMinutes >= 1)
-                return $"{(int)ts.TotalMinutes}m {ts.Seconds}s";
+                return showSeconds ? $"{(int)ts.TotalMinutes}m {ts.Seconds}s" : $"{(int)ts.TotalMinutes}m";
             return $"{ts.Seconds}s";
         }
     }

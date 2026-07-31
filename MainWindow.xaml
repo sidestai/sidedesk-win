@@ -5,6 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:SideDesk"
         xmlns:controls="clr-namespace:SideDesk.Controls"
+        xmlns:emoji="clr-namespace:Emoji.Wpf;assembly=Emoji.Wpf"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         mc:Ignorable="d"
         Title="元桌小屏"
@@ -18,13 +19,17 @@
         DragEnter="Window_DragEnter"
         Background="{DynamicResource BrushBG}">
     <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
         <Grid.RowDefinitions>
             <RowDefinition Height="30"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
         <!-- 标题栏 -->
-        <Border Grid.Row="0" Background="{DynamicResource BrushInputBG}">
+        <Border Grid.Row="0" Grid.Column="0" Background="{DynamicResource BrushInputBG}">
             <Border.ContextMenu>
                 <ContextMenu>
                     <MenuItem Header="登录" Click="Login_Click"/>
@@ -88,36 +93,28 @@
             </Grid>
         </Border>
 
-        <controls:SidebarPanel x:Name="sidebarPanel" Grid.Row="1" />
+        <controls:SidebarPanel x:Name="sidebarPanel" Grid.Row="1" Grid.Column="0" />
 
-        <!-- 通知栏（浮动覆盖层，不影响布局） -->
-        <Border x:Name="notificationBar" Grid.Row="1"
+        <!-- 通知栏（浮动覆盖层，不影响布局）；多条通知垂直堆叠，关闭一条其余自动上移 -->
+        <Border x:Name="notificationBar" Grid.Row="1" Grid.Column="0"
                 VerticalAlignment="Top"
                 Panel.ZIndex="100"
-                Background="{DynamicResource BrushAccent}"
-                Padding="8,4"
+                Background="Transparent"
+                Visibility="Collapsed">
+            <StackPanel x:Name="notificationStack"/>
+        </Border>
+
+        <!-- 气泡提示（好友上/下线等轻量通知，底部浮动，自动淡出） -->
+        <StackPanel x:Name="bubbleStack" Grid.Row="1" Grid.Column="0"
+                    VerticalAlignment="Bottom" HorizontalAlignment="Stretch"
+                    Panel.ZIndex="200" Margin="6,0,6,8"/>
+
+        <!-- 通知条（窗口最右侧约 5px 宽的竖条，展示各种颜色的通知提醒；占据独立布局列，显示时左侧内容区收缩；各通知段可悬停提示、点击处理） -->
+        <Border x:Name="notificationStrip" Grid.Column="1" Grid.Row="0" Grid.RowSpan="2"
+                Width="5"
+                Background="{DynamicResource BrushBorder}"
                 Visibility="Visible">
-            <DockPanel>
-                <Button DockPanel.Dock="Right"
-                        Content="✕"
-                        FontSize="11"
-                        Width="18" Height="18"
-                        Margin="4,0,0,0"
-                        Background="Transparent"
-                        Foreground="{DynamicResource BrushAccentText}"
-                        BorderThickness="0"
-                        Cursor="Hand"
-                        ToolTip="关闭通知"
-                        Click="NotificationClose_Click"/>
-                <TextBlock x:Name="notificationText"
-                           Text="🔔 示例通知：欢迎使用 元桌小屏！点击查看详情"
-                           Foreground="{DynamicResource BrushAccentText}"
-                           FontSize="11"
-                           VerticalAlignment="Center"
-                           TextTrimming="CharacterEllipsis"
-                           Cursor="Hand"
-                           MouseLeftButtonUp="NotificationBar_Click"/>
-            </DockPanel>
+            <StackPanel x:Name="notificationStripPanel" Orientation="Vertical"/>
         </Border>
     </Grid>
 </local:AppBarWindow>

@@ -8,6 +8,9 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using ChromeProtocol.Domains;
+using ChromeProtocol.Runtime.Messaging.WebSockets;
+using Microsoft.Extensions.Logging.Abstractions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using SideDesk.Models;
@@ -27,7 +30,243 @@ public class CdpBrowserService : IDisposable
     private readonly object _lock = new();
     private int _nextPort = 9222;
 
+    // 缓存的 WebSocket CDP 连接（避免每次抓取都新建连接触发浏览器弹窗）
+    private DefaultProtocolClient? _cachedClient;
+    private int _cachedPort;
+    private readonly SemaphoreSlim _connectLock = new(1, 1);
+
     private CdpBrowserService() { }
+
+    /// <summary>
+    /// 连接已运行的浏览器（用户主浏览器，已开启远程调试），获取网页元素文本值。
+    /// 不启动新进程，直接通过 WebSocket CDP 连接（Chrome 144+ 不再支持 HTTP /json 发现端点）。
+    /// </summary>
+    /// <param name="port">浏览器调试端口（如 9222）</param>
+    /// <param name="url">目标网址</param>
+    /// <param name="selector">CSS Selector 或 XPath（以 // 开头）</param>
+    public async Task<string> FetchFromRunningBrowserAsync(int port, string url, string selector)
+    {
+        Debug.WriteLine($"[CDP] === FetchFromRunningBrowser 开始 === port={port}, url={url}, selector={selector}");
+        try
+        {
+            // 复用缓存的 WebSocket CDP 连接（避免重复新建连接触发浏览器弹窗）
+            var client = await GetOrConnectBrowserAsync(port);
+            if (client == null)
+            {
+                Debug.WriteLine($"[CDP] ✗ 无法通过 WebSocket 连接到 127.0.0.1:{port}");
+                return "--";
+            }
+            Debug.WriteLine($"[CDP] ✓ 已获取 CDP 连接 (cached={_cachedClient != null})");
+
+            // 查找匹配 URL 的 Tab
+            var targetId = await FindTabByUrlAsync(client, url);
+            if (targetId == null)
+            {
+                Debug.WriteLine($"[CDP] ✗ 未找到匹配 URL 的标签页: {url}");
+                return "--";
+            }
+            Debug.WriteLine($"[CDP] ✓ 找到目标 Tab: targetId={targetId}");
+
+            // Attach 到目标 Tab 并执行 JS
+            var result = await EvaluateOnTargetAsync(client, targetId, selector);
+            Debug.WriteLine($"[CDP] ✓ 抓取结果: \"{result}\"");
+            return result;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[CDP] ✗ FetchFromRunningBrowser 异常: {ex.GetType().Name}: {ex.Message}");
+            Debug.WriteLine($"[CDP]   StackTrace: {ex.StackTrace}");
+            // 连接可能已断开，清除缓存以便下次重连
+            InvalidateCachedClient();
+            return "--";
+        }
+    }
+
+    /// <summary>
+    /// 获取或复用缓存的 WebSocket CDP 连接。
+    /// 避免每次数据抓取都新建连接（Edge 每次新连接都会弹出"允许远程调试"对话框）。
+    /// </summary>
+    public async Task<DefaultProtocolClient?> GetOrConnectBrowserAsync(int port)
+    {
+        // 快速检查：缓存连接是否可用
+        if (_cachedClient != null && _cachedPort == port)
+            return _cachedClient;
+
+        // 全局守卫：同端口已有连接尝试进行中（Edge 弹窗未确认）则复用，不重复弹窗
+        var client = await CdpConnectGuard.ConnectAsync(port, () => ConnectBrowserAsync(port));
+
+        await _connectLock.WaitAsync();
+        try
+        {
+            // 等待期间可能已有其他调用者完成缓存
+            if (_cachedClient != null && _cachedPort == port)
+            {
+                if (!ReferenceEquals(_cachedClient, client))
+                {
+                    try { client?.Dispose(); } catch { }
+                }
+                return _cachedClient;
+            }
+
+            // 清除旧连接并缓存本次结果
+            InvalidateCachedClient();
+            _cachedClient = client;
+            _cachedPort = port;
+            return client;
+        }
+        finally
+        {
+            _connectLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// 使缓存的连接失效（连接断开或出错时调用）
+    /// </summary>
+    private void InvalidateCachedClient()
+    {
+        try { _cachedClient?.Dispose(); } catch { }
+        _cachedClient = null;
+    }
+
+    /// <summary>
+    /// 通过 WebSocket CDP 连接到已运行的浏览器，返回协议客户端。
+    /// Chrome 144+ 移除了 HTTP /json 发现端点，需通过 DevToolsActivePort 文件获取 WebSocket 路径，
+    /// 或直接尝试连接 ws://127.0.0.1:{port}/devtools/browser。
+    /// </summary>
+    public async Task<DefaultProtocolClient?> ConnectBrowserAsync(int port)
+    {
+        // 尝试从 DevToolsActivePort 文件读取 WebSocket 路径（Edge/Chrome 均会写入）
+        var wsPaths = new List<string>();
+        var activePortPath = FindDevToolsActivePortFile(port);
+        if (activePortPath != null)
+        {
+            try
+            {
+                var lines = await File.ReadAllLinesAsync(activePortPath);
+                if (lines.Length >= 2 && int.TryParse(lines[0].Trim(), out int filePort) && filePort == port)
+                {
+                    var path = lines[1].Trim();
+                    if (path.StartsWith("/")) wsPaths.Add(path);
+                }
+            }
+            catch { /* 文件可能被锁定，忽略 */ }
+        }
+
+        // 回退：直接尝试标准路径
+        wsPaths.Add("/devtools/browser");
+
+        foreach (var path in wsPaths)
+        {
+            var wsUri = new Uri($"ws://127.0.0.1:{port}{path}");
+            var client = new DefaultProtocolClient(wsUri, NullLogger.Instance);
+            try
+            {
+                // 超时适当放宽：Edge “允许远程调试”弹窗需用户手动确认，
+                // 太短会在用户确认前超时重试、叠加弹窗；连接被拒绝时仍会快速失败。
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                await client.ConnectAsync(cts.Token);
+                Debug.WriteLine($"[CDP] WebSocket 连接成功: {wsUri}");
+                return client;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[CDP] 连接 {wsUri} 失败: {ex.Message}");
+                client.Dispose();
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 查找浏览器 DevToolsActivePort 文件（Edge/Chrome 用户数据目录）
+    /// </summary>
+    private static string? FindDevToolsActivePortFile(int port)
+    {
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var candidates = new[]
+        {
+            Path.Combine(localAppData, "Microsoft", "Edge", "User Data", "DevToolsActivePort"),
+            Path.Combine(localAppData, "Google", "Chrome", "User Data", "DevToolsActivePort"),
+            Path.Combine(localAppData, "BraveSoftware", "Brave-Browser", "User Data", "DevToolsActivePort"),
+        };
+        return candidates.FirstOrDefault(File.Exists);
+    }
+
+    /// <summary>
+    /// 通过 Target.getTargets 查找匹配 URL 的 page 类型 Tab，返回 TargetId
+    /// </summary>
+    public async Task<Target.TargetIDType?> FindTabByUrlAsync(DefaultProtocolClient client, string url)
+    {
+        var result = await client.SendCommandAsync(Target.GetTargets());
+        var pages = result.TargetInfos.Where(t => t.Type == "page").ToList();
+        Debug.WriteLine($"[CDP] GetTargets: 共 {result.TargetInfos.Count} 个 target, 其中 {pages.Count} 个 page");
+        foreach (var p in pages)
+            Debug.WriteLine($"[CDP]   page: \"{p.Title}\" -> {p.Url}");
+
+        // 精确匹配或前缀匹配
+        foreach (var tab in pages)
+        {
+            var tabUrl = tab.Url ?? "";
+            if (tabUrl.StartsWith(url, StringComparison.OrdinalIgnoreCase) || url.StartsWith(tabUrl, StringComparison.OrdinalIgnoreCase))
+            {
+                Debug.WriteLine($"[CDP] URL 匹配成功: \"{tabUrl}\" ~ \"{url}\"");
+                return tab.TargetId;
+            }
+        }
+
+        // 如果只有一个页面 Tab，直接使用它
+        if (pages.Count == 1)
+        {
+            Debug.WriteLine($"[CDP] 仅 1 个 page，直接使用: {pages[0].Url}");
+            return pages[0].TargetId;
+        }
+
+        Debug.WriteLine($"[CDP] ✗ 无匹配 URL 且有 {pages.Count} 个 page，返回 null");
+        return null;
+    }
+
+    /// <summary>
+    /// Attach 到指定 Target 并执行 JS 获取元素文本
+    /// </summary>
+    private async Task<string> EvaluateOnTargetAsync(DefaultProtocolClient client, Target.TargetIDType targetId, string selector)
+    {
+        // Attach 到目标 Tab，获取 sessionId
+        var attachResult = await client.SendCommandAsync(Target.AttachToTarget(targetId, Flatten: true));
+        var sessionId = attachResult.SessionId.Value;
+        Debug.WriteLine($"[CDP] AttachToTarget 成功, sessionId={sessionId}");
+
+        // 构建 JS 表达式：支持 CSS Selector 和 XPath
+        var jsExpression = BuildElementTextJs(selector);
+        Debug.WriteLine($"[CDP] 执行 JS: {jsExpression}");
+
+        // 通过 session 执行 Runtime.evaluate
+        var evalResult = await client.SendCommandAsync(
+            Runtime.Evaluate(jsExpression, ReturnByValue: true),
+            sessionId: sessionId);
+
+        Debug.WriteLine($"[CDP] Evaluate 返回: type={evalResult.Result?.Type}, value={evalResult.Result?.Value}, subtype={evalResult.Result?.Subtype}");
+        if (evalResult.ExceptionDetails != null)
+            Debug.WriteLine($"[CDP] ✗ JS 异常: {evalResult.ExceptionDetails.Text} (line {evalResult.ExceptionDetails.LineNumber})");
+
+        var value = evalResult.Result?.Value?.ToString();
+        return string.IsNullOrWhiteSpace(value) ? "--" : value;
+    }
+
+    /// <summary>
+    /// 构建获取元素文本的 JS 表达式（支持 CSS Selector 和 XPath）
+    /// XPath 以 / 或 // 开头（如 /html/body/... 或 //div[@class=...]）
+    /// </summary>
+    private static string BuildElementTextJs(string selector)
+    {
+        var trimmed = selector.TrimStart();
+        if (trimmed.StartsWith("//") || trimmed.StartsWith("/"))
+        {
+            return $"(function(){{ var r = document.evaluate(\"{EscapeJs(selector)}\", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null); return r.singleNodeValue ? r.singleNodeValue.textContent.trim() : '--'; }})()";
+        }
+        return $"(function(){{ var el = document.querySelector(\"{EscapeJs(selector)}\"); return el ? el.textContent.trim() : '--'; }})()";
+    }
 
     /// <summary>
     /// 获取网页元素的文本值
@@ -533,10 +772,12 @@ public class CdpBrowserService : IDisposable
     }
 
     /// <summary>
-    /// 关闭所有浏览器实例
+    /// 关闭所有浏览器实例和缓存连接
     /// </summary>
     public void Dispose()
     {
+        InvalidateCachedClient();
+
         lock (_lock)
         {
             foreach (var kvp in _instances)

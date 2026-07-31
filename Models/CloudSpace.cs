@@ -39,7 +39,7 @@ namespace SideDesk.Models
             Load();
         }
 
-        /// <summary>系统内置云空间预设（仅元桌云盘一项，不可删除/编辑）</summary>
+        /// <summary>系统内置云空间预设（元桌云盘，不可删除/编辑）</summary>
         private static List<CloudSpace> GetBuiltinSpaces() => new()
         {
             new CloudSpace { Name = "元桌云盘", Url = "内置", Icon = "☁️", Note = "元桌内置云存储服务", IsBuiltin = true },
@@ -71,18 +71,25 @@ namespace SideDesk.Models
             }
         }
 
-        /// <summary>迁移旧版内置预设：移除已废弃的内置网盘项，确保元桌云盘存在</summary>
+        /// <summary>迁移旧版内置预设：确保所有内置项存在，并移除不再是内置的旧条目</summary>
         private static void MigrateBuiltins()
         {
             bool changed = false;
-            // 移除旧版内置网盘预设（百度网盘等已不再内置）
-            int removed = _spaces.RemoveAll(s => s.IsBuiltin && s.Name != "元桌云盘");
+            var builtins = GetBuiltinSpaces();
+            var builtinNames = new HashSet<string>(builtins.ConvertAll(b => b.Name));
+
+            // 移除已不再是内置的旧条目（如旧版“百度网盘”内置项）
+            int removed = _spaces.RemoveAll(s => s.IsBuiltin && !builtinNames.Contains(s.Name));
             if (removed > 0) changed = true;
-            // 确保元桌云盘始终存在
-            if (!_spaces.Exists(s => s.IsBuiltin && s.Name == "元桌云盘"))
+
+            // 确保所有内置云空间始终存在
+            foreach (var builtin in builtins)
             {
-                _spaces.Insert(0, GetBuiltinSpaces()[0]);
-                changed = true;
+                if (!_spaces.Exists(s => s.IsBuiltin && s.Name == builtin.Name))
+                {
+                    _spaces.Insert(_spaces.FindIndex(s => s.IsBuiltin) < 0 ? 0 : _spaces.FindLastIndex(s => s.IsBuiltin) + 1, builtin);
+                    changed = true;
+                }
             }
             if (changed) SaveNoLock();
         }

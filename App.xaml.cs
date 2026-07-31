@@ -71,6 +71,9 @@ namespace SideDesk
             WindowConfigs = WindowConfigManager.Load();
             WindowConfigs.EnsureDefault();
 
+            // 初始化数据轮询服务（中央数据源）
+            Services.DataPollingService.Instance.SyncFromConfigs(WindowConfigs);
+
             // 加载程序注册表
             ProgramRegistry = ProgramRegistryManager.Load();
 
@@ -123,6 +126,17 @@ namespace SideDesk
                 System.Diagnostics.Debug.WriteLine($"[WebSocketServer] 启动异常: {ex.Message}");
             }
 
+            // 订阅后端 WebSocket 消息（好友请求等通知），无论哪条登录路径都生效
+            try
+            {
+                Services.BackendWebSocketService.Instance.MessageReceived -= OnBackendWsMessage;
+                Services.BackendWebSocketService.Instance.MessageReceived += OnBackendWsMessage;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[BackendWS] 订阅消息异常: {ex.Message}");
+            }
+
             // 启动 MCP Server (127.0.0.1:19192)，仅在开启时
             try
             {
@@ -143,6 +157,17 @@ namespace SideDesk
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[GlobalHotkey] 启动异常: {ex.Message}");
+            }
+
+            // 启动窗口使用时长采集（仅在开启“使用时长分析”时）
+            try
+            {
+                if (SideDesk.Framework.AppSettings.Instance.ShowUsageStats)
+                    Services.WindowUsageService.Instance.Start();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[WindowUsage] 启动异常: {ex.Message}");
             }
 
             // 启动时恢复上次保存的标题锁定规则（仅在功能开启时）
@@ -197,7 +222,13 @@ namespace SideDesk
                 await Task.Delay(2000);
 
                 var token = AppSettings.AccountToken;
-                if (string.IsNullOrEmpty(token)) return;
+                if (string.IsNullOrEmpty(token))
+                {
+                    // 无 token 但曾经登录过（会员用户掉线状态）→ 显示橙色登录提示
+                    if (AppSettings.HasLoggedInBefore)
+                        ShowLoggedOutNotification();
+                    return;
+                }
 
                 using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
                 using var req = new System.Net.Http.HttpRequestMessage(
@@ -222,7 +253,15 @@ namespace SideDesk
                     // Token 有效，清除过期提示，更新最后登录时间
                     AccountTokenExpiredMessage = null;
                     AppSettings.AccountLoginTime = DateTime.Now;
+                    AppSettings.HasLoggedInBefore = true; // 确认会员身份
                     AppSettings.Save();
+
+                    // 拉取用户详情（昵称、头像等）
+                    await FetchAndSaveUserInfoAsync(token);
+
+                    // Token 有效 → 启动后端 WebSocket 长连接（消息订阅已在 OnStartup 统一建立）
+                    try { Services.BackendWebSocketService.Instance.Start(token); }
+                    catch (Exception wsEx) { System.Diagnostics.Debug.WriteLine($"[BackendWS] 启动异常: {wsEx.Message}"); }
                     return;
                 }
 
@@ -243,6 +282,12 @@ namespace SideDesk
 
                     // 停止云同步
                     try { Services.CloudSyncService.Instance.Stop(); } catch { }
+
+                    // 停止后端 WebSocket 连接
+                    try { Services.BackendWebSocketService.Instance.Stop(); } catch { }
+
+                    // 显示橙色掉线通知
+                    ShowLoggedOutNotification();
                 }
                 // 其他 code（如 500、0=解析失败）不做处理，避免服务器临时故障时误清除
             }
@@ -250,6 +295,79 @@ namespace SideDesk
             {
                 // 网络不可达等异常：不做任何处理（服务器可能未启动）
                 System.Diagnostics.Debug.WriteLine($"[Auth] 启动时 Token 验证跳过: {ex.Message}");
+            }
+        }
+
+        /// <summary>在所有主窗口上显示橙色掉线通知，点击后打开设置→账户页登录</summary>
+        private void ShowLoggedOutNotification()
+        {
+            Dispatcher.Invoke(() =>
+            {
+                var orange = new System.Windows.Media.SolidColorBrush(
+                    (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#E67E22"));
+                orange.Freeze();
+                foreach (var mw in _windows)
+                {
+                    if (mw.IsLoaded)
+                        mw.ShowNotification("⚠️ 您已掉线，点击这里登录", orange, () =>
+                            OpenSettings(sw => sw.SwitchToAccountPage()));
+                }
+            });
+        }
+
+        /// <summary>调用后端 /auth/userinfo 接口获取用户详情（昵称、头像等）并保存到本地配置</summary>
+        public async Task FetchAndSaveUserInfoAsync(string token)
+        {
+            try
+            {
+                using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+                using var req = new System.Net.Http.HttpRequestMessage(
+                    System.Net.Http.HttpMethod.Get, "http://localhost:3007/api/auth/userinfo");
+                req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
+
+                using var resp = await http.SendAsync(req);
+                string body = await resp.Content.ReadAsStringAsync();
+
+                using var doc = System.Text.Json.JsonDocument.Parse(body);
+                var root = doc.RootElement;
+                int code = root.TryGetProperty("code", out var c) ? c.GetInt32() : 0;
+                if (code != 200) return;
+                if (!root.TryGetProperty("data", out var data)) return;
+
+                bool changed = false;
+
+                // 昵称
+                string? nickName = data.TryGetProperty("nickName", out var n) ? n.GetString() : null;
+                if (!string.IsNullOrWhiteSpace(nickName) && nickName != AppSettings.AccountName)
+                {
+                    AppSettings.AccountName = nickName;
+                    changed = true;
+                }
+
+                // 头像（URL → 下载转 base64）
+                string? avatarUrl = data.TryGetProperty("avatar", out var a) ? a.GetString() : null;
+                if (!string.IsNullOrWhiteSpace(avatarUrl))
+                {
+                    try
+                    {
+                        var imgBytes = await http.GetByteArrayAsync(avatarUrl);
+                        if (imgBytes.Length > 0)
+                        {
+                            AppSettings.AccountAvatar = Convert.ToBase64String(imgBytes);
+                            changed = true;
+                        }
+                    }
+                    catch (Exception avatarEx)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[Auth] 头像下载失败: {avatarEx.Message}");
+                    }
+                }
+
+                if (changed) AppSettings.Save();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Auth] 获取用户详情失败: {ex.Message}");
             }
         }
 
@@ -390,6 +508,9 @@ namespace SideDesk
             // 释放托盘图标
             try { _notifyIcon?.Dispose(); } catch { }
 
+            // 停止后端 WebSocket 客户端连接
+            try { Services.BackendWebSocketService.Instance.Stop(); } catch { }
+
             // 停止本地 WebSocket 服务端
             try
             {
@@ -403,6 +524,9 @@ namespace SideDesk
 
             // 停止全局窗口切换热键
             try { GlobalHotkeyService.Instance.Stop(); } catch { }
+
+            // 停止窗口使用时长采集
+            try { Services.WindowUsageService.Instance.Stop(); } catch { }
 
             // 停止虚拟桌面服务
             try { VirtualDesktop?.Dispose(); } catch { }
@@ -520,6 +644,63 @@ namespace SideDesk
                 // 非 fetchResult/register 消息弹窗提示
                 MessageBox.Show(message, "收到扩展消息", MessageBoxButton.OK, MessageBoxImage.Information);
             });
+        }
+
+        /// <summary>
+        /// 收到后端 WebSocket 推送的消息（好友请求、系统通知等）
+        /// </summary>
+        private void OnBackendWsMessage(string message)
+        {
+            System.Diagnostics.Debug.WriteLine($"[App] 后端WS消息: {message}");
+            try
+            {
+                var obj = Newtonsoft.Json.Linq.JObject.Parse(message);
+                var evt = (string?)obj["event"];
+                var data = obj["data"] as Newtonsoft.Json.Linq.JObject;
+
+                if (evt == "friend_request" && data != null)
+                {
+                    var fromName = (string?)data["fromName"] ?? "未知用户";
+                    var requestId = (int?)data["requestId"] ?? 0;
+
+                    Dispatcher.Invoke(() =>
+                    {
+                        foreach (var mw in _windows)
+                        {
+                            if (mw.IsLoaded)
+                                mw.ShowFriendRequestNotification(fromName, requestId);
+                        }
+                    });
+                }
+                else if (evt == "friend_online" && data != null)
+                {
+                    var userName = (string?)data["userName"] ?? "好友";
+                    Dispatcher.Invoke(() =>
+                    {
+                        foreach (var mw in _windows)
+                        {
+                            if (mw.IsLoaded)
+                                mw.ShowBubbleNotification($"🟢 {userName} 上线了");
+                        }
+                    });
+                }
+                else if (evt == "friend_offline" && data != null)
+                {
+                    var userName = (string?)data["userName"] ?? "好友";
+                    Dispatcher.Invoke(() =>
+                    {
+                        foreach (var mw in _windows)
+                        {
+                            if (mw.IsLoaded)
+                                mw.ShowBubbleNotification($"⚪ {userName} 下线了");
+                        }
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[App] 后端WS消息解析异常: {ex.Message}");
+            }
         }
 
         /// <summary>
@@ -1224,7 +1405,8 @@ namespace SideDesk
         /// 打开设置窗口（供托盘右键菜单使用）。
         /// 若已有打开的设置窗口则激活；无停靠窗口时也能独立弹出。
         /// </summary>
-        public void OpenSettings()
+        /// <param name="afterOpen">窗口显示后执行的回调（如导航到指定页面）</param>
+        public void OpenSettings(Action<SettingsWindow>? afterOpen = null)
         {
             foreach (Window w in Windows)
             {
@@ -1232,6 +1414,7 @@ namespace SideDesk
                 {
                     existing.Show();
                     existing.Activate();
+                    afterOpen?.Invoke(existing);
                     return;
                 }
             }
@@ -1239,6 +1422,7 @@ namespace SideDesk
             var settings = new SettingsWindow();
             settings.Show();
             settings.Activate();
+            afterOpen?.Invoke(settings);
         }
 
         #region 系统托盘图标

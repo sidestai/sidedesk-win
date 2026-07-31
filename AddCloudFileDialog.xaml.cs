@@ -60,9 +60,17 @@ public partial class AddCloudFileDialog : Window
             MessageBox.Show("请先选择一个云盘。", "无法选择", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
+
+        // 百度网盘：打开百度网盘窗口浏览
+        if (space.Name == "百度网盘")
+        {
+            new BaiduPanWindow().Show();
+            return;
+        }
+
         if (!space.IsBuiltin)
         {
-            MessageBox.Show("仅内置的元桌云盘支持浏览选择文件。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show("仅内置的云盘支持浏览选择文件。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
