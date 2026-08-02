@@ -8,10 +8,16 @@
     <DockPanel Margin="20">
         <!-- 顶部切换按钮 -->
         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,14">
-            <Button x:Name="toggleBatchBtn" Content="批量模式" Click="ToggleBatch_Click"
-                    DockPanel.Dock="Right" Padding="10,4"
-                    FontSize="{DynamicResource FontSizeSmall}"
-                    Style="{StaticResource GhostButtonStyle}"/>
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button Content="🌐 网页市场" Click="OpenWebMarket_Click"
+                        Padding="10,4" Margin="0,0,8,0"
+                        FontSize="{DynamicResource FontSizeSmall}"
+                        Style="{StaticResource GhostButtonStyle}"/>
+                <Button x:Name="toggleBatchBtn" Content="批量模式" Click="ToggleBatch_Click"
+                        Padding="10,4"
+                        FontSize="{DynamicResource FontSizeSmall}"
+                        Style="{StaticResource GhostButtonStyle}"/>
+            </StackPanel>
             <TextBlock Text="添加快捷项" FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
                        Foreground="{DynamicResource BrushTextMain}" VerticalAlignment="Center"/>
         </DockPanel>

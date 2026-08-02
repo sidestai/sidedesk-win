@@ -29,6 +29,7 @@
                 </MenuItem>
                 <MenuItem Header="计时器" Click="AddTimerPanel_Click"/>
                 <MenuItem Header="倒计时" Click="AddCountdownPanel_Click"/>
+                <MenuItem Header="番茄闹钟" Click="AddPomodoroPanel_Click"/>
                 <MenuItem Header="信号灯" Click="AddSignalLightPanel_Click"/>
                 <MenuItem Header="图片轮播" Click="AddImageCarouselPanel_Click"/>
                 <MenuItem Header="每日活跃" Click="AddDailyActivityPanel_Click"/>

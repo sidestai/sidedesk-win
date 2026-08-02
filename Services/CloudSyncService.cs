@@ -236,6 +236,30 @@ namespace SideDesk.Services
             [NJson.JsonProperty("items")] public List<SyncItem>? Items { get; set; }
         }
 
+        /// <summary>云同步上传的数据看板变量 DTO（key-value，团队/个人作用域）。一个数据项可对应多个变量。</summary>
+        private class SyncVariable
+        {
+            [NJson.JsonProperty("itemLocalId")] public string? ItemLocalId { get; set; }
+            [NJson.JsonProperty("varKey")] public string VarKey { get; set; } = "";
+            [NJson.JsonProperty("varValue")] public string? VarValue { get; set; }
+            [NJson.JsonProperty("label")] public string? Label { get; set; }
+            [NJson.JsonProperty("corpId")] public int? CorpId { get; set; }  // 团队ID（null=个人）
+        }
+
+        /// <summary>云同步上传的数据看板数据项配置 DTO（名称/网址/选择器/间隔/浏览器/团队归属）。</summary>
+        private class SyncDataItem
+        {
+            [NJson.JsonProperty("itemLocalId")] public string? ItemLocalId { get; set; }
+            [NJson.JsonProperty("label")] public string? Label { get; set; }
+            [NJson.JsonProperty("targetUrl")] public string? TargetUrl { get; set; }
+            [NJson.JsonProperty("selector")] public string? Selector { get; set; }
+            [NJson.JsonProperty("refreshInterval")] public int? RefreshInterval { get; set; }
+            [NJson.JsonProperty("browserId")] public string? BrowserId { get; set; }
+            [NJson.JsonProperty("profileId")] public string? ProfileId { get; set; }
+            [NJson.JsonProperty("templateId")] public string? TemplateId { get; set; }
+            [NJson.JsonProperty("corpId")] public int? CorpId { get; set; }  // 团队ID（null=个人）
+        }
+
         private static readonly NJson.JsonSerializerSettings _syncPayloadSettings = new()
         {
             NullValueHandling = NJson.NullValueHandling.Ignore
@@ -252,6 +276,18 @@ namespace SideDesk.Services
             foreach (var win in mgr.Windows)
                 bars.Add(BuildSyncBar(win));
 
+            // 收集所有数据看板变量（设置了变量名的数据项）
+            var variables = new List<SyncVariable>();
+            foreach (var win in mgr.Windows)
+                foreach (var p in win.Panels)
+                    CollectVariables(p, variables);
+
+            // 收集所有数据看板数据项配置（全量，后端结构化记录）
+            var dataItems = new List<SyncDataItem>();
+            foreach (var win in mgr.Windows)
+                foreach (var p in win.Panels)
+                    CollectDataItems(p, dataItems);
+
             // 当前选中的团队 ID（个人模式为 null，由后端自行处理）
             string? corpId = null;
             try
@@ -267,11 +303,68 @@ namespace SideDesk.Services
                 machine = Environment.MachineName,
                 corpId,
                 syncedAt = DateTime.Now.ToString("o"),
-                bars
+                bars,
+                variables,
+                dataItems
             };
             return NJson.JsonConvert.SerializeObject(payload,
                 indented ? NJson.Formatting.Indented : NJson.Formatting.None,
                 _syncPayloadSettings);
+        }
+
+        /// <summary>递归收集面板（含分组子面板）内设置了变量名的数据看板项，转为 SyncVariable。</summary>
+        private static void CollectVariables(PanelItem p, List<SyncVariable> vars)
+        {
+            if (p.DashboardItems != null)
+            {
+                foreach (var di in p.DashboardItems)
+                {
+                    if (string.IsNullOrEmpty(di.VarKey)) continue;
+                    var v = new SyncVariable
+                    {
+                        ItemLocalId = di.Id,
+                        VarKey = di.VarKey,
+                        VarValue = di.Value,
+                        Label = di.Label,
+                    };
+                    // 团队ID：数据项归属的团队（个人则为 null）
+                    if (!string.IsNullOrEmpty(di.TeamId) && int.TryParse(di.TeamId, out var cid))
+                        v.CorpId = cid;
+                    vars.Add(v);
+                }
+            }
+            if (p.ChildPanels != null)
+                foreach (var c in p.ChildPanels)
+                    CollectVariables(c, vars);
+        }
+
+        /// <summary>递归收集面板（含分组子面板）内所有数据看板数据项的配置，转为 SyncDataItem。</summary>
+        private static void CollectDataItems(PanelItem p, List<SyncDataItem> items)
+        {
+            if (p.DashboardItems != null)
+            {
+                foreach (var di in p.DashboardItems)
+                {
+                    var it = new SyncDataItem
+                    {
+                        ItemLocalId = di.Id,
+                        Label = di.Label,
+                        TargetUrl = di.TargetUrl,
+                        Selector = di.Selector,
+                        RefreshInterval = di.RefreshIntervalSeconds,
+                        BrowserId = di.BrowserId,
+                        ProfileId = di.ProfileId,
+                        TemplateId = di.TemplateId,
+                    };
+                    // 团队ID：数据项归属的团队（个人则为 null）
+                    if (!string.IsNullOrEmpty(di.TeamId) && int.TryParse(di.TeamId, out var cid))
+                        it.CorpId = cid;
+                    items.Add(it);
+                }
+            }
+            if (p.ChildPanels != null)
+                foreach (var c in p.ChildPanels)
+                    CollectDataItems(c, items);
         }
 
         /// <summary>将单个窗口配置转为 SyncBar（含其全部模块）。</summary>

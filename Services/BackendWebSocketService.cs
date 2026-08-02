@@ -123,6 +123,15 @@ namespace SideDesk.Services
             {
                 try
                 {
+                    // 先用 TCP 探测端口，避免后端未启动时反复抛出 WebSocketException
+                    using (var probe = new System.Net.Sockets.TcpClient())
+                    {
+                        var probeTask = probe.ConnectAsync(WsHost, WsPort);
+                        if (await Task.WhenAny(probeTask, Task.Delay(2000, token)).ConfigureAwait(false) != probeTask)
+                            throw new TimeoutException($"端口 {WsPort} 探测超时");
+                        await probeTask.ConfigureAwait(false); // 传播连接失败异常
+                    }
+
                     _socket?.Dispose();
                     _socket = new ClientWebSocket();
 

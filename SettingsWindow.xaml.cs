@@ -97,6 +97,9 @@ namespace SideDesk
             titleLockSwitch.IsChecked = _app.AppSettings.EnableTitleLock;
             windowSwitchHotkeySwitch.IsChecked = _app.AppSettings.EnableWindowSwitchHotkey;
             mcpServerSwitch.IsChecked = _app.AppSettings.EnableMcpServer;
+            httpServerSwitch.IsChecked = _app.AppSettings.EnableHttpServer;
+            httpPortBox.Text = _app.AppSettings.HttpServerPort.ToString();
+            UpdateHttpServerStatus();
             usageStatsSwitch.IsChecked = Framework.AppSettings.Instance.ShowUsageStats;
 
             // 账户 / 云同步
@@ -111,7 +114,7 @@ namespace SideDesk
         private void Nav_Changed(object sender, SelectionChangedEventArgs e)
         {
             if (_isLoading) return;
-            if (pageGeneral == null || pageAccount == null || pageCloudSpaces == null || pageTeams == null || pageFriends == null || pageAppearance == null || pageProgramManager == null || pageExtensions == null || pagePlugins == null || pageTools == null || pageModules == null || pageWindows == null || pageShortcuts == null || pageAbout == null) return;
+            if (pageGeneral == null || pageAccount == null || pageCloudSpaces == null || pageTeams == null || pageFriends == null || pageAppearance == null || pageProgramManager == null || pageExtensions == null || pagePlugins == null || pageTools == null || pageModules == null || pageWindows == null || pageShortcuts == null || pageAbout == null || pageDeveloper == null) return;
                     
             // 隐藏所有页面
             pageGeneral.Visibility = Visibility.Collapsed;
@@ -128,6 +131,7 @@ namespace SideDesk
             pageWindows.Visibility = Visibility.Collapsed;
             pageShortcuts.Visibility = Visibility.Collapsed;
             pageAbout.Visibility = Visibility.Collapsed;
+            pageDeveloper.Visibility = Visibility.Collapsed;
                     
             // 显示选中页面
             switch (navList.SelectedIndex)
@@ -146,6 +150,7 @@ namespace SideDesk
                 case 11: pageModules.Visibility = Visibility.Visible; RefreshModulesPage(); break;
                 case 12: pageShortcuts.Visibility = Visibility.Visible; break;
                 case 13: pageAbout.Visibility = Visibility.Visible; break;
+                case 14: pageDeveloper.Visibility = Visibility.Visible; break;
             }
         }
 
@@ -166,6 +171,252 @@ namespace SideDesk
             else
                 navList.SelectedIndex = 2; // 触发 Nav_Changed 显示账户页
         }
+
+        /// <summary>按页面名称导航（供通知动作 open_settings 调用）。
+        /// 支持名称：general/windows/account/teams/friends/cloudspaces/appearance/programs/extensions/plugins/tools/modules/shortcuts/about</summary>
+        public void NavigateToPage(string page)
+        {
+            int index = page.Trim().ToLowerInvariant() switch
+            {
+                "general" => 0,
+                "windows" => 1,
+                "account" => 2,
+                "teams" => 3,
+                "friends" => 4,
+                "cloudspaces" or "cloud" => 5,
+                "appearance" or "theme" => 6,
+                "programs" or "programmanager" => 7,
+                "extensions" => 8,
+                "plugins" => 9,
+                "tools" => 10,
+                "modules" => 11,
+                "shortcuts" => 12,
+                "about" => 13,
+                "developer" or "dev" => 14,
+                _ => -1
+            };
+            if (index < 0) return;
+
+            if (navList.SelectedIndex == index)
+                Nav_Changed(this, null!);
+            else
+                navList.SelectedIndex = index;
+        }
+
+        #region 开发者测试面板
+
+        private int _f12Count;
+        private bool _devTestRevealed;
+
+        /// <summary>在开发者页面连按 10 次 F12 显示隐藏测试面板</summary>
+        private void SettingsWindow_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.F12) return;
+            if (pageDeveloper == null || pageDeveloper.Visibility != Visibility.Visible) return;
+            if (_devTestRevealed) return;
+
+            _f12Count++;
+            if (_f12Count >= 10)
+            {
+                _devTestRevealed = true;
+                RevealDevTestPanel();
+            }
+        }
+
+        private void RevealDevTestPanel()
+        {
+            BuildNotificationTestPanel();
+            devTestHost.Visibility = Visibility.Visible;
+        }
+
+        /// <summary>构建通知系统测试面板：每种通知类型一个发送按钮</summary>
+        private void BuildNotificationTestPanel()
+        {
+            devTestHost.Children.Clear();
+
+            devTestHost.Children.Add(MakeSectionHeader("🔔 通知系统测试", "点击按钮即可模拟 WebSocket 推送对应通知，用于验证显示效果"));
+
+            // 显示模式
+            devTestHost.Children.Add(MakeTestSection("显示模式", new (string, Action)[]
+            {
+                ("横幅通知", () => Send(n => { n.Title = "横幅通知"; n.Body = "这是一条普通横幅，8 秒后自动消失"; })),
+                ("弹出对话框 (Alert)", () => Send(n => {
+                    n.Title = "重要提醒"; n.Body = "这是一条需要用户确认的弹出通知";
+                    n.DisplayMode = NotificationDisplayMode.Alert;
+                    n.Buttons = new List<NotificationAction> { Act("open_url", "查看详情", ("url", "https://www.baidu.com")), Act("dismiss", "关闭") };
+                })),
+                ("静默通知 (Silent)", () => Send(n => {
+                    n.Title = "静默通知"; n.Body = "不会弹出，仅进入通知中心（点右上角⋯→通知中心查看）";
+                    n.DisplayMode = NotificationDisplayMode.Silent;
+                })),
+            }));
+
+            // 时效与优先级
+            devTestHost.Children.Add(MakeTestSection("时效与优先级", new (string, Action)[]
+            {
+                ("常驻通知 (timeout=0)", () => Send(n => { n.Title = "常驻通知"; n.Body = "不会自动消失，需手动关闭"; n.Timeout = 0; })),
+                ("高优先级 + 声音", () => Send(n => { n.Title = "紧急通知"; n.Body = "优先级 Critical，播放提示音"; n.Priority = NotificationPriority.Critical; n.Sound = true; })),
+                ("低优先级", () => Send(n => { n.Title = "低优先级通知"; n.Body = "多个通知并发时会排在后面"; n.Priority = NotificationPriority.Low; })),
+                ("连发 5 条 (测限流)", SendBurst),
+            }));
+
+            // 外观
+            devTestHost.Children.Add(MakeTestSection("外观", new (string, Action)[]
+            {
+                ("自定义颜色", () => Send(n => { n.Title = "自定义配色"; n.Body = "背景与文字颜色均可自定义"; n.BackgroundColor = "#1a1a2e"; n.TextColor = "#e94560"; })),
+                ("大图通知", () => Send(n => { n.Title = "大图通知"; n.Body = "顶部展示一张图片"; n.LargeImage = "https://picsum.photos/400/160"; })),
+                ("进度通知 (模拟下载)", SendProgress),
+            }));
+
+            // Action 按钮
+            devTestHost.Children.Add(MakeTestSection("Action 按钮", new (string, Action)[]
+            {
+                ("open_url", () => Send(n => { n.Title = "打开网页"; n.Body = "点击下方按钮打开百度"; n.Buttons = new List<NotificationAction> { Act("open_url", "打开百度", ("url", "https://www.baidu.com")) }; })),
+                ("open_settings", () => Send(n => { n.Title = "打开设置"; n.Body = "点击按钮跳转到外观设置页"; n.Buttons = new List<NotificationAction> { Act("open_settings", "去设置", ("tab", "appearance")) }; })),
+                ("open_file", () => Send(n => { n.Title = "打开文件"; n.Body = "点击按钮打开记事本"; n.Buttons = new List<NotificationAction> { Act("open_file", "打开记事本", ("filePath", "notepad.exe")) }; })),
+                ("show_file_location", () => Send(n => { n.Title = "定位文件"; n.Body = "在资源管理器中显示本程序位置"; n.Buttons = new List<NotificationAction> { Act("show_file_location", "定位", ("filePath", AppDomain.CurrentDomain.BaseDirectory + "SideDesk.exe")) }; })),
+                ("show_messagebox", () => Send(n => { n.Title = "消息框"; n.Body = "点击按钮弹出自定义按钮的消息框";
+                    var subBtns = new Newtonsoft.Json.Linq.JArray
+                    {
+                        new Newtonsoft.Json.Linq.JObject { ["label"] = "好的", ["type"] = "dismiss" },
+                        new Newtonsoft.Json.Linq.JObject { ["label"] = "取消", ["type"] = "dismiss" }
+                    };
+                    n.Buttons = new List<NotificationAction> { Act("show_messagebox", "弹出消息框", ("message", "这是通知触发的消息框"), ("buttons", subBtns)) }; })),
+                ("run_command", () => Send(n => { n.Title = "执行命令"; n.Body = "后台运行一条命令"; n.Buttons = new List<NotificationAction> { Act("run_command", "运行", ("command", "echo hello > %TEMP%\\notif_test.txt"), ("runInBackground", true)) }; })),
+                ("input_reply", () => Send(n => { n.Title = "快速回复"; n.Body = "点击按钮输入回复内容"; n.Buttons = new List<NotificationAction> { Act("input_reply", "回复", ("placeholder", "输入回复..."), ("replyActionId", "test_reply")) }; })),
+                ("snooze", () => Send(n => { n.Title = "稍后提醒"; n.Body = "点击按钮 1 分钟后再次提醒"; n.Buttons = new List<NotificationAction> { Act("snooze", "1 分钟后提醒", ("snoozeInterval", 1)) }; })),
+                ("dismiss", () => Send(n => { n.Title = "可关闭"; n.Body = "点击按钮关闭本通知"; n.Buttons = new List<NotificationAction> { Act("dismiss", "知道了") }; })),
+            }));
+
+            // 点击主体 (click_main)
+            devTestHost.Children.Add(MakeTestSection("点击主体 (click_main)", new (string, Action)[]
+            {
+                ("点击通知打开网页", () => Send(n => { n.Title = "点我打开百度"; n.Body = "点击通知主体即可跳转"; n.ClickMain = Act("open_url", null, ("url", "https://www.baidu.com")); })),
+            }));
+        }
+
+        /// <summary>发送一条测试通知（默认 Banner 模式）</summary>
+        private static void Send(Action<NotificationPayload> configure)
+        {
+            var n = new NotificationPayload();
+            configure(n);
+            NotificationService.Instance.Enqueue(n);
+        }
+
+        /// <summary>构造一个通知动作</summary>
+        private static NotificationAction Act(string type, string? label, params (string key, object value)[] payload)
+        {
+            var action = new NotificationAction { Type = type, Label = label };
+            if (payload.Length > 0)
+            {
+                action.Payload = new Dictionary<string, object>();
+                foreach (var (k, v) in payload) action.Payload[k] = v;
+            }
+            return action;
+        }
+
+        /// <summary>连发 5 条通知，验证队列限流（最多同时 3 条）</summary>
+        private static void SendBurst()
+        {
+            for (int i = 1; i <= 5; i++)
+            {
+                var n = new NotificationPayload { Title = $"批量通知 #{i}", Body = $"第 {i} 条，验证限流排队" };
+                NotificationService.Instance.Enqueue(n);
+            }
+        }
+
+        /// <summary>发送一条进度通知并模拟进度推进</summary>
+        private void SendProgress()
+        {
+            var groupId = "test-progress-" + Guid.NewGuid().ToString("N").Substring(0, 6);
+            Send(n =>
+            {
+                n.Title = "正在下载文件...";
+                n.Body = "0%";
+                n.GroupId = groupId;
+                n.Progress = 0;
+                n.Timeout = 0;
+            });
+
+            int progress = 0;
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+            timer.Tick += (s, e) =>
+            {
+                progress += 10;
+                if (progress > 100)
+                {
+                    timer.Stop();
+                    return;
+                }
+                NotificationService.Instance.UpdateProgress(groupId, progress, progress >= 100 ? "下载完成 ✅" : $"{progress}%");
+                if (progress >= 100) timer.Stop();
+            };
+            timer.Start();
+        }
+
+        /// <summary>测试面板分区标题</summary>
+        private StackPanel MakeSectionHeader(string title, string subtitle)
+        {
+            var sp = new StackPanel { Margin = new Thickness(0, 0, 0, 12) };
+            sp.Children.Add(new TextBlock
+            {
+                Text = title,
+                FontSize = (double)FindResource("FontSizeNormal"),
+                FontWeight = FontWeights.SemiBold,
+                Foreground = (Brush)FindResource("BrushTextMain")
+            });
+            sp.Children.Add(new TextBlock
+            {
+                Text = subtitle,
+                FontSize = (double)FindResource("FontSizeSmall"),
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                Margin = new Thickness(0, 4, 0, 0)
+            });
+            return sp;
+        }
+
+        /// <summary>测试分区卡片：标题 + 按钮网格</summary>
+        private Border MakeTestSection(string title, (string label, Action action)[] buttons)
+        {
+            var wrap = new WrapPanel();
+            foreach (var (label, action) in buttons)
+            {
+                var btn = new Button
+                {
+                    Content = label,
+                    Style = (Style)FindResource("GhostButtonStyle"),
+                    Padding = new Thickness(12, 6, 12, 6),
+                    Margin = new Thickness(0, 0, 8, 8)
+                };
+                var act = action;
+                btn.Click += (s, e) => act();
+                wrap.Children.Add(btn);
+            }
+
+            var stack = new StackPanel();
+            stack.Children.Add(new TextBlock
+            {
+                Text = title,
+                FontSize = (double)FindResource("FontSizeNormal"),
+                FontWeight = FontWeights.SemiBold,
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                Margin = new Thickness(0, 0, 0, 10)
+            });
+            stack.Children.Add(wrap);
+
+            return new Border
+            {
+                Background = (Brush)FindResource("BrushInputBG"),
+                BorderBrush = (Brush)FindResource("BrushBorder"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(16),
+                Margin = new Thickness(0, 0, 0, 12),
+                Child = stack
+            };
+        }
+
+        #endregion
 
         #region 账户 / 云同步
 
@@ -451,6 +702,7 @@ namespace SideDesk
                 }
                 s.Save();
                 App.AccountTokenExpiredMessage = null; // 清除过期提示
+                _app.DismissLoggedOutNotification(); // 关闭主窗口上的掉线登录提示
 
                 // 登录成功 → 启动后端 WebSocket 长连接
                 try { Services.BackendWebSocketService.Instance.Start(s.AccountToken!); } catch { }
@@ -2587,6 +2839,78 @@ namespace SideDesk
             {
                 System.Diagnostics.Debug.WriteLine($"[Settings] MCP Server 启停异常: {ex.Message}");
             }
+        }
+
+        private void HttpServerSwitch_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_isLoading) return;
+            _app.AppSettings.EnableHttpServer = httpServerSwitch.IsChecked == true;
+            _app.AppSettings.Save();
+
+            try
+            {
+                if (_app.AppSettings.EnableHttpServer)
+                    Services.HttpServerService.Instance.Start(_app.AppSettings.HttpServerPort);
+                else
+                    Services.HttpServerService.Instance.Stop();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Settings] HTTP Server 启停异常: {ex.Message}");
+            }
+            UpdateHttpServerStatus();
+        }
+
+        private void HttpPort_LostFocus(object sender, RoutedEventArgs e)
+        {
+            ApplyHttpServerPort();
+        }
+
+        private void HttpPort_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+                ApplyHttpServerPort();
+        }
+
+        /// <summary>校验并应用 HTTP 端口，变化时重启服务</summary>
+        private void ApplyHttpServerPort()
+        {
+            if (_isLoading) return;
+            if (int.TryParse(httpPortBox.Text.Trim(), out int port) && port > 0 && port <= 65535)
+            {
+                if (_app.AppSettings.HttpServerPort != port)
+                {
+                    _app.AppSettings.HttpServerPort = port;
+                    _app.AppSettings.Save();
+                    try
+                    {
+                        if (_app.AppSettings.EnableHttpServer)
+                            Services.HttpServerService.Instance.Start(port); // 端口变化时先停后启
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[Settings] HTTP Server 改端口异常: {ex.Message}");
+                    }
+                }
+            }
+            else
+            {
+                httpPortBox.Text = _app.AppSettings.HttpServerPort.ToString();
+            }
+            UpdateHttpServerStatus();
+        }
+
+        /// <summary>更新 HTTP Server 运行状态显示</summary>
+        private void UpdateHttpServerStatus()
+        {
+            if (httpServerStatusText == null) return;
+            var svc = Services.HttpServerService.Instance;
+            if (_app.AppSettings.EnableHttpServer && svc.IsRunning)
+                httpServerStatusText.Text = $"运行中：http://127.0.0.1:{svc.CurrentPort}/";
+            else if (_app.AppSettings.EnableHttpServer)
+                httpServerStatusText.Text = "未运行（端口可能被占用）";
+            else
+                httpServerStatusText.Text = "已停止";
         }
 
         private void UsageStatsSwitch_Changed(object sender, RoutedEventArgs e)

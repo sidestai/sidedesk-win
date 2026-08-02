@@ -2273,13 +2273,27 @@ namespace SideDesk.Services
             });
 
             // === Tab 按钮栏 ===
-            var tabBar = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
+            var tabBar = new DockPanel { Margin = new Thickness(0, 0, 0, 12) };
+
+            // 应用市场入口（右侧）
+            var marketBtn = new Button
+            {
+                Content = "🛒 应用市场",
+                Padding = new Thickness(12, 6, 12, 6),
+                Style = (Style)Application.Current.FindResource("GhostButtonStyle")
+            };
+            marketBtn.Click += (s, ev2) => MarketWindow.Open("/app-market", "🛒 应用市场");
+            DockPanel.SetDock(marketBtn, Dock.Right);
+            tabBar.Children.Add(marketBtn);
+
+            var tabStack = new StackPanel { Orientation = Orientation.Horizontal };
             var tabManual = new Button { Content = "自行输入", Padding = new Thickness(12, 6, 12, 6), Margin = new Thickness(0, 0, 6, 0) };
             var tabList = new Button { Content = "从列表", Padding = new Thickness(12, 6, 12, 6), Margin = new Thickness(0, 0, 6, 0) };
             var tabBrowser = new Button { Content = "浏览器", Padding = new Thickness(12, 6, 12, 6) };
-            tabBar.Children.Add(tabManual);
-            tabBar.Children.Add(tabList);
-            tabBar.Children.Add(tabBrowser);
+            tabStack.Children.Add(tabManual);
+            tabStack.Children.Add(tabList);
+            tabStack.Children.Add(tabBrowser);
+            tabBar.Children.Add(tabStack);
             rootPanel.Children.Add(tabBar);
 
             // === Tab 内容容器 ===

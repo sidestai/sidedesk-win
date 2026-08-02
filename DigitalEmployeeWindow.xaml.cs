@@ -68,6 +68,10 @@ namespace SideDesk
             contactBox.Text = _current.Contact;
             descriptionBox.Text = _current.Description;
 
+            // 状态下拉框
+            var statusIndex = _current.Status switch { "online" => 0, "busy" => 1, "offline" => 2, _ => 0 };
+            statusCombo.SelectedIndex = statusIndex;
+
             UpdateAvatarPreview();
             _isLoading = false;
         }
@@ -168,6 +172,17 @@ namespace SideDesk
             _manager.Save();
             UpdateAvatarPreview();
             OnChanged?.Invoke();
+        }
+
+        private void StatusCombo_Changed(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isLoading || _current == null) return;
+            if (statusCombo.SelectedItem is ComboBoxItem item && item.Tag is string status)
+            {
+                _current.Status = status;
+                _manager.Save();
+                OnChanged?.Invoke();
+            }
         }
     }
 }

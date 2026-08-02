@@ -137,6 +137,19 @@ namespace SideDesk
                 System.Diagnostics.Debug.WriteLine($"[BackendWS] 订阅消息异常: {ex.Message}");
             }
 
+            // 订阅通知服务事件：队列就绪的通知转发到所有已加载的主窗口渲染
+            try
+            {
+                Services.NotificationService.Instance.NotificationReady -= OnNotificationReady;
+                Services.NotificationService.Instance.NotificationReady += OnNotificationReady;
+                Services.NotificationService.Instance.NotificationUpdated -= OnNotificationUpdated;
+                Services.NotificationService.Instance.NotificationUpdated += OnNotificationUpdated;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Notification] 订阅通知服务异常: {ex.Message}");
+            }
+
             // 启动 MCP Server (127.0.0.1:19192)，仅在开启时
             try
             {
@@ -146,6 +159,17 @@ namespace SideDesk
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[McpServer] 启动异常: {ex.Message}");
+            }
+
+            // 启动内置 HTTP Server (127.0.0.1:HttpServerPort)，默认开启
+            try
+            {
+                if (AppSettings.EnableHttpServer)
+                    Services.HttpServerService.Instance.Start(AppSettings.HttpServerPort);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[HttpServer] 启动异常: {ex.Message}");
             }
 
             // 启动全局窗口切换热键（Ctrl+1~9），仅在开启时
@@ -310,7 +334,20 @@ namespace SideDesk
                 {
                     if (mw.IsLoaded)
                         mw.ShowNotification("⚠️ 您已掉线，点击这里登录", orange, () =>
-                            OpenSettings(sw => sw.SwitchToAccountPage()));
+                            OpenSettings(sw => sw.SwitchToAccountPage()), "logged-out");
+                }
+            });
+        }
+
+        /// <summary>关闭所有主窗口上的掉线登录提示（登录成功后调用）</summary>
+        public void DismissLoggedOutNotification()
+        {
+            Dispatcher.Invoke(() =>
+            {
+                foreach (var mw in _windows)
+                {
+                    if (mw.IsLoaded)
+                        mw.DismissNotificationByTag("logged-out");
                 }
             });
         }
@@ -497,14 +534,52 @@ namespace SideDesk
         {
             SaveState();
             WindowConfigs.Save();
+            DisposeAllWebView2(); // 先释放 WebView2，避免其事件循环阻止进程退出
             foreach (var w in _windows.ToList())
                 CloseWindow(w);
             _windows.Clear();
             Shutdown();
         }
 
+        /// <summary>释放所有打开窗口中的 WebView2 控件（必须在退出前调用，否则 WebView2 运行时会阻止进程结束）</summary>
+        private void DisposeAllWebView2()
+        {
+            try
+            {
+                foreach (Window w in Windows)
+                    DisposeWebView2InVisualTree(w);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[App] 释放 WebView2 异常: {ex.Message}");
+            }
+        }
+
+        private void DisposeWebView2InVisualTree(System.Windows.DependencyObject parent)
+        {
+            int count = System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent);
+            for (int i = 0; i < count; i++)
+            {
+                var child = System.Windows.Media.VisualTreeHelper.GetChild(parent, i);
+                if (child is Microsoft.Web.WebView2.Wpf.WebView2 wv2)
+                {
+                    try { wv2.Dispose(); } catch { }
+                }
+                DisposeWebView2InVisualTree(child);
+            }
+        }
+
         protected override void OnExit(ExitEventArgs e)
         {
+            // 兜底：确保所有 AppBar 窗口注销（正常路径 CloseAll 已处理，此处防御非正常退出路径）
+            try
+            {
+                foreach (var w in _windows.ToList())
+                    w.UnregisterAppBar();
+                _windows.Clear();
+            }
+            catch { }
+
             // 释放托盘图标
             try { _notifyIcon?.Dispose(); } catch { }
 
@@ -521,6 +596,9 @@ namespace SideDesk
 
             // 停止 MCP Server
             try { Services.McpServerService.Instance.Stop(); } catch { }
+
+            // 停止内置 HTTP Server
+            try { Services.HttpServerService.Instance.Stop(); } catch { }
 
             // 停止全局窗口切换热键
             try { GlobalHotkeyService.Instance.Stop(); } catch { }
@@ -545,7 +623,31 @@ namespace SideDesk
 
             // 【已禁用】CDP浏览器服务 - 2026-06-09 禁用，解决重复启动问题
             // try { Services.CdpBrowserService.Instance.Dispose(); } catch { }
+
+            // 退出前恢复工作区：ABM_REMOVE 后 shell 的 WM_SETTINGCHANGE 广播是异步的，
+            // 下方 Environment.Exit 会硬杀进程导致广播未完成，需显式刷新工作区
+            try { RestoreWorkAreaOnExit(); } catch { }
+
             base.OnExit(e);
+
+            // 强制结束进程：防止残留的前台线程 / WebView2 原生事件循环导致“僵尸进程”无法退出
+            Environment.Exit(0);
+        }
+
+        /// <summary>
+        /// 系统关机/注销时清理 AppBar，避免残留区域
+        /// </summary>
+        protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
+        {
+            try
+            {
+                foreach (var w in _windows.ToList())
+                    w.UnregisterAppBar();
+                _windows.Clear();
+                RestoreWorkAreaOnExit();
+            }
+            catch { }
+            base.OnSessionEnding(e);
         }
 
         /// <summary>
@@ -696,6 +798,20 @@ namespace SideDesk
                         }
                     });
                 }
+                else if (evt == "notification" && data != null)
+                {
+                    // 富通知推送：解析载荷并入队（NotificationService 负责限流/分组/显示）
+                    var payload = Models.NotificationPayload.FromJson(data);
+                    Services.NotificationService.Instance.Enqueue(payload);
+                }
+                else if (evt == "notification_progress" && data != null)
+                {
+                    // 进度更新快捷事件: { group_id, progress, body? }
+                    var groupId = (string?)data["group_id"] ?? "";
+                    var progress = (int?)data["progress"];
+                    var body = (string?)data["body"];
+                    Services.NotificationService.Instance.UpdateProgress(groupId, progress, body);
+                }
             }
             catch (Exception ex)
             {
@@ -710,6 +826,37 @@ namespace SideDesk
         {
             var payload = Newtonsoft.Json.JsonConvert.SerializeObject(new { type = "closeTab" });
             await Services.WebSocketServerService.Instance.SendAsync(clientId, payload);
+        }
+
+        /// <summary>
+        /// 通知队列就绪事件：在 UI 线程将通知转发到所有已加载的主窗口渲染。
+        /// 使用 BeginInvoke 避免阻塞 WS 接收线程（Alert 模式 ShowDialog 会长时间阻塞）。
+        /// </summary>
+        private void OnNotificationReady(Models.NotificationPayload payload)
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                foreach (var mw in _windows)
+                {
+                    if (mw.IsLoaded)
+                        mw.ShowRichNotification(payload);
+                }
+            }));
+        }
+
+        /// <summary>
+        /// 同组通知更新事件：在 UI 线程通知主窗口原地更新卡片
+        /// </summary>
+        private void OnNotificationUpdated(Models.NotificationPayload payload)
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                foreach (var mw in _windows)
+                {
+                    if (mw.IsLoaded)
+                        mw.UpdateRichNotification(payload);
+                }
+            }));
         }
 
         #region 插件编辑器桥接
@@ -1104,12 +1251,23 @@ namespace SideDesk
         }
 
         /// <summary>
-        /// 重置显示器工作区为完整屏幕区域（恢复被残留 AppBar 占用的空间）
+        /// 重置显示器工作区：恢复被残留 AppBar 占用的空间（排除任务栏区域）
         /// </summary>
         private static void ResetWorkArea()
         {
             try
             {
+                // 获取任务栏位置，避免工作区覆盖任务栏
+                RECT taskbarRect = default;
+                bool hasVisibleTaskbar = false;
+                var taskbar = NativeMethods.FindWindow("Shell_TrayWnd", null);
+                if (taskbar != IntPtr.Zero && NativeMethods.IsWindowVisible(taskbar))
+                {
+                    NativeMethods.GetWindowRect(taskbar, out taskbarRect);
+                    hasVisibleTaskbar = taskbarRect.Right - taskbarRect.Left > 0
+                                       && taskbarRect.Bottom - taskbarRect.Top > 0;
+                }
+
                 NativeMethods.EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero,
                     (IntPtr hMonitor, IntPtr hdc, ref RECT pRect, int dwData) =>
                     {
@@ -1117,19 +1275,96 @@ namespace SideDesk
                         monitorInfo.cbSize = System.Runtime.InteropServices.Marshal.SizeOf<MONITORINFO>();
                         if (NativeMethods.GetMonitorInfo(hMonitor, ref monitorInfo))
                         {
-                            var fullRect = monitorInfo.rcMonitor;
+                            var workRect = monitorInfo.rcMonitor;
+
+                            // 从全屏区域中扣除任务栏占用的边缘
+                            if (hasVisibleTaskbar)
+                            {
+                                if (taskbarRect.Top <= monitorInfo.rcMonitor.Top &&
+                                    taskbarRect.Bottom > monitorInfo.rcMonitor.Top &&
+                                    taskbarRect.Left <= monitorInfo.rcMonitor.Left &&
+                                    taskbarRect.Right >= monitorInfo.rcMonitor.Right)
+                                    workRect.Top = taskbarRect.Bottom; // 任务栏在顶部
+                                else if (taskbarRect.Bottom >= monitorInfo.rcMonitor.Bottom &&
+                                    taskbarRect.Top < monitorInfo.rcMonitor.Bottom &&
+                                    taskbarRect.Left <= monitorInfo.rcMonitor.Left &&
+                                    taskbarRect.Right >= monitorInfo.rcMonitor.Right)
+                                    workRect.Bottom = taskbarRect.Top; // 任务栏在底部
+                                else if (taskbarRect.Left <= monitorInfo.rcMonitor.Left &&
+                                    taskbarRect.Right > monitorInfo.rcMonitor.Left &&
+                                    taskbarRect.Top <= monitorInfo.rcMonitor.Top &&
+                                    taskbarRect.Bottom >= monitorInfo.rcMonitor.Bottom)
+                                    workRect.Left = taskbarRect.Right; // 任务栏在左侧
+                                else if (taskbarRect.Right >= monitorInfo.rcMonitor.Right &&
+                                    taskbarRect.Left < monitorInfo.rcMonitor.Right &&
+                                    taskbarRect.Top <= monitorInfo.rcMonitor.Top &&
+                                    taskbarRect.Bottom >= monitorInfo.rcMonitor.Bottom)
+                                    workRect.Right = taskbarRect.Left; // 任务栏在右侧
+                            }
+
                             NativeMethods.SystemParametersInfo(
-                                NativeMethods.SPI_SETWORKAREA, 0, ref fullRect, NativeMethods.SPIF_SENDCHANGE);
+                                NativeMethods.SPI_SETWORKAREA, 0, ref workRect, NativeMethods.SPIF_SENDCHANGE);
                             System.Diagnostics.Debug.WriteLine(
-                                $"[AppBar] 重置工作区: L={fullRect.Left} T={fullRect.Top} R={fullRect.Right} B={fullRect.Bottom}");
+                                $"[AppBar] 重置工作区: L={workRect.Left} T={workRect.Top} R={workRect.Right} B={workRect.Bottom}");
                         }
                         return true;
                     }, 0);
+
+                // 广播 WM_SETTINGCHANGE，确保所有窗口立即感知工作区变化
+                // 使用 SendMessageTimeout 避免某个顶层窗口无响应导致死锁
+                NativeMethods.SendMessageTimeout(NativeMethods.HWND_BROADCAST, NativeMethods.WM_SETTINGCHANGE,
+                    IntPtr.Zero, IntPtr.Zero, NativeMethods.SMTO_ABORTIFHUNG, 1000, out _);
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[AppBar] 重置工作区失败: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// 退出时恢复工作区：检查 AppBar 移除后工作区是否已还原，未还原则强制重置
+        /// </summary>
+        private static void RestoreWorkAreaOnExit()
+        {
+            // 先广播一次 WM_SETTINGCHANGE，让 shell 完成挂起的工作区重新计算
+            // 使用 SendMessageTimeout 避免某个顶层窗口无响应导致死锁
+            NativeMethods.SendMessageTimeout(NativeMethods.HWND_BROADCAST, NativeMethods.WM_SETTINGCHANGE,
+                IntPtr.Zero, IntPtr.Zero, NativeMethods.SMTO_ABORTIFHUNG, 1000, out _);
+
+            // 短暂等待系统处理
+            System.Threading.Thread.Sleep(100);
+
+            // 检查主显示器工作区是否仍被残留 AppBar 占用：
+            // 如果工作区左右两侧被扣除了不属于任务栏的区域，则强制重置
+            var taskbar = NativeMethods.FindWindow("Shell_TrayWnd", null);
+            bool needReset = false;
+
+            var monitorInfo = new MONITORINFO();
+            monitorInfo.cbSize = System.Runtime.InteropServices.Marshal.SizeOf<MONITORINFO>();
+            var hPrimary = NativeMethods.MonitorFromPoint(new POINT { X = 0, Y = 0 }, 1 /* MONITOR_DEFAULTTOPRIMARY */);
+            if (NativeMethods.GetMonitorInfo(hPrimary, ref monitorInfo))
+            {
+                int leftGap = monitorInfo.rcWork.Left - monitorInfo.rcMonitor.Left;
+                int rightGap = monitorInfo.rcMonitor.Right - monitorInfo.rcWork.Right;
+
+                // 任务栏在左/右时会有正常间隙，其他情况工作区不应有左右间隙
+                bool taskbarOnLeft = false, taskbarOnRight = false;
+                if (taskbar != IntPtr.Zero && NativeMethods.IsWindowVisible(taskbar))
+                {
+                    NativeMethods.GetWindowRect(taskbar, out var tbRect);
+                    taskbarOnLeft = tbRect.Left <= monitorInfo.rcMonitor.Left && tbRect.Right < monitorInfo.rcMonitor.Right;
+                    taskbarOnRight = tbRect.Right >= monitorInfo.rcMonitor.Right && tbRect.Left > monitorInfo.rcMonitor.Left;
+                }
+
+                if ((leftGap > 0 && !taskbarOnLeft) || (rightGap > 0 && !taskbarOnRight))
+                    needReset = true;
+
+                System.Diagnostics.Debug.WriteLine(
+                    $"[AppBar] 退出检查: leftGap={leftGap}, rightGap={rightGap}, needReset={needReset}");
+            }
+
+            if (needReset)
+                ResetWorkArea();
         }
 
         /// <summary>
@@ -1340,6 +1575,18 @@ namespace SideDesk
         /// </summary>
         private void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
         {
+            // 进程即将终止时尽力释放 AppBar 区域，避免工作区残留
+            if (e.IsTerminating)
+            {
+                try
+                {
+                    foreach (var w in _windows.ToList())
+                        w.UnregisterAppBar();
+                    RestoreWorkAreaOnExit();
+                }
+                catch { }
+            }
+
             if (e.ExceptionObject is Exception ex)
             {
                 LogCrash("UnhandledException", ex);

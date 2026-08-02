@@ -130,6 +130,11 @@ public partial class AddShortcutDialog : Window
         }
     }
 
+    private void OpenWebMarket_Click(object sender, RoutedEventArgs e)
+    {
+        Windows.MarketWindow.Open("/web-market", "🌐 网页市场");
+    }
+
     private void ToggleBatch_Click(object sender, RoutedEventArgs e)
     {
         _isBatchMode = !_isBatchMode;

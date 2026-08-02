@@ -27,7 +27,8 @@ public enum PanelType
     Calendar,        // 日历
     Plugin,          // 外部插件
     ScreenTime,      // 屏幕时长
-    Countdown        // 倒计时器
+    Countdown,       // 倒计时器
+    Pomodoro         // 番茄闹钟
 }
 
 public class PanelItem
@@ -77,6 +78,8 @@ public class PanelItem
     public bool CarouselAutoPlay { get; set; } = true;           // 图片轮播：自动播放
     public string? PluginId { get; set; }                        // 插件模块：插件 ID（对应 plugin.json 中的 id）
     public string ScreenTimeStyle { get; set; } = "List";        // 屏幕时长组件展示风格：List/Pie/Category/Window
+    public string DailyActivityView { get; set; } = "Month";      // 每日活跃视图模式：Month(当月热力图)/Today(仅今日)/Week(前后5天逐日)
+    public PomodoroSettings? Pomodoro { get; set; }                    // 番茄闹钟数据
 }
 
 public class FileAreaItem
@@ -188,6 +191,61 @@ public class SignalLightItem
     public string? Icon { get; set; }                  // 灯上方图标（emoji/文字，空则无）
     public bool IsOn { get; set; } = true;             // 亮/灭状态
     public string LightStyle { get; set; } = "Circle"; // 灯样式：Circle/Square/Pixel
+}
+
+/// <summary>
+/// 番茄闹钟设置与运行状态
+/// </summary>
+public class PomodoroSettings
+{
+    // 时长配置
+    public int WorkMinutes { get; set; } = 25;          // 番茄钟时长（分钟）
+    public int ShortBreakMinutes { get; set; } = 5;     // 短休息时长（分钟）
+    public int LongBreakMinutes { get; set; } = 15;     // 长休息时长（分钟）
+    public int LongBreakInterval { get; set; } = 4;     // 每完成 N 个番茄后进入长休息
+
+    // 行为配置
+    public bool AutoStartNext { get; set; } = false;    // 阶段结束后自动开始下一阶段
+    public bool RemindFlash { get; set; } = true;       // 结束时闪烁窗口
+    public bool RemindPopup { get; set; } = true;       // 结束时弹出提示窗口
+
+    // 运行状态
+    public string Mode { get; set; } = "Work";          // 当前模式：Work/ShortBreak/LongBreak
+    public double RemainingSeconds { get; set; } = 25 * 60;
+    public bool IsRunning { get; set; } = false;
+    public DateTime? StartTime { get; set; }            // 本次启动时刻（运行中用于计算已消耗时间）
+    public int CompletedCount { get; set; } = 0;        // 当日已完成番茄数
+    public string? CompletedDate { get; set; }          // 计数所属日期（yyyy-MM-dd，跨天自动清零）
+
+    /// <summary>获取当前模式的总时长（秒）</summary>
+    public int GetModeTotalSeconds() => Mode switch
+    {
+        "ShortBreak" => ShortBreakMinutes * 60,
+        "LongBreak" => LongBreakMinutes * 60,
+        _ => WorkMinutes * 60
+    };
+
+    /// <summary>获取当前剩余时间（含运行中的实时计算）</summary>
+    public TimeSpan GetRemaining()
+    {
+        if (IsRunning && StartTime.HasValue)
+        {
+            var remaining = RemainingSeconds - (DateTime.Now - StartTime.Value).TotalSeconds;
+            return TimeSpan.FromSeconds(Math.Max(0, remaining));
+        }
+        return TimeSpan.FromSeconds(Math.Max(0, RemainingSeconds));
+    }
+
+    /// <summary>确保计数为当天（跨天清零）</summary>
+    public void EnsureTodayCount()
+    {
+        var today = DateTime.Now.ToString("yyyy-MM-dd");
+        if (CompletedDate != today)
+        {
+            CompletedDate = today;
+            CompletedCount = 0;
+        }
+    }
 }
 
 public class WindowConfig

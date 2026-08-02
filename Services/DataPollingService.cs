@@ -10,6 +10,7 @@ using System.Windows.Threading;
 using ChromeProtocol.Domains;
 using ChromeProtocol.Runtime.Messaging.WebSockets;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Win32;
 using SideDesk.Models;
 
 namespace SideDesk.Services;
@@ -238,8 +239,10 @@ public class DataPollingService : IDisposable
                 }
                 else if (appSettings.EnableAutoLaunchHiddenBrowser && !conn.IsSelfLaunched)
                 {
-                    // 用户浏览器：尝试新建 Tab
-                    targetId = await CreateTabAsync(conn.Client, item.TargetUrl);
+                    // 用户浏览器：以 app 模式启动（干净独立窗口，不在主浏览器开普通标签页）
+                    var (exePath, userDataDir, _) = ResolveBrowserConfig(item, appSettings);
+                    if (!string.IsNullOrEmpty(exePath))
+                        targetId = await LaunchAppModeAsync(conn.Client, exePath, userDataDir, item.TargetUrl);
                 }
             }
 
@@ -386,15 +389,43 @@ public class DataPollingService : IDisposable
         }
     }
 
-    /// <summary>查找默认浏览器 exe 路径</summary>
+    /// <summary>查找系统默认浏览器 exe 路径（从注册表 UserChoice 读取）</summary>
     private static string FindDefaultBrowserExe()
     {
+        try
+        {
+            // 读取 Windows 默认浏览器 ProgId（如 MSEdgeHTM、ChromeHTML）
+            using var userChoice = Registry.CurrentUser.OpenSubKey(
+                @"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice");
+            var progId = userChoice?.GetValue("ProgId")?.ToString();
+            if (!string.IsNullOrEmpty(progId))
+            {
+                // 从 HKCR\<ProgId>\shell\open\command 解析 exe 路径
+                using var cmdKey = Registry.ClassesRoot.OpenSubKey($@"{progId}\shell\open\command");
+                var cmd = cmdKey?.GetValue(null)?.ToString();
+                if (!string.IsNullOrEmpty(cmd))
+                {
+                    // 命令格式: "C:\...\msedge.exe" -- "%1" 或 C:\...\msedge.exe "%1"
+                    var exePath = cmd.StartsWith("\"")
+                        ? cmd.Substring(1, cmd.IndexOf('"', 1) - 1)
+                        : cmd.Split(' ')[0];
+                    if (File.Exists(exePath))
+                        return exePath;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[DataPolling] 读取默认浏览器失败: {ex.Message}");
+        }
+
+        // 兜底：Edge 优先（Windows 自带）
         var candidates = new[]
         {
-            @"C:\Program Files\Google\Chrome\Application\chrome.exe",
-            @"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
             @"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
-            @"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+            @"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            @"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            @"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
         };
         return candidates.FirstOrDefault(File.Exists) ?? "";
     }
@@ -550,6 +581,111 @@ public class DataPollingService : IDisposable
             Debug.WriteLine($"[DataPolling] ✗ 新建 Tab 失败: {ex.Message}");
             return null;
         }
+    }
+
+    /// <summary>以 app 模式在用户浏览器中启动 URL（干净独立窗口，不在主浏览器新建普通标签页）</summary>
+    private async Task<Target.TargetIDType?> LaunchAppModeAsync(DefaultProtocolClient client, string exePath, string userDataDir, string url)
+    {
+        if (!LaunchAppModeProcess(exePath, userDataDir, url)) return null;
+
+        try
+        {
+            // app 窗口会在已运行的浏览器进程中打开，等待其页面出现在 CDP target 列表（严格 URL 匹配，不做单 Tab 兜底）
+            for (int i = 0; i < 10; i++)
+            {
+                await Task.Delay(1000);
+                var result = await client.SendCommandAsync(Target.GetTargets());
+                Target.TargetIDType? found = null;
+                foreach (var t in result.TargetInfos)
+                {
+                    if (t.Type != "page") continue;
+                    var tabUrl = t.Url ?? "";
+                    if (string.IsNullOrEmpty(tabUrl)) continue;
+                    if (tabUrl.StartsWith(url, StringComparison.OrdinalIgnoreCase) || url.StartsWith(tabUrl, StringComparison.OrdinalIgnoreCase))
+                    {
+                        found = t.TargetId;
+                        break;
+                    }
+                }
+                if (found != null)
+                {
+                    Debug.WriteLine($"[DataPolling] ✓ app 模式页面已就绪: {url} -> {found}");
+                    return found;
+                }
+            }
+
+            Debug.WriteLine($"[DataPolling] ✗ app 模式页面等待超时: {url}");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[DataPolling] ✗ app 模式等待页面异常: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>启动 app 模式浏览器进程（干净独立窗口，无地址栏/标签栏）。返回是否启动成功。</summary>
+    private static bool LaunchAppModeProcess(string exePath, string userDataDir, string url)
+    {
+        try
+        {
+            var args = $"--app=\"{url}\"";
+            if (!string.IsNullOrEmpty(userDataDir))
+                args += $" --user-data-dir=\"{userDataDir}\"";
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = exePath,
+                Arguments = args,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            Process.Start(psi);
+            Debug.WriteLine($"[DataPolling] 以 app 模式启动: {exePath} {args}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[DataPolling] ✗ app 模式启动失败: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>以 app 模式（干净独立窗口）打开数据项的目标网址，供外部调用（如点击数据看板项）</summary>
+    public void OpenItemUrlInAppMode(DataDashboardItem item)
+    {
+        var url = item?.TargetUrl;
+        if (string.IsNullOrEmpty(url)) return;
+
+        var appSettings = ((App)Application.Current).AppSettings;
+        var (exePath, userDataDir, _) = ResolveBrowserConfig(item!, appSettings);
+
+        // 未指定 Profile 时，自动检测浏览器默认 User Data 目录以复用登录态
+        if (string.IsNullOrEmpty(userDataDir) && !string.IsNullOrEmpty(exePath))
+            userDataDir = DetectDefaultUserDataDir(exePath);
+
+        // 优先用数据项配置的浏览器 + Profile 以 app 模式打开（复用登录态）
+        if (!string.IsNullOrEmpty(exePath) && LaunchAppModeProcess(exePath, userDataDir, url))
+            return;
+
+        // 回退：找不到浏览器或启动失败 → 系统默认方式打开
+        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); } catch { }
+    }
+
+    /// <summary>探测浏览器默认的 User Data 目录</summary>
+    private static string DetectDefaultUserDataDir(string browserExePath)
+    {
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var browserName = Path.GetFileNameWithoutExtension(browserExePath).ToLower();
+
+        if (browserName.Contains("chrome"))
+            return Path.Combine(localAppData, "Google", "Chrome", "User Data");
+        if (browserName.Contains("edge") || browserName.Contains("msedge"))
+            return Path.Combine(localAppData, "Microsoft", "Edge", "User Data");
+        if (browserName.Contains("brave"))
+            return Path.Combine(localAppData, "BraveSoftware", "Brave-Browser", "User Data");
+
+        return "";
     }
 
     /// <summary>导航已有 Tab 到 URL（用于自启动浏览器）</summary>

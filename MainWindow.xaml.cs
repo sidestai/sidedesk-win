@@ -1,7 +1,12 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Net.Http;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using System.Windows.Interop;
 using System.Windows.Input;
@@ -10,6 +15,7 @@ using Microsoft.Web.WebView2.Core;
 using SideDesk.Controls;
 using SideDesk.Models;
 using SideDesk.Services;
+using SideDesk.Windows;
 
 namespace SideDesk
 {
@@ -245,6 +251,21 @@ namespace SideDesk
         {
             if (_configManager == null || _dockState == null) return;
             new ScreenManagerWindow(this).ShowDialog();
+        }
+
+        /// <summary>打开通知中心窗口（已有实例则激活）</summary>
+        private void NotificationCenter_Click(object sender, RoutedEventArgs e)
+        {
+            foreach (Window w in Application.Current.Windows)
+            {
+                if (w is NotificationCenterWindow existing)
+                {
+                    existing.Show();
+                    existing.Activate();
+                    return;
+                }
+            }
+            new NotificationCenterWindow().Show();
         }
 
         /// <summary>通用主题化确认对话框（返回是否点击了确定）。</summary>
@@ -667,11 +688,32 @@ namespace SideDesk
         /// <summary>显示通知（自定义背景色 + 点击动作）</summary>
         public void ShowNotification(string text, Brush background, Action clickAction) => AddNotification(text, clickAction, background);
 
+        /// <summary>显示通知（带标签，可通过 DismissNotificationByTag 定向关闭）</summary>
+        public void ShowNotification(string text, Brush background, Action clickAction, string tag)
+        {
+            var item = CreateNotificationItem(text, clickAction, background);
+            item.Tag = tag;
+            notificationStack.Children.Add(item);
+            notificationBar.Visibility = Visibility.Visible;
+        }
+
         /// <summary>隐藏通知栏（清空全部通知）</summary>
         public void HideNotification()
         {
             notificationStack.Children.Clear();
             notificationBar.Visibility = Visibility.Collapsed;
+        }
+
+        /// <summary>关闭指定标签的通知；栏空时隐藏容器</summary>
+        public void DismissNotificationByTag(string tag)
+        {
+            for (int i = notificationStack.Children.Count - 1; i >= 0; i--)
+            {
+                if (notificationStack.Children[i] is Border b && Equals(b.Tag, tag))
+                    notificationStack.Children.RemoveAt(i);
+            }
+            if (notificationStack.Children.Count == 0)
+                notificationBar.Visibility = Visibility.Collapsed;
         }
 
         /// <summary>向通知栈追加一条通知并显示容器</summary>
@@ -1026,6 +1068,486 @@ namespace SideDesk
 
         #endregion
 
+        #region 富通知卡片（WebSocket 推送通知）
+
+        /// <summary>富通知卡片引用保持器（用于分组更新和定时器管理）</summary>
+        private class RichCardHolder
+        {
+            public NotificationPayload Payload = null!;
+            public Border Card = null!;
+            public ProgressBar? ProgressBarRef;
+            public Emoji.Wpf.TextBlock? BodyTextRef;
+            public DispatcherTimer? Timer;
+        }
+
+        /// <summary>当前显示的富通知卡片（key: 通知 Id）</summary>
+        private readonly Dictionary<string, RichCardHolder> _richCards = new();
+
+        /// <summary>显示富通知（banner 模式：在通知栏渲染卡片；alert 模式：弹出模态对话框）</summary>
+        public void ShowRichNotification(NotificationPayload n)
+        {
+            if (n.DisplayMode == NotificationDisplayMode.Alert)
+            {
+                ShowAlertNotification(n);
+                return;
+            }
+
+            var holder = CreateRichCard(n);
+            _richCards[n.Id] = holder;
+            notificationStack.Children.Add(holder.Card);
+            notificationBar.Visibility = Visibility.Visible;
+
+            // 超时自动消失（timeout=0 为常驻）
+            if (n.Timeout > 0)
+            {
+                var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(n.Timeout) };
+                timer.Tick += (s, e) =>
+                {
+                    timer.Stop();
+                    DismissRichNotification(holder);
+                };
+                holder.Timer = timer;
+
+                // 鼠标悬停时暂停计时
+                holder.Card.MouseEnter += (s, e) => timer.Stop();
+                holder.Card.MouseLeave += (s, e) => { if (holder.Card.IsLoaded) timer.Start(); };
+
+                timer.Start();
+            }
+        }
+
+        /// <summary>原地更新已显示的同组通知（进度/内容变更）</summary>
+        public void UpdateRichNotification(NotificationPayload update)
+        {
+            if (string.IsNullOrEmpty(update.GroupId)) return;
+
+            RichCardHolder? target = null;
+            foreach (var kv in _richCards)
+            {
+                if (kv.Value.Payload.GroupId == update.GroupId)
+                { target = kv.Value; break; }
+            }
+            if (target == null) return;
+
+            // 更新进度条
+            if (update.Progress.HasValue && target.ProgressBarRef != null)
+            {
+                target.ProgressBarRef.Value = update.Progress.Value;
+                target.Payload.Progress = update.Progress;
+            }
+
+            // 更新正文
+            if (update.Body != null && target.BodyTextRef != null)
+            {
+                target.BodyTextRef.Text = update.Body;
+                target.Payload.Body = update.Body;
+            }
+
+            // 更新标题
+            if (!string.IsNullOrEmpty(update.Title) && update.Title != target.Payload.Title)
+            {
+                target.Payload.Title = update.Title;
+                // 重建卡片内容
+                var index = notificationStack.Children.IndexOf(target.Card);
+                if (index >= 0)
+                {
+                    var timer = target.Timer;
+                    timer?.Stop();
+                    notificationStack.Children.RemoveAt(index);
+                    _richCards.Remove(target.Payload.Id);
+
+                    target.Payload.Id = update.Id;
+                    var newHolder = CreateRichCard(target.Payload);
+                    newHolder.Timer = timer;
+                    _richCards[target.Payload.Id] = newHolder;
+                    notificationStack.Children.Insert(index, newHolder.Card);
+
+                    // 重新绑定悬停暂停计时
+                    if (timer != null)
+                    {
+                        newHolder.Card.MouseEnter += (s, e) => timer.Stop();
+                        newHolder.Card.MouseLeave += (s, e) => { if (newHolder.Card.IsLoaded) timer.Start(); };
+                        timer.Start();
+                    }
+                }
+            }
+        }
+
+        /// <summary>关闭富通知卡片（淡出动画 → 移除 → 释放槽位）</summary>
+        private void DismissRichNotification(RichCardHolder holder)
+        {
+            // 若该 holder 已被分组更新重建替换，使用最新的 holder（Payload 对象共享，Id 始终为最新）
+            if (_richCards.TryGetValue(holder.Payload.Id, out var current))
+                holder = current;
+
+            holder.Timer?.Stop();
+
+            var fadeOut = new System.Windows.Media.Animation.DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(250));
+            fadeOut.Completed += (_, _) =>
+            {
+                notificationStack.Children.Remove(holder.Card);
+                if (notificationStack.Children.Count == 0)
+                    notificationBar.Visibility = Visibility.Collapsed;
+            };
+            holder.Card.BeginAnimation(OpacityProperty, fadeOut);
+
+            _richCards.Remove(holder.Payload.Id);
+            NotificationService.Instance.OnNotificationDismissed(holder.Payload);
+        }
+
+        /// <summary>构建富通知卡片 UI</summary>
+        private RichCardHolder CreateRichCard(NotificationPayload n)
+        {
+            var holder = new RichCardHolder { Payload = n };
+
+            // 颜色解析
+            Brush bg = ParseColor(n.BackgroundColor) ?? (Brush)FindResource("BrushAccent");
+            Brush fg = ParseColor(n.TextColor) ?? (Brush)FindResource("BrushAccentText");
+            var fgMuted = new SolidColorBrush(((SolidColorBrush)fg).Color) { Opacity = 0.75 };
+
+            var stack = new StackPanel();
+
+            // 大图（可选）
+            if (!string.IsNullOrEmpty(n.LargeImage))
+            {
+                var image = new Image
+                {
+                    Stretch = Stretch.UniformToFill,
+                    MaxHeight = 80,
+                    Margin = new Thickness(0, 0, 0, 4),
+                    HorizontalAlignment = HorizontalAlignment.Stretch
+                };
+                var clip = new RectangleGeometry { Rect = new Rect(0, 0, 400, 80), RadiusX = 4, RadiusY = 4 };
+                image.Clip = clip;
+                LoadNotificationImage(image, n.LargeImage);
+                stack.Children.Add(image);
+            }
+
+            // 标题行：标题 + 时间（关闭按钮悬浮叠加在卡片右上角，不占布局）
+            var titleRow = new Grid();
+            titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var titleText = new Emoji.Wpf.TextBlock
+            {
+                Text = n.Title,
+                FontSize = 11.5,
+                FontWeight = FontWeights.Bold,
+                Foreground = fg,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center,
+                IsHitTestVisible = false
+            };
+            Grid.SetColumn(titleText, 0);
+            titleRow.Children.Add(titleText);
+
+            var timeText = new TextBlock
+            {
+                Text = n.Timestamp.ToString("HH:mm"),
+                FontSize = 9,
+                Foreground = fgMuted,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(6, 0, 0, 0),
+                IsHitTestVisible = false
+            };
+            Grid.SetColumn(timeText, 1);
+            titleRow.Children.Add(timeText);
+
+            stack.Children.Add(titleRow);
+
+            // 正文（可选，最多 2 行）
+            if (!string.IsNullOrEmpty(n.Body))
+            {
+                var bodyText = new Emoji.Wpf.TextBlock
+                {
+                    Text = n.Body,
+                    FontSize = 10.5,
+                    Foreground = fgMuted,
+                    TextWrapping = TextWrapping.Wrap,
+                    MaxHeight = 30,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    Margin = new Thickness(0, 2, 0, 0),
+                    IsHitTestVisible = false
+                };
+                holder.BodyTextRef = bodyText;
+                stack.Children.Add(bodyText);
+            }
+
+            // 进度条（可选）
+            if (n.Progress.HasValue)
+            {
+                var progressBar = new ProgressBar
+                {
+                    Minimum = 0,
+                    Maximum = 100,
+                    Value = n.Progress.Value,
+                    Height = 4,
+                    Margin = new Thickness(0, 5, 0, 0),
+                    Background = new SolidColorBrush(Colors.White) { Opacity = 0.2 },
+                    Foreground = fg,
+                    BorderThickness = new Thickness(0),
+                    IsHitTestVisible = false
+                };
+                holder.ProgressBarRef = progressBar;
+                stack.Children.Add(progressBar);
+            }
+
+            // 操作按钮（可选）
+            if (n.Buttons != null && n.Buttons.Count > 0)
+            {
+                var btnPanel = new WrapPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Margin = new Thickness(0, 6, 0, 0)
+                };
+
+                foreach (var action in n.Buttons)
+                {
+                    var btn = new Button
+                    {
+                        Content = action.Label ?? action.Type,
+                        FontSize = 10,
+                        Padding = new Thickness(8, 3, 8, 3),
+                        Margin = new Thickness(0, 0, 6, 0),
+                        Background = new SolidColorBrush(Colors.White) { Opacity = 0.15 },
+                        Foreground = fg,
+                        BorderThickness = new Thickness(0),
+                        Cursor = Cursors.Hand
+                    };
+                    var capturedAction = action;
+                    btn.Click += async (s, e) =>
+                    {
+                        DismissRichNotification(holder);
+                        await NotificationActionService.ExecuteAsync(capturedAction, n);
+                    };
+                    btnPanel.Children.Add(btn);
+                }
+
+                stack.Children.Add(btnPanel);
+            }
+
+            // 关闭按钮：与内容叠加在同一 Grid 单元格，悬浮右上角，不占布局（文字始终铺满）
+            Button? closeBtn = null;
+            if (n.AllowClose)
+            {
+                closeBtn = new Button
+                {
+                    Content = "✕",
+                    FontSize = 10,
+                    Width = 16,
+                    Height = 16,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    VerticalAlignment = VerticalAlignment.Top,
+                    Background = bg,
+                    Foreground = fg,
+                    BorderThickness = new Thickness(0),
+                    Cursor = Cursors.Hand,
+                    ToolTip = "关闭通知",
+                    Visibility = Visibility.Collapsed
+                };
+                closeBtn.Click += (s, e) => DismissRichNotification(holder);
+            }
+
+            var overlay = new Grid();
+            overlay.Children.Add(stack);
+            if (closeBtn != null) overlay.Children.Add(closeBtn);
+
+            // 外层卡片
+            var card = new Border
+            {
+                Background = bg,
+                Padding = new Thickness(8, 6, 8, 6),
+                Margin = new Thickness(0, 0, 0, 4),
+                Child = overlay,
+                Cursor = n.ClickMain != null ? Cursors.Hand : Cursors.Arrow,
+                Tag = n.Id
+            };
+            holder.Card = card;
+
+            // 悬停显示/隐藏关闭按钮
+            if (closeBtn != null)
+            {
+                var closeRef = closeBtn;
+                card.MouseEnter += (s, e) => closeRef.Visibility = Visibility.Visible;
+                card.MouseLeave += (s, e) => closeRef.Visibility = Visibility.Collapsed;
+            }
+
+            // 点击通知主体 → 执行 clickMain
+            card.MouseLeftButtonUp += async (s, e) =>
+            {
+                if (e.OriginalSource is Button) return; // 按钮点击不触发主体动作
+                if (n.ClickMain != null)
+                {
+                    DismissRichNotification(holder);
+                    await NotificationActionService.ExecuteAsync(n.ClickMain, n);
+                }
+                else
+                {
+                    ShowNotificationDetail($"{n.Title}\n{n.Body}");
+                }
+            };
+
+            return holder;
+        }
+
+        /// <summary>解析颜色字符串（#RRGGBB / #AARRGGBB），失败返回 null</summary>
+        private static Brush? ParseColor(string? color)
+        {
+            if (string.IsNullOrWhiteSpace(color)) return null;
+            try
+            {
+                var c = (Color)ColorConverter.ConvertFromString(color);
+                return new SolidColorBrush(c);
+            }
+            catch { return null; }
+        }
+
+        /// <summary>加载通知大图（URL 异步下载缓存到临时目录；本地路径直接加载）</summary>
+        private static void LoadNotificationImage(Image image, string source)
+        {
+            if (source.StartsWith("http://") || source.StartsWith("https://"))
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var cacheDir = Path.Combine(Path.GetTempPath(), "SideDesk", "notif-images");
+                        Directory.CreateDirectory(cacheDir);
+                        var fileName = $"{source.GetHashCode():X8}{Path.GetExtension(new Uri(source).AbsolutePath)}";
+                        var cachePath = Path.Combine(cacheDir, fileName);
+
+                        if (!File.Exists(cachePath))
+                        {
+                            using var http = new HttpClient();
+                            var bytes = await http.GetByteArrayAsync(source);
+                            await File.WriteAllBytesAsync(cachePath, bytes);
+                        }
+
+                        var bmp = new BitmapImage();
+                        bmp.BeginInit();
+                        bmp.UriSource = new Uri(cachePath);
+                        bmp.CacheOption = BitmapCacheOption.OnLoad;
+                        bmp.EndInit();
+                        bmp.Freeze();
+
+                        image.Dispatcher.Invoke(() => image.Source = bmp);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"[Notification] 图片加载失败: {ex.Message}");
+                    }
+                });
+            }
+            else if (File.Exists(source))
+            {
+                try
+                {
+                    var bmp = new BitmapImage();
+                    bmp.BeginInit();
+                    bmp.UriSource = new Uri(source);
+                    bmp.CacheOption = BitmapCacheOption.OnLoad;
+                    bmp.EndInit();
+                    bmp.Freeze();
+                    image.Source = bmp;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[Notification] 本地图片加载失败: {ex.Message}");
+                }
+            }
+        }
+
+        /// <summary>Alert 模式：弹出主题化模态对话框（内容同卡片 + 按钮）</summary>
+        private void ShowAlertNotification(NotificationPayload n)
+        {
+            var (dialog, content) = CreateThemedDialog(n.Title, 380, 200);
+
+            if (!string.IsNullOrEmpty(n.Body))
+            {
+                content.Children.Add(new Emoji.Wpf.TextBlock
+                {
+                    Text = n.Body,
+                    FontSize = 12,
+                    Foreground = (Brush)FindResource("BrushTextMain"),
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(0, 0, 0, 16)
+                });
+            }
+
+            // 进度条
+            if (n.Progress.HasValue)
+            {
+                content.Children.Add(new ProgressBar
+                {
+                    Minimum = 0,
+                    Maximum = 100,
+                    Value = n.Progress.Value,
+                    Height = 6,
+                    Margin = new Thickness(0, 0, 0, 16)
+                });
+            }
+
+            // 按钮区
+            var btnPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right
+            };
+
+            if (n.Buttons != null)
+            {
+                foreach (var action in n.Buttons)
+                {
+                    var btn = new Button
+                    {
+                        Content = action.Label ?? action.Type,
+                        MinWidth = 70,
+                        Margin = new Thickness(8, 0, 0, 0),
+                        Style = (Style)FindResource("StandardButtonStyle")
+                    };
+                    var capturedAction = action;
+                    btn.Click += async (s, e) =>
+                    {
+                        dialog.Close(); // Closed 事件统一释放槽位
+                        await NotificationActionService.ExecuteAsync(capturedAction, n);
+                    };
+                    btnPanel.Children.Add(btn);
+                }
+            }
+
+            // 无按钮时添加默认关闭按钮
+            if (n.Buttons == null || n.Buttons.Count == 0)
+            {
+                var okBtn = new Button
+                {
+                    Content = "确定",
+                    MinWidth = 70,
+                    Style = (Style)FindResource("PrimaryButtonStyle")
+                };
+                okBtn.Click += (s, e) => dialog.Close();
+                btnPanel.Children.Add(okBtn);
+            }
+
+            content.Children.Add(btnPanel);
+
+            // 点击主体执行 clickMain
+            if (n.ClickMain != null)
+            {
+                content.MouseLeftButtonUp += async (s, e) =>
+                {
+                    if (e.OriginalSource is Button) return;
+                    dialog.Close();
+                    await NotificationActionService.ExecuteAsync(n.ClickMain, n);
+                };
+            }
+
+            // 统一在关闭时释放显示槽位（无论按钮/✕/clickMain 关闭）
+            dialog.Closed += (s, e) => NotificationService.Instance.OnNotificationDismissed(n);
+            dialog.ShowDialog();
+        }
+
+        #endregion
+
         #region 气泡提示
 
         /// <summary>显示气泡浮动提示（底部圆角小卡片，自动淡出消失）</summary>
@@ -1048,7 +1570,6 @@ namespace SideDesk
                 Background = (Brush)FindResource("BrushDialogBG"),
                 BorderBrush = (Brush)FindResource("BrushBorder"),
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(8),
                 Padding = new Thickness(12, 7, 12, 7),
                 Margin = new Thickness(0, 0, 0, 4),
                 Child = textBlock,

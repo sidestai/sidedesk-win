@@ -79,6 +79,7 @@
                             <Separator x:Name="menuSeparator1"/>
                             <MenuItem Header="创建小屏" Click="NewSideScreen_Click"/>
                             <MenuItem Header="小屏管理" Click="ScreenManager_Click"/>
+                            <MenuItem x:Name="notificationCenterMenu" Header="通知中心" Click="NotificationCenter_Click"/>
                             <MenuItem Header="设置" Click="Settings_Click"/>
                             <MenuItem x:Name="toolsMenu" Header="工具">
                                 <MenuItem x:Name="titleLockMenuItem" Header="窗口标题锁定器" Click="TitleLock_Click"/>

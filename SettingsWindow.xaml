@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="设置" Height="500" Width="700"
         WindowStartupLocation="CenterScreen" ResizeMode="NoResize"
+        PreviewKeyDown="SettingsWindow_PreviewKeyDown"
         Background="{DynamicResource BrushBG}">
     <Grid>
         <Grid.ColumnDefinitions>
@@ -52,6 +53,7 @@
                     <ListBoxItem Content="模块"/>
                     <ListBoxItem Content="快捷键"/>
                     <ListBoxItem Content="关于"/>
+                    <ListBoxItem Content="开发者"/>
                 </ListBox>
             </DockPanel>
         </Border>
@@ -711,6 +713,38 @@
                         </DockPanel>
                     </Border>
 
+                    <!-- HTTP 服务器 -->
+                    <Border Background="{DynamicResource BrushInputBG}" 
+                            BorderBrush="{DynamicResource BrushBorder}" 
+                            BorderThickness="1" CornerRadius="8" 
+                            Padding="16" Margin="0,0,0,12">
+                        <DockPanel>
+                            <CheckBox x:Name="httpServerSwitch" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                      Style="{StaticResource RaycastSwitchStyle}"
+                                      Checked="HttpServerSwitch_Changed" 
+                                      Unchecked="HttpServerSwitch_Changed"/>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="HTTP 服务器" 
+                                           Foreground="{DynamicResource BrushTextMain}"
+                                           FontSize="{DynamicResource FontSizeNormal}"
+                                           FontWeight="SemiBold"/>
+                                <TextBlock Text="默认开启。在 127.0.0.1 提供本地 HTTP 接口，外部工具/脚本可查询状态、推送通知" 
+                                           Foreground="{DynamicResource BrushTextMuted}"
+                                           FontSize="{DynamicResource FontSizeTiny}"
+                                           Margin="0,2,0,0"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <TextBlock Text="端口：" Foreground="{DynamicResource BrushTextSec}" 
+                                               FontSize="12" VerticalAlignment="Center"/>
+                                    <TextBox x:Name="httpPortBox" Width="70" FontSize="12" Padding="4,3"
+                                             Text="19195" LostFocus="HttpPort_LostFocus" KeyDown="HttpPort_KeyDown"/>
+                                    <TextBlock x:Name="httpServerStatusText" Text="" 
+                                               Foreground="{DynamicResource BrushTextMuted}" 
+                                               FontSize="11" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+
                     <!-- 窗口使用时长统计 -->
                     <Border Background="{DynamicResource BrushInputBG}"
                             BorderBrush="{DynamicResource BrushBorder}"
@@ -1009,6 +1043,22 @@
                             </Grid>
                         </StackPanel>
                     </Border>
+                </StackPanel>
+
+                <!-- 开发者页面 -->
+                <StackPanel x:Name="pageDeveloper" Visibility="Collapsed" Margin="0,0,0,20">
+                    <TextBlock Text="开发者"
+                               FontSize="{DynamicResource FontSizeSubtitle}"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource BrushTextMain}"
+                               Margin="0,0,0,8"/>
+                    <TextBlock Text="调试与测试工具"
+                               Foreground="{DynamicResource BrushTextMuted}"
+                               FontSize="{DynamicResource FontSizeSmall}"
+                               Margin="0,0,0,20"/>
+
+                    <!-- 隐藏测试面板宿主：连按 10 次 F12 后填充并显示 -->
+                    <StackPanel x:Name="devTestHost" Visibility="Collapsed"/>
                 </StackPanel>
             </Grid>
         </ScrollViewer>

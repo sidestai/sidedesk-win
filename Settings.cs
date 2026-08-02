@@ -90,6 +90,12 @@ namespace SideDesk
         /// <summary>是否开启 MCP Server（HTTP/SSE，端口 19192）</summary>
         public bool EnableMcpServer { get; set; } = false;
 
+        /// <summary>是否开启内置 HTTP Server（默认开启，监听 127.0.0.1:HttpServerPort）</summary>
+        public bool EnableHttpServer { get; set; } = true;
+
+        /// <summary>内置 HTTP Server 监听端口（默认 19195）</summary>
+        public int HttpServerPort { get; set; } = 19195;
+
         /// <summary>数据模块连接方式："extension" = 浏览器插件（启动 WS 19191），"cdp" = 直连 CDP（需浏览器开启 --remote-debugging-port）</summary>
         public string DataConnectionMode { get; set; } = "extension";
 

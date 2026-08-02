@@ -17,6 +17,7 @@ public class DigitalEmployee
     public string Description { get; set; } = "";    // 简介/职责描述
     public string Skills { get; set; } = "";         // 擅长/技能
     public string Contact { get; set; } = "";        // 联系方式（邮箱/工号等）
+    public string Status { get; set; } = "online";   // 状态：online 在线 / busy 忙碌 / offline 离线
     public DateTime CreatedAt { get; set; } = DateTime.Now;
 
     /// <summary>头像占位显示文字：优先 emoji，否则名字首字符</summary>
@@ -24,6 +25,16 @@ public class DigitalEmployee
     public string AvatarFallback =>
         !string.IsNullOrWhiteSpace(Emoji) ? Emoji
         : (string.IsNullOrWhiteSpace(Name) ? "?" : Name.Trim().Substring(0, 1));
+
+    /// <summary>状态显示文本</summary>
+    [JsonIgnore]
+    public string StatusText => Status switch
+    {
+        "online" => "在线",
+        "busy" => "忙碌",
+        "offline" => "离线",
+        _ => "在线"
+    };
 }
 
 /// <summary>

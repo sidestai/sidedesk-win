@@ -43,6 +43,9 @@ namespace SideDesk
         [DllImport("user32.dll")]
         internal static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
 
+        [DllImport("user32.dll")]
+        internal static extern IntPtr MonitorFromPoint(POINT pt, uint dwFlags);
+
         // Cursor / window rect (for hover-expand hit-testing)
         [DllImport("user32.dll")]
         internal static extern bool GetCursorPos(out POINT lpPoint);
@@ -58,6 +61,20 @@ namespace SideDesk
         internal const uint SPI_GETWORKAREA = 0x0030;
         internal const uint SPI_SETWORKAREA = 0x002F;
         internal const uint SPIF_SENDCHANGE = 0x0002;
+
+        // FindWindow (用于定位任务栏)
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        internal static extern IntPtr FindWindow(string? lpClassName, string? lpWindowName);
+
+        internal static readonly IntPtr HWND_BROADCAST = new IntPtr(0xffff);
+        internal const uint WM_SETTINGCHANGE = 0x001A;
+
+        // SendMessageTimeout：广播消息时用，避免目标窗口无响应导致死锁
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        internal static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam,
+            uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
+
+        internal const uint SMTO_ABORTIFHUNG = 0x0002;
 
         // DPI
         [DllImport("shcore.dll")]
@@ -321,6 +338,14 @@ namespace SideDesk
                 CoTaskMemFree(pidl);
             }
         }
+
+        #endregion
+
+        #region Memory
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool SetProcessWorkingSetSize(IntPtr hProcess, long dwMinimumWorkingSetSize, long dwMaximumWorkingSetSize);
 
         #endregion
     }

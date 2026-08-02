@@ -135,6 +135,18 @@
                         </StackPanel>
                     </Grid>
 
+                    <!-- 状态 -->
+                    <TextBlock Text="状态" Foreground="{DynamicResource BrushTextMain}"
+                               FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                    <ComboBox x:Name="statusCombo" SelectionChanged="StatusCombo_Changed"
+                              Margin="0,0,0,16" Padding="10,6"
+                              Background="{DynamicResource BrushInputBG}"
+                              Foreground="{DynamicResource BrushTextMain}">
+                        <ComboBoxItem Content="🟢 在线" Tag="online"/>
+                        <ComboBoxItem Content="🟡 忙碌" Tag="busy"/>
+                        <ComboBoxItem Content="⚪ 离线" Tag="offline"/>
+                    </ComboBox>
+
                     <!-- 技能 -->
                     <TextBlock Text="擅长/技能" Foreground="{DynamicResource BrushTextMain}"
                                FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" Margin="0,0,0,6"/>

@@ -22,6 +22,11 @@ public class DataDashboardItem
     public string Selector { get; set; } = "";       // XPath 或 CSS Selector
     public int RefreshIntervalSeconds { get; set; } = 60; // 刷新间隔（秒）
 
+    // 团队归属与变量
+    public string? TeamId { get; set; }              // 所属团队ID（null/空=个人）
+    public string? TeamName { get; set; }            // 团队名称快照（显示用）
+    public string? VarKey { get; set; }              // 变量名（如 qcoder.count，团队/个人内唯一，供其他地方条件判断/显示引用）
+
     // 样式配置
     public string LabelColor { get; set; } = "";         // 标题文字颜色（空=默认）
     public double LabelFontSize { get; set; } = 0;       // 标题字号（0=默认11）
