@@ -8,8 +8,12 @@
          MenuItem / Separator 的子样式放在 ContextMenu 的 Style.Resources 中，
          只影响菜单内部，不会波及其他控件。 -->
 
-    <!-- 全局 MenuItem 样式：用 Emoji.Wpf.TextBlock 渲染 Header，使所有菜单项支持彩色 emoji -->
+    <!-- 全局 MenuItem 样式：用 Emoji.Wpf.TextBlock 渲染 Header，使所有菜单项支持彩色 emoji。
+         显式设置对齐属性，避免主题默认样式里的 FindAncestor(ItemsControl) 继承绑定
+         在 ContextMenu 弹出层（脱离可视化树）中解析失败产生 Binding Error 4。 -->
     <Style TargetType="MenuItem">
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="HeaderTemplate">
             <Setter.Value>
                 <DataTemplate>
@@ -66,6 +70,8 @@
                 <Setter Property="Padding" Value="12,7" />
                 <Setter Property="FontSize" Value="13" />
                 <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="VerticalContentAlignment" Value="Center" />
                 <Setter Property="HeaderTemplate">
                     <Setter.Value>
                         <DataTemplate>

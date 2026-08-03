@@ -29,6 +29,10 @@ namespace SideDesk.Services
                         await Task.Run(() => OpenUrl(action.GetPayloadString("url")));
                         break;
 
+                    case NotificationActionType.OpenWebView:
+                        OpenWebView(action);
+                        break;
+
                     case NotificationActionType.OpenSettings:
                         OpenSettings(action);
                         break;
@@ -83,6 +87,19 @@ namespace SideDesk.Services
         {
             if (string.IsNullOrWhiteSpace(url)) return;
             Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
+
+        /// <summary>在独立窗口内嵌 WebView2 打开网页（payload: url / title）</summary>
+        private static void OpenWebView(NotificationAction action)
+        {
+            var url = action.GetPayloadString("url");
+            if (string.IsNullOrWhiteSpace(url)) return;
+            var title = action.GetPayloadString("title", "网页");
+
+            Application.Current?.Dispatcher.InvokeAsync(() =>
+            {
+                new SideDesk.Windows.WebViewWindow(url, title).Show();
+            });
         }
 
         /// <summary>打开内部设置页（支持 path/tab 参数定位页面）</summary>

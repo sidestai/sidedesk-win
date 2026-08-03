@@ -62,6 +62,23 @@ namespace SideDesk
                 default: themeModeCombo.SelectedIndex = 0; break;
             }
 
+            // 配色主题（JSON 自定义主题）
+            customThemeCombo.Items.Add("默认");
+            var customThemes = Services.ThemeManager.LoadThemes();
+            foreach (var t in customThemes) customThemeCombo.Items.Add(t.Name);
+            int customIdx = 0;
+            var savedTheme = Framework.AppSettings.Instance.CurrentTheme;
+            if (!string.IsNullOrWhiteSpace(savedTheme))
+            {
+                for (int i = 0; i < customThemes.Count; i++)
+                {
+                    if (string.Equals(customThemes[i].Name, savedTheme, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(customThemes[i].FileName, savedTheme, StringComparison.OrdinalIgnoreCase))
+                    { customIdx = i + 1; break; }
+                }
+            }
+            customThemeCombo.SelectedIndex = customIdx;
+
             // 背景透明度
             bgOpacityBox.Text = _app.AppSettings.BackgroundOpacity.ToString("F0");
 
@@ -272,6 +289,7 @@ namespace SideDesk
             devTestHost.Children.Add(MakeTestSection("Action 按钮", new (string, Action)[]
             {
                 ("open_url", () => Send(n => { n.Title = "打开网页"; n.Body = "点击下方按钮打开百度"; n.Buttons = new List<NotificationAction> { Act("open_url", "打开百度", ("url", "https://www.baidu.com")) }; })),
+                ("open_webview", () => Send(n => { n.Title = "内嵌网页窗口"; n.Body = "点击按钮在独立 WebView2 窗口打开百度"; n.Buttons = new List<NotificationAction> { Act("open_webview", "打开网页窗口", ("url", "https://www.baidu.com"), ("title", "网页")) }; })),
                 ("open_settings", () => Send(n => { n.Title = "打开设置"; n.Body = "点击按钮跳转到外观设置页"; n.Buttons = new List<NotificationAction> { Act("open_settings", "去设置", ("tab", "appearance")) }; })),
                 ("open_file", () => Send(n => { n.Title = "打开文件"; n.Body = "点击按钮打开记事本"; n.Buttons = new List<NotificationAction> { Act("open_file", "打开记事本", ("filePath", "notepad.exe")) }; })),
                 ("show_file_location", () => Send(n => { n.Title = "定位文件"; n.Body = "在资源管理器中显示本程序位置"; n.Buttons = new List<NotificationAction> { Act("show_file_location", "定位", ("filePath", AppDomain.CurrentDomain.BaseDirectory + "SideDesk.exe")) }; })),
@@ -587,7 +605,7 @@ namespace SideDesk
 
             App.AccountTokenExpiredMessage = message;
             try { Services.CloudSyncService.Instance.Stop(); } catch { }
-            try { Services.BackendWebSocketService.Instance.Stop(); } catch { }
+            try { Services.BackendWebSocketService.Instance.Start(null); } catch { } // 降级为访客连接，保持可接收设备维度通知
 
             RefreshAccountUI();
             RefreshCorpSelector();
@@ -679,7 +697,7 @@ namespace SideDesk
                 s.SelectedCorpName = null;
                 s.Save();
                 try { Services.CloudSyncService.Instance.Stop(); } catch { }
-                try { Services.BackendWebSocketService.Instance.Stop(); } catch { }
+                try { Services.BackendWebSocketService.Instance.Start(null); } catch { } // 登出后降级为访客连接，保持可接收设备维度通知
                 RefreshAccountUI();
                 RefreshCorpSelector();
                 return;
@@ -1849,6 +1867,29 @@ namespace SideDesk
             _app.AppSettings.ThemeMode = mode;
             _app.AppSettings.Save();
             App.ApplyTheme(mode);
+        }
+
+        /// <summary>配色主题选择：默认 = 纯 XAML 深浅主题；其余 = resources/themes 下的 JSON 自定义主题</summary>
+        private void CustomTheme_Changed(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isLoading) return;
+
+            if (customThemeCombo.SelectedIndex <= 0)
+            {
+                // 默认：清除 JSON 覆盖，还原 XAML 主题
+                Services.ThemeManager.ClearTheme();
+                Framework.AppSettings.Instance.CurrentTheme = "";
+            }
+            else
+            {
+                var name = customThemeCombo.SelectedItem?.ToString();
+                var theme = Services.ThemeManager.GetThemeByName(name);
+                if (theme == null) return;
+                Services.ThemeManager.ApplyTheme(theme);
+                Framework.AppSettings.Instance.CurrentTheme = theme.Name;
+            }
+
+            Framework.AppSettings.Instance.Save();
         }
 
         private void HideModuleTitleSwitch_Changed(object sender, RoutedEventArgs e)
@@ -3863,7 +3904,7 @@ namespace SideDesk
                     using var req = new System.Net.Http.HttpRequestMessage(
                         System.Net.Http.HttpMethod.Get, "http://localhost:3007/api/sidebar/bar/visible");
                     req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
-                    using var resp = await http.SendAsync(req);
+                    using var resp = await Services.HttpLog.SendAsync(http, req);
                     string json = await resp.Content.ReadAsStringAsync();
                     var root = Newtonsoft.Json.Linq.JObject.Parse(json);
 
@@ -4031,6 +4072,7 @@ namespace SideDesk
 
             var editItem = new MenuItem { Header = "编辑" };
             editItem.Click += (_, _) => WindowEdit_Click(tag);
+            if (string.IsNullOrEmpty(tag.LocalId)) editItem.IsEnabled = false; // 团队窗口暂无本地结构可编辑
             menu.Items.Add(editItem);
 
             if (!string.IsNullOrEmpty(tag.ServerId))
@@ -4049,11 +4091,408 @@ namespace SideDesk
             menu.IsOpen = true;
         }
 
+        /// <summary>「编辑」菜单项点击 → 弹出树状结构窗口，列出该窗口下所有组件和分组（支持删除/拖拽排序，保存后更新主窗口）</summary>
         private void WindowEdit_Click(WindowRowTag tag)
         {
-            // TODO: 打开窗口编辑（重命名等）
-            MessageBox.Show("编辑功能开发中", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            var app = (App)Application.Current;
+            var win = app.WindowConfigs.GetById(tag.LocalId!);
+            if (win == null)
+            {
+                MessageBox.Show("未找到该窗口的本地配置。", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            ShowWindowStructureDialog(win);
         }
+
+        /// <summary>弹出窗口结构编辑对话框：树状展示组件与分组，支持拖拽排序、右键删除，点击保存后同步更新主窗口</summary>
+        private void ShowWindowStructureDialog(WindowConfig win)
+        {
+            var app = (App)Application.Current;
+
+            // 通过 JSON 深拷贝：所有编辑都在副本上进行，点「保存」才写回（点「取消」则丢弃）
+            var workingPanels = Newtonsoft.Json.JsonConvert.DeserializeObject<List<PanelItem>>(
+                Newtonsoft.Json.JsonConvert.SerializeObject(win.Panels)) ?? new List<PanelItem>();
+
+            var dialog = new Window
+            {
+                Title = $"窗口结构 - {win.Name}",
+                Width = 420,
+                Height = 540,
+                MinWidth = 340,
+                MinHeight = 320,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this,
+                Background = (Brush)FindResource("BrushDialogBG"),
+                Foreground = (Brush)FindResource("BrushTextMain")
+            };
+            dialog.SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(dialog, App.IsCurrentThemeLight());
+
+            var rootPanel = new DockPanel { Margin = new Thickness(16) };
+
+            // 顶部统计信息
+            var summaryText = new Emoji.Wpf.TextBlock
+            {
+                FontSize = 13,
+                Foreground = (Brush)FindResource("BrushTextSec"),
+                Margin = new Thickness(0, 0, 0, 4)
+            };
+            DockPanel.SetDock(summaryText, Dock.Top);
+            rootPanel.Children.Add(summaryText);
+
+            // 操作提示
+            var hintText = new TextBlock
+            {
+                Text = "提示：拖拽节点可调整顺序 / 移入分组；右键节点可删除。",
+                FontSize = 11,
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                Margin = new Thickness(0, 0, 0, 10)
+            };
+            DockPanel.SetDock(hintText, Dock.Top);
+            rootPanel.Children.Add(hintText);
+
+            // 底部按钮栏：保存 / 取消
+            var btnBar = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 12, 0, 0) };
+            DockPanel.SetDock(btnBar, Dock.Bottom);
+            var saveBtn = new Button { Content = "保存", Width = 80, IsDefault = true, Style = (Style)FindResource("PrimaryButtonStyle"), Margin = new Thickness(0, 0, 8, 0) };
+            var cancelBtn = new Button { Content = "取消", Width = 80, IsCancel = true, Style = (Style)FindResource("StandardButtonStyle") };
+            btnBar.Children.Add(saveBtn);
+            btnBar.Children.Add(cancelBtn);
+            rootPanel.Children.Add(btnBar);
+
+            // 树状结构（支持拖放）
+            var tree = new TreeView
+            {
+                AllowDrop = true,
+                Background = System.Windows.Media.Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                Foreground = (Brush)FindResource("BrushTextMain")
+            };
+            rootPanel.Children.Add(tree);
+
+            PanelItem? draggedPanel = null;   // 当前正在拖拽的面板
+            Point dragStart = default;        // 鼠标按下位置（用于判定拖拽阈值）
+
+            // ── 重建树 ──
+            void RebuildTree()
+            {
+                tree.Items.Clear();
+                if (workingPanels.Count == 0)
+                {
+                    tree.Items.Add(new TreeViewItem
+                    {
+                        Header = "（空窗口，暂无组件）",
+                        Foreground = (Brush)FindResource("BrushTextMuted"),
+                        IsEnabled = false
+                    });
+                }
+                else
+                {
+                    foreach (var p in workingPanels)
+                        tree.Items.Add(BuildNode(p));
+                }
+                int total = CountPanelsRecursive(workingPanels);
+                summaryText.Text = $"🪟 {win.Name}    共 {workingPanels.Count} 个顶层项 / {total} 个模块";
+            }
+
+            // ── 构建树节点（含右键删除菜单）──
+            TreeViewItem BuildNode(PanelItem panel)
+            {
+                var node = new TreeViewItem
+                {
+                    Header = BuildPanelNodeHeader(panel),
+                    Foreground = (Brush)FindResource("BrushTextMain"),
+                    IsExpanded = panel.Type == PanelType.Group,
+                    Tag = panel
+                };
+
+                var ctx = new ContextMenu { Style = (Style)FindResource("DarkContextMenuStyle") };
+                var delMi = new MenuItem { Header = "删除", Foreground = System.Windows.Media.Brushes.IndianRed };
+                delMi.Click += (_, _) =>
+                {
+                    if (panel.Type == PanelType.Group && (panel.ChildPanels?.Count ?? 0) > 0)
+                    {
+                        var r = MessageBox.Show($"该分组内有 {panel.ChildPanels!.Count} 个组件，将一并删除。确定删除？", "删除确认", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                        if (r != MessageBoxResult.Yes) return;
+                    }
+                    FindContainingList(workingPanels, panel)?.Remove(panel);
+                    RebuildTree();
+                };
+                ctx.Items.Add(delMi);
+                node.ContextMenu = ctx;
+
+                if (panel.ChildPanels != null)
+                    foreach (var c in panel.ChildPanels)
+                        node.Items.Add(BuildNode(c));
+
+                return node;
+            }
+
+            // ── 拖拽开始 ──
+            tree.PreviewMouseLeftButtonDown += (s, e) =>
+            {
+                dragStart = e.GetPosition(null);
+                draggedPanel = FindAncestor<TreeViewItem>(e.OriginalSource as DependencyObject)?.Tag as PanelItem;
+            };
+
+            tree.PreviewMouseMove += (s, e) =>
+            {
+                if (e.LeftButton != MouseButtonState.Pressed || draggedPanel == null) return;
+                var pos = e.GetPosition(null);
+                if (Math.Abs(pos.X - dragStart.X) < SystemParameters.MinimumHorizontalDragDistance &&
+                    Math.Abs(pos.Y - dragStart.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+
+                var dragged = draggedPanel;
+                draggedPanel = null;
+                DragDrop.DoDragDrop(tree, new DataObject(typeof(PanelItem), dragged), DragDropEffects.Move);
+            };
+
+            tree.PreviewMouseLeftButtonUp += (s, e) => draggedPanel = null;
+
+            // ── 拖拽悬停：设置允许放置效果 ──
+            tree.DragOver += (s, e) =>
+            {
+                e.Effects = e.Data.GetDataPresent(typeof(PanelItem)) ? DragDropEffects.Move : DragDropEffects.None;
+                e.Handled = true;
+            };
+
+            // ── 放置：执行移动 ──
+            tree.Drop += (s, e) =>
+            {
+                e.Handled = true;
+                if (e.Data.GetData(typeof(PanelItem)) is not PanelItem dragged) return;
+
+                var targetItem = FindTreeViewItemAt(tree, e.GetPosition(tree));
+                var target = targetItem?.Tag as PanelItem;
+
+                double fraction = 0.5;
+                if (targetItem != null)
+                {
+                    double y = e.GetPosition(targetItem).Y;
+                    fraction = y / Math.Max(1, targetItem.ActualHeight);
+                }
+
+                if (PerformDrop(workingPanels, dragged, target, targetItem == null ? 1.0 : fraction))
+                    RebuildTree();
+            };
+
+            // ── 保存：写回配置并刷新主窗口 ──
+            saveBtn.Click += (s, e) =>
+            {
+                win.Panels = workingPanels;
+                app.WindowConfigs.Save();
+                app.RefreshAllNativePanels();
+                dialog.Close();
+            };
+            cancelBtn.Click += (s, e) => dialog.Close();
+
+            RebuildTree();
+            dialog.Content = rootPanel;
+            dialog.Show();
+        }
+
+        /// <summary>执行拖放移动：将 dragged 移动到 target 的前面/后面/分组内（target 为 null 表示移到顶层末尾）。返回是否有变更。</summary>
+        private static bool PerformDrop(List<PanelItem> root, PanelItem dragged, PanelItem? target, double fraction)
+        {
+            // 空白区域 → 移到顶层末尾
+            if (target == null)
+            {
+                var src = FindContainingList(root, dragged);
+                if (src == null) return false;
+                if (src == root && root.IndexOf(dragged) == root.Count - 1) return false; // 已在末尾
+                src.Remove(dragged);
+                root.Add(dragged);
+                return true;
+            }
+
+            if (dragged == target) return false;
+            if (IsDescendant(dragged, target)) return false; // 不能移入自己的子项
+
+            var sourceList = FindContainingList(root, dragged);
+            if (sourceList == null) return false;
+
+            // 中间区域且目标是分组 → 移入分组内
+            if (target.Type == PanelType.Group && fraction > 0.3 && fraction < 0.7)
+            {
+                target.ChildPanels ??= new List<PanelItem>();
+                sourceList.Remove(dragged);
+                target.ChildPanels.Add(dragged);
+                target.IsExpanded = true;
+                return true;
+            }
+
+            // 上部/下部 → 插入到目标的前面/后面
+            var targetList = FindContainingList(root, target);
+            if (targetList == null) return false;
+
+            sourceList.Remove(dragged);
+            int targetIdx = targetList.IndexOf(target);
+            if (targetIdx < 0) return false;
+
+            int insertIdx = fraction <= 0.3 ? targetIdx : targetIdx + 1;
+            if (insertIdx > targetList.Count) insertIdx = targetList.Count;
+            targetList.Insert(insertIdx, dragged);
+            return true;
+        }
+
+        /// <summary>查找直接包含 target 的面板列表（顶层或某分组的 ChildPanels），未找到返回 null</summary>
+        private static List<PanelItem>? FindContainingList(List<PanelItem> panels, PanelItem target)
+        {
+            if (panels.Contains(target)) return panels;
+            foreach (var p in panels)
+            {
+                if (p.ChildPanels == null) continue;
+                var found = FindContainingList(p.ChildPanels, target);
+                if (found != null) return found;
+            }
+            return null;
+        }
+
+        /// <summary>判断 potentialDescendant 是否为 ancestor 的后代（防止拖入自身子级造成环）</summary>
+        private static bool IsDescendant(PanelItem ancestor, PanelItem potentialDescendant)
+        {
+            if (ancestor.ChildPanels == null) return false;
+            foreach (var c in ancestor.ChildPanels)
+            {
+                if (c == potentialDescendant) return true;
+                if (IsDescendant(c, potentialDescendant)) return true;
+            }
+            return false;
+        }
+
+        /// <summary>沿可视树向上查找指定类型的祖先（兼容 Run 等 ContentElement：非 Visual 时改走逻辑树）</summary>
+        private static T? FindAncestor<T>(DependencyObject? dep) where T : DependencyObject
+        {
+            while (dep != null && dep is not T)
+            {
+                dep = dep is Visual or System.Windows.Media.Media3D.Visual3D
+                    ? VisualTreeHelper.GetParent(dep)
+                    : LogicalTreeHelper.GetParent(dep);
+            }
+            return dep as T;
+        }
+
+        /// <summary>命中测试：获取指定坐标处的 TreeViewItem</summary>
+        private static TreeViewItem? FindTreeViewItemAt(TreeView tree, Point point)
+        {
+            var hit = VisualTreeHelper.HitTest(tree, point);
+            var dep = hit?.VisualHit;
+            while (dep != null && dep is not TreeViewItem)
+                dep = VisualTreeHelper.GetParent(dep);
+            return dep as TreeViewItem;
+        }
+
+        /// <summary>递归统计面板总数（含分组内子面板）</summary>
+        private static int CountPanelsRecursive(List<PanelItem> panels)
+        {
+            int count = 0;
+            foreach (var p in panels)
+            {
+                count++;
+                if (p.ChildPanels != null)
+                    count += CountPanelsRecursive(p.ChildPanels);
+            }
+            return count;
+        }
+
+        /// <summary>构建树节点的头部（显示名 + 附加信息）</summary>
+        private StackPanel BuildPanelNodeHeader(PanelItem panel)
+        {
+            string display = GetPanelDisplayName(panel);
+
+            var headerPanel = new StackPanel { Orientation = Orientation.Horizontal };
+            headerPanel.Children.Add(new Emoji.Wpf.TextBlock
+            {
+                Text = display,
+                FontSize = 13,
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                VerticalAlignment = VerticalAlignment.Center
+            });
+
+            // 附加信息（自定义标题时显示类型名；分组显示子项数量）
+            string? extra = null;
+            if (panel.Type == PanelType.Group)
+            {
+                int childCount = panel.ChildPanels?.Count ?? 0;
+                extra = $"{childCount} 项";
+            }
+            else if (!string.IsNullOrEmpty(panel.Title))
+            {
+                extra = GetPanelTypeName(panel.Type);
+            }
+
+            if (extra != null)
+            {
+                headerPanel.Children.Add(new TextBlock
+                {
+                    Text = $"  ({extra})",
+                    FontSize = 11,
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
+                    VerticalAlignment = VerticalAlignment.Center
+                });
+            }
+
+            return headerPanel;
+        }
+
+        /// <summary>获取面板的显示名称（优先自定义标题，其次类型中文名；快捷方式追加分组名）</summary>
+        private static string GetPanelDisplayName(PanelItem panel)
+        {
+            string typeName = GetPanelTypeName(panel.Type);
+
+            if (panel.Type == PanelType.QuickGroup)
+            {
+                // 快捷方式：尝试解析关联的快捷分组名称
+                string groupName = "快捷方式";
+                if (!string.IsNullOrEmpty(panel.GroupId))
+                {
+                    var qg = QuickGroupManager.GetAll().FirstOrDefault(g => g.Id == panel.GroupId);
+                    if (qg != null) groupName = qg.Name;
+                }
+                return string.IsNullOrEmpty(panel.Title) ? groupName : panel.Title;
+            }
+
+            if (panel.Type == PanelType.Plugin)
+            {
+                // 插件：尝试解析插件名称
+                string pluginName = "插件";
+                if (!string.IsNullOrEmpty(panel.PluginId))
+                {
+                    var p = Services.Plugins.PluginLoaderService.Instance.GetPlugin(panel.PluginId);
+                    if (p != null) pluginName = p.Config.Name;
+                }
+                return string.IsNullOrEmpty(panel.Title) ? pluginName : panel.Title;
+            }
+
+            return string.IsNullOrEmpty(panel.Title) ? typeName : panel.Title;
+        }
+
+        /// <summary>PanelType → 中文类型名（与「添加模块」菜单的标准命名一致）</summary>
+        private static string GetPanelTypeName(PanelType type) => type switch
+        {
+            PanelType.QuickGroup => "快捷方式",
+            PanelType.StickyNotes => "便签",
+            PanelType.Clipboard => "剪贴板收藏",
+            PanelType.SystemMonitor => "系统信息",
+            PanelType.UsageStats => "使用统计",
+            PanelType.AIChat => "AI 对话",
+            PanelType.FileArea => "文件区",
+            PanelType.ClipboardHistory => "剪贴板历史",
+            PanelType.DataDashboard => "数据看板",
+            PanelType.Timer => "计时器",
+            PanelType.Group => "分组",
+            PanelType.TodoList => "今日待办",
+            PanelType.SignalLight => "信号灯",
+            PanelType.DigitalEmployee => "数字员工",
+            PanelType.Friend => "好友",
+            PanelType.ImageCarousel => "图片轮播",
+            PanelType.DailyActivity => "每日活跃",
+            PanelType.Calendar => "日历",
+            PanelType.Plugin => "插件",
+            PanelType.ScreenTime => "屏幕时长",
+            PanelType.Countdown => "倒计时",
+            PanelType.Pomodoro => "番茄闹钟",
+            _ => type.ToString()
+        };
 
         private void WindowDelete_Click(WindowRowTag tag)
         {
@@ -4095,7 +4534,7 @@ namespace SideDesk
             var dialog = new System.Windows.Window
             {
                 Title = "创建分享",
-                Width = 320, Height = 220,
+                Width = 320, Height = 340,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Owner = this,
                 ResizeMode = ResizeMode.NoResize
@@ -4108,6 +4547,14 @@ namespace SideDesk
             var refRadio = new RadioButton { Content = "引用（对方看到你的实时数据）", Margin = new Thickness(0, 0, 0, 16) };
             panel.Children.Add(copyRadio);
             panel.Children.Add(refRadio);
+
+            panel.Children.Add(new TextBlock { Text = "导入者权限：", FontSize = 13, Margin = new Thickness(0, 0, 0, 8) });
+            var cbEdit = new CheckBox { Content = "允许编辑", IsChecked = true, Margin = new Thickness(0, 0, 0, 6) };
+            var cbDelete = new CheckBox { Content = "允许删除", IsChecked = true, Margin = new Thickness(0, 0, 0, 6) };
+            var cbReShare = new CheckBox { Content = "允许再分享", IsChecked = false, Margin = new Thickness(0, 0, 0, 16) };
+            panel.Children.Add(cbEdit);
+            panel.Children.Add(cbDelete);
+            panel.Children.Add(cbReShare);
 
             var confirmBtn = new Button
             {
@@ -4126,11 +4573,18 @@ namespace SideDesk
                 {
                     var app = (App)Application.Current;
                     using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-                    var payload = Newtonsoft.Json.JsonConvert.SerializeObject(new { barServerId = serverId, shareMode = mode });
+                    var payload = Newtonsoft.Json.JsonConvert.SerializeObject(new
+                    {
+                        barServerId = serverId,
+                        shareMode = mode,
+                        allowEdit = cbEdit.IsChecked == true,
+                        allowDelete = cbDelete.IsChecked == true,
+                        allowReShare = cbReShare.IsChecked == true
+                    });
                     using var content = new System.Net.Http.StringContent(payload, System.Text.Encoding.UTF8, "application/json");
                     using var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, "http://localhost:3007/api/sidebar/share/create") { Content = content };
                     req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + app.AppSettings.AccountToken);
-                    using var resp = await http.SendAsync(req);
+                    using var resp = await Services.HttpLog.SendAsync(http, req);
                     string json = await resp.Content.ReadAsStringAsync();
                     var root = Newtonsoft.Json.Linq.JObject.Parse(json);
 
@@ -4138,7 +4592,11 @@ namespace SideDesk
                     {
                         string code = root["data"]?["shareCode"]?.ToString() ?? "";
                         dialog.Close();
-                        MessageBox.Show($"分享创建成功！\n\n短码：{code}\n链接：http://localhost:3007/s/{code}\n\n将短码或链接发给对方即可导入。", "分享成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                        ThemedMessageBox.ShowShareResult(
+                            this,
+                            code,
+                            $"http://localhost:3007/s/{code}"
+                        );
                     }
                     else
                     {
@@ -4208,7 +4666,7 @@ namespace SideDesk
                     using var content = new System.Net.Http.StringContent(payload, System.Text.Encoding.UTF8, "application/json");
                     using var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, "http://localhost:3007/api/sidebar/share/import") { Content = content };
                     req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + app.AppSettings.AccountToken);
-                    using var resp = await http.SendAsync(req);
+                    using var resp = await Services.HttpLog.SendAsync(http, req);
                     string json = await resp.Content.ReadAsStringAsync();
                     var root = Newtonsoft.Json.Linq.JObject.Parse(json);
 
@@ -4247,8 +4705,8 @@ namespace SideDesk
             dialog.ShowDialog();
         }
 
-        /// <summary>我的分享列表</summary>
-        private async void MyShares_Click(object sender, RoutedEventArgs e)
+        /// <summary>我的分享：打开独立窗口列出正在分享的项，可逐项取消分享</summary>
+        private void MyShares_Click(object sender, RoutedEventArgs e)
         {
             var app = (App)Application.Current;
             var token = app.AppSettings.AccountToken;
@@ -4258,47 +4716,190 @@ namespace SideDesk
                 return;
             }
 
-            try
+            var win = new System.Windows.Window
             {
-                using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-                using var req = new System.Net.Http.HttpRequestMessage(
-                    System.Net.Http.HttpMethod.Get, "http://localhost:3007/api/sidebar/share/list/mine");
-                req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
-                using var resp = await http.SendAsync(req);
-                string json = await resp.Content.ReadAsStringAsync();
-                var root = Newtonsoft.Json.Linq.JObject.Parse(json);
+                Title = "我的分享",
+                Width = 620, Height = 480,
+                MinWidth = 520, MinHeight = 320,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this
+            };
 
-                if (root["code"]?.ToObject<int>() == 200 && root["data"] is Newtonsoft.Json.Linq.JArray shares)
+            var dock = new DockPanel { Margin = new Thickness(16) };
+            var header = new TextBlock
+            {
+                Text = "正在分享的项目",
+                FontSize = 14,
+                FontWeight = FontWeights.Bold,
+                Margin = new Thickness(0, 0, 0, 12)
+            };
+            DockPanel.SetDock(header, Dock.Top);
+
+            var listPanel = new StackPanel();
+            var scroll = new ScrollViewer { VerticalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Auto, Content = listPanel };
+            dock.Children.Add(header);
+            dock.Children.Add(scroll);
+            win.Content = dock;
+
+            // 构造单行：标题 + 详情 + 取消分享按钮
+            System.Windows.UIElement BuildRow(Newtonsoft.Json.Linq.JToken s)
+            {
+                string shareId = s["shareId"]?.ToString() ?? "";
+                bool isItem = s["shareLevel"]?.ToString() == "item";
+                string title = isItem
+                    ? (s["itemTitle"]?.ToString() ?? "未命名模块")
+                    : (s["barTitle"]?.ToString() ?? "未命名窗口");
+                string mode = s["shareMode"]?.ToString() == "copy" ? "复制" : "引用";
+                string level = isItem ? "模块" : "窗口";
+                string code = s["shareCode"]?.ToString() ?? "";
+                var maxUses = s["maxUses"]?.ToObject<int>() ?? 0;
+                string usesText = maxUses == 0 ? "∞" : maxUses.ToString();
+                string used = s["usedCount"]?.ToString() ?? "0";
+                string views = s["viewCount"]?.ToString() ?? "0";
+                int importerCount = s["importerCount"]?.ToObject<int>() ?? 0;
+                string created = s["createdAt"]?.ToString() ?? "";
+                if (DateTime.TryParse(created, out var dt)) created = dt.ToString("yyyy-MM-dd HH:mm");
+
+                var border = new Border
                 {
-                    if (shares.Count == 0)
+                    Background = (System.Windows.Media.Brush)FindResource("BrushInputBG"),
+                    CornerRadius = new CornerRadius(8),
+                    Padding = new Thickness(14, 10, 14, 10),
+                    Margin = new Thickness(0, 0, 0, 8)
+                };
+                var grid = new Grid();
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                border.Child = grid;
+
+                var info = new StackPanel();
+                Grid.SetColumn(info, 0);
+                info.Children.Add(new TextBlock
+                {
+                    Text = $"{title}  [{level}·{mode}]",
+                    FontSize = 13,
+                    FontWeight = FontWeights.SemiBold,
+                    TextTrimming = TextTrimming.CharacterEllipsis
+                });
+                info.Children.Add(new TextBlock
+                {
+                    Text = $"短码: {code}    使用: {used}/{usesText}    查看: {views}    接收者: {importerCount}    创建: {created}",
+                    FontSize = 12,
+                    Opacity = 0.65,
+                    Margin = new Thickness(0, 4, 0, 0),
+                    TextTrimming = TextTrimming.CharacterEllipsis
+                });
+                grid.Children.Add(info);
+
+                var cancelBtn = new Button
+                {
+                    Content = "取消分享",
+                    Style = (Style)FindResource("GhostButtonStyle"),
+                    Padding = new Thickness(12, 4, 12, 4),
+                    FontSize = 12,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                Grid.SetColumn(cancelBtn, 1);
+                grid.Children.Add(cancelBtn);
+
+                cancelBtn.Click += async (_, _) =>
+                {
+                    var confirm = MessageBox.Show(
+                        $"确定取消分享“{title}”吗？\n取消后短码失效，所有接收者的导入记录也会被清除。",
+                        "取消分享", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+                    if (confirm != MessageBoxResult.OK) return;
+
+                    cancelBtn.IsEnabled = false;
+                    try
                     {
-                        MessageBox.Show("暂无分享记录", "我的分享", MessageBoxButton.OK, MessageBoxImage.Information);
-                        return;
+                        using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+                        using var req = new System.Net.Http.HttpRequestMessage(
+                            System.Net.Http.HttpMethod.Delete, $"http://localhost:3007/api/sidebar/share/{shareId}");
+                        req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
+                        using var resp = await Services.HttpLog.SendAsync(http, req);
+                        string json = await resp.Content.ReadAsStringAsync();
+                        var root = Newtonsoft.Json.Linq.JObject.Parse(json);
+
+                        if (root["code"]?.ToObject<int>() == 200)
+                        {
+                            listPanel.Children.Remove(border);
+                            if (listPanel.Children.Count == 0)
+                            {
+                                listPanel.Children.Add(new TextBlock
+                                {
+                                    Text = "暂无分享记录",
+                                    FontSize = 13,
+                                    Opacity = 0.6,
+                                    HorizontalAlignment = HorizontalAlignment.Center,
+                                    Margin = new Thickness(0, 40, 0, 0)
+                                });
+                            }
+                        }
+                        else
+                        {
+                            MessageBox.Show(root["msg"]?.ToString() ?? "取消分享失败", "错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                            cancelBtn.IsEnabled = true;
+                        }
                     }
-
-                    var lines = shares.Select(s =>
+                    catch (Exception ex)
                     {
-                        string title = s["barTitle"]?.ToString() ?? "未命名";
-                        string mode = s["shareMode"]?.ToString() == "copy" ? "复制" : "引用";
-                        string code = s["shareCode"]?.ToString() ?? "";
-                        var maxUses = s["maxUses"]?.ToObject<int>() ?? 0;
-                        string usesText = maxUses == 0 ? "∞" : maxUses.ToString();
-                        string used = s["usedCount"]?.ToString() ?? "0";
-                        string views = s["viewCount"]?.ToString() ?? "0";
-                        return $"• {title}  [{mode}]  短码: {code}  使用: {used}/{usesText}  查看: {views}";
-                    }).ToList();
+                        MessageBox.Show($"取消分享失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                        cancelBtn.IsEnabled = true;
+                    }
+                };
 
-                    MessageBox.Show(string.Join("\n", lines), "我的分享", MessageBoxButton.OK, MessageBoxImage.Information);
-                }
-                else
-                {
-                    MessageBox.Show(root["msg"]?.ToString() ?? "获取分享列表失败", "错误", MessageBoxButton.OK, MessageBoxImage.Warning);
-                }
+                return border;
             }
-            catch (Exception ex)
+
+            // 拉取列表并渲染
+            win.Loaded += async (_, _) =>
             {
-                MessageBox.Show($"获取分享列表失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
+                listPanel.Children.Add(new TextBlock { Text = "加载中...", FontSize = 13, Opacity = 0.6 });
+                try
+                {
+                    using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+                    using var req = new System.Net.Http.HttpRequestMessage(
+                        System.Net.Http.HttpMethod.Get, "http://localhost:3007/api/sidebar/share/list/mine");
+                    req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
+                    using var resp = await Services.HttpLog.SendAsync(http, req);
+                    string json = await resp.Content.ReadAsStringAsync();
+                    var root = Newtonsoft.Json.Linq.JObject.Parse(json);
+
+                    listPanel.Children.Clear();
+                    if (root["code"]?.ToObject<int>() == 200 && root["data"] is Newtonsoft.Json.Linq.JArray shares)
+                    {
+                        if (shares.Count == 0)
+                        {
+                            listPanel.Children.Add(new TextBlock
+                            {
+                                Text = "暂无分享记录",
+                                FontSize = 13,
+                                Opacity = 0.6,
+                                HorizontalAlignment = HorizontalAlignment.Center,
+                                Margin = new Thickness(0, 40, 0, 0)
+                            });
+                            return;
+                        }
+                        foreach (var s in shares)
+                            listPanel.Children.Add(BuildRow(s));
+                    }
+                    else
+                    {
+                        listPanel.Children.Add(new TextBlock
+                        {
+                            Text = root["msg"]?.ToString() ?? "获取分享列表失败",
+                            FontSize = 13
+                        });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    listPanel.Children.Clear();
+                    listPanel.Children.Add(new TextBlock { Text = $"获取分享列表失败: {ex.Message}", FontSize = 13 });
+                }
+            };
+
+            win.Show();
         }
 
         #endregion

@@ -40,6 +40,8 @@
                 <MenuItem x:Name="addPluginMenu" Header="插件" SubmenuOpened="AddPluginMenu_SubmenuOpened">
                     <MenuItem Header="(加载中...)" IsEnabled="False"/>
                 </MenuItem>
+                <Separator/>
+                <MenuItem x:Name="addTeamLibraryMenu" Header="从团队组件库添加..." Click="AddFromTeamLibrary_Click"/>
             </MenuItem>
             <Separator />
             <MenuItem Header="布局" x:Name="LayoutMenu">

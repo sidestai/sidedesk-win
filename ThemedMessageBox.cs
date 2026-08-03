@@ -23,6 +23,170 @@ public static class ThemedMessageBox
         return ShowCore(owner, message, title, withCancel: true);
     }
 
+    /// <summary>
+    /// 显示分享结果窗口：短码与链接各带「复制」按钮，可单独复制。
+    /// </summary>
+    public static void ShowShareResult(Window? owner, string shareCode, string shareLink, string title = "分享成功")
+    {
+        var dialog = new Window
+        {
+            Title = title,
+            Width = 420,
+            SizeToContent = SizeToContent.Height,
+            WindowStartupLocation = owner != null ? WindowStartupLocation.CenterOwner : WindowStartupLocation.CenterScreen,
+            Owner = owner,
+            ResizeMode = ResizeMode.NoResize,
+            WindowStyle = WindowStyle.None,
+            AllowsTransparency = true,
+            Background = Brushes.Transparent,
+            ShowInTaskbar = false
+        };
+
+        var root = new Border
+        {
+            Background = (Brush)GetResource(owner, "BrushDialogBG"),
+            BorderBrush = (Brush)GetResource(owner, "BrushBorder"),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10)
+        };
+
+        var outerGrid = new Grid();
+        outerGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 标题栏
+        outerGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 提示文字
+        outerGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 短码行
+        outerGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 链接行
+        outerGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 关闭按钮
+
+        // 标题栏
+        var titleBar = new Grid { Background = Brushes.Transparent };
+        titleBar.MouseLeftButtonDown += (s, e) =>
+        {
+            if (e.OriginalSource is Button) return;
+            if (e.LeftButton == MouseButtonState.Pressed) dialog.DragMove();
+        };
+        titleBar.Children.Add(new TextBlock
+        {
+            Text = title,
+            FontSize = 13,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = (Brush)GetResource(owner, "BrushTextMain"),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(16, 12, 0, 12)
+        });
+        var closeBtn = new Button
+        {
+            Content = "\u2715",
+            Width = 26, Height = 26, FontSize = 11,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 10, 0),
+            Style = (Style)GetResource(owner, "GhostButtonStyle"),
+            Cursor = Cursors.Hand
+        };
+        closeBtn.Click += (s, e) => dialog.Close();
+        titleBar.Children.Add(closeBtn);
+        Grid.SetRow(titleBar, 0);
+
+        // 提示文字
+        var hint = new TextBlock
+        {
+            Text = "分享创建成功！将短码或链接发给对方即可导入。",
+            FontSize = 12,
+            Foreground = (Brush)GetResource(owner, "BrushTextSub"),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(16, 4, 16, 12)
+        };
+        Grid.SetRow(hint, 1);
+
+        // 辅助方法：构建「标签 + 只读文本框 + 复制按钮」行
+        Grid MakeCopyRow(string label, string value, int rowIndex)
+        {
+            var row = new Grid { Margin = new Thickness(16, 0, 16, 10) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var lbl = new TextBlock
+            {
+                Text = label,
+                FontSize = 12,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = (Brush)GetResource(owner, "BrushTextMain"),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+            Grid.SetColumn(lbl, 0);
+
+            var tb = new TextBox
+            {
+                Text = value,
+                FontSize = 12,
+                IsReadOnly = true,
+                BorderThickness = new Thickness(1),
+                BorderBrush = (Brush)GetResource(owner, "BrushBorder"),
+                Background = (Brush)GetResource(owner, "BrushInputBG"),
+                Foreground = (Brush)GetResource(owner, "BrushTextMain"),
+                Padding = new Thickness(6, 4, 6, 4),
+                VerticalAlignment = VerticalAlignment.Center,
+                TextWrapping = TextWrapping.NoWrap
+            };
+            Grid.SetColumn(tb, 1);
+
+            var btn = new Button
+            {
+                Content = "复制",
+                Width = 52,
+                Margin = new Thickness(8, 0, 0, 0),
+                Style = (Style)GetResource(owner, "StandardButtonStyle"),
+                Cursor = Cursors.Hand
+            };
+            btn.Click += (s, e) =>
+            {
+                Clipboard.SetText(value);
+                btn.Content = "已复制 ✓";
+            };
+            Grid.SetColumn(btn, 2);
+
+            row.Children.Add(lbl);
+            row.Children.Add(tb);
+            row.Children.Add(btn);
+            Grid.SetRow(row, rowIndex);
+            return row;
+        }
+
+        var codeRow = MakeCopyRow("短码：", shareCode, 2);
+        var linkRow = MakeCopyRow("链接：", shareLink, 3);
+
+        // 关闭按钮
+        var btnPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(16, 4, 16, 16)
+        };
+        var okBtn = new Button
+        {
+            Content = "关闭",
+            Width = 80,
+            Style = (Style)GetResource(owner, "PrimaryButtonStyle"),
+            Cursor = Cursors.Hand,
+            IsDefault = true,
+            IsCancel = true
+        };
+        okBtn.Click += (s, e) => dialog.Close();
+        btnPanel.Children.Add(okBtn);
+        Grid.SetRow(btnPanel, 4);
+
+        outerGrid.Children.Add(titleBar);
+        outerGrid.Children.Add(hint);
+        outerGrid.Children.Add(codeRow);
+        outerGrid.Children.Add(linkRow);
+        outerGrid.Children.Add(btnPanel);
+        root.Child = outerGrid;
+        dialog.Content = root;
+        dialog.ShowDialog();
+    }
+
     private static bool ShowCore(Window? owner, string message, string title, bool withCancel)
     {
         var confirmed = false;

@@ -131,6 +131,9 @@ namespace SideDesk
         /// <summary>是否启用加密同步（敏感设置项加密后再上传）</summary>
         public bool SyncEncryptEnabled { get; set; } = false;
 
+        /// <summary>是否记录网络请求日志（request/response 写入 %LocalAppData%\SideDesk\http.log，默认开启便于排查）</summary>
+        public bool HttpLogEnabled { get; set; } = true;
+
         /// <summary>DPAPI 加密后的派生密钥（base64，仅本机可解）</summary>
         public string? SyncDerivedKey { get; set; }
 
@@ -167,6 +170,23 @@ namespace SideDesk
 
         /// <summary>用户手动禁用的插件 ID 集合（在设置-插件中关闭）</summary>
         public HashSet<string> DisabledPlugins { get; set; } = new();
+
+        /// <summary>已关闭/已点击的通知记录（key=通知唯一标识，value=记录时间；用于控制某类通知在周期内不再出现）</summary>
+        public Dictionary<string, DateTime> DismissedNotices { get; set; } = new();
+
+        /// <summary>判断指定 key 的通知是否应显示（从未记录过，或抑制周期已过期）</summary>
+        public bool ShouldShowNotice(string key, TimeSpan? suppressPeriod = null)
+        {
+            if (!DismissedNotices.TryGetValue(key, out var time)) return true;
+            if (suppressPeriod == null) return false; // 无周期 = 永久不再显示
+            return DateTime.Now - time > suppressPeriod.Value;
+        }
+
+        /// <summary>记录通知已关闭/已点击（配合 ShouldShowNotice 实现免打扰）</summary>
+        public void DismissNotice(string key)
+        {
+            DismissedNotices[key] = DateTime.Now;
+        }
 
         /// <summary>每个物理显示器的停靠配置（下标 = 主显示器优先排序后的显示器序号）</summary>
         public List<MonitorDockSettings> Monitors { get; set; } = new();

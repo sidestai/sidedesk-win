@@ -27,6 +27,19 @@ namespace SideDesk.Services
         [JsonProperty("members")] public List<TeamMember> Members { get; set; } = new();
     }
 
+    /// <summary>团队组件库条目</summary>
+    public class TeamLibraryItem
+    {
+        [JsonProperty("itemServerId")] public string ItemServerId { get; set; } = "";
+        [JsonProperty("title")] public string? Title { get; set; }
+        [JsonProperty("itemType")] public string ItemType { get; set; } = "";
+        [JsonProperty("itemData")] public string? ItemData { get; set; }
+        [JsonProperty("corpId")] public int CorpId { get; set; }
+        [JsonProperty("isMine")] public bool IsMine { get; set; }
+        [JsonProperty("creatorName")] public string CreatorName { get; set; } = "";
+        [JsonProperty("createdAt")] public DateTime? CreatedAt { get; set; }
+    }
+
     #endregion
 
     /// <summary>
@@ -132,6 +145,29 @@ namespace SideDesk.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[Team] 创建团队失败: {ex.Message}");
+                return null;
+            }
+        }
+
+        #endregion
+
+        #region 3. 团队组件库
+
+        /// <summary>GET /api/sidebar/item/team-library?corpId=X — 返回指定团队的共享模块列表</summary>
+        public async Task<List<TeamLibraryItem>?> GetTeamLibraryAsync(string corpId)
+        {
+            try
+            {
+                using var req = CreateRequest(HttpMethod.Get, $"{BaseUrl}/api/sidebar/item/team-library?corpId={corpId}");
+                using var resp = await _http.SendAsync(req).ConfigureAwait(false);
+                var data = await ParseResponseTokenAsync(resp).ConfigureAwait(false);
+                if (data is not JArray arr) return null;
+
+                return arr.ToObject<List<TeamLibraryItem>>() ?? new List<TeamLibraryItem>();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Team] 获取团队组件库失败: {ex.Message}");
                 return null;
             }
         }

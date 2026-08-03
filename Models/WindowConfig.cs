@@ -80,6 +80,12 @@ public class PanelItem
     public string ScreenTimeStyle { get; set; } = "List";        // 屏幕时长组件展示风格：List/Pie/Category/Window
     public string DailyActivityView { get; set; } = "Month";      // 每日活跃视图模式：Month(当月热力图)/Today(仅今日)/Week(前后5天逐日)
     public PomodoroSettings? Pomodoro { get; set; }                    // 番茄闹钟数据
+    /// <summary>归属类型: personal=个人, team=团队</summary>
+    public string OwnerType { get; set; } = "personal";
+    /// <summary>所属团队 ID（OwnerType=team 时有值）</summary>
+    public string? TeamId { get; set; }
+    /// <summary>团队名称快照（显示用）</summary>
+    public string? TeamName { get; set; }
 }
 
 public class FileAreaItem
@@ -299,11 +305,58 @@ public class WindowConfigManager
             if (File.Exists(_filePath))
             {
                 var json = File.ReadAllText(_filePath);
-                return JsonConvert.DeserializeObject<WindowConfigManager>(json) ?? new WindowConfigManager();
+                var mgr = JsonConvert.DeserializeObject<WindowConfigManager>(json) ?? new WindowConfigManager();
+                MigrateLegacyStickyNotesOnce(mgr);
+                return mgr;
             }
         }
         catch { }
         return new WindowConfigManager();
+    }
+
+    /// <summary>
+    /// 旧版全局便签库一次性迁移：per-panel 存储引入前便签数据存于全局 sticky-notes.json。
+    /// 升级后首次启动时将全局数据迁入尚无 per-panel 数据的遗留便签模块，并写入完成标记；
+    /// 之后新建/导入的便签模块一律从空列表开始（否则新面板会被全局遗留数据污染）。
+    /// </summary>
+    private static void MigrateLegacyStickyNotesOnce(WindowConfigManager mgr)
+    {
+        try
+        {
+            string flagPath = Path.Combine(Path.GetDirectoryName(_filePath)!, "sticky-notes-migrated.flag");
+            if (File.Exists(flagPath)) return;
+
+            bool migrated = false;
+            var globalNotes = StickyNoteManager.GetAll();
+            if (globalNotes.Count > 0)
+            {
+                foreach (var win in mgr.Windows)
+                {
+                    foreach (var p in EnumerateAllPanels(win.Panels))
+                    {
+                        if (p.Type == PanelType.StickyNotes && p.StickyNotes == null)
+                        {
+                            p.StickyNotes = new List<StickyNote>(globalNotes);
+                            migrated = true;
+                        }
+                    }
+                }
+            }
+            File.WriteAllText(flagPath, DateTime.Now.ToString("o"));
+            if (migrated) mgr.Save();
+        }
+        catch { }
+    }
+
+    private static IEnumerable<PanelItem> EnumerateAllPanels(List<PanelItem> panels)
+    {
+        foreach (var p in panels)
+        {
+            yield return p;
+            if (p.ChildPanels != null)
+                foreach (var c in EnumerateAllPanels(p.ChildPanels))
+                    yield return c;
+        }
     }
 
     public void Save()
@@ -316,6 +369,9 @@ public class WindowConfigManager
             File.WriteAllText(_filePath, json);
         }
         catch { }
+
+        // 行级同步：任何配置保存后通知 CloudSyncService（防抖 2s + 快照对比确保不重复推送）
+        try { Services.CloudSyncService.Instance.NotifyRowsChanged(); } catch { }
     }
 
     public WindowConfig? GetById(string id) => Windows.FirstOrDefault(w => w.Id == id);

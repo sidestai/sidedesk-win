@@ -28,6 +28,7 @@ namespace SideDesk.Models
     public enum NotificationActionType
     {
         OpenUrl,
+        OpenWebView,
         OpenSettings,
         OpenFile,
         ShowFileLocation,
@@ -58,6 +59,7 @@ namespace SideDesk.Models
             return type?.Trim().ToLowerInvariant() switch
             {
                 "open_url" => NotificationActionType.OpenUrl,
+                "open_webview" => NotificationActionType.OpenWebView,
                 "open_settings" => NotificationActionType.OpenSettings,
                 "open_file" => NotificationActionType.OpenFile,
                 "show_file_location" => NotificationActionType.ShowFileLocation,
@@ -164,6 +166,9 @@ namespace SideDesk.Models
         /// <summary>是否已读（通知中心使用）</summary>
         public bool IsRead { get; set; }
 
+        /// <summary>通知免打扰标识（点击/关闭后记录到 Settings.DismissedNotices，配合 ShouldShowNotice 控制不再出现；null 表示不参与免打扰）</summary>
+        public string? NoticeKey { get; set; }
+
         /// <summary>从 WebSocket JSON data 对象解析通知载荷（snake_case 字段映射）</summary>
         public static NotificationPayload FromJson(JObject data)
         {
@@ -225,6 +230,8 @@ namespace SideDesk.Models
 
             // click_main
             n.ClickMain = NotificationAction.FromJson(data["click_main"] ?? data["clickMain"]);
+
+            n.NoticeKey = (string?)data["notice_key"];
 
             return n;
         }

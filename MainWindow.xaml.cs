@@ -27,6 +27,9 @@ namespace SideDesk
         private DispatcherTimer? _hoverTimer;
         private SettingsWindow? _settingsWindow;
 
+        /// <summary>启动引导通知是否已入队（多窗口实例共享，避免重复入队；富通知会广播到所有窗口）</summary>
+        private static bool _welcomeNoticeEnqueued;
+
         public ScreenType CurrentScreen => _currentScreen;
         internal WindowConfigManager? ConfigManager => _configManager;
         internal DockWindowState? DockState => _dockState;
@@ -58,8 +61,28 @@ namespace SideDesk
             // Ctrl+1~9 快速切换窗口标签
             PreviewKeyDown += MainWindow_PreviewKeyDown;
 
-            // 初始欢迎通知（多条通知垂直堆叠）
-            ShowNotification("🔔 示例通知：欢迎使用 元桌小屏！点击查看详情");
+            // 启动引导通知（富通知）：点击在独立 WebView2 窗口打开网页；点击过一次后永久不再出现
+            var app = (App)Application.Current;
+            const string welcomeNoticeKey = "welcome_open_webview";
+            if (!_welcomeNoticeEnqueued && app.AppSettings.ShouldShowNotice(welcomeNoticeKey))
+            {
+                _welcomeNoticeEnqueued = true;
+                Services.NotificationService.Instance.Enqueue(new NotificationPayload
+                {
+                    Title = "🌐 点击打开网页窗口",
+                    Body = "在独立窗口中浏览网页",
+                    NoticeKey = welcomeNoticeKey,
+                    ClickMain = new NotificationAction
+                    {
+                        Type = "open_webview",
+                        Payload = new Dictionary<string, object>
+                        {
+                            ["url"] = "https://www.baidu.com",
+                            ["title"] = "网页"
+                        }
+                    }
+                });
+            }
         }
 
         private void ApplyBackgroundOpacity()
@@ -602,6 +625,442 @@ namespace SideDesk
             CreateNewWindow();
         }
 
+        private void ImportShare_Click(object sender, RoutedEventArgs e)
+        {
+            ShowImportShareDialog();
+        }
+
+        /// <summary>
+        /// 导入分享对话框：两步流程。
+        /// 步骤1：输入短码 → 查询预览信息展示给用户；
+        /// 步骤2：用户确认 → 执行导入。
+        /// </summary>
+        private void ShowImportShareDialog()
+        {
+            var app = (App)Application.Current;
+            if (string.IsNullOrEmpty(app.AppSettings?.AccountToken))
+            {
+                ThemedMessageBox.Show(this, "请先登录再导入分享。", "提示");
+                return;
+            }
+
+            var dialog = new Window
+            {
+                Title = "导入分享",
+                Width = 400,
+                SizeToContent = SizeToContent.Height,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this,
+                ResizeMode = ResizeMode.NoResize,
+                WindowStyle = WindowStyle.None,
+                AllowsTransparency = true,
+                Background = System.Windows.Media.Brushes.Transparent,
+                ShowInTaskbar = false
+            };
+
+            var root = new Border
+            {
+                Background = (System.Windows.Media.Brush)TryFindResource("BrushDialogBG"),
+                BorderBrush = (System.Windows.Media.Brush)TryFindResource("BrushBorder"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(10)
+            };
+
+            var outerStack = new StackPanel();
+
+            // ===== 标题栏 =====
+            var titleBar = new Grid { Background = System.Windows.Media.Brushes.Transparent };
+            titleBar.MouseLeftButtonDown += (s, e) =>
+            {
+                if (e.OriginalSource is Button) return;
+                if (e.LeftButton == System.Windows.Input.MouseButtonState.Pressed) dialog.DragMove();
+            };
+            var titleText = new TextBlock
+            {
+                Text = "导入分享",
+                FontSize = 13,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = (System.Windows.Media.Brush)TryFindResource("BrushTextMain"),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(16, 12, 0, 12)
+            };
+            titleBar.Children.Add(titleText);
+            var closeBtn = new Button
+            {
+                Content = "\u2715",
+                Width = 26, Height = 26, FontSize = 11,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 10, 0),
+                Style = (Style)TryFindResource("GhostButtonStyle"),
+                Cursor = System.Windows.Input.Cursors.Hand
+            };
+            closeBtn.Click += (s, e) => dialog.Close();
+            titleBar.Children.Add(closeBtn);
+            outerStack.Children.Add(titleBar);
+
+            // ===== 步骤1：输入区域 =====
+            var inputArea = new StackPanel { Margin = new Thickness(16, 0, 16, 0) };
+            inputArea.Children.Add(new TextBlock
+            {
+                Text = "输入分享短码或链接：",
+                FontSize = 12,
+                Foreground = (System.Windows.Media.Brush)TryFindResource("BrushTextSub"),
+                Margin = new Thickness(0, 0, 0, 6)
+            });
+            var inputRow = new Grid();
+            inputRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            inputRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var inputBox = new TextBox
+            {
+                FontSize = 13,
+                Padding = new Thickness(8, 6, 8, 6),
+                BorderThickness = new Thickness(1),
+                BorderBrush = (System.Windows.Media.Brush)TryFindResource("BrushBorder"),
+                Background = (System.Windows.Media.Brush)TryFindResource("BrushInputBG"),
+                Foreground = (System.Windows.Media.Brush)TryFindResource("BrushTextMain"),
+                CaretBrush = (System.Windows.Media.Brush)TryFindResource("BrushTextMain"),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Grid.SetColumn(inputBox, 0);
+            var lookupBtn = new Button
+            {
+                Content = "查询",
+                Width = 64,
+                Margin = new Thickness(8, 0, 0, 0),
+                Style = (Style)TryFindResource("StandardButtonStyle"),
+                Cursor = System.Windows.Input.Cursors.Hand,
+                IsDefault = true
+            };
+            Grid.SetColumn(lookupBtn, 1);
+            inputRow.Children.Add(inputBox);
+            inputRow.Children.Add(lookupBtn);
+            inputArea.Children.Add(inputRow);
+            outerStack.Children.Add(inputArea);
+
+            // ===== 步骤2：预览信息区域（初始隐藏）=====
+            var previewArea = new Border
+            {
+                Margin = new Thickness(16, 12, 16, 0),
+                Padding = new Thickness(12),
+                BorderThickness = new Thickness(1),
+                BorderBrush = (System.Windows.Media.Brush)TryFindResource("BrushBorder"),
+                CornerRadius = new CornerRadius(6),
+                Background = (System.Windows.Media.Brush)TryFindResource("BrushInputBG"),
+                Visibility = Visibility.Collapsed
+            };
+            var previewStack = new StackPanel();
+            var previewTitle  = new TextBlock { FontSize = 14, FontWeight = FontWeights.SemiBold,
+                Foreground = (System.Windows.Media.Brush)TryFindResource("BrushTextMain"),
+                Margin = new Thickness(0, 0, 0, 4) };
+            var previewType   = new TextBlock { FontSize = 12,
+                Foreground = (System.Windows.Media.Brush)TryFindResource("BrushTextSub"),
+                Margin = new Thickness(0, 0, 0, 2) };
+            var previewMode   = new TextBlock { FontSize = 12,
+                Foreground = (System.Windows.Media.Brush)TryFindResource("BrushTextSub"),
+                Margin = new Thickness(0, 0, 0, 2) };
+            var previewCount  = new TextBlock { FontSize = 12,
+                Foreground = (System.Windows.Media.Brush)TryFindResource("BrushTextSub") };
+            previewStack.Children.Add(previewTitle);
+            previewStack.Children.Add(previewType);
+            previewStack.Children.Add(previewMode);
+            previewStack.Children.Add(previewCount);
+            previewArea.Child = previewStack;
+            outerStack.Children.Add(previewArea);
+
+            // ===== 底部按钮 =====
+            var btnPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(16, 12, 16, 16)
+            };
+            var cancelBtn = new Button
+            {
+                Content = "取消",
+                Width = 72,
+                Margin = new Thickness(0, 0, 10, 0),
+                Style = (Style)TryFindResource("StandardButtonStyle"),
+                Cursor = System.Windows.Input.Cursors.Hand,
+                IsCancel = true
+            };
+            cancelBtn.Click += (s, e) => dialog.Close();
+            var importBtn = new Button
+            {
+                Content = "确认导入",
+                Width = 88,
+                Style = (Style)TryFindResource("PrimaryButtonStyle"),
+                Cursor = System.Windows.Input.Cursors.Hand,
+                IsEnabled = false   // 查询成功后才激活
+            };
+            btnPanel.Children.Add(cancelBtn);
+            btnPanel.Children.Add(importBtn);
+            outerStack.Children.Add(btnPanel);
+
+            root.Child = outerStack;
+            dialog.Content = root;
+
+            // 缓存预览结果，供导入步骤使用
+            string cachedCode = "";
+            string cachedShareLevel = "";
+
+            // ===== 步骤1：查询 =====
+            lookupBtn.Click += async (_, _) =>
+            {
+                string input = inputBox.Text.Trim();
+                if (string.IsNullOrEmpty(input)) return;
+
+                string code = input;
+                if (input.Contains("/s/"))
+                {
+                    var parts = input.Split("/s/");
+                    if (parts.Length > 1) code = parts[1].Trim().TrimEnd('/');
+                }
+                Debug.WriteLine($"[ImportShare] 用户输入: '{input}' → 短码: '{code}'");
+
+                lookupBtn.IsEnabled = false;
+                lookupBtn.Content = "查询中…";
+                previewArea.Visibility = Visibility.Collapsed;
+                importBtn.IsEnabled = false;
+                try
+                {
+                    var token = app.AppSettings.AccountToken;
+                    using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+                    string previewUrl = $"http://localhost:3007/api/sidebar/share/{Uri.EscapeDataString(code)}";
+                    Debug.WriteLine($"[ImportShare] 预览请求: GET {previewUrl}");
+                    using var req = new HttpRequestMessage(HttpMethod.Get, previewUrl);
+                    req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
+                    using var resp = await Services.HttpLog.SendAsync(http, req);
+                    string json = await resp.Content.ReadAsStringAsync();
+                    Debug.WriteLine($"[ImportShare] 预览响应 HTTP {(int)resp.StatusCode}: {json}");
+                    var root2 = Newtonsoft.Json.Linq.JObject.Parse(json);
+
+                    if (root2["code"]?.ToObject<int>() != 200)
+                    {
+                        string errMsg = root2["msg"]?.ToString() ?? "分享不存在或已失效";
+                        Debug.WriteLine($"[ImportShare] 预览失败: {errMsg}");
+                        ThemedMessageBox.Show(dialog, errMsg, "查询失败");
+                        return;
+                    }
+
+                    var d = root2["data"]!;
+                    string shareLevel = d["shareLevel"]?.ToString() ?? "bar";
+                    string shareMode  = d["shareMode"]?.ToString() ?? "copy";
+                    string barTitle   = d["barTitle"]?.ToString() ?? "未命名窗口";
+                    string itemType   = d["itemType"]?.ToString() ?? "";
+                    string itemTitle  = d["itemTitle"]?.ToString() ?? "";
+                    int    itemCount  = d["itemCount"]?.ToObject<int>() ?? 0;
+
+                    // itemTitle 若为空用 itemType 兜底
+                    string displayName = !string.IsNullOrEmpty(itemTitle) ? itemTitle
+                                       : !string.IsNullOrEmpty(itemType)  ? itemType
+                                       : barTitle;
+                    Debug.WriteLine($"[ImportShare] 预览成功: shareLevel={shareLevel}, shareMode={shareMode}, barTitle={barTitle}, itemTitle={itemTitle}, itemType={itemType}");
+
+                    // 填充预览区
+                    previewTitle.Text = shareLevel == "item" ? displayName : barTitle;
+                    previewType.Text  = shareLevel == "item"
+                        ? $"类型：模块（{itemType}）  所属窗口：{barTitle}"
+                        : $"类型：窗口  共 {itemCount} 个模块";
+                    previewMode.Text  = $"分享模式：{(shareMode == "copy" ? "复制（对方获得独立副本）" : "引用（实时查看你的数据）")}";
+                    previewCount.Text = shareLevel == "bar" ? "" : "";
+                    previewCount.Visibility = Visibility.Collapsed;
+                    previewArea.Visibility = Visibility.Visible;
+
+                    // 缓存给导入步骤
+                    cachedCode       = code;
+                    cachedShareLevel = shareLevel;
+                    importBtn.IsEnabled = true;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[ImportShare] 预览异常: {ex.Message}");
+                    ThemedMessageBox.Show(dialog, $"查询失败: {ex.Message}", "错误");
+                }
+                finally
+                {
+                    lookupBtn.IsEnabled = true;
+                    lookupBtn.Content = "查询";
+                }
+            };
+
+            // ===== 步骤2：确认导入 =====
+            importBtn.Click += async (_, _) =>
+            {
+                if (string.IsNullOrEmpty(cachedCode)) return;
+                importBtn.IsEnabled = false;
+                importBtn.Content = "导入中…";
+                try
+                {
+                    await DoImportShareAsync(cachedCode, cachedShareLevel, dialog);
+                }
+                finally
+                {
+                    importBtn.IsEnabled = true;
+                    importBtn.Content = "确认导入";
+                }
+            };
+
+            dialog.ShowDialog();
+        }
+
+        /// <summary>
+        /// 执行导入：直接使用已知 shareLevel，读当前小屏 ServerId 并 POST 导入接口。
+        /// </summary>
+        private async Task DoImportShareAsync(string code, string shareLevel, Window dialog)
+        {
+            var app = (App)Application.Current;
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+            var token = app.AppSettings.AccountToken;
+            Debug.WriteLine($"[ImportShare] 开始导入, code={code}, shareLevel={shareLevel}, 有token={!string.IsNullOrEmpty(token)}");
+        
+            // 构建导入请求（item 级将当前小屏的 ServerId 传入）
+            string? targetBarServerId = null;
+            if (shareLevel == "item" && _configManager != null && _dockState != null)
+            {
+                var activeId = _dockState.WindowIds.Count > _dockState.ActiveIndex
+                    ? _dockState.WindowIds[_dockState.ActiveIndex]
+                    : _dockState.WindowIds[0];
+                targetBarServerId = _configManager.GetById(activeId)?.ServerId;
+                Debug.WriteLine($"[ImportShare] item 级导入, 当前小屏 ServerId={targetBarServerId ?? "(null)"}");
+            }
+        
+            var importPayload = new System.Collections.Generic.Dictionary<string, object?> { ["shareCode"] = code };
+            if (targetBarServerId != null)
+                importPayload["targetBarServerId"] = targetBarServerId;
+            // 预生成本地组件 GUID 随导入请求上报，服务器记录在 share_import.local_id
+            string importLocalId = Guid.NewGuid().ToString();
+            importPayload["localId"] = importLocalId;
+            Debug.WriteLine($"[ImportShare] 本地组件 GUID localId={importLocalId}");
+        
+            var importJson = Newtonsoft.Json.JsonConvert.SerializeObject(importPayload);
+            Debug.WriteLine($"[ImportShare] 导入请求 POST /sidebar/share/import, payload={importJson}");
+            using var importContent = new System.Net.Http.StringContent(importJson, System.Text.Encoding.UTF8, "application/json");
+            using var importReq = new HttpRequestMessage(HttpMethod.Post, "http://localhost:3007/api/sidebar/share/import") { Content = importContent };
+            importReq.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
+            using var importResp = await Services.HttpLog.SendAsync(http, importReq);
+            string importRespJson = await importResp.Content.ReadAsStringAsync();
+            Debug.WriteLine($"[ImportShare] 导入响应 HTTP {(int)importResp.StatusCode}: {importRespJson}");
+            var importResult = Newtonsoft.Json.Linq.JObject.Parse(importRespJson);
+        
+            if (importResult["code"]?.ToObject<int>() != 200)
+            {
+                string errMsg = importResult["msg"]?.ToString() ?? "导入失败";
+                Debug.WriteLine($"[ImportShare] 导入失败: {errMsg}");
+                ThemedMessageBox.Show(this, errMsg, "导入失败");
+                return;
+            }
+        
+            var data = importResult["data"]!;
+            string resultBarServerId = data["barServerId"]?.ToString() ?? "";
+            string resultShareMode   = data["shareMode"]?.ToString() ?? "";
+            string? sourceBarId      = data["sourceBarId"]?.ToString();
+            string  resultItemTitle  = data["itemTitle"]?.ToString() ?? "";
+            string  resultItemType   = data["itemType"]?.ToString() ?? "";
+            string  resultItemData   = data["itemData"]?.ToString() ?? "";
+            Debug.WriteLine($"[ImportShare] 导入成功: shareLevel={shareLevel}, barServerId={resultBarServerId}, shareMode={resultShareMode}");
+
+            if (shareLevel == "item")
+            {
+                // === Item 级导入：在当前窗口创建本地 PanelItem ===
+                string itemServerId = data["itemServerId"]?.ToString() ?? "";
+                Debug.WriteLine($"[ImportShare] item 级: itemServerId={itemServerId}, itemType={resultItemType}");
+
+                if (!string.IsNullOrEmpty(itemServerId) && _configManager != null && _dockState != null)
+                {
+                    // 解析 itemType → PanelType
+                    PanelType panelType = PanelType.StickyNotes;
+                    if (System.Enum.TryParse<PanelType>(resultItemType, true, out var parsed))
+                        panelType = parsed;
+
+                    // 创建 PanelItem（Id 使用导入前预生成并上报给服务器的 GUID）
+                    var newPanel = new PanelItem
+                    {
+                        Id = importLocalId,
+                        ServerId = itemServerId,
+                        Type = panelType,
+                        Title = !string.IsNullOrEmpty(resultItemTitle) ? resultItemTitle : null,
+                    };
+
+                    // 应用 itemData 中的模块设置（如有）
+                    if (!string.IsNullOrEmpty(resultItemData))
+                    {
+                        try
+                        {
+                            var itemDataObj = Newtonsoft.Json.Linq.JObject.Parse(resultItemData);
+                            foreach (var prop in itemDataObj.Properties())
+                            {
+                                var targetProp = newPanel.GetType().GetProperty(prop.Name);
+                                if (targetProp != null && targetProp.CanWrite && prop.Value.Type != Newtonsoft.Json.Linq.JTokenType.Null)
+                                {
+                                    try { targetProp.SetValue(newPanel, prop.Value.ToObject(targetProp.PropertyType)); }
+                                    catch { /* 忽略单个字段解析失败 */ }
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"[ImportShare] 解析 itemData 失败: {ex.Message}");
+                        }
+                    }
+
+                    // 添加到当前窗口
+                    var activeId = _dockState.WindowIds.Count > _dockState.ActiveIndex
+                        ? _dockState.WindowIds[_dockState.ActiveIndex]
+                        : _dockState.WindowIds[0];
+                    var activeWin = _configManager.GetById(activeId);
+                    if (activeWin != null)
+                    {
+                        activeWin.Panels.Add(newPanel);
+                        _configManager.Save();
+
+                        // reference/copy 模式：本地为空，先全量拉取数据再渲染（增量 since 拉不到旧行；
+                        // copy 模式服务端已复制源模块行数据，同样需要全量拉取才能看到副本内容）
+                        if (resultShareMode == "reference" || resultShareMode == "copy")
+                        {
+                            bool pulled = await CloudSyncService.Instance.PullItemFullAsync(newPanel);
+                            Debug.WriteLine($"[ImportShare] {resultShareMode} 全量拉取 {(pulled ? "成功" : "无数据/失败")}");
+                            if (pulled) _configManager.Save();
+                        }
+
+                        RefreshNativePanels();
+                        Debug.WriteLine($"[ImportShare] 已创建本地 PanelItem (Type={panelType}, ServerId={itemServerId}, Mode={resultShareMode})，面板已刷新");
+                    }
+                }
+
+                dialog.Close();
+                _ = CloudSyncService.Instance.SyncNowAsync(silent: true);
+                ThemedMessageBox.Show(this,
+                    $"模块导入完成。\n模式：{(resultShareMode == "copy" ? "复制（独立副本）" : "引用（实时数据）")}",
+                    "导入成功");
+            }
+            else
+            {
+                // === Bar 级导入：新建小屏并切换 ===
+                dialog.Close();
+                Debug.WriteLine($"[ImportShare] bar 级导入完成，新建小屏");
+                string barTitleResult = data["barTitle"]?.ToString() ?? "导入窗口";
+                var newWin = new WindowConfig
+                {
+                    Id = importLocalId,
+                    Name = barTitleResult,
+                    ServerId = resultBarServerId,
+                    ShareMode = resultShareMode,
+                    SourceBarId = sourceBarId,
+                    OwnerType = "personal"
+                };
+                _configManager?.Add(newWin);
+                _dockState?.WindowIds.Add(newWin.Id);
+                _configManager?.Save();
+                RefreshWindowTabs();
+                WindowTab_Click(_dockState!.WindowIds.Count - 1);
+
+                ThemedMessageBox.Show(this,
+                    $"小屏「{barTitleResult}」导入成功。\n模式：{(resultShareMode == "copy" ? "复制（独立副本）" : "引用（实时数据）")}",
+                    "导入成功");
+            }
+        }
+
         private void CreateNewWindow()
         {
             var dialog = new AddWindowDialog { Owner = this };
@@ -630,6 +1089,25 @@ namespace SideDesk
             _configManager.Save();
             RefreshWindowTabs();
             SwitchToWindowByIndex(_dockState.ActiveIndex);
+        }
+
+        /// <summary>
+        /// 属主取消分享：从当前 dock 移除指定导入窗口（窗口配置由调用方统一处理）。
+        /// </summary>
+        internal void RemoveSharedWindowById(string windowId)
+        {
+            if (_configManager == null || _dockState == null) return;
+            int idx = _dockState.WindowIds.IndexOf(windowId);
+            if (idx < 0) return;
+
+            _dockState.WindowIds.RemoveAt(idx);
+            if (_dockState.WindowIds.Count > 0 && _dockState.ActiveIndex >= _dockState.WindowIds.Count)
+                _dockState.ActiveIndex = _dockState.WindowIds.Count - 1;
+
+            _configManager.Save();
+            RefreshWindowTabs();
+            if (_dockState.WindowIds.Count > 0)
+                SwitchToWindowByIndex(_dockState.ActiveIndex);
         }
 
         #endregion
@@ -1317,6 +1795,7 @@ namespace SideDesk
                     var capturedAction = action;
                     btn.Click += async (s, e) =>
                     {
+                        RecordNoticeDismissal(n);
                         DismissRichNotification(holder);
                         await NotificationActionService.ExecuteAsync(capturedAction, n);
                     };
@@ -1378,6 +1857,7 @@ namespace SideDesk
                 if (e.OriginalSource is Button) return; // 按钮点击不触发主体动作
                 if (n.ClickMain != null)
                 {
+                    RecordNoticeDismissal(n);
                     DismissRichNotification(holder);
                     await NotificationActionService.ExecuteAsync(n.ClickMain, n);
                 }
@@ -1388,6 +1868,15 @@ namespace SideDesk
             };
 
             return holder;
+        }
+
+        /// <summary>记录通知免打扰标识（通知被点击时调用；带 NoticeKey 的通知点击后不再重复出现）</summary>
+        private void RecordNoticeDismissal(NotificationPayload n)
+        {
+            if (string.IsNullOrEmpty(n.NoticeKey)) return;
+            var app = (App)Application.Current;
+            app.AppSettings.DismissNotice(n.NoticeKey);
+            app.AppSettings.Save();
         }
 
         /// <summary>解析颜色字符串（#RRGGBB / #AARRGGBB），失败返回 null</summary>

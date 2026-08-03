@@ -155,7 +155,7 @@ namespace SideDesk.Services
                 System.Diagnostics.Debug.WriteLine($"[CloudDrive] STS Token: Bearer {token[..Math.Min(token.Length, 30)]}...");
 
                 using var req = CreateRequest(HttpMethod.Post, url);
-                using var resp = await _http.SendAsync(req).ConfigureAwait(false);
+                using var resp = await HttpLog.SendAsync(_http, req).ConfigureAwait(false);
                 var data = await ParseResponseTokenAsync(resp).ConfigureAwait(false);
                 if (data is not JObject obj) return null;
 
@@ -190,7 +190,7 @@ namespace SideDesk.Services
                 using var req = CreateRequest(HttpMethod.Post, $"{BaseUrl}/api/cloud-drive/register");
                 req.Content = new StringContent(body.ToString(Formatting.None), Encoding.UTF8, "application/json");
 
-                using var resp = await _http.SendAsync(req).ConfigureAwait(false);
+                using var resp = await HttpLog.SendAsync(_http, req).ConfigureAwait(false);
                 var data = await ParseResponseTokenAsync(resp).ConfigureAwait(false);
                 if (data is not JObject obj) return null;
 
@@ -222,7 +222,7 @@ namespace SideDesk.Services
                 using var req = CreateRequest(HttpMethod.Post, $"{BaseUrl}/api/cloud-drive/mkdir");
                 req.Content = new StringContent(body.ToString(Formatting.None), Encoding.UTF8, "application/json");
 
-                using var resp = await _http.SendAsync(req).ConfigureAwait(false);
+                using var resp = await HttpLog.SendAsync(_http, req).ConfigureAwait(false);
                 var data = await ParseResponseTokenAsync(resp).ConfigureAwait(false);
                 if (data is not JObject obj) return null;
 
@@ -248,7 +248,7 @@ namespace SideDesk.Services
                 using var req = CreateRequest(HttpMethod.Post, $"{BaseUrl}/api/cloud-drive/delete");
                 req.Content = new StringContent(body.ToString(Formatting.None), Encoding.UTF8, "application/json");
 
-                using var resp = await _http.SendAsync(req).ConfigureAwait(false);
+                using var resp = await HttpLog.SendAsync(_http, req).ConfigureAwait(false);
                 string json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
                 System.Diagnostics.Debug.WriteLine($"[CloudDrive] 删除响应: {json}");
                 if (!resp.IsSuccessStatusCode) return false;
@@ -273,7 +273,7 @@ namespace SideDesk.Services
             {
                 string url = $"{BaseUrl}/api/cloud-drive/list?parentId={parentId}&corpId={CorpId}";
                 using var req = CreateRequest(HttpMethod.Get, url);
-                using var resp = await _http.SendAsync(req).ConfigureAwait(false);
+                using var resp = await HttpLog.SendAsync(_http, req).ConfigureAwait(false);
                 var data = await ParseResponseTokenAsync(resp).ConfigureAwait(false);
                 if (data is not JArray arr) return null;
 

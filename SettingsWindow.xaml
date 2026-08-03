@@ -477,6 +477,23 @@
                                   SelectionChanged="ThemeMode_Changed"/>
                     </Grid>
 
+                    <!-- 配色主题（JSON 自定义主题） -->
+                    <Grid Margin="0,0,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="配色主题" Foreground="{DynamicResource BrushTextMain}"
+                                       FontSize="{DynamicResource FontSizeNormal}"/>
+                            <TextBlock Text="从 resources/themes 加载的自定义配色方案" Foreground="{DynamicResource BrushTextMuted}" 
+                                       FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0"/>
+                        </StackPanel>
+                        <ComboBox x:Name="customThemeCombo" Grid.Column="1" Width="160"
+                                  Style="{StaticResource GlobalComboBoxStyle}"
+                                  SelectionChanged="CustomTheme_Changed"/>
+                    </Grid>
+
                     <!-- 背景透明度 -->
                     <Grid Margin="0,0,0,16">
                         <Grid.ColumnDefinitions>

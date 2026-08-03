@@ -1,0 +1,332 @@
+using System;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+using SideDesk.Models;
+using SideDesk.Services;
+
+namespace SideDesk.Windows;
+
+/// <summary>
+/// 团队组件库窗口：浏览团队共享的模块并添加到当前窗口（数据共享互通）
+/// </summary>
+public partial class TeamLibraryWindow : Window
+{
+    /// <summary>添加模块时的回调（将构造好的 PanelItem 传回调用方）</summary>
+    public Action<PanelItem>? OnAddItem { get; set; }
+
+    public TeamLibraryWindow()
+    {
+        InitializeComponent();
+        SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(this);
+        Loaded += async (_, _) => await LoadLibraryAsync();
+    }
+
+    private async System.Threading.Tasks.Task LoadLibraryAsync()
+    {
+        listPanel.Children.Clear();
+
+        var app = (App)Application.Current;
+        string? corpId = app.AppSettings.SelectedCorpId;
+        if (string.IsNullOrEmpty(corpId))
+        {
+            listPanel.Children.Add(BuildHint("请先在设置中切换到某个团队"));
+            return;
+        }
+
+        listPanel.Children.Add(new TextBlock
+        {
+            Text = "加载中...",
+            FontSize = 12,
+            Foreground = (Brush)FindResource("BrushTextMuted"),
+            Margin = new Thickness(0, 20, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Center
+        });
+
+        var items = await TeamService.Instance.GetTeamLibraryAsync(corpId);
+
+        listPanel.Children.Clear();
+
+        if (items == null)
+        {
+            listPanel.Children.Add(BuildHint("加载失败，请确认已登录"));
+            return;
+        }
+
+        if (items.Count == 0)
+        {
+            listPanel.Children.Add(BuildHint("暂无团队共享组件\n在模块设置中将归属切换为团队即可共享"));
+            return;
+        }
+
+        foreach (var libItem in items)
+        {
+            listPanel.Children.Add(BuildItemRow(libItem));
+        }
+    }
+
+    private UIElement BuildHint(string text)
+    {
+        return new TextBlock
+        {
+            Text = text,
+            FontSize = 12,
+            Foreground = (Brush)FindResource("BrushTextMuted"),
+            Margin = new Thickness(0, 20, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+            TextAlignment = TextAlignment.Center
+        };
+    }
+
+    private UIElement BuildItemRow(TeamLibraryItem libItem)
+    {
+        var border = new Border
+        {
+            CornerRadius = new CornerRadius(6),
+            Background = (Brush)FindResource("BrushInputBG"),
+            Padding = new Thickness(10, 8, 10, 8),
+            Margin = new Thickness(0, 0, 0, 8)
+        };
+
+        var dock = new DockPanel();
+
+        // 右侧：添加按钮
+        var addBtn = new Button
+        {
+            Content = "添加",
+            Width = 56,
+            MinHeight = 26,
+            FontSize = 11,
+            Style = (Style)FindResource("PrimaryButtonStyle"),
+            Tag = libItem
+        };
+        addBtn.Click += AddBtn_Click;
+        DockPanel.SetDock(addBtn, Dock.Right);
+        dock.Children.Add(addBtn);
+
+        // 左侧：图标 + 信息
+        var icon = new TextBlock
+        {
+            Text = GetTypeIcon(libItem.ItemType),
+            FontSize = 18,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 10, 0)
+        };
+        dock.Children.Add(icon);
+
+        var infoPanel = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+
+        // 名称行：标题 + "我的"标记
+        var namePanel = new StackPanel { Orientation = Orientation.Horizontal };
+        namePanel.Children.Add(new Emoji.Wpf.TextBlock
+        {
+            Text = string.IsNullOrEmpty(libItem.Title) ? GetTypeName(libItem.ItemType) : libItem.Title,
+            FontSize = 13,
+            FontWeight = FontWeights.Medium,
+            Foreground = (Brush)FindResource("BrushTextMain")
+        });
+        if (libItem.IsMine)
+        {
+            namePanel.Children.Add(new TextBlock
+            {
+                Text = " 我的",
+                FontSize = 10,
+                Foreground = (Brush)FindResource("BrushAccent"),
+                VerticalAlignment = VerticalAlignment.Center
+            });
+        }
+        infoPanel.Children.Add(namePanel);
+
+        // 副标题：类型 + 创建者
+        string sub = GetTypeName(libItem.ItemType);
+        if (!string.IsNullOrEmpty(libItem.CreatorName))
+            sub += $" · {libItem.CreatorName}";
+        infoPanel.Children.Add(new TextBlock
+        {
+            Text = sub,
+            FontSize = 11,
+            Foreground = (Brush)FindResource("BrushTextMuted"),
+            Margin = new Thickness(0, 2, 0, 0)
+        });
+
+        dock.Children.Add(infoPanel);
+        border.Child = dock;
+        return border;
+    }
+
+    private void AddBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button btn || btn.Tag is not TeamLibraryItem libItem) return;
+
+        // 构造本地 PanelItem：引用同一条服务端记录（数据共享）
+        var panel = new PanelItem
+        {
+            ServerId = libItem.ItemServerId,
+            OwnerType = "team",
+            TeamId = libItem.CorpId.ToString(),
+            Title = libItem.Title
+        };
+
+        // 解析模块类型
+        if (Enum.TryParse<PanelType>(libItem.ItemType, out var panelType))
+            panel.Type = panelType;
+
+        // 用服务端 itemData 还原模块级设置（列表数据通过行级拉取获取）
+        if (!string.IsNullOrEmpty(libItem.ItemData))
+        {
+            try
+            {
+                var id = panel.Id;
+                var serverId = panel.ServerId;
+                var type = panel.Type;
+                var ownerType = panel.OwnerType;
+                var teamId = panel.TeamId;
+
+                Newtonsoft.Json.JsonConvert.PopulateObject(libItem.ItemData, panel);
+
+                panel.Id = id;
+                panel.ServerId = serverId;
+                panel.Type = type;
+                panel.OwnerType = ownerType;
+                panel.TeamId = teamId;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[TeamLibrary] 还原模块数据失败: {ex.Message}");
+            }
+        }
+
+        OnAddItem?.Invoke(panel);
+
+        // 添加后异步拉取该模块的行级数据（列表内容）
+        _ = PullRowsForNewPanel(panel);
+
+        // 标记已添加
+        btn.Content = "已添加";
+        btn.IsEnabled = false;
+    }
+
+    /// <summary>添加团队模块后，异步拉取其行级数据（列表内容）</summary>
+    private async System.Threading.Tasks.Task PullRowsForNewPanel(PanelItem panel)
+    {
+        try
+        {
+            var app = (App)Application.Current;
+            var settings = app.AppSettings;
+            if (string.IsNullOrEmpty(settings.AccountToken) || string.IsNullOrEmpty(panel.ServerId)) return;
+            if (!RowChangeTracker.IsRowSyncable(panel.Type)) return;
+
+            string url = $"http://localhost:3007/api/sidebar/item-row/pull?itemServerId={Uri.EscapeDataString(panel.ServerId!)}";
+            using var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, url);
+            req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + settings.AccountToken);
+
+            using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+            using var resp = await Services.HttpLog.SendAsync(http, req).ConfigureAwait(false);
+            if (!resp.IsSuccessStatusCode) return;
+
+            string json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+            var root = Newtonsoft.Json.Linq.JObject.Parse(json);
+            if (root["code"]?.ToObject<int>() != 200) return;
+            if (root["data"]?["rows"] is not Newtonsoft.Json.Linq.JArray rowsArr || rowsArr.Count == 0) return;
+
+            // 将行数据还原到对应列表
+            var rows = new Newtonsoft.Json.Linq.JArray();
+            foreach (var r in rowsArr)
+            {
+                var content = r["content"] as Newtonsoft.Json.Linq.JObject;
+                if (content == null) continue;
+                content["Id"] = r["rowId"]?.ToString();
+                rows.Add(content);
+            }
+
+            string listJson = rows.ToString();
+            await Dispatcher.InvokeAsync(() =>
+            {
+                switch (panel.Type)
+                {
+                    case PanelType.StickyNotes:
+                        panel.StickyNotes = Newtonsoft.Json.JsonConvert.DeserializeObject<System.Collections.Generic.List<StickyNote>>(listJson) ?? new();
+                        break;
+                    case PanelType.TodoList:
+                        panel.TodoItems = Newtonsoft.Json.JsonConvert.DeserializeObject<System.Collections.Generic.List<TodoItem>>(listJson) ?? new();
+                        break;
+                    case PanelType.Timer:
+                        panel.TimerItems = Newtonsoft.Json.JsonConvert.DeserializeObject<System.Collections.Generic.List<TimerItem>>(listJson) ?? new();
+                        break;
+                    case PanelType.Countdown:
+                        panel.CountdownItems = Newtonsoft.Json.JsonConvert.DeserializeObject<System.Collections.Generic.List<CountdownItem>>(listJson) ?? new();
+                        break;
+                    case PanelType.SignalLight:
+                        panel.SignalLights = Newtonsoft.Json.JsonConvert.DeserializeObject<System.Collections.Generic.List<SignalLightItem>>(listJson) ?? new();
+                        break;
+                    case PanelType.Clipboard:
+                        panel.ClipboardItems = Newtonsoft.Json.JsonConvert.DeserializeObject<System.Collections.Generic.List<ClipboardSavedItem>>(listJson) ?? new();
+                        break;
+                    case PanelType.FileArea:
+                        panel.FileItems = Newtonsoft.Json.JsonConvert.DeserializeObject<System.Collections.Generic.List<FileAreaItem>>(listJson) ?? new();
+                        break;
+                }
+                System.Diagnostics.Debug.WriteLine($"[TeamLibrary] 已拉取模块行数据: {panel.Type}, {rowsArr.Count} 行");
+            });
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[TeamLibrary] 拉取行数据失败: {ex.Message}");
+        }
+    }
+
+    private void Close_Click(object sender, RoutedEventArgs e) => Close();
+
+    /// <summary>模块类型 -> 图标</summary>
+    private static string GetTypeIcon(string itemType) => itemType switch
+    {
+        "QuickGroup" => "⚡",
+        "StickyNotes" => "📝",
+        "TodoList" => "✅",
+        "Clipboard" => "📋",
+        "SystemMonitor" => "📊",
+        "UsageStats" => "📈",
+        "AIChat" => "🤖",
+        "FileArea" => "📁",
+        "DataDashboard" => "📉",
+        "Timer" => "⏱",
+        "Countdown" => "⏳",
+        "Pomodoro" => "🍅",
+        "SignalLight" => "🚦",
+        "ImageCarousel" => "🖼",
+        "DailyActivity" => "📅",
+        "Calendar" => "🗓",
+        "DigitalEmployee" => "👤",
+        "Friend" => "💬",
+        "Group" => "📦",
+        "ScreenTime" => "🕐",
+        _ => "🧩"
+    };
+
+    /// <summary>模块类型 -> 中文名称</summary>
+    private static string GetTypeName(string itemType) => itemType switch
+    {
+        "QuickGroup" => "快捷方式",
+        "StickyNotes" => "便签",
+        "TodoList" => "今日待办",
+        "Clipboard" => "剪贴板收藏",
+        "SystemMonitor" => "系统信息",
+        "UsageStats" => "使用统计",
+        "AIChat" => "AI 对话",
+        "FileArea" => "文件区",
+        "DataDashboard" => "数据看板",
+        "Timer" => "计时器",
+        "Countdown" => "倒计时",
+        "Pomodoro" => "番茄闹钟",
+        "SignalLight" => "信号灯",
+        "ImageCarousel" => "图片轮播",
+        "DailyActivity" => "每日活跃",
+        "Calendar" => "日历",
+        "DigitalEmployee" => "数字员工",
+        "Friend" => "好友",
+        "Group" => "分组",
+        "ScreenTime" => "屏幕时长",
+        _ => itemType
+    };
+}

@@ -239,6 +239,9 @@ namespace SideDesk.Controls
                 return;
             }
 
+            // 行级同步：通知 CloudSyncService 数据可能变更（防抖 2s 后自动推送）
+            Services.CloudSyncService.Instance.NotifyRowsChanged();
+
             // 确保每个「快捷方式」面板 1:1 绑定到唯一分组，避免多个面板渲染同一份数据
             EnsureQuickGroupBindings();
 
@@ -492,6 +495,18 @@ namespace SideDesk.Controls
                 OnShowSettings = (p, t) => ShowPanelSettingsDialog(p, t),
                 OnRenamePanel = (p, t) => PromptRenamePanel(p, t)
             };
+
+            // 模块级分享（已同步且有窗口 ServerId 时显示）
+            var app = (App)Application.Current;
+            if (!string.IsNullOrEmpty(item.ServerId)
+                && !string.IsNullOrEmpty(_currentWindowConfig?.ServerId)
+                && !string.IsNullOrEmpty(app.AppSettings.AccountToken))
+            {
+                var shareMi = new MenuItem { Header = "分享模块" };
+                shareMi.Click += (_, _) => ShareModule_Click(item);
+                module.AddCustomMenuItem(shareMi);
+            }
+
             return module;
         }
 
@@ -717,6 +732,7 @@ namespace SideDesk.Controls
             if (_currentWindowConfig.Panels.Remove(item))
             {
                 _configManager.Save();
+                NotifyServerDeletePanel(item);
                 RenderPanels();
                 TryUnloadOrphanPlugin(item);
                 RequestGCAfterRemoval();
@@ -729,12 +745,138 @@ namespace SideDesk.Controls
                 if (group.ChildPanels!.Remove(item))
                 {
                     _configManager.Save();
+                    NotifyServerDeletePanel(item);
                     RenderPanels();
                     TryUnloadOrphanPlugin(item);
                     RequestGCAfterRemoval();
                     return;
                 }
             }
+        }
+
+        /// <summary>
+        /// 模块删除后通知服务端软删除对应 item（Group 类型由服务端连带删子项）。
+        /// 旧版只删本地不通知服务端，残留的 item 会被结构对账“补齐缺失”重新带回本地，
+        /// 造成已删除模块“复活”/导入副本重复。
+        /// </summary>
+        private static void NotifyServerDeletePanel(PanelItem item)
+        {
+            try
+            {
+                var app = (App)Application.Current;
+                var settings = app.AppSettings;
+                if (!settings.EnableCloudSync || string.IsNullOrEmpty(settings.AccountToken)) return;
+                if (string.IsNullOrEmpty(item.ServerId)) return;
+                _ = Services.CloudSyncService.Instance.DeleteItemOnServerAsync(item.ServerId!);
+            }
+            catch (System.Exception ex)
+            {
+                Debug.WriteLine($"[NativeModePanel] 通知服务端删除模块失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>模块级分享：创建分享链接（传入 itemServerId）</summary>
+        private async void ShareModule_Click(PanelItem item)
+        {
+            var barServerId = _currentWindowConfig?.ServerId;
+
+            // 如果模块还没有 ServerId，调用轻量接口创建
+            if (string.IsNullOrEmpty(item.ServerId))
+            {
+                if (string.IsNullOrEmpty(barServerId))
+                {
+                    MessageBox.Show("窗口尚未同步，请先执行一次云同步。", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                var newId = await Services.CloudSyncService.Instance.EnsureItemServerIdAsync(item, barServerId);
+                if (string.IsNullOrEmpty(newId))
+                {
+                    MessageBox.Show("模块同步失败，无法创建分享。请确保已登录并开启云同步。", "错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+            }
+
+            var itemServerId = item.ServerId;
+
+            var dialog = new System.Windows.Window
+            {
+                Title = "分享模块",
+                Width = 320, Height = 340,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = Window.GetWindow(this),
+                ResizeMode = ResizeMode.NoResize
+            };
+
+            var panel = new StackPanel { Margin = new Thickness(20) };
+            panel.Children.Add(new TextBlock { Text = "选择分享模式：", FontSize = 13, Margin = new Thickness(0, 0, 0, 10) });
+
+            var copyRadio = new RadioButton { Content = "复制（对方获得独立副本）", IsChecked = true, Margin = new Thickness(0, 0, 0, 6) };
+            var refRadio = new RadioButton { Content = "引用（对方看到你的实时数据）", Margin = new Thickness(0, 0, 0, 16) };
+            panel.Children.Add(copyRadio);
+            panel.Children.Add(refRadio);
+
+            panel.Children.Add(new TextBlock { Text = "导入者权限：", FontSize = 13, Margin = new Thickness(0, 0, 0, 8) });
+            var cbEdit = new CheckBox { Content = "允许编辑", IsChecked = true, Margin = new Thickness(0, 0, 0, 6) };
+            var cbDelete = new CheckBox { Content = "允许删除", IsChecked = true, Margin = new Thickness(0, 0, 0, 6) };
+            var cbReShare = new CheckBox { Content = "允许再分享", IsChecked = false, Margin = new Thickness(0, 0, 0, 16) };
+            panel.Children.Add(cbEdit);
+            panel.Children.Add(cbDelete);
+            panel.Children.Add(cbReShare);
+
+            var confirmBtn = new Button
+            {
+                Content = "创建分享链接",
+                Padding = new Thickness(16, 6, 16, 6),
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+            panel.Children.Add(confirmBtn);
+            dialog.Content = panel;
+
+            confirmBtn.Click += async (_, _) =>
+            {
+                string mode = copyRadio.IsChecked == true ? "copy" : "reference";
+                try
+                {
+                    var app = (App)Application.Current;
+                    using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+                    var payload = Newtonsoft.Json.JsonConvert.SerializeObject(new
+                    {
+                        barServerId,
+                        itemServerId,
+                        shareMode = mode,
+                        allowEdit = cbEdit.IsChecked == true,
+                        allowDelete = cbDelete.IsChecked == true,
+                        allowReShare = cbReShare.IsChecked == true
+                    });
+                    using var content = new System.Net.Http.StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+                    using var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, "http://localhost:3007/api/sidebar/share/create") { Content = content };
+                    req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + app.AppSettings.AccountToken);
+                    using var resp = await Services.HttpLog.SendAsync(http, req);
+                    string json = await resp.Content.ReadAsStringAsync();
+                    var root = Newtonsoft.Json.Linq.JObject.Parse(json);
+
+                    if (root["code"]?.ToObject<int>() == 200)
+                    {
+                        string code = root["data"]?["shareCode"]?.ToString() ?? "";
+                        dialog.Close();
+                        ThemedMessageBox.ShowShareResult(
+                            Application.Current.MainWindow,
+                            code,
+                            $"http://localhost:3007/s/{code}"
+                        );
+                    }
+                    else
+                    {
+                        MessageBox.Show(root["msg"]?.ToString() ?? "创建分享失败", "错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"创建分享失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            };
+
+            dialog.ShowDialog();
         }
 
         /// <summary>删除插件面板后，若所有窗口配置中均无该插件的引用，则卸载 DLL 释放内存。</summary>
@@ -1020,6 +1162,70 @@ namespace SideDesk.Controls
             };
             root.Children.Add(titleBox);
 
+            // 归属选择（个人 / 团队）
+            root.Children.Add(new TextBlock
+            {
+                Text = "归属",
+                FontSize = 12,
+                Foreground = (Brush)FindResource("BrushTextSec"),
+                Margin = new Thickness(0, 0, 0, 6)
+            });
+            var ownerCombo = new ComboBox
+            {
+                Style = (Style)FindResource("GlobalComboBoxStyle"),
+                Margin = new Thickness(0, 0, 0, 14)
+            };
+            ownerCombo.Items.Add(new ComboBoxItem { Content = "个人", Tag = null });
+            ownerCombo.SelectedIndex = 0;
+            root.Children.Add(ownerCombo);
+
+            // 归属提示文本（团队共享说明）
+            var ownerHint = new TextBlock
+            {
+                Text = "",
+                FontSize = 11,
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                Margin = new Thickness(0, -10, 0, 10),
+                TextWrapping = TextWrapping.Wrap
+            };
+            root.Children.Add(ownerHint);
+
+            // 异步加载团队列表
+            string? pendingTeamId = item.OwnerType == "team" ? item.TeamId : null;
+            _ = System.Threading.Tasks.Task.Run(async () =>
+            {
+                var app = (App)Application.Current;
+                if (string.IsNullOrEmpty(app.AppSettings.AccountToken)) return; // 未登录只有个人
+
+                var teams = await Services.TeamService.Instance.ListTeamsAsync();
+                if (teams == null) return;
+
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    foreach (var t in teams)
+                        ownerCombo.Items.Add(new ComboBoxItem { Content = t.Name, Tag = t.Id });
+
+                    // 编辑模式恢复原团队选中
+                    if (!string.IsNullOrEmpty(pendingTeamId))
+                    {
+                        for (int i = 1; i < ownerCombo.Items.Count; i++)
+                        {
+                            if ((ownerCombo.Items[i] as ComboBoxItem)?.Tag as string == pendingTeamId)
+                            { ownerCombo.SelectedIndex = i; break; }
+                        }
+                    }
+                });
+            });
+
+            ownerCombo.SelectionChanged += (s, e) =>
+            {
+                var selected = ownerCombo.SelectedItem as ComboBoxItem;
+                bool isTeam = !string.IsNullOrEmpty(selected?.Tag as string);
+                ownerHint.Text = isTeam
+                    ? "团队可见：团队其他成员可从团队组件库添加此模块，数据共享互通"
+                    : "";
+            };
+
             // 背景色
             root.Children.Add(new TextBlock
             {
@@ -1146,6 +1352,23 @@ namespace SideDesk.Controls
             {
                 item.Title = string.IsNullOrWhiteSpace(titleBox.Text) ? null : titleBox.Text.Trim();
                 item.BGColor = selectedColor;
+
+                // 归属变更检测与实时更新
+                var ownerItem = ownerCombo.SelectedItem as ComboBoxItem;
+                string? newTeamId = ownerItem?.Tag as string;
+                string newOwnerType = string.IsNullOrEmpty(newTeamId) ? "personal" : "team";
+                string? newTeamName = string.IsNullOrEmpty(newTeamId) ? null : ownerItem?.Content as string;
+
+                bool ownerChanged = item.OwnerType != newOwnerType || item.TeamId != newTeamId;
+                if (ownerChanged)
+                {
+                    item.OwnerType = newOwnerType;
+                    item.TeamId = newTeamId;
+                    item.TeamName = newTeamName;
+                    // 实时推送归属变更到后端（fire-and-forget）
+                    _ = Services.CloudSyncService.Instance.UpdateItemOwnershipAsync(item);
+                }
+
                 _configManager?.Save();
                 RenderPanels();
                 dialog.Close();
@@ -1310,15 +1533,10 @@ namespace SideDesk.Controls
 
         private UIElement BuildStickyNotesWidget(PanelItem item)
         {
-            // 便签数据 per-panel 存储（新面板从空开始，旧面板迁移全局数据）
-            if (item.StickyNotes == null)
-            {
-                var globalNotes = StickyNoteManager.GetAll();
-                item.StickyNotes = globalNotes.Count > 0
-                    ? new List<StickyNote>(globalNotes)
-                    : new List<StickyNote>();
-                _configManager?.Save();
-            }
+            // 便签数据 per-panel 存储：新建/导入的模块一律从空列表开始。
+            // 旧版全局库（sticky-notes.json）已在升级后首次启动时由 WindowConfigManager.Load 一次性迁入遗留模块，
+            // 不能在此处再播种，否则导入分享得到的新模块会被全局遗留数据污染
+            item.StickyNotes ??= new List<StickyNote>();
 
             var container = new StackPanel();
 
@@ -4382,6 +4600,27 @@ namespace SideDesk.Controls
         private void AddCalendarPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.Calendar);
         private void AddScreenTimePanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.ScreenTime);
 
+        /// <summary>打开团队组件库，选择团队共享模块添加到当前窗口（数据共享互通）</summary>
+        private void AddFromTeamLibrary_Click(object sender, RoutedEventArgs e)
+        {
+            var app = (App)Application.Current;
+            if (string.IsNullOrEmpty(app.AppSettings.AccountToken))
+            {
+                MessageBox.Show("请先登录后再使用团队组件库", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var window = new SideDesk.Windows.TeamLibraryWindow { Owner = Window.GetWindow(this) };
+            window.OnAddItem = panel =>
+            {
+                if (_currentWindowConfig == null || _configManager == null) return;
+                _currentWindowConfig.Panels.Add(panel);
+                _configManager.Save();
+                RenderPanels();
+            };
+            window.Show();
+        }
+
         /// <summary>插件子菜单展开时动态填充已加载的插件列表</summary>
         private void AddPluginMenu_SubmenuOpened(object sender, RoutedEventArgs e)
         {
@@ -6690,6 +6929,8 @@ namespace SideDesk.Controls
             panels.Insert(newIdx, item);
             _configManager.Save();
             RenderPanels();
+            // 排序同步：将当前所有模块的顺序推送到服务端
+            _ = PushItemPositionsAsync();
         }
 
         /// <summary>将指定面板拖入置顶区目标位置并持久化（拖入置顶区即自动置顶）。
@@ -6724,6 +6965,29 @@ namespace SideDesk.Controls
             panels.Insert(newIdx, item);
             _configManager.Save();
             RenderPanels();
+            // 排序同步
+            _ = PushItemPositionsAsync();
+        }
+
+        /// <summary>将当前窗口内所有模块的当前顺序推送到服务端</summary>
+        private async Task PushItemPositionsAsync()
+        {
+            if (_currentWindowConfig == null) return;
+            var serverIds = _currentWindowConfig.Panels
+                .Where(p => !string.IsNullOrEmpty(p.ServerId))
+                .Select(p => p.ServerId!)
+                .ToList();
+            if (serverIds.Count == 0) return;
+
+            int corpId = 0;
+            if (_currentWindowConfig.OwnerType == "team"
+                && !string.IsNullOrEmpty(_currentWindowConfig.CorpId)
+                && int.TryParse(_currentWindowConfig.CorpId, out var cid))
+            {
+                corpId = cid;
+            }
+
+            await Services.CloudSyncService.Instance.PushResourcePosAsync("item", serverIds, corpId).ConfigureAwait(false);
         }
 
         #endregion

@@ -67,6 +67,12 @@ namespace SideDesk
             // 加载上次保存的设置
             AppSettings = Settings.Load();
 
+            // 网络请求日志开关（默认开启；日志写入 %LocalAppData%\SideDesk\http.log）
+            Services.HttpLog.Enabled = AppSettings.HttpLogEnabled;
+
+            // 后台预计算设备唯一 ID（CPU ID + MAC 指纹）：WMI 查询较慢，放线程池避免阻塞启动
+            _ = Task.Run(() => { var _ = Services.DeviceIdService.DeviceId; });
+
             // 加载窗口配置
             WindowConfigs = WindowConfigManager.Load();
             WindowConfigs.EnsureDefault();
@@ -92,6 +98,12 @@ namespace SideDesk
 
             // 应用主题
             ApplyTheme(AppSettings.ThemeMode);
+
+            // 恢复用户上次选择的 JSON 自定义主题（若配置了且文件有效）
+            if (!string.IsNullOrWhiteSpace(Framework.AppSettings.Instance.CurrentTheme))
+            {
+                Services.ThemeManager.RestoreFromName(Framework.AppSettings.Instance.CurrentTheme);
+            }
 
             // 首次启动（无任何显示器配置）：默认主显示器左侧停靠，保持旧默认行为
             if (AppSettings.Monitors.Count == 0)
@@ -213,6 +225,11 @@ namespace SideDesk
             {
                 if (AppSettings.EnableCloudSync && !string.IsNullOrEmpty(AppSettings.AccountToken))
                     Services.CloudSyncService.Instance.Start();
+                else if (!string.IsNullOrEmpty(AppSettings.AccountToken))
+                {
+                    // 未开启云同步但已登录：仅拉取行级最新数据（共享互通）
+                    _ = Services.CloudSyncService.Instance.PullAllRowsAsync(WindowConfigs, AppSettings);
+                }
             }
             catch (Exception ex)
             {
@@ -251,6 +268,10 @@ namespace SideDesk
                     // 无 token 但曾经登录过（会员用户掉线状态）→ 显示橙色登录提示
                     if (AppSettings.HasLoggedInBefore)
                         ShowLoggedOutNotification();
+
+                    // 未登录 → 以访客（设备）身份建立后端 WebSocket 连接，使本设备可接收“按设备/未登录用户”维度的通知
+                    try { Services.BackendWebSocketService.Instance.Start(null); }
+                    catch (Exception wsEx) { System.Diagnostics.Debug.WriteLine($"[BackendWS] 访客启动异常: {wsEx.Message}"); }
                     return;
                 }
 
@@ -259,7 +280,7 @@ namespace SideDesk
                     System.Net.Http.HttpMethod.Get, "http://localhost:3007/api/auth/userinfo");
                 req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
 
-                using var resp = await http.SendAsync(req);
+                using var resp = await Services.HttpLog.SendAsync(http, req);
                 string body = await resp.Content.ReadAsStringAsync();
                 System.Diagnostics.Debug.WriteLine($"[Auth] Token 验证响应 ({(int)resp.StatusCode}): {body}");
 
@@ -307,8 +328,8 @@ namespace SideDesk
                     // 停止云同步
                     try { Services.CloudSyncService.Instance.Stop(); } catch { }
 
-                    // 停止后端 WebSocket 连接
-                    try { Services.BackendWebSocketService.Instance.Stop(); } catch { }
+                    // 后端 WebSocket 降级为访客连接（设备仍未登录，保持可接收设备维度通知）
+                    try { Services.BackendWebSocketService.Instance.Start(null); } catch { }
 
                     // 显示橙色掉线通知
                     ShowLoggedOutNotification();
@@ -362,7 +383,7 @@ namespace SideDesk
                     System.Net.Http.HttpMethod.Get, "http://localhost:3007/api/auth/userinfo");
                 req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
 
-                using var resp = await http.SendAsync(req);
+                using var resp = await Services.HttpLog.SendAsync(http, req);
                 string body = await resp.Content.ReadAsStringAsync();
 
                 using var doc = System.Text.Json.JsonDocument.Parse(body);
@@ -812,6 +833,25 @@ namespace SideDesk
                     var body = (string?)data["body"];
                     Services.NotificationService.Instance.UpdateProgress(groupId, progress, body);
                 }
+                else if (evt == "team_row_updated" && data != null)
+                {
+                    // 团队模块行数据更新通知：拉取受影响模块的最新行并刷新 UI
+                    var itemServerId = (string?)data["itemServerId"];
+                    bool forceFull = data["forceFull"]?.ToObject<bool>() == true;
+                    if (!string.IsNullOrEmpty(itemServerId))
+                        _ = HandleTeamRowUpdatedAsync(itemServerId!, forceFull);
+                }
+                else if (evt == "share_cancelled" && data != null)
+                {
+                    // 属主取消分享：移除本地导入的组件（item 级）或导入的窗口（bar 级）
+                    HandleShareCancelled(data);
+                }
+                else if (evt == "structure_changed")
+                {
+                    // 窗口/模块结构变更（同账号其他设备的新建/删除等操作）：拉取对账补齐本地；
+                    // pushLocal=false 只拉不推，避免多设备间循环触发
+                    _ = Services.CloudSyncService.Instance.ReconcileAsync(pushLocal: false);
+                }
             }
             catch (Exception ex)
             {
@@ -826,6 +866,178 @@ namespace SideDesk
         {
             var payload = Newtonsoft.Json.JsonConvert.SerializeObject(new { type = "closeTab" });
             await Services.WebSocketServerService.Instance.SendAsync(clientId, payload);
+        }
+
+        /// <summary>
+        /// 处理团队行更新通知：拉取受影响模块的最新行数据并刷新 UI。
+        /// forceFull=true（如分享取消）：全量拉取并整体替换本地行，让不可见的行从本地消失。
+        /// </summary>
+        private async System.Threading.Tasks.Task HandleTeamRowUpdatedAsync(string itemServerId, bool forceFull = false)
+        {
+            try
+            {
+                var settings = AppSettings;
+                if (string.IsNullOrEmpty(settings.AccountToken)) return;
+
+                // 找到本地引用该 serverId 的模块
+                Models.PanelItem? target = null;
+                foreach (var win in WindowConfigs.Windows)
+                {
+                    target = FindPanelByServerId(win.Panels, itemServerId);
+                    if (target != null) break;
+                }
+                if (target == null) return;
+
+                // 强制全量：走 CloudSyncService 的全量拉取（整体替换本地行）后刷新 UI
+                if (forceFull)
+                {
+                    bool changed = await Services.CloudSyncService.Instance.PullItemFullAsync(target);
+                    System.Diagnostics.Debug.WriteLine($"[App] 强制全量刷新 {(changed ? "有变更" : "无变更")}: {target.Type}");
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        foreach (var mw in _windows)
+                        {
+                            if (mw.IsLoaded)
+                                mw.RefreshNativePanels();
+                        }
+                    });
+                    return;
+                }
+
+                // 合并语义全量拉取：只增改、通过墓碑删除，不会整体删除未返回的本地行；
+                // 绑定同一 ServerId 的其他视图由 CloudSyncService 内部镜像同步
+                bool mergeChanged = await Services.CloudSyncService.Instance.PullItemMergeFullAsync(target);
+                System.Diagnostics.Debug.WriteLine($"[App] 团队行更新已应用: {target.Type}, {(mergeChanged ? "有变更" : "无变更")}");
+                if (mergeChanged)
+                {
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        foreach (var mw in _windows)
+                        {
+                            if (mw.IsLoaded)
+                                mw.RefreshNativePanels();
+                        }
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[App] 处理团队行更新失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>刷新所有已加载主窗口的面板渲染（数据同步后调用）</summary>
+        public void RefreshAllMainWindows()
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                foreach (var mw in _windows)
+                {
+                    if (mw.IsLoaded)
+                        mw.RefreshNativePanels();
+                }
+            }));
+        }
+
+        /// <summary>分享失效清理：从所有已加载主窗口的 dock 移除指定导入窗口的标签</summary>
+        public void RemoveSharedWindowsByIds(System.Collections.Generic.IEnumerable<string> windowIds)
+        {
+            var ids = windowIds.ToList();
+            if (ids.Count == 0) return;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                foreach (var mw in _windows)
+                {
+                    if (!mw.IsLoaded) continue;
+                    foreach (var id in ids)
+                        mw.RemoveSharedWindowById(id);
+                }
+            }));
+        }
+
+        /// <summary>
+        /// 处理分享取消通知：移除本地导入的组件（item 级）或导入的窗口（bar 级）。
+        /// localId 为导入时上报的本地组件 GUID；为空时回退按 ServerId 匹配（仅对 reference 模块有效）。
+        /// </summary>
+        private void HandleShareCancelled(Newtonsoft.Json.Linq.JObject data)
+        {
+            try
+            {
+                string shareLevel = (string?)data["shareLevel"] ?? "item";
+                string itemServerId = (string?)data["itemServerId"] ?? "";
+                string sourceBarId = (string?)data["sourceBarId"] ?? "";
+                string localId = (string?)data["localId"] ?? "";
+
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (shareLevel == "bar")
+                    {
+                        // 优先按导入时上报的 localId 匹配；旧导入记录无 localId 时回退按 SourceBarId 匹配
+                        Models.WindowConfig? win = null;
+                        if (!string.IsNullOrEmpty(localId))
+                            win = WindowConfigs.Windows.FirstOrDefault(w => w.Id == localId);
+                        if (win == null && !string.IsNullOrEmpty(sourceBarId))
+                            win = WindowConfigs.Windows.FirstOrDefault(w => w.SourceBarId == sourceBarId);
+                        if (win == null) return;
+                        WindowConfigs.Windows.Remove(win);
+                        WindowConfigs.Save();
+                        foreach (var mw in _windows)
+                            if (mw.IsLoaded) mw.RemoveSharedWindowById(win.Id);
+                        System.Diagnostics.Debug.WriteLine($"[App] 分享已取消: 移除导入窗口 localId={win.Id}");
+                    }
+                    else
+                    {
+                        bool removed = false;
+                        foreach (var w in WindowConfigs.Windows)
+                            removed |= RemoveSharedPanels(w.Panels, localId, itemServerId);
+                        if (!removed) return;
+                        WindowConfigs.Save();
+                        foreach (var mw in _windows)
+                            if (mw.IsLoaded) mw.RefreshNativePanels();
+                        System.Diagnostics.Debug.WriteLine($"[App] 分享已取消: 移除导入组件 localId={localId}, ServerId={itemServerId}");
+                    }
+                }));
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[App] 处理分享取消通知失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>递归移除匹配的导入面板：优先按 localId 精确匹配；无 localId 时按 ServerId 匹配</summary>
+        private static bool RemoveSharedPanels(System.Collections.Generic.List<Models.PanelItem> panels, string localId, string itemServerId)
+        {
+            bool removed = false;
+            for (int i = panels.Count - 1; i >= 0; i--)
+            {
+                var p = panels[i];
+                bool match = !string.IsNullOrEmpty(localId)
+                    ? p.Id == localId
+                    : (!string.IsNullOrEmpty(itemServerId) && p.ServerId == itemServerId);
+                if (match)
+                {
+                    panels.RemoveAt(i);
+                    removed = true;
+                    continue;
+                }
+                if (p.ChildPanels != null)
+                    removed |= RemoveSharedPanels(p.ChildPanels, localId, itemServerId);
+            }
+            return removed;
+        }
+
+        private static Models.PanelItem? FindPanelByServerId(System.Collections.Generic.List<Models.PanelItem> panels, string serverId)
+        {
+            foreach (var p in panels)
+            {
+                if (p.ServerId == serverId) return p;
+                if (p.ChildPanels != null)
+                {
+                    var found = FindPanelByServerId(p.ChildPanels, serverId);
+                    if (found != null) return found;
+                }
+            }
+            return null;
         }
 
         /// <summary>
@@ -1251,9 +1463,18 @@ namespace SideDesk
         }
 
         /// <summary>
-        /// 重置显示器工作区：恢复被残留 AppBar 占用的空间（排除任务栏区域）
+        /// 重置显示器工作区：恢复被残留 AppBar 占用的空间（排除任务栏区域）。
+        /// 放到后台线程执行并设整体超时：SystemParametersInfo/EnumDisplayMonitors
+        /// 可能因 shell 锁争用或挂起窗口长时间阻塞，绝不能卡住调用线程（尤其退出流程）。
         /// </summary>
-        private static void ResetWorkArea()
+        private static void ResetWorkArea(int maxWaitMs = 3000)
+        {
+            var task = System.Threading.Tasks.Task.Run(ResetWorkAreaCore);
+            if (!task.Wait(TimeSpan.FromMilliseconds(maxWaitMs)))
+                System.Diagnostics.Debug.WriteLine("[AppBar] 重置工作区超时，放弃等待（后台继续执行）");
+        }
+
+        private static void ResetWorkAreaCore()
         {
             try
             {
@@ -1302,8 +1523,12 @@ namespace SideDesk
                                     workRect.Right = taskbarRect.Left; // 任务栏在右侧
                             }
 
+                            // 注意：fWinIni 必须传 0，不能带 SPIF_SENDCHANGE——
+                            // 带该标志时系统会在当前线程同步向所有顶层窗口广播 WM_SETTINGCHANGE，
+                            // 任一窗口挂起（如 WebView2 进程窗口）都会导致本调用无限期阻塞，卡死退出流程。
+                            // 窗口通知由下方带超时保护的 BroadcastSettingChange 负责。
                             NativeMethods.SystemParametersInfo(
-                                NativeMethods.SPI_SETWORKAREA, 0, ref workRect, NativeMethods.SPIF_SENDCHANGE);
+                                NativeMethods.SPI_SETWORKAREA, 0, ref workRect, 0);
                             System.Diagnostics.Debug.WriteLine(
                                 $"[AppBar] 重置工作区: L={workRect.Left} T={workRect.Top} R={workRect.Right} B={workRect.Bottom}");
                         }
@@ -1311,9 +1536,7 @@ namespace SideDesk
                     }, 0);
 
                 // 广播 WM_SETTINGCHANGE，确保所有窗口立即感知工作区变化
-                // 使用 SendMessageTimeout 避免某个顶层窗口无响应导致死锁
-                NativeMethods.SendMessageTimeout(NativeMethods.HWND_BROADCAST, NativeMethods.WM_SETTINGCHANGE,
-                    IntPtr.Zero, IntPtr.Zero, NativeMethods.SMTO_ABORTIFHUNG, 1000, out _);
+                BroadcastSettingChange();
             }
             catch (Exception ex)
             {
@@ -1322,14 +1545,26 @@ namespace SideDesk
         }
 
         /// <summary>
+        /// 广播 WM_SETTINGCHANGE（通知所有顶层窗口工作区已变化）。
+        /// SendMessageTimeout 的超时按“每个窗口”单独计算，系统里若有挂起/慢响应的窗口
+        /// （如 WebView2 浏览器进程窗口），同步广播会累积等待甚至卡死退出流程；
+        /// 故放到后台线程执行并设置整体超时上限，确保调用线程永不被长时间阻塞。
+        /// </summary>
+        private static void BroadcastSettingChange(int maxWaitMs = 1500)
+        {
+            var broadcast = System.Threading.Tasks.Task.Run(() =>
+                NativeMethods.SendMessageTimeout(NativeMethods.HWND_BROADCAST, NativeMethods.WM_SETTINGCHANGE,
+                    IntPtr.Zero, IntPtr.Zero, NativeMethods.SMTO_ABORTIFHUNG, 1000, out _));
+            broadcast.Wait(TimeSpan.FromMilliseconds(maxWaitMs));
+        }
+
+        /// <summary>
         /// 退出时恢复工作区：检查 AppBar 移除后工作区是否已还原，未还原则强制重置
         /// </summary>
         private static void RestoreWorkAreaOnExit()
         {
             // 先广播一次 WM_SETTINGCHANGE，让 shell 完成挂起的工作区重新计算
-            // 使用 SendMessageTimeout 避免某个顶层窗口无响应导致死锁
-            NativeMethods.SendMessageTimeout(NativeMethods.HWND_BROADCAST, NativeMethods.WM_SETTINGCHANGE,
-                IntPtr.Zero, IntPtr.Zero, NativeMethods.SMTO_ABORTIFHUNG, 1000, out _);
+            BroadcastSettingChange();
 
             // 短暂等待系统处理
             System.Threading.Thread.Sleep(100);
@@ -1478,14 +1713,34 @@ namespace SideDesk
         }
 
         /// <summary>
-        /// 获取当前主题是否为浅色模式（考虑 System 模式）
+        /// 获取当前主题是否为浅色模式（考虑 System 模式与 JSON 自定义主题覆盖）
         /// </summary>
         public static bool IsCurrentThemeLight()
         {
+            // JSON 自定义主题优先：其背景明暗决定标题栏深浅
+            if (_customThemeLight.HasValue) return _customThemeLight.Value;
+
             if (string.Equals(_currentThemeMode, "System", StringComparison.OrdinalIgnoreCase))
                 return IsSystemLightTheme();
             return string.Equals(_currentThemeMode, "Light", StringComparison.OrdinalIgnoreCase);
         }
+
+        /// <summary>JSON 自定义主题的明暗覆盖（null 表示未启用自定义主题）</summary>
+        private static bool? _customThemeLight = null;
+
+        /// <summary>
+        /// 设置自定义主题的明暗覆盖并刷新所有窗口的 DWM 标题栏。
+        /// 传入 null 表示清除覆盖（回到由 ThemeMode 决定）。
+        /// </summary>
+        public static void SetCustomThemeLightOverride(bool? isLight)
+        {
+            _customThemeLight = isLight;
+            foreach (Window w in Current.Windows)
+                UpdateWindowDwmTheme(w, IsCurrentThemeLight());
+        }
+
+        /// <summary>手动触发主题变更通知（供应用/清除 JSON 自定义主题后调用，驱动各面板重绘）</summary>
+        public static void RaiseThemeChanged() => ThemeChanged?.Invoke();
 
         /// <summary>
         /// 使用当前主题设置窗口 DWM 标题栏
@@ -1551,7 +1806,17 @@ namespace SideDesk
         /// </summary>
         private void TaskScheduler_UnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
         {
-            LogCrash("TaskScheduler_UnobservedTaskException", e.Exception);
+            // 堆栈在 finalizer 重抛时已丢失，额外记录展平后的内部异常便于定位泄漏源
+            string? detail = null;
+            if (e.Exception is AggregateException agg)
+            {
+                var sb = new System.Text.StringBuilder();
+                int idx = 1;
+                foreach (var inner in agg.Flatten().InnerExceptions)
+                    sb.AppendLine($"  内部异常{idx++}: {inner.GetType().FullName}: {inner.Message} @ {inner.StackTrace?.Split('\n')[0].Trim()}");
+                detail = sb.ToString();
+            }
+            LogCrash("TaskScheduler_UnobservedTaskException", e.Exception, detail);
             e.SetObserved(); // 阻止程序崩溃
         }
         
@@ -1619,7 +1884,7 @@ namespace SideDesk
         /// <summary>
         /// 记录崩溃信息
         /// </summary>
-        private void LogCrash(string source, Exception ex)
+        private void LogCrash(string source, Exception ex, string? extra = null)
         {
             string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
             string logLine = $"""
@@ -1627,7 +1892,7 @@ namespace SideDesk
                 类型: {ex.GetType().FullName}
                 消息: {ex.Message}
                 堆栈: {ex.StackTrace}
-                
+                {(extra != null ? $"内部异常:\n{extra}" : "")}
                 """;
             
             System.Diagnostics.Debug.WriteLine(logLine);

@@ -10,7 +10,8 @@ namespace SideDesk.Services
 {
     /// <summary>
     /// 后端 WebSocket 客户端服务：与后端服务器 (ws://localhost:19190) 建立长连接。
-    /// 在 Token 验证成功或登录成功后调用 Start(token) 启动连接。
+    /// 已登录时调用 Start(token) 以用户身份连接；未登录时调用 Start(null) 以访客（设备）身份连接。
+    /// 连接 URL 始终携带 deviceId（设备指纹），供后端“按设备推送”与“给未登录用户广播”使用。
     /// 支持自动重连（指数退避）、心跳保活（30s ping）、断线检测。
     /// </summary>
     public sealed class BackendWebSocketService
@@ -54,16 +55,18 @@ namespace SideDesk.Services
         private BackendWebSocketService() { }
 
         /// <summary>
-        /// 启动 WebSocket 连接（幂等：已连接且 token 相同时无副作用；token 变更时重连）
+        /// 启动 WebSocket 连接（幂等：身份未变时跳过；身份变化时重连）。
+        /// token 为空表示以访客（未登录设备）身份连接，仅凭 deviceId 标识。
         /// </summary>
-        public void Start(string token)
+        public void Start(string? token)
         {
-            if (string.IsNullOrEmpty(token)) return;
+            // 空 token 规范化为 null（访客模式）
+            if (string.IsNullOrEmpty(token)) token = null;
 
-            // token 变更 → 先停止旧连接再重新连接
+            // 身份变更（访客↔已登录，或切换账号）→ 先停止旧连接再重新连接
             if (_running && _token != token)
             {
-                Debug.WriteLine("[BackendWS] Token 已变更，重新建立连接");
+                Debug.WriteLine("[BackendWS] 连接身份已变更，重新建立连接");
                 StopInternal();
             }
             else if (_running)
@@ -76,7 +79,7 @@ namespace SideDesk.Services
             _running = true;
             _reconnectAttempts = 0;
             _cts = new CancellationTokenSource();
-            Debug.WriteLine("[BackendWS] 服务启动，准备连接后端 WebSocket");
+            Debug.WriteLine(_token == null ? "[BackendWS] 服务启动（访客模式），准备连接后端 WebSocket" : "[BackendWS] 服务启动（已登录模式），准备连接后端 WebSocket");
             _ = ConnectLoopAsync(_cts.Token);
         }
 
@@ -123,20 +126,35 @@ namespace SideDesk.Services
             {
                 try
                 {
-                    // 先用 TCP 探测端口，避免后端未启动时反复抛出 WebSocketException
+                    // 先用 TCP 探测端口，避免后端未启动时反复抛出 WebSocketException。
+                    // 使用带取消令牌的 ConnectAsync：await 的就是最终失败的那个 Task，
+                    // 不能像旧实现那样 WhenAny 超时后丢弃 probeTask —— 被丢弃的探测任务
+                    // 在 TcpClient Dispose 时会以 OperationCanceledException("已中止 I/O 操作") 失败，
+                    // 无人观察导致 UnobservedTaskException 反复写入崩溃日志。
                     using (var probe = new System.Net.Sockets.TcpClient())
+                    using (var probeCts = CancellationTokenSource.CreateLinkedTokenSource(token))
                     {
-                        var probeTask = probe.ConnectAsync(WsHost, WsPort);
-                        if (await Task.WhenAny(probeTask, Task.Delay(2000, token)).ConfigureAwait(false) != probeTask)
+                        probeCts.CancelAfter(2000);
+                        try
+                        {
+                            await probe.ConnectAsync(WsHost, WsPort, probeCts.Token).ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException) when (!token.IsCancellationRequested)
+                        {
                             throw new TimeoutException($"端口 {WsPort} 探测超时");
-                        await probeTask.ConfigureAwait(false); // 传播连接失败异常
+                        }
                     }
 
                     _socket?.Dispose();
                     _socket = new ClientWebSocket();
 
-                    var uri = new Uri($"ws://{WsHost}:{WsPort}/?token={Uri.EscapeDataString(_token ?? "")}");
-                    Debug.WriteLine($"[BackendWS] 正在连接 {WsHost}:{WsPort} ...");
+                    // 连接 URL 始终携带 deviceId（设备指纹）；已登录时额外携带 token
+                    var deviceId = DeviceIdService.DeviceId;
+                    var query = string.IsNullOrEmpty(_token)
+                        ? $"?deviceId={Uri.EscapeDataString(deviceId)}"
+                        : $"?token={Uri.EscapeDataString(_token)}&deviceId={Uri.EscapeDataString(deviceId)}";
+                    var uri = new Uri($"ws://{WsHost}:{WsPort}/{query}");
+                    Debug.WriteLine($"[BackendWS] 正在连接 {WsHost}:{WsPort} ({(string.IsNullOrEmpty(_token) ? "访客" : "已登录")}) ...");
 
                     using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(token);
                     connectCts.CancelAfter(TimeSpan.FromSeconds(10)); // 连接超时 10 秒
