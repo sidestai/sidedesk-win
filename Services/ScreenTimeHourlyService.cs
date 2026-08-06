@@ -30,7 +30,7 @@ namespace SideDesk.Services
 
         private const string MarkerKey = "screen_time_last_past_date";
         private const string CloudMarkerKey = "screen_time_cloud_synced_date";
-        private const string BaseUrl = "http://localhost:3007";
+        private const string BaseUrl = Constants.URLs.ServerBaseUrl;
         private static readonly Regex LogFilePattern = new(@"^windowlog_(\d{8})\.txt$", RegexOptions.IgnoreCase);
         private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(15) };
 

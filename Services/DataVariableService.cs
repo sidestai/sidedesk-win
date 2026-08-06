@@ -31,7 +31,7 @@ namespace SideDesk.Services
         private static readonly Lazy<DataVariableService> _lazy = new(() => new DataVariableService());
         public static DataVariableService Instance => _lazy.Value;
 
-        private const string BaseUrl = "http://localhost:3007";
+        private const string BaseUrl = Constants.URLs.ServerBaseUrl;
 
         private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(10) };
 

@@ -892,7 +892,7 @@ namespace SideDesk.Controls
                         allowReShare = cbReShare.IsChecked == true
                     });
                     using var content = new System.Net.Http.StringContent(payload, System.Text.Encoding.UTF8, "application/json");
-                    using var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, "http://localhost:3007/api/sidebar/share/create") { Content = content };
+                    using var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, Constants.URLs.ServerBaseUrl + "/api/sidebar/share/create") { Content = content };
                     req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + app.AppSettings.AccountToken);
                     using var resp = await Services.HttpLog.SendAsync(http, req);
                     string json = await resp.Content.ReadAsStringAsync();
@@ -905,7 +905,7 @@ namespace SideDesk.Controls
                         ThemedMessageBox.ShowShareResult(
                             Application.Current.MainWindow,
                             code,
-                            $"http://localhost:3007/s/{code}"
+                            $"{Constants.URLs.ServerBaseUrl}/s/{code}"
                         );
                     }
                     else

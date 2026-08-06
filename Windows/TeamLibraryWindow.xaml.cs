@@ -260,7 +260,7 @@ public partial class TeamLibraryWindow : Window
             if (string.IsNullOrEmpty(settings.AccountToken) || string.IsNullOrEmpty(panel.ServerId)) return;
             if (!RowChangeTracker.IsRowSyncable(panel.Type)) return;
 
-            string url = $"http://localhost:3007/api/sidebar/item-row/pull?itemServerId={Uri.EscapeDataString(panel.ServerId!)}";
+            string url = $"{Constants.URLs.ServerBaseUrl}/api/sidebar/item-row/pull?itemServerId={Uri.EscapeDataString(panel.ServerId!)}";
             using var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, url);
             req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + settings.AccountToken);
 

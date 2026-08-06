@@ -14,13 +14,8 @@ public partial class AddWindowDialog : Window
 {
     public WindowConfig? Result { get; private set; }
 
-    /// <summary>前端站点基础地址</summary>
-    private static readonly string FrontendBaseUrl =
-#if DEBUG
-        "http://localhost:3007/#";
-#else
-        "http://localhost:3007/#"; // TODO: 生产环境替换为实际部署地址
-#endif
+    /// <summary>前端站点基础地址（统一在 Constants.URLs.ServerBaseUrl）</summary>
+    private static readonly string FrontendBaseUrl = Constants.URLs.ServerBaseUrl + "/#";
 
     private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(15) };
 
@@ -73,7 +68,7 @@ public partial class AddWindowDialog : Window
             IsEnabled = false; // 防重复点击
             try
             {
-                serverId = await CreateWebBarAsync(name, app.AppSettings.AccountToken!);
+                serverId = await CreateWebBarAsync(name, app.AppSettings.AccountToken!, corpId);
             }
             finally
             {
@@ -102,14 +97,15 @@ public partial class AddWindowDialog : Window
         Close();
     }
 
-    /// <summary>POST /api/sidebar/web-bar — 创建 Web Bar（不带网址），返回服务端加密 ID；失败返回 null</summary>
-    private static async Task<string?> CreateWebBarAsync(string title, string token)
+    /// <summary>POST /api/sidebar/web-bar — 创建 Web Bar（不带网址，可选团队归属），返回服务端加密 ID；失败返回 null</summary>
+    private static async Task<string?> CreateWebBarAsync(string title, string token, string? corpId)
     {
         try
         {
             var body = new JObject { ["title"] = title };
+            if (!string.IsNullOrEmpty(corpId)) body["corpId"] = corpId; // 团队加密串透传，后端解析并校验成员身份
 
-            using var req = new HttpRequestMessage(HttpMethod.Post, "http://localhost:3007/api/sidebar/web-bar");
+            using var req = new HttpRequestMessage(HttpMethod.Post, Constants.URLs.ServerBaseUrl + "/api/sidebar/web-bar");
             req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
             req.Content = new StringContent(body.ToString(Formatting.None), Encoding.UTF8, "application/json");
 

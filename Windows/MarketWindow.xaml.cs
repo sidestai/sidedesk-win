@@ -10,13 +10,8 @@ namespace SideDesk.Windows;
 /// </summary>
 public partial class MarketWindow : Window
 {
-    /// <summary>前端站点基础地址</summary>
-    private static readonly string FrontendBaseUrl =
-#if DEBUG
-        "http://localhost:3007/#";
-#else
-        "http://localhost:3007/#"; // TODO: 生产环境替换为实际部署地址
-#endif
+    /// <summary>前端站点基础地址（统一在 Constants.URLs.ServerBaseUrl）</summary>
+    private static readonly string FrontendBaseUrl = Constants.URLs.ServerBaseUrl + "/#";
 
     private readonly string _marketPath;
 

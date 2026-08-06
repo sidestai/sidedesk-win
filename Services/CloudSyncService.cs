@@ -38,30 +38,30 @@ namespace SideDesk.Services
         /// <summary>上次因「模块不存在」触发愈合同步的时间（UTC），用于节流</summary>
         private DateTime _lastHealSyncUtc = DateTime.MinValue;
 
-        // TODO: 上线时替换为正式环境同步接口地址（当前为测试环境）
-        private const string SyncEndpoint = "http://localhost:3007/api/sidebar/sync";
+        // 接口基址统一收口在 Constants.URLs.ServerBaseUrl，发布时只需改那一处
+        private const string SyncEndpoint = Constants.URLs.ServerBaseUrl + "/api/sidebar/sync";
         // 删除接口：软删除 bar/item（JSON Body 传 type + serverId）
-        private const string DeleteEndpoint = "http://localhost:3007/api/sidebar/sync/delete";
+        private const string DeleteEndpoint = Constants.URLs.ServerBaseUrl + "/api/sidebar/sync/delete";
         // 新增单个窗口接口：只提交新建的 bar（含 items），不触碰其他窗口
-        private const string CreateBarEndpoint = "http://localhost:3007/api/sidebar/sync/bar";
+        private const string CreateBarEndpoint = Constants.URLs.ServerBaseUrl + "/api/sidebar/sync/bar";
         // 用户设置同步接口
-        private const string SettingSyncEndpoint = "http://localhost:3007/api/sidebar/setting/sync";
-        private const string SettingListEndpoint = "http://localhost:3007/api/sidebar/setting/list";
+        private const string SettingSyncEndpoint = Constants.URLs.ServerBaseUrl + "/api/sidebar/setting/sync";
+        private const string SettingListEndpoint = Constants.URLs.ServerBaseUrl + "/api/sidebar/setting/list";
         // 模块归属实时变更接口
-        private const string ItemOwnerEndpoint = "http://localhost:3007/api/sidebar/sync/item-owner";
+        private const string ItemOwnerEndpoint = Constants.URLs.ServerBaseUrl + "/api/sidebar/sync/item-owner";
         // 团队组件库接口
-        private const string TeamLibraryEndpoint = "http://localhost:3007/api/sidebar/item/team-library";
+        private const string TeamLibraryEndpoint = Constants.URLs.ServerBaseUrl + "/api/sidebar/item/team-library";
         // 行级数据同步接口
-        private const string RowPushEndpoint = "http://localhost:3007/api/sidebar/item-row/push";
-        private const string RowPullEndpoint = "http://localhost:3007/api/sidebar/item-row/pull";
+        private const string RowPushEndpoint = Constants.URLs.ServerBaseUrl + "/api/sidebar/item-row/push";
+        private const string RowPullEndpoint = Constants.URLs.ServerBaseUrl + "/api/sidebar/item-row/pull";
         // 资源排序接口
-        private const string ResourcePosEndpoint = "http://localhost:3007/api/sidebar/resource-pos/save";
+        private const string ResourcePosEndpoint = Constants.URLs.ServerBaseUrl + "/api/sidebar/resource-pos/save";
         // 轻量创建单个模块接口
-        private const string CreateItemEndpoint = "http://localhost:3007/api/sidebar/sync/item";
+        private const string CreateItemEndpoint = Constants.URLs.ServerBaseUrl + "/api/sidebar/sync/item";
         // 全量结构拉取接口（启动对账）
-        private const string StructurePullEndpoint = "http://localhost:3007/api/sidebar/sync/pull";
+        private const string StructurePullEndpoint = Constants.URLs.ServerBaseUrl + "/api/sidebar/sync/pull";
         // 我仍有效的分享导入记录接口（启动对账清理失效共享组件用）
-        private const string ShareImportsEndpoint = "http://localhost:3007/api/sidebar/share/imports/mine";
+        private const string ShareImportsEndpoint = Constants.URLs.ServerBaseUrl + "/api/sidebar/share/imports/mine";
 
         private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(30) };
         private bool _syncing;

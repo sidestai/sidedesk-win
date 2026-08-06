@@ -60,7 +60,7 @@ namespace SideDesk.Services
         private static readonly Lazy<TeamService> _lazy = new(() => new TeamService());
         public static TeamService Instance => _lazy.Value;
 
-        private const string BaseUrl = "http://localhost:3007";
+        private const string BaseUrl = Constants.URLs.ServerBaseUrl;
 
         private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(30) };
 

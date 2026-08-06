@@ -37,7 +37,7 @@ namespace SideDesk.Services
         private static readonly Lazy<McpToolRegistryService> _instance = new(() => new McpToolRegistryService());
         public static McpToolRegistryService Instance => _instance.Value;
 
-        private const string BaseUrl = "http://localhost:3007/api/mcp-tool";
+        private const string BaseUrl = Constants.URLs.ServerBaseUrl + "/api/mcp-tool";
         private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(10) };
 
         /// <summary>本地下载的官方 MCP 配置文件（未登录时的工具来源）</summary>

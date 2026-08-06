@@ -47,7 +47,7 @@ namespace SideDesk.Services
         private static readonly Lazy<DailyActivityService> _lazy = new(() => new DailyActivityService());
         public static DailyActivityService Instance => _lazy.Value;
 
-        private const string BaseUrl = "http://localhost:3007";
+        private const string BaseUrl = Constants.URLs.ServerBaseUrl;
         private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(60);
 
         private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(10) };

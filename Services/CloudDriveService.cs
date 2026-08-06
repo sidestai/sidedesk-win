@@ -92,7 +92,7 @@ namespace SideDesk.Services
         private static readonly Lazy<CloudDriveService> _lazy = new(() => new CloudDriveService());
         public static CloudDriveService Instance => _lazy.Value;
 
-        private const string BaseUrl = "http://localhost:3007";
+        private const string BaseUrl = Constants.URLs.ServerBaseUrl;
         /// <summary>企业 ID（动态读取：选中团队时用团队 ID，否则用默认个人 ID）</summary>
         private static string CorpId
         {

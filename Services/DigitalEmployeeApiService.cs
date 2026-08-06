@@ -15,7 +15,7 @@ public sealed class DigitalEmployeeApiService
     private static readonly Lazy<DigitalEmployeeApiService> _lazy = new(() => new DigitalEmployeeApiService());
     public static DigitalEmployeeApiService Instance => _lazy.Value;
 
-    private const string BaseUrl = "http://localhost:3007";
+    private const string BaseUrl = Constants.URLs.ServerBaseUrl;
 
     private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(15) };
 

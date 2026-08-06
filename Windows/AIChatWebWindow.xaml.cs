@@ -10,13 +10,8 @@ namespace SideDesk.Windows;
 /// </summary>
 public partial class AIChatWebWindow : Window
 {
-    /// <summary>前端聊天页基础地址</summary>
-    private static readonly string ChatBaseUrl =
-#if DEBUG
-        "http://localhost:3007/#/ai-chat";
-#else
-        "http://localhost:3007/#/ai-chat"; // TODO: 生产环境替换为实际部署地址
-#endif
+    /// <summary>前端聊天页基础地址（基址统一在 Constants.URLs.ServerBaseUrl）</summary>
+    private static readonly string ChatBaseUrl = Constants.URLs.ServerBaseUrl + "/#/ai-chat";
 
     public AIChatWebWindow()
     {

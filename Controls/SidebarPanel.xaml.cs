@@ -137,7 +137,7 @@ namespace SideDesk.Controls
         /// </summary>
         private static string AppendTokenForFrontend(string url)
         {
-            const string prefix = "http://localhost:3007/";
+            string prefix = Constants.URLs.ServerBaseUrl + "/";
             if (string.IsNullOrEmpty(url) || !url.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                 return url;
 

@@ -839,7 +839,7 @@ namespace SideDesk
                 {
                     var token = app.AppSettings.AccountToken;
                     using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-                    string previewUrl = $"http://localhost:3007/api/sidebar/share/{Uri.EscapeDataString(code)}";
+                    string previewUrl = $"{Constants.URLs.ServerBaseUrl}/api/sidebar/share/{Uri.EscapeDataString(code)}";
                     Debug.WriteLine($"[ImportShare] 预览请求: GET {previewUrl}");
                     using var req = new HttpRequestMessage(HttpMethod.Get, previewUrl);
                     req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
@@ -949,7 +949,7 @@ namespace SideDesk
             var importJson = Newtonsoft.Json.JsonConvert.SerializeObject(importPayload);
             Debug.WriteLine($"[ImportShare] 导入请求 POST /sidebar/share/import, payload={importJson}");
             using var importContent = new System.Net.Http.StringContent(importJson, System.Text.Encoding.UTF8, "application/json");
-            using var importReq = new HttpRequestMessage(HttpMethod.Post, "http://localhost:3007/api/sidebar/share/import") { Content = importContent };
+            using var importReq = new HttpRequestMessage(HttpMethod.Post, Constants.URLs.ServerBaseUrl + "/api/sidebar/share/import") { Content = importContent };
             importReq.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
             using var importResp = await Services.HttpLog.SendAsync(http, importReq);
             string importRespJson = await importResp.Content.ReadAsStringAsync();

@@ -8,13 +8,8 @@ namespace SideDesk.Windows;
 /// </summary>
 public partial class PluginEditorWindow : Window
 {
-    /// <summary>前端编辑器页面基础地址</summary>
-    private static readonly string EditorBaseUrl =
-#if DEBUG
-        "http://localhost:3007/#/plugin-editor";
-#else
-        "http://localhost:3007/#/plugin-editor"; // TODO: 生产环境替换为实际部署地址
-#endif
+    /// <summary>前端编辑器页面基础地址（基址统一在 Constants.URLs.ServerBaseUrl）</summary>
+    private static readonly string EditorBaseUrl = Constants.URLs.ServerBaseUrl + "/#/plugin-editor";
 
     public PluginEditorWindow()
     {

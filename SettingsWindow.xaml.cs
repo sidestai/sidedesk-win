@@ -4293,7 +4293,7 @@ namespace SideDesk
                 {
                     using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
                     using var req = new System.Net.Http.HttpRequestMessage(
-                        System.Net.Http.HttpMethod.Get, "http://localhost:3007/api/sidebar/bar/visible");
+                        System.Net.Http.HttpMethod.Get, Constants.URLs.ServerBaseUrl + "/api/sidebar/bar/visible");
                     req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
                     using var resp = await Services.HttpLog.SendAsync(http, req);
                     string json = await resp.Content.ReadAsStringAsync();
@@ -5001,7 +5001,7 @@ namespace SideDesk
                         allowReShare = cbReShare.IsChecked == true
                     });
                     using var content = new System.Net.Http.StringContent(payload, System.Text.Encoding.UTF8, "application/json");
-                    using var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, "http://localhost:3007/api/sidebar/share/create") { Content = content };
+                    using var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, Constants.URLs.ServerBaseUrl + "/api/sidebar/share/create") { Content = content };
                     req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + app.AppSettings.AccountToken);
                     using var resp = await Services.HttpLog.SendAsync(http, req);
                     string json = await resp.Content.ReadAsStringAsync();
@@ -5014,7 +5014,7 @@ namespace SideDesk
                         ThemedMessageBox.ShowShareResult(
                             this,
                             code,
-                            $"http://localhost:3007/s/{code}"
+                            $"{Constants.URLs.ServerBaseUrl}/s/{code}"
                         );
                     }
                     else
@@ -5083,7 +5083,7 @@ namespace SideDesk
                     using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
                     var payload = Newtonsoft.Json.JsonConvert.SerializeObject(new { shareCode = code });
                     using var content = new System.Net.Http.StringContent(payload, System.Text.Encoding.UTF8, "application/json");
-                    using var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, "http://localhost:3007/api/sidebar/share/import") { Content = content };
+                    using var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, Constants.URLs.ServerBaseUrl + "/api/sidebar/share/import") { Content = content };
                     req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + app.AppSettings.AccountToken);
                     using var resp = await Services.HttpLog.SendAsync(http, req);
                     string json = await resp.Content.ReadAsStringAsync();
@@ -5242,7 +5242,7 @@ namespace SideDesk
                     {
                         using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
                         using var req = new System.Net.Http.HttpRequestMessage(
-                            System.Net.Http.HttpMethod.Delete, $"http://localhost:3007/api/sidebar/share/{shareId}");
+                            System.Net.Http.HttpMethod.Delete, $"{Constants.URLs.ServerBaseUrl}/api/sidebar/share/{shareId}");
                         req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
                         using var resp = await Services.HttpLog.SendAsync(http, req);
                         string json = await resp.Content.ReadAsStringAsync();
@@ -5287,7 +5287,7 @@ namespace SideDesk
                 {
                     using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
                     using var req = new System.Net.Http.HttpRequestMessage(
-                        System.Net.Http.HttpMethod.Get, "http://localhost:3007/api/sidebar/share/list/mine");
+                        System.Net.Http.HttpMethod.Get, Constants.URLs.ServerBaseUrl + "/api/sidebar/share/list/mine");
                     req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
                     using var resp = await Services.HttpLog.SendAsync(http, req);
                     string json = await resp.Content.ReadAsStringAsync();

@@ -275,7 +275,7 @@ namespace SideDesk
 
                 using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
                 using var req = new System.Net.Http.HttpRequestMessage(
-                    System.Net.Http.HttpMethod.Get, "http://localhost:3007/api/auth/userinfo");
+                    System.Net.Http.HttpMethod.Get, Constants.URLs.ServerBaseUrl + "/api/auth/userinfo");
                 req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
 
                 using var resp = await Services.HttpLog.SendAsync(http, req);
@@ -384,7 +384,7 @@ namespace SideDesk
             {
                 using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
                 using var req = new System.Net.Http.HttpRequestMessage(
-                    System.Net.Http.HttpMethod.Get, "http://localhost:3007/api/auth/userinfo");
+                    System.Net.Http.HttpMethod.Get, Constants.URLs.ServerBaseUrl + "/api/auth/userinfo");
                 req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
 
                 using var resp = await Services.HttpLog.SendAsync(http, req);
