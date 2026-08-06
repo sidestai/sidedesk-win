@@ -33,7 +33,7 @@ namespace SideDesk.Windows
         public WindowLogger()
         {
             string appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            _logFolder = Path.Combine(appData, "SideDesk", "WindowLogs");
+            _logFolder = Path.Combine(appData, "SideDesk", "Logs");
             if (!Directory.Exists(_logFolder))
                 Directory.CreateDirectory(_logFolder);
 
@@ -118,8 +118,7 @@ namespace SideDesk.Windows
             string title = sbTitle.ToString().Replace("\t", " ").Replace("\n", " ").Replace("\r", " ");
             string className = sbClass.ToString();
 
-            // TODO: integrate later - WeChat region recognizer for contact name detection
-            // 微信特殊处理暂时跳过
+            // 微信聊天对象识别功能已废弃（WeChatRegionRecognizer / ScreenCaptureLogger 已整体禁用），此处不做特殊处理
 
             // Try to get browser URL
             string url = "";

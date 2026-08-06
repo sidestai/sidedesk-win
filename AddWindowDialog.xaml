@@ -37,18 +37,11 @@
                            FontSize="{DynamicResource FontSizeNormal}" Foreground="{DynamicResource BrushTextMain}"/>
                 <RadioButton x:Name="nativeRadio" Content="本地模式" IsChecked="True"
                              FontSize="{DynamicResource FontSizeNormal}"
-                             Foreground="{DynamicResource BrushTextSec}" Margin="0,0,15,0" Checked="ModeChanged"/>
-                <RadioButton x:Name="webviewRadio" Content="网页模式1"
+                             Foreground="{DynamicResource BrushTextSec}" Margin="0,0,15,0"/>
+                <RadioButton x:Name="webviewRadio" Content="网页模式"
                              FontSize="{DynamicResource FontSizeNormal}"
-                             Foreground="{DynamicResource BrushTextSec}" Checked="ModeChanged"/>
+                             Foreground="{DynamicResource BrushTextSec}"/>
             </StackPanel>
-
-            <!-- URL -->
-            <DockPanel x:Name="urlPanel" Margin="0,0,0,0">
-                <TextBlock DockPanel.Dock="Left" Text="URL：" Width="60" VerticalAlignment="Center"
-                           FontSize="{DynamicResource FontSizeNormal}" Foreground="{DynamicResource BrushTextMain}"/>
-                <TextBox x:Name="urlBox" Text="https://" Style="{StaticResource GlobalTextBoxStyle}"/>
-            </DockPanel>
         </StackPanel>
 
         <!-- 按钮 -->

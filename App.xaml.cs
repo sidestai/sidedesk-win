@@ -18,7 +18,6 @@ namespace SideDesk
         public Settings AppSettings { get; private set; } = new();
         public WindowConfigManager WindowConfigs { get; private set; } = new();
         public ProgramRegistryManager ProgramRegistry { get; private set; } = new();
-        public ExtensionManager Extensions { get; private set; } = new();
         public Services.VirtualDesktopService? VirtualDesktop { get; private set; }
 
         /// <summary>启动时 Token 验证失败的提示信息（非空表示登录已过期，设置页显示提示）</summary>
@@ -67,7 +66,10 @@ namespace SideDesk
             // 加载上次保存的设置
             AppSettings = Settings.Load();
 
-            // 网络请求日志开关（默认开启；日志写入 %LocalAppData%\SideDesk\http.log）
+            // 旧日志文件迁移到统一的 Logs 目录（需在各类日志器写入前执行）
+            MigrateLogsToLogsFolder();
+
+            // 网络请求日志开关（默认开启；日志写入 %LocalAppData%\SideDesk\Logs\http.log）
             Services.HttpLog.Enabled = AppSettings.HttpLogEnabled;
 
             // 后台预计算设备唯一 ID（CPU ID + MAC 指纹）：WMI 查询较慢，放线程池避免阻塞启动
@@ -82,9 +84,6 @@ namespace SideDesk
 
             // 加载程序注册表
             ProgramRegistry = ProgramRegistryManager.Load();
-
-            // 加载扩展管理器
-            Extensions = ExtensionManager.Load();
 
             // 加载外部插件
             try
@@ -173,6 +172,10 @@ namespace SideDesk
                 System.Diagnostics.Debug.WriteLine($"[McpServer] 启动异常: {ex.Message}");
             }
 
+            // 同步服务端 MCP 工具注册表（登录态生效；未登录自动回退内置工具）
+            try { _ = Services.McpToolRegistryService.Instance.SyncAsync(); }
+            catch { }
+
             // 启动内置 HTTP Server (127.0.0.1:HttpServerPort)，默认开启
             try
             {
@@ -220,16 +223,11 @@ namespace SideDesk
                 System.Diagnostics.Debug.WriteLine($"[TitleLock] 启动恢复锁定规则失败: {ex.Message}");
             }
 
-            // 启动云同步（仅在已登录且已开启时）
+            // 启动云同步（仅在已登录且已开启时；未开启时不做任何行级/结构同步）
             try
             {
                 if (AppSettings.EnableCloudSync && !string.IsNullOrEmpty(AppSettings.AccountToken))
                     Services.CloudSyncService.Instance.Start();
-                else if (!string.IsNullOrEmpty(AppSettings.AccountToken))
-                {
-                    // 未开启云同步但已登录：仅拉取行级最新数据（共享互通）
-                    _ = Services.CloudSyncService.Instance.PullAllRowsAsync(WindowConfigs, AppSettings);
-                }
             }
             catch (Exception ex)
             {
@@ -307,6 +305,9 @@ namespace SideDesk
                     // Token 有效 → 启动后端 WebSocket 长连接（消息订阅已在 OnStartup 统一建立）
                     try { Services.BackendWebSocketService.Instance.Start(token); }
                     catch (Exception wsEx) { System.Diagnostics.Debug.WriteLine($"[BackendWS] 启动异常: {wsEx.Message}"); }
+
+                    // 登录态有效 → 同步服务端 MCP 工具注册表
+                    try { _ = Services.McpToolRegistryService.Instance.SyncAsync(); } catch { }
                     return;
                 }
 
@@ -327,6 +328,9 @@ namespace SideDesk
 
                     // 停止云同步
                     try { Services.CloudSyncService.Instance.Stop(); } catch { }
+
+                    // 登录态失效 → 注册表回退内置工具（隐私模式）
+                    try { _ = Services.McpToolRegistryService.Instance.SyncAsync(); } catch { }
 
                     // 后端 WebSocket 降级为访客连接（设备仍未登录，保持可接收设备维度通知）
                     try { Services.BackendWebSocketService.Instance.Start(null); } catch { }
@@ -402,22 +406,31 @@ namespace SideDesk
                     changed = true;
                 }
 
-                // 头像（URL → 下载转 base64）
+                // 头像（URL → 下载转 base64；base64 → 直接使用）
                 string? avatarUrl = data.TryGetProperty("avatar", out var a) ? a.GetString() : null;
                 if (!string.IsNullOrWhiteSpace(avatarUrl))
                 {
-                    try
+                    if (avatarUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
                     {
-                        var imgBytes = await http.GetByteArrayAsync(avatarUrl);
-                        if (imgBytes.Length > 0)
+                        try
                         {
-                            AppSettings.AccountAvatar = Convert.ToBase64String(imgBytes);
-                            changed = true;
+                            var imgBytes = await http.GetByteArrayAsync(avatarUrl);
+                            if (imgBytes.Length > 0)
+                            {
+                                AppSettings.AccountAvatar = Convert.ToBase64String(imgBytes);
+                                changed = true;
+                            }
+                        }
+                        catch (Exception avatarEx)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[Auth] 头像下载失败: {avatarEx.Message}");
                         }
                     }
-                    catch (Exception avatarEx)
+                    else
                     {
-                        System.Diagnostics.Debug.WriteLine($"[Auth] 头像下载失败: {avatarEx.Message}");
+                        // 兼容 base64 直存的头像
+                        AppSettings.AccountAvatar = avatarUrl;
+                        changed = true;
                     }
                 }
 
@@ -784,40 +797,116 @@ namespace SideDesk
                 if (evt == "friend_request" && data != null)
                 {
                     var fromName = (string?)data["fromName"] ?? "未知用户";
-                    var requestId = (int?)data["requestId"] ?? 0;
+                    var requestId = (string?)data["requestId"] ?? "";
 
                     Dispatcher.Invoke(() =>
                     {
+                        // 逐窗口隔离：某个停靠栏面板构建通知 UI 失败时不影响其它面板与设置页刷新
+                        bool anyShown = false;
                         foreach (var mw in _windows)
                         {
-                            if (mw.IsLoaded)
+                            if (!mw.IsLoaded) continue;
+                            try
+                            {
                                 mw.ShowFriendRequestNotification(fromName, requestId);
+                                anyShown = true;
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[BackendWS] 主窗口显示好友请求通知失败: {ex}");
+                                // 降级为简单气泡通知（不走富通知卡的模板/ToolTip 构建路径）
+                                try { mw.ShowBubbleNotification($"👤 {fromName} 请求添加您为好友"); anyShown = true; } catch { }
+                            }
                         }
+                        // 设置窗口打开时同步刷新好友请求列表（避免只弹主窗口通知、设置页看不到的问题）
+                        foreach (Window w in Windows)
+                        {
+                            try
+                            {
+                                if (w is SettingsWindow sw && sw.IsLoaded)
+                                    sw.OnFriendRequestReceived();
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[BackendWS] 设置窗口刷新好友请求失败: {ex}");
+                            }
+                        }
+                        System.Diagnostics.Debug.WriteLine($"[BackendWS] friend_request 通知处理完成 anyShown={anyShown}");
                     });
                 }
                 else if (evt == "friend_online" && data != null)
                 {
+                    var userId = (string?)data["userId"] ?? "";
                     var userName = (string?)data["userName"] ?? "好友";
                     Dispatcher.Invoke(() =>
                     {
                         foreach (var mw in _windows)
                         {
-                            if (mw.IsLoaded)
-                                mw.ShowBubbleNotification($"🟢 {userName} 上线了");
+                            if (!mw.IsLoaded) continue;
+                            // 更新好友模块在线状态（按 encrypt2 密文匹配缓存项）
+                            if (!string.IsNullOrEmpty(userId))
+                                mw.UpdateFriendOnlineStatus(userId, true);
+                            mw.ShowBubbleNotification($"🟢 {userName} 上线了");
+                        }
+                        // 设置窗口打开时同步刷新好友页的在线状态点
+                        foreach (Window w in Windows)
+                        {
+                            try
+                            {
+                                if (w is SettingsWindow sw && sw.IsLoaded)
+                                    sw.OnFriendStatusChanged();
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[BackendWS] 设置窗口刷新好友在线状态失败: {ex}");
+                            }
                         }
                     });
                 }
                 else if (evt == "friend_offline" && data != null)
                 {
+                    var userId = (string?)data["userId"] ?? "";
                     var userName = (string?)data["userName"] ?? "好友";
                     Dispatcher.Invoke(() =>
                     {
                         foreach (var mw in _windows)
                         {
-                            if (mw.IsLoaded)
-                                mw.ShowBubbleNotification($"⚪ {userName} 下线了");
+                            if (!mw.IsLoaded) continue;
+                            if (!string.IsNullOrEmpty(userId))
+                                mw.UpdateFriendOnlineStatus(userId, false);
+                            mw.ShowBubbleNotification($"⚪ {userName} 下线了");
+                        }
+                        foreach (Window w in Windows)
+                        {
+                            try
+                            {
+                                if (w is SettingsWindow sw && sw.IsLoaded)
+                                    sw.OnFriendStatusChanged();
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[BackendWS] 设置窗口刷新好友在线状态失败: {ex}");
+                            }
                         }
                     });
+                }
+                else if (evt == "friend_profile_updated" && data != null)
+                {
+                    // 好友修改了资料/头像：更新本地好友缓存中的昵称与头像并刷新好友组件
+                    var userId = (string?)data["userId"] ?? "";
+                    var nickName = (string?)data["nickName"];
+                    var avatar = (string?)data["avatar"];
+                    if (!string.IsNullOrEmpty(userId))
+                    {
+                        Dispatcher.Invoke(() =>
+                        {
+                            foreach (var mw in _windows)
+                            {
+                                if (mw.IsLoaded)
+                                    mw.UpdateFriendProfile(userId, nickName, avatar);
+                            }
+                        });
+                    }
                 }
                 else if (evt == "notification" && data != null)
                 {
@@ -1860,6 +1949,7 @@ namespace SideDesk
                 string crashLog = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                     "SideDesk",
+                    "Logs",
                     $"crash-{DateTime.Now:yyyy-MM-dd-HHmmss}.log");
                 
                 try
@@ -1882,6 +1972,47 @@ namespace SideDesk
         }
         
         /// <summary>
+        /// 一次性迁移：把旧位置的日志（根目录散落的 *.log 与 WindowLogs/ScreenCaptureLogs 子目录）
+        /// 并入统一的 %LocalAppData%\SideDesk\Logs 目录，并清理空的旧子目录。
+        /// </summary>
+        private static void MigrateLogsToLogsFolder()
+        {
+            try
+            {
+                string baseDir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SideDesk");
+                if (!Directory.Exists(baseDir)) return;
+
+                string logsDir = Path.Combine(baseDir, "Logs");
+                Directory.CreateDirectory(logsDir);
+
+                void MoveFile(string src)
+                {
+                    if (!File.Exists(src)) return;
+                    string dst = Path.Combine(logsDir, Path.GetFileName(src));
+                    if (File.Exists(dst)) { File.Delete(src); return; } // 新位置已有同名文件（更新）：删除旧文件
+                    File.Move(src, dst);
+                }
+
+                // 根目录散落的日志：http.log / http.old.log / crash-*.log / window-*.log / keyboard-*.log
+                foreach (var f in Directory.GetFiles(baseDir, "*.log"))
+                    MoveFile(f);
+
+                // 旧子目录：WindowLogs / ScreenCaptureLogs → Logs（迁移完成后删除空目录）
+                foreach (var oldSub in new[] { "WindowLogs", "ScreenCaptureLogs" })
+                {
+                    string oldDir = Path.Combine(baseDir, oldSub);
+                    if (!Directory.Exists(oldDir)) continue;
+                    foreach (var f in Directory.GetFiles(oldDir))
+                        MoveFile(f);
+                    if (Directory.GetFiles(oldDir).Length == 0 && Directory.GetDirectories(oldDir).Length == 0)
+                        Directory.Delete(oldDir);
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>
         /// 记录崩溃信息
         /// </summary>
         private void LogCrash(string source, Exception ex, string? extra = null)
@@ -1902,7 +2033,8 @@ namespace SideDesk
             {
                 string logDir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "SideDesk");
+                    "SideDesk",
+                    "Logs");
                 Directory.CreateDirectory(logDir);
                 
                 string crashLog = Path.Combine(logDir, $"crash-{DateTime.Now:yyyy-MM-dd}.log");

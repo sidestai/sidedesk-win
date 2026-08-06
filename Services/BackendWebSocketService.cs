@@ -239,7 +239,8 @@ namespace SideDesk.Services
                 {
                     var text = Encoding.UTF8.GetString(ms.ToArray());
                     Debug.WriteLine($"[BackendWS] 收到消息: {text}");
-                    try { MessageReceived?.Invoke(text); } catch { }
+                    try { MessageReceived?.Invoke(text); }
+                    catch (Exception ex) { Debug.WriteLine($"[BackendWS] 消息分发异常（已吞掉，不影响接收循环）: {ex}"); }
                 }
             }
         }

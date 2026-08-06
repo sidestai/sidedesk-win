@@ -24,9 +24,6 @@
                 <MenuItem Header="AI 对话" Click="AddAIChatPanel_Click"/>
                 <MenuItem Header="文件区" Click="AddFileAreaPanel_Click"/>
                 <MenuItem Header="数据看板" Click="AddDataDashboard_Click"/>
-                <MenuItem x:Name="addDataBlockMenu" Header="添加数据块" SubmenuOpened="AddDataBlockMenu_SubmenuOpened">
-                    <MenuItem Header="(加载中...)" IsEnabled="False"/>
-                </MenuItem>
                 <MenuItem Header="计时器" Click="AddTimerPanel_Click"/>
                 <MenuItem Header="倒计时" Click="AddCountdownPanel_Click"/>
                 <MenuItem Header="番茄闹钟" Click="AddPomodoroPanel_Click"/>
@@ -37,17 +34,14 @@
                 <MenuItem Header="数字员工" Click="AddDigitalEmployeePanel_Click"/>
                 <MenuItem Header="好友" Click="AddFriendPanel_Click"/>
                 <Separator/>
+                <MenuItem x:Name="addDataBlockMenu" Header="添加数据块" SubmenuOpened="AddDataBlockMenu_SubmenuOpened">
+                    <MenuItem Header="(加载中...)" IsEnabled="False"/>
+                </MenuItem>
                 <MenuItem x:Name="addPluginMenu" Header="插件" SubmenuOpened="AddPluginMenu_SubmenuOpened">
                     <MenuItem Header="(加载中...)" IsEnabled="False"/>
                 </MenuItem>
                 <Separator/>
                 <MenuItem x:Name="addTeamLibraryMenu" Header="从团队组件库添加..." Click="AddFromTeamLibrary_Click"/>
-            </MenuItem>
-            <Separator />
-            <MenuItem Header="布局" x:Name="LayoutMenu">
-                <MenuItem Header="左侧停靠" Click="Layout_Left_Click" />
-                <MenuItem Header="右侧停靠" Click="Layout_Right_Click" />
-                <MenuItem Header="双侧停靠" Click="Layout_Both_Click" />
             </MenuItem>
             <Separator />
             <MenuItem Header="工具" x:Name="ToolsMenu" SubmenuOpened="ToolsMenu_SubmenuOpened">

@@ -1,3 +1,4 @@
+#if false // 已禁用：微信区域截图 + 特征串文字识别功能不再启用（整个文件被排除编译）
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -483,3 +484,4 @@ namespace SideDesk
         public Dictionary<string, string> FeatureMapping { get; set; } = new Dictionary<string, string>();
     }
 }
+#endif

@@ -7,7 +7,7 @@ namespace SideDesk.Services
 {
     /// <summary>
     /// 网络请求日志：把发往后端的 request/response 全量写入本地日志文件，便于排查同步问题。
-    /// 日志文件：%LocalAppData%\SideDesk\http.log（超过大小上限自动滚动为 http.old.log）。
+    /// 日志文件：%LocalAppData%\SideDesk\Logs\http.log（超过大小上限自动滚动为 http.old.log）。
     /// <see cref="Enabled"/> 为总开关（读取 Settings.HttpLogEnabled，默认开启）；
     /// 请求/响应体超长时截断，Authorization 头自动脱敏。
     /// </summary>
@@ -24,7 +24,7 @@ namespace SideDesk.Services
 
         private static readonly object _lock = new();
         private static readonly string _dir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SideDesk");
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SideDesk", "Logs");
         private static readonly string _filePath = Path.Combine(_dir, "http.log");
 
         /// <summary>日志文件完整路径（供 UI 展示/打开）</summary>

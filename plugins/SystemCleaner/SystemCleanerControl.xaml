@@ -4,9 +4,9 @@
              FontFamily="Microsoft YaHei UI" FontSize="12">
     <StackPanel Margin="6">
         <!-- 内存信息 -->
-        <Border Background="#22FFFFFF" CornerRadius="6" Padding="8" Margin="0,0,0,6">
+        <Border x:Name="memoryCard" Background="#22FFFFFF" CornerRadius="6" Padding="8" Margin="0,0,0,6">
             <StackPanel>
-                <TextBlock Text="💾 内存" FontWeight="Bold" FontSize="13" Margin="0,0,0,4"/>
+                <TextBlock x:Name="txtMemTitle" Text="💾 内存" FontWeight="Bold" FontSize="13" Margin="0,0,0,4"/>
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
@@ -19,16 +19,16 @@
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
-                    <TextBlock Grid.Row="0" Grid.Column="0" Text="总内存：" Opacity="0.7" Margin="0,1"/>
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="总内存：" Margin="0,1"/>
                     <TextBlock Grid.Row="0" Grid.Column="1" x:Name="txtTotalMemory" Text="--" Margin="0,1"/>
 
-                    <TextBlock Grid.Row="1" Grid.Column="0" Text="已使用：" Opacity="0.7" Margin="0,1"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="已使用：" Margin="0,1"/>
                     <TextBlock Grid.Row="1" Grid.Column="1" x:Name="txtUsedMemory" Text="--" Margin="0,1"/>
 
-                    <TextBlock Grid.Row="2" Grid.Column="0" Text="可用：" Opacity="0.7" Margin="0,1"/>
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="可用：" Margin="0,1"/>
                     <TextBlock Grid.Row="2" Grid.Column="1" x:Name="txtAvailMemory" Text="--" Margin="0,1"/>
 
-                    <TextBlock Grid.Row="3" Grid.Column="0" Text="使用率：" Opacity="0.7" Margin="0,1"/>
+                    <TextBlock Grid.Row="3" Grid.Column="0" Text="使用率：" Margin="0,1"/>
                     <TextBlock Grid.Row="3" Grid.Column="1" x:Name="txtMemoryPercent" Text="--" FontWeight="Bold" Margin="0,1"/>
                 </Grid>
                 <!-- 内存进度条 -->
@@ -38,9 +38,9 @@
         </Border>
 
         <!-- CPU 信息 -->
-        <Border Background="#22FFFFFF" CornerRadius="6" Padding="8" Margin="0,0,0,6">
+        <Border x:Name="cpuCard" Background="#22FFFFFF" CornerRadius="6" Padding="8" Margin="0,0,0,6">
             <StackPanel>
-                <TextBlock Text="⚙ CPU" FontWeight="Bold" FontSize="13" Margin="0,0,0,4"/>
+                <TextBlock x:Name="txtCpuTitle" Text="⚙ CPU" FontWeight="Bold" FontSize="13" Margin="0,0,0,4"/>
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
@@ -51,10 +51,10 @@
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
-                    <TextBlock Grid.Row="0" Grid.Column="0" Text="使用率：" Opacity="0.7" Margin="0,1"/>
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="使用率：" Margin="0,1"/>
                     <TextBlock Grid.Row="0" Grid.Column="1" x:Name="txtCpuPercent" Text="--" FontWeight="Bold" Margin="0,1"/>
 
-                    <TextBlock Grid.Row="1" Grid.Column="0" Text="核心数：" Opacity="0.7" Margin="0,1"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="核心数：" Margin="0,1"/>
                     <TextBlock Grid.Row="1" Grid.Column="1" x:Name="txtCpuCores" Text="--" Margin="0,1"/>
                 </Grid>
                 <!-- CPU 进度条 -->
@@ -90,6 +90,6 @@
 
         <!-- 清理结果提示 -->
         <TextBlock x:Name="txtCleanResult" Text="" Margin="0,4,0,0" FontSize="11"
-                   Opacity="0.8" TextWrapping="Wrap" Foreground="#A5D6A7"/>
+                   TextWrapping="Wrap" Foreground="#A5D6A7"/>
     </StackPanel>
 </UserControl>

@@ -84,13 +84,25 @@ namespace SideDesk.Windows
 
             var closeBtn = new Button
             {
-                Content = "✕",
                 Width = 26,
                 Height = 26,
-                FontSize = 11,
+                // GhostButtonStyle 默认 Padding=16,10 会把 26px 按钮的内容区压没，必须置 0
+                Padding = new Thickness(0),
                 Margin = new Thickness(8, 0, 0, 0),
                 Style = (Style)FindResource("GhostButtonStyle"),
-                Cursor = Cursors.Hand
+                Cursor = Cursors.Hand,
+                ToolTip = "关闭",
+                // 用矢量 Path 画 ✕，不依赖字体字形渲染（✕ 字符在部分字体下不可见）
+                Content = new System.Windows.Shapes.Path
+                {
+                    Data = Geometry.Parse("M0,0 L8,8 M8,0 L0,8"),
+                    Stroke = (Brush)FindResource("BrushTextMain"),
+                    StrokeThickness = 1.4,
+                    StrokeStartLineCap = PenLineCap.Round,
+                    StrokeEndLineCap = PenLineCap.Round,
+                    Width = 8,
+                    Height = 8
+                }
             };
             closeBtn.Click += (s, e) => Close();
 

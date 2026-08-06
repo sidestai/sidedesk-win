@@ -243,6 +243,8 @@ public static class ThemedMessageBox
             Width = 26,
             Height = 26,
             FontSize = 11,
+            // GhostButtonStyle 默认 Padding=16,10 会把 26px 按钮的内容区压没，必须置 0
+            Padding = new Thickness(0),
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 10, 0),

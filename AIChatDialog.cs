@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Shell;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using SideDesk.Models;
@@ -49,18 +50,82 @@ namespace SideDesk
                 Top = top,
                 WindowStartupLocation = WindowStartupLocation.Manual,
                 ResizeMode = ResizeMode.CanResize,
+                WindowStyle = WindowStyle.None,   // 自定义标题栏（支持彩色 emoji）
                 Owner = owner
             };
+            // 无边框窗口保留原生边缘拖拽调整大小；CaptionHeight=0 由自定义标题栏自行接管拖动
+            WindowChrome.SetWindowChrome(_dialog, new WindowChrome
+            {
+                CaptionHeight = 0,
+                ResizeBorderThickness = new Thickness(5),
+                CornerRadius = new CornerRadius(0),
+                GlassFrameThickness = new Thickness(0, 0, 0, 1)
+            });
             _dialog.Loaded += (s, e) => HideFromTaskbar(_dialog);
             _dialog.SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(_dialog, App.IsCurrentThemeLight());
 
-            _dialog.SetBinding(Window.BackgroundProperty, new System.Windows.Data.Binding("Background") { Source = owner });
             _dialog.Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("BrushTextMain");
 
+            // 根容器：自绘边框 + 背景（跟随主窗口主题）
+            var root = new System.Windows.Controls.Border
+            {
+                BorderBrush = (System.Windows.Media.Brush)Application.Current.FindResource("BrushBorder"),
+                BorderThickness = new Thickness(1)
+            };
+            root.SetBinding(System.Windows.Controls.Border.BackgroundProperty,
+                new System.Windows.Data.Binding("Background") { Source = owner });
+
             var grid = new Grid();
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 标题栏
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            // ===== 自定义标题栏：emoji 标题 + 拖动 + 关闭 =====
+            var titleBar = new Grid { Background = System.Windows.Media.Brushes.Transparent };
+            titleBar.MouseLeftButtonDown += (s, e) =>
+            {
+                if (e.OriginalSource is Button) return; // 点在关闭按钮上时不拖动
+                if (e.ClickCount == 2) return;
+                if (e.LeftButton == MouseButtonState.Pressed) _dialog.DragMove();
+            };
+            var titleText = new Emoji.Wpf.TextBlock
+            {
+                Text = "🤖 AI Chat",
+                FontSize = 13,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("BrushTextMain"),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(12, 8, 0, 2)
+            };
+            var closeBtn = new Button
+            {
+                Width = 26,
+                Height = 26,
+                Padding = new Thickness(0),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 8, 0),
+                Style = (Style)Application.Current.FindResource("GhostButtonStyle"),
+                Cursor = Cursors.Hand,
+                ToolTip = "关闭",
+                // 用矢量 Path 画 ✕，不依赖字体字形渲染
+                Content = new System.Windows.Shapes.Path
+                {
+                    Data = System.Windows.Media.Geometry.Parse("M0,0 L8,8 M8,0 L0,8"),
+                    Stroke = (System.Windows.Media.Brush)Application.Current.FindResource("BrushTextMain"),
+                    StrokeThickness = 1.4,
+                    StrokeStartLineCap = System.Windows.Media.PenLineCap.Round,
+                    StrokeEndLineCap = System.Windows.Media.PenLineCap.Round,
+                    Width = 8,
+                    Height = 8
+                }
+            };
+            closeBtn.Click += (s, e) => _dialog.Close();
+            titleBar.Children.Add(titleText);
+            titleBar.Children.Add(closeBtn);
+            Grid.SetRow(titleBar, 0);
+            grid.Children.Add(titleBar);
 
             // Header: model selection + settings
             var headerPanel = new DockPanel { Margin = new Thickness(10, 8, 10, 4) };
@@ -123,7 +188,7 @@ namespace SideDesk
             };
             headerPanel.Children.Add(_statusText);
 
-            Grid.SetRow(headerPanel, 0);
+            Grid.SetRow(headerPanel, 1);
             grid.Children.Add(headerPanel);
 
             // Chat message area
@@ -135,7 +200,7 @@ namespace SideDesk
             };
             _chatStack = new StackPanel();
             _chatScrollViewer.Content = _chatStack;
-            Grid.SetRow(_chatScrollViewer, 1);
+            Grid.SetRow(_chatScrollViewer, 2);
             grid.Children.Add(_chatScrollViewer);
 
             // Input area
@@ -160,10 +225,11 @@ namespace SideDesk
                 Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle")
             };
             inputPanel.Children.Add(_inputBox);
-            Grid.SetRow(inputPanel, 2);
+            Grid.SetRow(inputPanel, 3);
             grid.Children.Add(inputPanel);
 
-            _dialog.Content = grid;
+            root.Child = grid;
+            _dialog.Content = root;
 
             // Send message handler
             Action sendMessage = async () =>
@@ -374,7 +440,8 @@ namespace SideDesk
                 modelId = modelInfo.DefaultModelId;
 
             string url = apiBase + "/v1/chat/completions";
-            var tools = AIToolService.GetToolDefinitions();
+            // 注册表生效时（已登录）用服务端清单，否则内置工具（隐私模式）
+            var tools = McpToolRegistryService.GetActiveToolDefinitions();
 
             System.Diagnostics.Debug.WriteLine($"[AIChat] 请求: POST {url}");
             System.Diagnostics.Debug.WriteLine($"[AIChat] 模型: {modelId}, ApiKey: {(string.IsNullOrEmpty(config.ApiKey) ? "(空)" : config.ApiKey.Substring(0, Math.Min(6, config.ApiKey.Length)) + "***")}");

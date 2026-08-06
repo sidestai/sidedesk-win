@@ -8,6 +8,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -20,13 +21,20 @@
         <TextBlock Grid.Row="1" Text="团队共享的模块，添加后数据与团队互通" FontSize="11"
                    Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,12" TextWrapping="Wrap"/>
 
+        <!-- 团队切换：选择团队后下方刷新为该团队的组件列表 -->
+        <DockPanel Grid.Row="2" Margin="0,0,0,10">
+            <TextBlock Text="团队" DockPanel.Dock="Left" VerticalAlignment="Center" FontSize="12"
+                       Foreground="{DynamicResource BrushTextSec}" Margin="0,0,10,0"/>
+            <ComboBox x:Name="teamCombo" Style="{StaticResource GlobalComboBoxStyle}" IsEditable="False"/>
+        </DockPanel>
+
         <!-- 列表区域 -->
-        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <StackPanel x:Name="listPanel"/>
         </ScrollViewer>
 
         <!-- 按钮 -->
-        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
             <Button Content="关闭" Width="75" Click="Close_Click"
                     Style="{StaticResource StandardButtonStyle}"/>
         </StackPanel>

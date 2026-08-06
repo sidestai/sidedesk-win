@@ -34,7 +34,13 @@ namespace SideDesk.Services
                 new { type = "function", function = new { name = "list_clipboard_history", description = "获取最近的剪贴板历史记录（最多100条复制记录，含文本/图片/文件）", parameters = new { type = "object", properties = new { }, required = new string[] { } } } },
                 new { type = "function", function = new { name = "search_clipboard_history", description = "根据关键词搜索剪贴板历史记录（模糊匹配，含文件路径）", parameters = new { type = "object", properties = new { keyword = new { type = "string", description = "搜索关键词" } }, required = new[] { "keyword" } } } },
                 new { type = "function", function = new { name = "list_clipboard_favorites", description = "获取所有剪贴板收藏内容（用户手动保存的剪贴板信息）", parameters = new { type = "object", properties = new { }, required = new string[] { } } } },
-                new { type = "function", function = new { name = "search_clipboard_favorites", description = "根据关键词搜索剪贴板收藏内容（模糊匹配）", parameters = new { type = "object", properties = new { keyword = new { type = "string", description = "搜索关键词" } }, required = new[] { "keyword" } } } }
+                new { type = "function", function = new { name = "search_clipboard_favorites", description = "根据关键词搜索剪贴板收藏内容（模糊匹配）", parameters = new { type = "object", properties = new { keyword = new { type = "string", description = "搜索关键词" } }, required = new[] { "keyword" } } } },
+                new { type = "function", function = new { name = "get_pomodoro_status", description = "获取番茄闹钟组件当前状态（模式、是否运行中、剩余时间、今日完成数）", parameters = new { type = "object", properties = new { window = new { type = "string", description = "目标窗口名称或序号（可选，如'2'、'主页'），不传则返回所有窗口的番茄闹钟" } }, required = new string[] { } } } },
+                new { type = "function", function = new { name = "start_pomodoro", description = "开始番茄钟（切换到工作模式并开始计时）", parameters = new { type = "object", properties = new { window = new { type = "string", description = "目标窗口名称或序号（可选，如'2'、'主页'），不传则作用于所有窗口的番茄闹钟" } }, required = new string[] { } } } },
+                new { type = "function", function = new { name = "stop_pomodoro", description = "停止/暂停当前番茄闹钟计时（剩余时间保留，可随时继续）", parameters = new { type = "object", properties = new { window = new { type = "string", description = "目标窗口名称或序号（可选，如'2'、'主页'），不传则作用于所有窗口的番茄闹钟" } }, required = new string[] { } } } },
+                new { type = "function", function = new { name = "start_short_break", description = "开始短休息（切换到短休息模式并开始计时）", parameters = new { type = "object", properties = new { window = new { type = "string", description = "目标窗口名称或序号（可选，如'2'、'主页'），不传则作用于所有窗口的番茄闹钟" } }, required = new string[] { } } } },
+                new { type = "function", function = new { name = "start_long_break", description = "开始长休息（切换到长休息模式并开始计时）", parameters = new { type = "object", properties = new { window = new { type = "string", description = "目标窗口名称或序号（可选，如'2'、'主页'），不传则作用于所有窗口的番茄闹钟" } }, required = new string[] { } } } },
+                new { type = "function", function = new { name = "get_pomodoro_count", description = "获取今日已完成的番茄数量", parameters = new { type = "object", properties = new { window = new { type = "string", description = "目标窗口名称或序号（可选，如'2'、'主页'），不传则合计所有窗口" } }, required = new string[] { } } } }
             };
         }
 
@@ -66,6 +72,12 @@ namespace SideDesk.Services
                     "search_clipboard_history" => Tool_SearchClipboardHistory(args["keyword"]?.ToString() ?? ""),
                     "list_clipboard_favorites" => Tool_ListClipboardFavorites(),
                     "search_clipboard_favorites" => Tool_SearchClipboardFavorites(args["keyword"]?.ToString() ?? ""),
+                    "get_pomodoro_status" => Tool_GetPomodoroStatus(args["window"]?.ToString()),
+                    "start_pomodoro" => Tool_StartPomodoro(args["window"]?.ToString()),
+                    "stop_pomodoro" => Tool_StopPomodoro(args["window"]?.ToString()),
+                    "start_short_break" => Tool_StartShortBreak(args["window"]?.ToString()),
+                    "start_long_break" => Tool_StartLongBreak(args["window"]?.ToString()),
+                    "get_pomodoro_count" => Tool_GetPomodoroCount(args["window"]?.ToString()),
                     _ => new { error = $"未知工具: {toolName}" }
                 };
 
@@ -497,6 +509,186 @@ namespace SideDesk.Services
             }
             app.Dispatcher.BeginInvoke(() => app.RefreshAllNativePanels());
             return new { success = true, message = $"便签已删除（{note.Preview}）", id = note.Id, source };
+        }
+
+        // ═══════════ 番茄闹钟工具 ═══════════
+
+        /// <summary>收集番茄闹钟组件（顶层 + 分组内子模块）；win 非空时仅限该窗口</summary>
+        private static List<(PanelItem item, string source)> CollectPomodoroPanels(App app, WindowConfig? win = null)
+        {
+            var list = new List<(PanelItem, string)>();
+            IEnumerable<WindowConfig> windows = win != null ? new[] { win } : app.WindowConfigs.Windows;
+            foreach (var w in windows)
+            {
+                foreach (var p in w.Panels)
+                {
+                    if (p.Type == PanelType.Pomodoro)
+                        list.Add((p, $"{p.Title ?? "番茄闹钟"}@{w.Name}"));
+                    if (p.Type == PanelType.Group && p.ChildPanels != null)
+                        foreach (var c in p.ChildPanels.Where(c => c.Type == PanelType.Pomodoro))
+                            list.Add((c, $"{c.Title ?? "番茄闹钟"}@{w.Name}"));
+                }
+            }
+            return list;
+        }
+
+        /// <summary>模式显示名称</summary>
+        private static string GetPomodoroModeLabel(string mode) => mode switch
+        {
+            "ShortBreak" => "短休息",
+            "LongBreak" => "长休息",
+            _ => "番茄钟"
+        };
+
+        /// <summary>生成单个番茄组件的状态快照</summary>
+        private static object PomodoroSnapshot(PanelItem p, string source)
+        {
+            var s = p.Pomodoro ??= new PomodoroSettings();
+            s.EnsureTodayCount();
+            var remaining = s.GetRemaining();
+            return new
+            {
+                source,
+                mode = s.Mode,
+                modeLabel = GetPomodoroModeLabel(s.Mode),
+                isRunning = s.IsRunning,
+                remainingSeconds = (int)Math.Ceiling(remaining.TotalSeconds),
+                remainingText = $"{(int)remaining.TotalMinutes:D2}:{remaining.Seconds:D2}",
+                completedCount = s.CompletedCount
+            };
+        }
+
+        /// <summary>
+        /// 解析番茄闹钟作用域：window 非空时按名称/序号/方位定位窗口；
+        /// 解析成功 panels 非空返回 null，否则返回错误描述。
+        /// </summary>
+        private static string? TryResolvePomodoroPanels(App app, string? window, out List<(PanelItem item, string source)> panels)
+        {
+            panels = new List<(PanelItem, string)>();
+            WindowConfig? win = null;
+            if (!string.IsNullOrWhiteSpace(window))
+            {
+                win = ResolveWindow(app, window.Trim());
+                if (win == null)
+                    return $"找不到窗口: {window}（可用窗口: {string.Join(", ", app.WindowConfigs.Windows.Select((w, i) => $"{i + 1}.{w.Name}"))}）";
+            }
+
+            panels = CollectPomodoroPanels(app, win);
+            if (panels.Count == 0)
+                return win == null
+                    ? "未找到番茄闹钟组件，请先在侧栏添加「番茄闹钟」组件"
+                    : $"窗口'{win.Name}'下没有番茄闹钟组件，请先在该窗口添加「番茄闹钟」组件";
+            return null;
+        }
+
+        /// <summary>获取番茄闹钟组件当前状态（可按窗口定位）</summary>
+        public static object Tool_GetPomodoroStatus(string? window = null)
+        {
+            var app = (App)System.Windows.Application.Current;
+            var err = TryResolvePomodoroPanels(app, window, out var panels);
+            if (err != null)
+                return new { success = false, error = err };
+            return new { total = panels.Count, items = panels.Select(t => PomodoroSnapshot(t.item, t.source)).ToList() };
+        }
+
+        /// <summary>获取今日已完成的番茄数量（可按窗口定位，默认多个组件合计）</summary>
+        public static object Tool_GetPomodoroCount(string? window = null)
+        {
+            var app = (App)System.Windows.Application.Current;
+            var err = TryResolvePomodoroPanels(app, window, out var panels);
+            if (err != null)
+                return new { success = false, error = err };
+
+            int total = 0;
+            foreach (var (p, _) in panels)
+            {
+                var s = p.Pomodoro ??= new PomodoroSettings();
+                s.EnsureTodayCount();
+                total += s.CompletedCount;
+            }
+            return new { date = DateTime.Now.ToString("yyyy-MM-dd"), completedCount = total, componentCount = panels.Count };
+        }
+
+        /// <summary>开始番茄钟（切换到工作模式并开始计时）</summary>
+        public static object Tool_StartPomodoro(string? window = null) => ApplyPomodoroAction("Work", start: true, window);
+
+        /// <summary>开始短休息（切换到短休息模式并开始计时）</summary>
+        public static object Tool_StartShortBreak(string? window = null) => ApplyPomodoroAction("ShortBreak", start: true, window);
+
+        /// <summary>开始长休息（切换到长休息模式并开始计时）</summary>
+        public static object Tool_StartLongBreak(string? window = null) => ApplyPomodoroAction("LongBreak", start: true, window);
+
+        /// <summary>停止/暂停当前计时（保持当前模式，剩余时间保留）</summary>
+        public static object Tool_StopPomodoro(string? window = null) => ApplyPomodoroAction(null, start: false, window);
+
+        /// <summary>
+        /// 番茄闹钟统一控制：mode 非空时先切换模式（重置为新模式满时长），
+        /// start=true 开始/继续，start=false 暂停并结算剩余时间。
+        /// 状态变更在 UI 线程执行，完成后保存配置并重绘面板（组件重绘时自动恢复计时器）。
+        /// </summary>
+        private static object ApplyPomodoroAction(string? mode, bool start, string? window = null)
+        {
+            var app = (App)System.Windows.Application.Current;
+            var err = TryResolvePomodoroPanels(app, window, out var panels);
+            if (err != null)
+                return new { success = false, error = err };
+
+            try
+            {
+                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                {
+                    foreach (var (p, _) in panels)
+                    {
+                        var s = p.Pomodoro ??= new PomodoroSettings();
+                        s.EnsureTodayCount();
+
+                        // 切换模式：重置为新模式满时长（与组件内手动切换逻辑一致，但不计入完成数）
+                        if (!string.IsNullOrEmpty(mode) && s.Mode != mode)
+                        {
+                            s.Mode = mode;
+                            s.RemainingSeconds = s.GetModeTotalSeconds();
+                            s.IsRunning = false;
+                            s.StartTime = null;
+                        }
+
+                        if (start)
+                        {
+                            if (s.GetRemaining().TotalSeconds <= 0)
+                                s.RemainingSeconds = s.GetModeTotalSeconds();
+                            if (!s.IsRunning)
+                            {
+                                s.IsRunning = true;
+                                s.StartTime = DateTime.Now;
+                            }
+                        }
+                        else
+                        {
+                            // 暂停：结算剩余时间（与组件内暂停逻辑一致）
+                            if (s.IsRunning && s.StartTime.HasValue)
+                                s.RemainingSeconds = Math.Max(0, s.RemainingSeconds - (DateTime.Now - s.StartTime.Value).TotalSeconds);
+                            s.IsRunning = false;
+                            s.StartTime = null;
+                        }
+                    }
+
+                    app.WindowConfigs.Save();
+                    app.RefreshAllNativePanels();
+                });
+            }
+            catch (Exception ex)
+            {
+                return new { success = false, error = $"操作失败: {ex.Message}" };
+            }
+
+            string actionLabel = start
+                ? $"已开始{GetPomodoroModeLabel(mode ?? panels[0].item.Pomodoro!.Mode)}"
+                : "已停止计时";
+            return new
+            {
+                success = true,
+                message = $"{actionLabel}（共 {panels.Count} 个番茄闹钟组件）",
+                items = panels.Select(t => PomodoroSnapshot(t.item, t.source)).ToList()
+            };
         }
 
         /// <summary>按名称、序号或方位（左侧/右侧）解析窗口</summary>

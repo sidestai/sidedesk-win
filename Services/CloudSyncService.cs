@@ -35,6 +35,9 @@ namespace SideDesk.Services
         private static readonly Lazy<CloudSyncService> _lazy = new(() => new CloudSyncService());
         public static CloudSyncService Instance => _lazy.Value;
 
+        /// <summary>上次因「模块不存在」触发愈合同步的时间（UTC），用于节流</summary>
+        private DateTime _lastHealSyncUtc = DateTime.MinValue;
+
         // TODO: 上线时替换为正式环境同步接口地址（当前为测试环境）
         private const string SyncEndpoint = "http://localhost:3007/api/sidebar/sync";
         // 删除接口：软删除 bar/item（JSON Body 传 type + serverId）
@@ -318,20 +321,49 @@ namespace SideDesk.Services
         }
 
         /// <summary>
-        /// 实时推送模块归属变更到服务器（个人 ↔ 团队）。
-        /// 仅在已登录且开启云同步、serverId 非空时发起请求。返回是否成功。
+        /// 实时推送模块归属变更到服务器（个人 ↔ 团队），同步更新服务端 corp_id。
+        /// 链路兜底：窗口未同步→先建窗口；模块未同步→先建模块；均就绪后推归属。
+        /// 返回：true=已同步成功；false=尝试过但失败（含后端拒绝，失败原因见 LastOwnershipError）；null=未尝试（未登录/未开云同步）。
         /// </summary>
-        public async Task<bool> UpdateItemOwnershipAsync(PanelItem item)
+        public string? LastOwnershipError { get; private set; }
+
+        public async Task<bool?> UpdateItemOwnershipAsync(PanelItem item, WindowConfig? win = null)
         {
+            LastOwnershipError = null;
             var app = (SideDesk.App)System.Windows.Application.Current;
             var settings = app.AppSettings;
-            if (!settings.EnableCloudSync || string.IsNullOrEmpty(settings.AccountToken) || string.IsNullOrEmpty(item.ServerId)) return false;
+            if (!settings.EnableCloudSync || string.IsNullOrEmpty(settings.AccountToken)) return null;
+
+            // 窗口尚未同步：先把整个窗口（含模块）提交，corpId 随载荷一并落库
+            if (win != null && string.IsNullOrEmpty(win.ServerId))
+            {
+                if (!await CreateBarOnServerAsync(win))
+                {
+                    LastOwnershipError = "窗口同步到服务器失败";
+                    return false;
+                }
+            }
+
+            // 模块尚未同步到服务端：先创建（创建时已携带 corpId）；
+            // 窗口不可用（如分组内子模块拿不到窗口）则留给全量同步处理
+            if (string.IsNullOrEmpty(item.ServerId))
+            {
+                if (win == null || string.IsNullOrEmpty(win.ServerId)) return null;
+                var sid = await EnsureItemServerIdAsync(item, win.ServerId!);
+                if (string.IsNullOrEmpty(sid))
+                {
+                    LastOwnershipError = "模块同步到服务器失败";
+                    return false;
+                }
+                return true;
+            }
 
             try
             {
-                int? corpId = null;
-                if (item.OwnerType == "team" && !string.IsNullOrEmpty(item.TeamId) && int.TryParse(item.TeamId, out var cid))
-                    corpId = cid;
+                // 团队 ID 为服务端加密串，直接透传，由后端解析
+                string? corpId = null;
+                if (item.OwnerType == "team" && !string.IsNullOrEmpty(item.TeamId))
+                    corpId = item.TeamId;
 
                 var payload = new { serverId = item.ServerId, corpId };
                 string json = NJson.JsonConvert.SerializeObject(payload);
@@ -344,11 +376,31 @@ namespace SideDesk.Services
                 using var resp = await HttpLog.SendAsync(_http, req).ConfigureAwait(false);
                 string responseJson = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
                 System.Diagnostics.Debug.WriteLine($"[CloudSync] 模块归属变更响应: {responseJson}");
-                return resp.IsSuccessStatusCode;
+                if (!resp.IsSuccessStatusCode)
+                {
+                    LastOwnershipError = $"服务器拒绝（HTTP {(int)resp.StatusCode}）";
+                    return false;
+                }
+                // HTTP 200 也可能业务失败（如后端返回“仅创建者可修改模块归属”），解析 code/msg
+                try
+                {
+                    var root = JObject.Parse(responseJson);
+                    if (root["code"]?.ToObject<int>() != 200)
+                    {
+                        var msg = root["msg"]?.ToString() ?? "服务器处理失败";
+                        // 他人创建的模块：服务端归属保持原样（导入组件本就不应改归属），视为无需同步，不报错
+                        if (msg.Contains("仅创建者")) return null;
+                        LastOwnershipError = msg;
+                        return false;
+                    }
+                }
+                catch { /* 非 JSON 响应但 HTTP 成功，视为成功 */ }
+                return true;
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[CloudSync] 模块归属变更失败: {ex.Message}");
+                LastOwnershipError = ex.Message;
                 return false;
             }
         }
@@ -430,6 +482,12 @@ namespace SideDesk.Services
                     var teamId = p.TeamId;
                     var teamName = p.TeamName;
 
+                    // 行级同步类型的列表/对象已改由行表读取，剔除服务端旧快照避免覆盖本地行数据
+                    data.Remove("Pomodoro");
+                    data.Remove("DashboardItems");
+                    data.Remove("DigitalEmployeeIds");
+                    data.Remove("FriendUserIds");
+                    data.Remove("QuickItems");
                     NJson.JsonConvert.PopulateObject(data.ToString(), p);
 
                     p.Id = id;
@@ -618,8 +676,10 @@ namespace SideDesk.Services
             {
                 foreach (var prop in data.Properties())
                 {
-                    // 元数据字段以本地为准，不允许 itemData 覆盖
-                    if (prop.Name is "Id" or "ServerId" or "Type" or "ChildPanels") continue;
+                    // 元数据字段以本地为准，不允许 itemData 覆盖；
+                    // 行级同步类型的列表/对象已改由行表读取，服务端 itemData 中的旧快照不得回灌
+                    if (prop.Name is "Id" or "ServerId" or "Type" or "ChildPanels" or "Pomodoro"
+                        or "DashboardItems" or "DigitalEmployeeIds" or "FriendUserIds" or "QuickItems") continue;
                     var targetProp = panel.GetType().GetProperty(prop.Name);
                     if (targetProp != null && targetProp.CanWrite && prop.Value.Type != JTokenType.Null)
                     {
@@ -749,7 +809,8 @@ namespace SideDesk.Services
         {
             var app = (SideDesk.App)System.Windows.Application.Current;
             var settings = app.AppSettings;
-            if (string.IsNullOrEmpty(settings.AccountToken)) return;
+            // 未开启云同步：行级数据不提交服务器
+            if (!settings.EnableCloudSync || string.IsNullOrEmpty(settings.AccountToken)) return;
 
             // 防抖：重置 2 秒定时器（触发非常频繁，不打日志；真正推送时才有日志）
             if (_rowPushDebounceTimer == null)
@@ -758,6 +819,8 @@ namespace SideDesk.Services
                 _rowPushDebounceTimer.Tick += async (_, _) =>
                 {
                     _rowPushDebounceTimer!.Stop();
+                    // 定时器排队期间开关可能被关闭：触发时再次检查
+                    if (!settings.EnableCloudSync || string.IsNullOrEmpty(settings.AccountToken)) return;
                     try
                     {
                         // 存在尚未取得 ServerId 的行同步模块（如新建模块）时，先上传结构获取 ServerId，
@@ -805,10 +868,32 @@ namespace SideDesk.Services
                 PanelType.SignalLight => p.SignalLights,
                 PanelType.Clipboard => p.ClipboardItems,
                 PanelType.FileArea => p.FileItems,
+                // 番茄钟仅一条行记录，包装成单元素列表参与行级差异对比；
+                // 剔除计时运行状态，云同步/分享只带番茄数与时长等配置
+                PanelType.Pomodoro => p.Pomodoro == null ? null : new List<JObject> { SanitizePomodoroForSync(p.Pomodoro) },
+                PanelType.DataDashboard => p.DashboardItems,
+                // 数字员工/好友：引用 Id 列表包装为行对象参与行级差异对比
+                PanelType.DigitalEmployee => p.DigitalEmployeeIds == null ? null
+                    : p.DigitalEmployeeIds.Where(id => !string.IsNullOrEmpty(id))
+                        .Select(id => new DigitalEmployeeRow { Id = id!, EmployeeId = id! }).ToList(),
+                PanelType.Friend => p.FriendUserIds == null ? null
+                    : p.FriendUserIds.Select(id => new FriendUserRow { Id = id.ToString(), UserId = id.ToString() }).ToList(),
+                PanelType.QuickGroup => p.QuickItems,
                 _ => null
             };
             if (list == null) return null;
             return NJson.JsonConvert.SerializeObject(list, NJson.Formatting.None);
+        }
+
+        /// <summary>番茄钟行内容中不参与云同步/分享的运行状态字段（当前计时/暂停等仅本地保留）</summary>
+        private static readonly string[] _pomodoroRuntimeProps = { "Mode", "RemainingSeconds", "IsRunning", "StartTime" };
+
+        /// <summary>剔除番茄钟运行状态字段，仅保留番茄数、时长与行为配置（云同步/分享用）</summary>
+        private static JObject SanitizePomodoroForSync(PomodoroSettings pom)
+        {
+            var jo = JObject.FromObject(pom);
+            foreach (var name in _pomodoroRuntimeProps) jo.Remove(name);
+            return jo;
         }
 
         /// <summary>获取模块列表数据的行集合（rowId -> JToken）</summary>
@@ -837,7 +922,8 @@ namespace SideDesk.Services
         /// </summary>
         private async Task PushAllRowsAsync(WindowConfigManager mgr, Settings settings)
         {
-            if (string.IsNullOrEmpty(settings.AccountToken)) return;
+            // 未开启云同步：行级数据不提交服务器（防御性兼顾所有调用方）
+            if (!settings.EnableCloudSync || string.IsNullOrEmpty(settings.AccountToken)) return;
             if (_pushingRows) return; // 防止并发推送
             _pushingRows = true;
             try
@@ -898,54 +984,77 @@ namespace SideDesk.Services
             var newRows = ParseRowsFromJson(currentJson);
             string rowType = RowChangeTracker.GetRowType(p.Type);
 
-            var changedRows = new List<object>();
+            // 查询相关行的缓存服务端 ID：更新/删除优先走 serverId 寻址
+            var idMap = SideDesk.Services.LocalDbService.GetRowServerIds(
+                newRows.Keys.Concat(oldRows.Keys));
+
+            var changedRows = new List<Dictionary<string, object>>();
             var deletedRowIds = new List<string>();
+            var deletedRowServerIds = new List<string>();
 
             // 新增/修改：新快照中有，且与旧快照不同
             foreach (var kv in newRows)
             {
                 if (!oldRows.TryGetValue(kv.Key, out var oldRow) || !JToken.DeepEquals(oldRow, kv.Value))
-                {
-                    changedRows.Add(new
-                    {
-                        rowId = kv.Key,
-                        dataId = kv.Key,
-                        rowType,
-                        content = kv.Value,
-                        updatedAt = DateTime.Now.ToString("o")
-                    });
-                }
+                    changedRows.Add(BuildRowPayload(kv.Key, rowType, kv.Value, idMap));
             }
 
-            // 删除：旧快照中有，新快照中无
+            // 删除：旧快照中有，新快照中无。
+            // 已缓存 serverId（已同步到服务端）→ 服务端主键删除；否则 GUID 兜底（缓存缺失/旧数据）
             foreach (var key in oldRows.Keys)
             {
                 if (!newRows.ContainsKey(key))
-                    deletedRowIds.Add(key);
+                {
+                    if (idMap.TryGetValue(key, out var sids) && sids.RowServerId != null)
+                        deletedRowServerIds.Add(sids.RowServerId);
+                    else
+                        deletedRowIds.Add(key);
+                }
             }
 
             // 无变更则只更新快照（静默）
-            if (changedRows.Count == 0 && deletedRowIds.Count == 0)
+            if (changedRows.Count == 0 && deletedRowIds.Count == 0 && deletedRowServerIds.Count == 0)
             {
                 _rowSnapshots[p.Id] = currentJson;
                 return;
             }
 
-            bool ok = await SendRowPushAsync(p.ServerId!, changedRows, deletedRowIds, settings);
+            bool ok = await SendRowPushAsync(p.ServerId!, changedRows, deletedRowIds, deletedRowServerIds, settings);
             if (ok)
             {
                 _rowSnapshots[p.Id] = currentJson;
             }
         }
 
+        /// <summary>组装单行推送载荷：GUID 保留为新行临时身份/兜底，已缓存的 serverId 一并携带（服务端优先主键寻址）</summary>
+        private static Dictionary<string, object> BuildRowPayload(string rowGuid, string rowType, JObject content,
+            Dictionary<string, (string? RowServerId, string? DataServerId)> idMap)
+        {
+            var rowObj = new Dictionary<string, object>
+            {
+                ["rowId"] = rowGuid,
+                ["dataId"] = rowGuid,
+                ["rowType"] = rowType,
+                ["content"] = content,
+                ["updatedAt"] = DateTime.Now.ToString("o")
+            };
+            if (idMap.TryGetValue(rowGuid, out var sids))
+            {
+                if (sids.RowServerId != null) rowObj["rowServerId"] = sids.RowServerId;
+                if (sids.DataServerId != null) rowObj["dataServerId"] = sids.DataServerId;
+            }
+            return rowObj;
+        }
+
         /// <summary>推送行级变更载荷到服务端；成功返回 true</summary>
-        private async Task<bool> SendRowPushAsync(string serverId, List<object> changedRows, List<string> deletedRowIds, Settings settings)
+        private async Task<bool> SendRowPushAsync(string serverId, List<Dictionary<string, object>> changedRows,
+            List<string> deletedRowIds, List<string> deletedRowServerIds, Settings settings)
         {
             try
             {
-                var payload = new { itemServerId = serverId, rows = changedRows, deletedRowIds };
+                var payload = new { itemServerId = serverId, rows = changedRows, deletedRowIds, deletedRowServerIds };
                 string json = NJson.JsonConvert.SerializeObject(payload);
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 行级推送 POST {RowPushEndpoint}: {changedRows.Count} 行变更, {deletedRowIds.Count} 行删除");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] 行级推送 POST {RowPushEndpoint}: {changedRows.Count} 行变更, {deletedRowServerIds.Count} 行主键删除, {deletedRowIds.Count} 行 GUID 兜底删除");
                 System.Diagnostics.Debug.WriteLine($"[CloudSync] 行级推送载荷: {json.Substring(0, Math.Min(json.Length, 500))}");
 
                 using var content = new StringContent(json, Encoding.UTF8, "application/json");
@@ -966,7 +1075,31 @@ namespace SideDesk.Services
                     if (bizCode != 200)
                     {
                         System.Diagnostics.Debug.WriteLine($"[CloudSync] 行级推送被业务层拒绝: code={bizCode}, msg={root["msg"]}");
+                        // 「模块不存在」：服务端模块被对账软删而本地仍存在（多窗口/多设备上报竞态）。
+                        // 触发一次全量结构同步，服务端 processItems 会复活该模块；行数据不丢，后续推送重试即可成功。
+                        // 60 秒节流，避免多个面板同时被拒时连环触发全量同步
+                        if (root["msg"]?.ToString() == "模块不存在"
+                            && (DateTime.UtcNow - _lastHealSyncUtc).TotalSeconds > 60)
+                        {
+                            _lastHealSyncUtc = DateTime.UtcNow;
+                            _ = SyncNowAsync(silent: true);
+                        }
                         return false;
+                    }
+
+                    // 回填服务端返回的行主键映射：后续更新/删除即可改走 serverId 寻址
+                    if (root["data"]?["rowIds"] is JObject rowIds)
+                    {
+                        var entries = new List<(string, string?, string?)>();
+                        foreach (var prop in rowIds.Properties())
+                        {
+                            string? rsid = prop.Value["rowServerId"]?.ToString();
+                            string? dsid = prop.Value["dataServerId"]?.ToString();
+                            if (!string.IsNullOrEmpty(prop.Name) && (rsid != null || dsid != null))
+                                entries.Add((prop.Name, rsid, dsid));
+                        }
+                        if (entries.Count > 0)
+                            SideDesk.Services.LocalDbService.SaveRowServerIds(entries);
                     }
                 }
                 catch { /* 响应解析失败时保持原有 HTTP 状态码判定结果 */ }
@@ -1032,30 +1165,36 @@ namespace SideDesk.Services
             }
 
             string rowType = RowChangeTracker.GetRowType(group[0].Type);
-            var changedRows = new List<object>();
+
+            // 查询相关行的缓存服务端 ID：更新/删除优先走 serverId 寻址
+            var idMap = SideDesk.Services.LocalDbService.GetRowServerIds(
+                mergedRows.Keys.Concat(oldUnion.Keys));
+
+            var changedRows = new List<Dictionary<string, object>>();
             foreach (var kv in mergedRows)
             {
                 if (!oldUnion.TryGetValue(kv.Key, out var oldRow) || !JToken.DeepEquals(oldRow, kv.Value))
-                {
-                    changedRows.Add(new
-                    {
-                        rowId = kv.Key,
-                        dataId = kv.Key,
-                        rowType,
-                        content = kv.Value,
-                        updatedAt = DateTime.Now.ToString("o")
-                    });
-                }
+                    changedRows.Add(BuildRowPayload(kv.Key, rowType, kv.Value, idMap));
             }
-            var deletedRowIds = oldUnion.Keys.Where(k => !mergedRows.ContainsKey(k)).ToList();
 
-            if (changedRows.Count == 0 && deletedRowIds.Count == 0)
+            // 删除：已缓存 serverId → 服务端主键删除；否则 GUID 兜底
+            var deletedRowIds = new List<string>();
+            var deletedRowServerIds = new List<string>();
+            foreach (var key in oldUnion.Keys.Where(k => !mergedRows.ContainsKey(k)))
+            {
+                if (idMap.TryGetValue(key, out var sids) && sids.RowServerId != null)
+                    deletedRowServerIds.Add(sids.RowServerId);
+                else
+                    deletedRowIds.Add(key);
+            }
+
+            if (changedRows.Count == 0 && deletedRowIds.Count == 0 && deletedRowServerIds.Count == 0)
             {
                 AlignSiblingGroup(group, mergedRows); // 无变更：也对齐各视图数据与快照
                 return;
             }
 
-            bool ok = await SendRowPushAsync(group[0].ServerId!, changedRows, deletedRowIds, settings);
+            bool ok = await SendRowPushAsync(group[0].ServerId!, changedRows, deletedRowIds, deletedRowServerIds, settings);
             if (ok)
                 AlignSiblingGroup(group, mergedRows);
             // 推送失败时不对齐：下次同步会基于原快照重新计算差异并重试
@@ -1108,7 +1247,8 @@ namespace SideDesk.Services
         /// </summary>
         public async Task PullAllRowsAsync(WindowConfigManager mgr, Settings settings)
         {
-            if (string.IsNullOrEmpty(settings.AccountToken)) return;
+            // 未开启云同步：不从服务器拉取行级数据
+            if (!settings.EnableCloudSync || string.IsNullOrEmpty(settings.AccountToken)) return;
 
             bool anyChanged = false;
             foreach (var win in mgr.Windows)
@@ -1134,7 +1274,7 @@ namespace SideDesk.Services
         {
             var app = (SideDesk.App)System.Windows.Application.Current;
             var settings = app.AppSettings;
-            if (string.IsNullOrEmpty(settings.AccountToken)) return false;
+            if (!settings.EnableCloudSync || string.IsNullOrEmpty(settings.AccountToken)) return false;
             bool changed = await PullPanelRows(p, settings, forceFull: true).ConfigureAwait(false);
             if (changed)
                 System.Windows.Application.Current?.Dispatcher?.Invoke(() => app.WindowConfigs.Save());
@@ -1146,7 +1286,7 @@ namespace SideDesk.Services
         {
             var app = (SideDesk.App)System.Windows.Application.Current;
             var settings = app.AppSettings;
-            if (string.IsNullOrEmpty(settings.AccountToken)) return false;
+            if (!settings.EnableCloudSync || string.IsNullOrEmpty(settings.AccountToken)) return false;
             bool changed = await PullPanelRows(p, settings, fullMerge: true).ConfigureAwait(false);
             if (changed)
                 System.Windows.Application.Current?.Dispatcher?.Invoke(() => app.WindowConfigs.Save());
@@ -1179,13 +1319,33 @@ namespace SideDesk.Services
                 if (!forceFull && rowsArr.Count == 0) return false;
 
                 // 合并行数据到本地列表（全量拉取时整体替换）
-                return MergeRowsIntoPanel(p, rowsArr, replaceAll: forceFull);
+                bool merged = MergeRowsIntoPanel(p, rowsArr, replaceAll: forceFull);
+                CacheRowServerIds(rowsArr);
+                return merged;
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[CloudSync] 行级拉取失败 ({p.Type}): {ex.Message}");
                 return false;
             }
+        }
+
+        /// <summary>拉取回写：将服务端返回的行主键 ID（rowServerId/dataServerId）缓存到本地 SQLite，
+        /// 供后续行级操作（如按服务端主键精确删除）直接使用。</summary>
+        public static void CacheRowServerIds(Newtonsoft.Json.Linq.JArray rowsArr)
+        {
+            var entries = new List<(string, string?, string?)>();
+            foreach (var r in rowsArr.OfType<Newtonsoft.Json.Linq.JObject>())
+            {
+                string? rowUid = r["rowId"]?.ToString();
+                if (string.IsNullOrEmpty(rowUid)) continue;
+                string? rowServerId = r["rowServerId"]?.Type == Newtonsoft.Json.Linq.JTokenType.String ? r["rowServerId"]?.ToString() : null;
+                string? dataServerId = r["dataServerId"]?.Type == Newtonsoft.Json.Linq.JTokenType.String ? r["dataServerId"]?.ToString() : null;
+                if (rowServerId == null && dataServerId == null) continue;
+                entries.Add((rowUid!, rowServerId, dataServerId));
+            }
+            if (entries.Count > 0)
+                SideDesk.Services.LocalDbService.SaveRowServerIds(entries);
         }
 
         /// <summary>将服务端行数据合并到本地模块列表（增/改/删）；replaceAll=true 时以服务端结果整体替换（全量拉取/分享取消刷新）</summary>
@@ -1301,6 +1461,41 @@ namespace SideDesk.Services
                 case PanelType.FileArea:
                     p.FileItems = NJson.JsonConvert.DeserializeObject<List<FileAreaItem>>(json) ?? new();
                     break;
+                case PanelType.Pomodoro:
+                    var pomodoros = NJson.JsonConvert.DeserializeObject<List<PomodoroSettings>>(json);
+                    if (pomodoros != null && pomodoros.Count > 0)
+                    {
+                        var incoming = pomodoros[0];
+                        // 远端行不含运行状态：保留本地计时状态，避免同步拉取/对齐打断当前计时
+                        if (p.Pomodoro != null)
+                        {
+                            incoming.Mode = p.Pomodoro.Mode;
+                            incoming.RemainingSeconds = p.Pomodoro.RemainingSeconds;
+                            incoming.IsRunning = p.Pomodoro.IsRunning;
+                            incoming.StartTime = p.Pomodoro.StartTime;
+                        }
+                        else
+                        {
+                            // 首次拉取（如导入分享）：剩余时间对齐时长配置，避免停留在默认值
+                            incoming.RemainingSeconds = incoming.GetModeTotalSeconds();
+                        }
+                        p.Pomodoro = incoming;
+                    }
+                    break;
+                case PanelType.DataDashboard:
+                    p.DashboardItems = NJson.JsonConvert.DeserializeObject<List<DataDashboardItem>>(json) ?? new();
+                    break;
+                case PanelType.DigitalEmployee:
+                    var deRows = NJson.JsonConvert.DeserializeObject<List<DigitalEmployeeRow>>(json) ?? new();
+                    p.DigitalEmployeeIds = deRows.Select(r => r.EmployeeId).Where(s => !string.IsNullOrEmpty(s)).ToList();
+                    break;
+                case PanelType.Friend:
+                    var fuRows = NJson.JsonConvert.DeserializeObject<List<FriendUserRow>>(json) ?? new();
+                    p.FriendUserIds = fuRows.Select(r => r.UserId).Where(s => !string.IsNullOrEmpty(s)).ToList();
+                    break;
+                case PanelType.QuickGroup:
+                    p.QuickItems = NJson.JsonConvert.DeserializeObject<List<QuickItem>>(json) ?? new();
+                    break;
             }
         }
 
@@ -1376,7 +1571,7 @@ namespace SideDesk.Services
             [NJson.JsonProperty("name")] public string Name { get; set; } = "";
             [NJson.JsonProperty("bgColor")] public string? BGColor { get; set; }
             [NJson.JsonProperty("ownerType")] public string? OwnerType { get; set; }  // 归属类型: personal/team
-            [NJson.JsonProperty("corpId")] public int? CorpId { get; set; }           // 所属团队ID
+            [NJson.JsonProperty("corpId")] public string? CorpId { get; set; }           // 所属团队ID（服务端加密串，后端解析）
             [NJson.JsonProperty("items")] public List<SyncItem> Items { get; set; } = new();
         }
 
@@ -1388,7 +1583,7 @@ namespace SideDesk.Services
             [NJson.JsonProperty("type")] public string Type { get; set; } = "";
             [NJson.JsonProperty("title")] public string? Title { get; set; }
             [NJson.JsonProperty("bgColor")] public string? BGColor { get; set; }
-            [NJson.JsonProperty("corpId")] public int? CorpId { get; set; }           // 所属团队ID（>0=团队，null=个人）
+            [NJson.JsonProperty("corpId")] public string? CorpId { get; set; }           // 所属团队ID（服务端加密串，null=个人）
             [NJson.JsonProperty("data")] public JObject Data { get; set; } = new();
             [NJson.JsonProperty("items")] public List<SyncItem>? Items { get; set; }
         }
@@ -1400,7 +1595,7 @@ namespace SideDesk.Services
             [NJson.JsonProperty("varKey")] public string VarKey { get; set; } = "";
             [NJson.JsonProperty("varValue")] public string? VarValue { get; set; }
             [NJson.JsonProperty("label")] public string? Label { get; set; }
-            [NJson.JsonProperty("corpId")] public int? CorpId { get; set; }  // 团队ID（null=个人）
+            [NJson.JsonProperty("corpId")] public string? CorpId { get; set; }  // 团队ID（服务端加密串，null=个人）
         }
 
         /// <summary>云同步上传的数据看板数据项配置 DTO（名称/网址/选择器/间隔/浏览器/团队归属）。</summary>
@@ -1414,7 +1609,7 @@ namespace SideDesk.Services
             [NJson.JsonProperty("browserId")] public string? BrowserId { get; set; }
             [NJson.JsonProperty("profileId")] public string? ProfileId { get; set; }
             [NJson.JsonProperty("templateId")] public string? TemplateId { get; set; }
-            [NJson.JsonProperty("corpId")] public int? CorpId { get; set; }  // 团队ID（null=个人）
+            [NJson.JsonProperty("corpId")] public string? CorpId { get; set; }  // 团队ID（服务端加密串，null=个人）
         }
 
         private static readonly NJson.JsonSerializerSettings _syncPayloadSettings = new()
@@ -1437,17 +1632,21 @@ namespace SideDesk.Services
             foreach (var win in mgr.Windows)
                 bars.Add(BuildSyncBar(win, emittedServerIds));
 
-            // 收集所有数据看板变量（设置了变量名的数据项）
+            // 收集所有数据看板变量（设置了变量名的数据项；含不绑定面板的后台数据项）
             var variables = new List<SyncVariable>();
             foreach (var win in mgr.Windows)
                 foreach (var p in win.Panels)
                     CollectVariables(p, variables);
+            foreach (var di in mgr.BackgroundDashboardItems)
+                CollectVariableFromItem(di, variables);
 
-            // 收集所有数据看板数据项配置（全量，后端结构化记录）
+            // 收集所有数据看板数据项配置（全量，后端结构化记录；含后台数据项）
             var dataItems = new List<SyncDataItem>();
             foreach (var win in mgr.Windows)
                 foreach (var p in win.Panels)
                     CollectDataItems(p, dataItems);
+            foreach (var di in mgr.BackgroundDashboardItems)
+                CollectDataItemFromItem(di, dataItems);
 
             // 当前选中的团队 ID（个人模式为 null，由后端自行处理）
             string? corpId = null;
@@ -1477,55 +1676,59 @@ namespace SideDesk.Services
         private static void CollectVariables(PanelItem p, List<SyncVariable> vars)
         {
             if (p.DashboardItems != null)
-            {
                 foreach (var di in p.DashboardItems)
-                {
-                    if (string.IsNullOrEmpty(di.VarKey)) continue;
-                    var v = new SyncVariable
-                    {
-                        ItemLocalId = di.Id,
-                        VarKey = di.VarKey,
-                        VarValue = di.Value,
-                        Label = di.Label,
-                    };
-                    // 团队ID：数据项归属的团队（个人则为 null）
-                    if (!string.IsNullOrEmpty(di.TeamId) && int.TryParse(di.TeamId, out var cid))
-                        v.CorpId = cid;
-                    vars.Add(v);
-                }
-            }
+                    CollectVariableFromItem(di, vars);
             if (p.ChildPanels != null)
                 foreach (var c in p.ChildPanels)
                     CollectVariables(c, vars);
+        }
+
+        /// <summary>将单个设置了变量名的数据项转为 SyncVariable（面板项与后台数据项共用）。</summary>
+        private static void CollectVariableFromItem(DataDashboardItem di, List<SyncVariable> vars)
+        {
+            if (string.IsNullOrEmpty(di.VarKey)) return;
+            var v = new SyncVariable
+            {
+                ItemLocalId = di.Id,
+                VarKey = di.VarKey,
+                VarValue = di.Value,
+                Label = di.Label,
+            };
+            // 团队ID：数据项归属的团队（服务端加密串，个人则为 null）
+            if (!string.IsNullOrEmpty(di.TeamId))
+                v.CorpId = di.TeamId;
+            vars.Add(v);
         }
 
         /// <summary>递归收集面板（含分组子面板）内所有数据看板数据项的配置，转为 SyncDataItem。</summary>
         private static void CollectDataItems(PanelItem p, List<SyncDataItem> items)
         {
             if (p.DashboardItems != null)
-            {
                 foreach (var di in p.DashboardItems)
-                {
-                    var it = new SyncDataItem
-                    {
-                        ItemLocalId = di.Id,
-                        Label = di.Label,
-                        TargetUrl = di.TargetUrl,
-                        Selector = di.Selector,
-                        RefreshInterval = di.RefreshIntervalSeconds,
-                        BrowserId = di.BrowserId,
-                        ProfileId = di.ProfileId,
-                        TemplateId = di.TemplateId,
-                    };
-                    // 团队ID：数据项归属的团队（个人则为 null）
-                    if (!string.IsNullOrEmpty(di.TeamId) && int.TryParse(di.TeamId, out var cid))
-                        it.CorpId = cid;
-                    items.Add(it);
-                }
-            }
+                    CollectDataItemFromItem(di, items);
             if (p.ChildPanels != null)
                 foreach (var c in p.ChildPanels)
                     CollectDataItems(c, items);
+        }
+
+        /// <summary>将单个数据看板数据项配置转为 SyncDataItem（面板项与后台数据项共用）。</summary>
+        private static void CollectDataItemFromItem(DataDashboardItem di, List<SyncDataItem> items)
+        {
+            var it = new SyncDataItem
+            {
+                ItemLocalId = di.Id,
+                Label = di.Label,
+                TargetUrl = di.TargetUrl,
+                Selector = di.Selector,
+                RefreshInterval = di.RefreshIntervalSeconds,
+                BrowserId = di.BrowserId,
+                ProfileId = di.ProfileId,
+                TemplateId = di.TemplateId,
+            };
+            // 团队ID：数据项归属的团队（服务端加密串，个人则为 null）
+            if (!string.IsNullOrEmpty(di.TeamId))
+                it.CorpId = di.TeamId;
+            items.Add(it);
         }
 
         /// <summary>将单个窗口配置转为 SyncBar（含其全部模块）。</summary>
@@ -1533,8 +1736,9 @@ namespace SideDesk.Services
         {
             emittedServerIds ??= new HashSet<string>();
             var bar = new SyncBar { LocalId = win.Id, ServerId = win.ServerId, Name = win.Name, BGColor = win.BGColor, OwnerType = win.OwnerType != "personal" ? win.OwnerType : null };
-            if (win.OwnerType == "team" && !string.IsNullOrEmpty(win.CorpId) && int.TryParse(win.CorpId, out var cid))
-                bar.CorpId = cid;
+            // 团队 ID 为服务端加密串，直接透传，由后端解析
+            if (win.OwnerType == "team" && !string.IsNullOrEmpty(win.CorpId))
+                bar.CorpId = win.CorpId;
             foreach (var p in win.Panels)
             {
                 var item = BuildSyncItem(p, isInsideGroup: false, emittedServerIds);
@@ -1558,9 +1762,9 @@ namespace SideDesk.Services
                 BGColor = p.BGColor ?? p.GroupBGColor,
                 Data = BuildItemData(p)
             };
-            // 团队归属时附带团队 ID（corpId>0 即代表团队）
-            if (p.OwnerType == "team" && !string.IsNullOrEmpty(p.TeamId) && int.TryParse(p.TeamId, out var cid))
-                item.CorpId = cid;
+            // 团队归属时附带团队 ID（服务端加密串，后端解析）
+            if (p.OwnerType == "team" && !string.IsNullOrEmpty(p.TeamId))
+                item.CorpId = p.TeamId;
 
             if (!isInsideGroup && p.Type == PanelType.Group && p.ChildPanels is { Count: > 0 })
             {
@@ -1593,6 +1797,11 @@ namespace SideDesk.Services
             jo.Remove("SignalLights");
             jo.Remove("ClipboardItems");
             jo.Remove("FileItems");
+            jo.Remove("Pomodoro");
+            jo.Remove("DashboardItems");
+            jo.Remove("DigitalEmployeeIds");
+            jo.Remove("FriendUserIds");
+            jo.Remove("QuickItems");
 
             foreach (var prop in jo.Properties().Where(pr => pr.Value.Type == JTokenType.Null).ToList())
                 prop.Remove();
@@ -1935,6 +2144,21 @@ namespace SideDesk.Services
                     System.Diagnostics.Debug.WriteLine($"[Backup] 写回 {prop.Name} 失败: {ex.Message}");
                 }
             }
+
+            // 窗口配置主存储已改为 SQLite：若备份写回了 windows.json，需重新导入 sidedesk.db，
+            // 否则重启后仍读旧 db，恢复不生效
+            try
+            {
+                string windowsJson = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "SideDesk", "windows.json");
+                if (File.Exists(windowsJson))
+                    LocalDbService.ReimportJsonIfExists(windowsJson);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Backup] 重新导入 windows.json 到 SQLite 失败: {ex.Message}");
+            }
             return count;
         }
 
@@ -2015,9 +2239,9 @@ namespace SideDesk.Services
         /// 推送资源排序到服务端。
         /// resourceType: "bar" / "item" / "row"
         /// serverIds: 按当前顺序排列的加密服务端 ID 列表
-        /// corpId: 团队模块行调序时传入（user_id 置 0，全团队共享顺序）
+        /// corpId: 团队模块行调序时传入（团队加密串，user_id 置 0，全团队共享顺序）
         /// </summary>
-        public async Task PushResourcePosAsync(string resourceType, List<string> serverIds, int corpId = 0)
+        public async Task PushResourcePosAsync(string resourceType, List<string> serverIds, string? corpId = null)
         {
             var app = (SideDesk.App)System.Windows.Application.Current;
             var settings = app.AppSettings;
@@ -2066,9 +2290,10 @@ namespace SideDesk.Services
             {
                 // 构建与全量同步一致的 item 载荷（去除列表数据）
                 var itemData = BuildItemData(item);
-                int? corpId = null;
-                if (item.OwnerType == "team" && !string.IsNullOrEmpty(item.TeamId) && int.TryParse(item.TeamId, out var cid))
-                    corpId = cid;
+                // 团队 ID 为服务端加密串，直接透传，由后端解析
+                string? corpId = null;
+                if (item.OwnerType == "team" && !string.IsNullOrEmpty(item.TeamId))
+                    corpId = item.TeamId;
 
                 var payload = new
                 {

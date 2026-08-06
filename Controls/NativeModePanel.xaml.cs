@@ -91,6 +91,7 @@ namespace SideDesk.Controls
 
         // 对话框实例
         private AIChatDialog? _aiChatDialog;
+        private SideDesk.Windows.AIChatWebWindow? _aiChatWebWindow;
         private WindowUsagePanel? _windowUsagePanel;
 
         /// <summary>请求主窗口调整宽度</summary>
@@ -221,6 +222,8 @@ namespace SideDesk.Controls
         /// <summary>外部触发重新渲染面板（例如设置变更后）。</summary>
         public void RefreshLayout() => RenderPanels();
 
+        private Emoji.Wpf.TextBlock? _pinnedPlaceholder; // 置顶区编辑模式占位提示（复用实例，避免重复创建）
+
         private void RenderPanels()
         {
             dynamicContent.Children.Clear();
@@ -242,9 +245,6 @@ namespace SideDesk.Controls
             // 行级同步：通知 CloudSyncService 数据可能变更（防抖 2s 后自动推送）
             Services.CloudSyncService.Instance.NotifyRowsChanged();
 
-            // 确保每个「快捷方式」面板 1:1 绑定到唯一分组，避免多个面板渲染同一份数据
-            EnsureQuickGroupBindings();
-
             bool hasPinned = false;
             foreach (var panel in _currentWindowConfig.Panels)
             {
@@ -265,21 +265,9 @@ namespace SideDesk.Controls
                     }
                 }
 
-                var widget = CreatePanelWidget(panel);
+                var widget = BuildPanelWidget(panel);
                 if (widget != null)
                 {
-                    // 未走 WrapWidget 的自定义卡片模块，在顶层统一附加可调高能力（编辑模式显示拖拽手柄）
-                    if (widget is FrameworkElement wfe && wfe.Uid != "wrapHandled")
-                        widget = WrapResizable(wfe, panel);
-
-                    // 标记面板 Id（供右键位置插入计算）；编辑模式下额外挂载拖拽调序手柄
-                    if (widget is FrameworkElement fe)
-                    {
-                        fe.Tag = panel.Id;
-                        if (_isEditMode)
-                            AttachPanelDragHandlers(fe, panel);
-                    }
-
                     // 置顶模块渲染到置顶区（压缩下方滚动区高度），其余渲染到滚动区
                     if (panel.IsPinned)
                     {
@@ -293,21 +281,8 @@ namespace SideDesk.Controls
                 }
             }
 
-            // 置顶区：有置顶模块时显示；编辑模式下始终显示，方便将模块拖入置顶
-            pinnedArea.Visibility = (hasPinned || _isEditMode) ? Visibility.Visible : Visibility.Collapsed;
-            // 编辑模式且置顶区为空时显示占位提示（无 Tag，不参与拖拽索引计算）
-            if (_isEditMode && !hasPinned)
-            {
-                pinnedContent.Children.Add(new Emoji.Wpf.TextBlock
-                {
-                    Text = "📌 拖拽模块到此处可置顶",
-                    Foreground = (Brush)FindResource("BrushTextMuted"),
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    Margin = new Thickness(0, 4, 0, 2),
-                    FontSize = 12,
-                    Opacity = 0.6
-                });
-            }
+            // 置顶区可见性 + 编辑模式占位提示
+            SyncPinnedAreaVisibility(hasPinned);
 
             // 空窗口提示
             if (_currentWindowConfig.Panels.Count == 0)
@@ -331,88 +306,98 @@ namespace SideDesk.Controls
             }
         }
 
-        /// <summary>
-        /// 确保当前窗口配置内每个「快捷方式」面板都 1:1 绑定到唯一且存在的分组。
-        /// 迁移策略：未绑定/绑定失效/重复绑定的面板，按声明顺序依次绑定到尚未被占用的现有分组；
-        /// 现有分组用完后，为每个多出的面板新建一个空分组。数据不丢失，各面板数据独立隔离。
-        /// </summary>
-        private void EnsureQuickGroupBindings()
+        /// <summary>构建单个面板的可渲染 widget（可调高包装 + 面板 Id 标记 + 编辑模式拖拽手柄），供全量/增量渲染复用</summary>
+        private UIElement? BuildPanelWidget(PanelItem panel)
         {
-            if (_currentWindowConfig == null) return;
+            var widget = CreatePanelWidget(panel);
+            if (widget == null) return null;
 
-            // 递归收集所有快捷方式面板（含嵌套分组的子面板），保持声明顺序
-            var quickPanels = new List<PanelItem>();
-            void Collect(List<PanelItem> panels)
+            // 未走 WrapWidget 的自定义卡片模块，在顶层统一附加可调高能力（编辑模式显示拖拽手柄）
+            if (widget is FrameworkElement wfe && wfe.Uid != "wrapHandled")
+                widget = WrapResizable(wfe, panel);
+
+            // 标记面板 Id（供右键位置插入计算）；编辑模式下额外挂载拖拽调序手柄
+            if (widget is FrameworkElement fe)
             {
-                foreach (var p in panels)
-                {
-                    if (p.Type == PanelType.QuickGroup) quickPanels.Add(p);
-                    if (p.ChildPanels != null) Collect(p.ChildPanels);
-                }
+                fe.Tag = panel.Id;
+                if (_isEditMode)
+                    AttachPanelDragHandlers(fe, panel);
             }
-            Collect(_currentWindowConfig.Panels);
-            if (quickPanels.Count == 0) return;
+            return widget;
+        }
 
-            var allGroups = QuickGroupManager.GetAll();
-            var existingIds = new HashSet<string>(allGroups.Select(g => g.Id));
-            var usedIds = new HashSet<string>();
-            bool changed = false;
-
-            // 预占：其他窗口配置中已绑定的分组，保证跨窗口也不共享同一分组
-            if (_configManager != null)
+        /// <summary>当前配置是否存在置顶面板（含分组内被置顶的子面板）</summary>
+        private bool AnyPinnedPanels()
+        {
+            if (_currentWindowConfig == null) return false;
+            foreach (var p in _currentWindowConfig.Panels)
             {
-                void CollectUsed(List<PanelItem> panels)
+                if (p.IsPinned) return true;
+                if (p.Type == PanelType.Group && p.ChildPanels != null && p.ChildPanels.Any(c => c.IsPinned)) return true;
+            }
+            return false;
+        }
+
+        /// <summary>同步置顶区可见性：有置顶模块时显示；编辑模式下始终显示（空时附占位提示，方便拖入置顶）</summary>
+        private void SyncPinnedAreaVisibility(bool hasPinned)
+        {
+            pinnedArea.Visibility = (hasPinned || _isEditMode) ? Visibility.Visible : Visibility.Collapsed;
+            if (_isEditMode && !hasPinned)
+            {
+                if (_pinnedPlaceholder == null)
                 {
-                    foreach (var p in panels)
+                    _pinnedPlaceholder = new Emoji.Wpf.TextBlock
                     {
-                        if (p.Type == PanelType.QuickGroup && !string.IsNullOrEmpty(p.GroupId) && existingIds.Contains(p.GroupId!))
-                            usedIds.Add(p.GroupId!);
-                        if (p.ChildPanels != null) CollectUsed(p.ChildPanels);
-                    }
+                        Text = "📌 拖拽模块到此处可置顶",
+                        Foreground = (Brush)FindResource("BrushTextMuted"),
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        Margin = new Thickness(0, 4, 0, 2),
+                        FontSize = 12,
+                        Opacity = 0.6
+                    };
                 }
-                foreach (var win in _configManager.Windows)
+                if (!pinnedContent.Children.Contains(_pinnedPlaceholder))
+                    pinnedContent.Children.Add(_pinnedPlaceholder);
+            }
+            else if (_pinnedPlaceholder != null)
+            {
+                pinnedContent.Children.Remove(_pinnedPlaceholder);
+            }
+        }
+
+        /// <summary>
+        /// 增量插入新增的顶层面板 widget：不重建已有模块，保留滚动位置与各面板运行状态。
+        /// panelIndex 为面板在 Panels 中的下标（AddPanelToGroupOrTop 返回）。
+        /// </summary>
+        private void InsertPanelWidgetIncremental(PanelItem panel, int panelIndex)
+        {
+            var widget = BuildPanelWidget(panel);
+            if (widget == null) { RenderPanels(); return; } // 构建失败兜底全量重绘
+
+            if (panel.IsPinned)
+            {
+                pinnedContent.Children.Add(widget);
+            }
+            else
+            {
+                // 首个模块加入时，滚动区里只有“右键添加模块”空态占位，先清掉
+                if (_currentWindowConfig != null && _currentWindowConfig.Panels.Count == 1)
+                    dynamicContent.Children.Clear();
+
+                // 滚动区实际插入位置 = 排在前面的非置顶面板数（置顶面板渲染在置顶区）
+                int childIndex = 0;
+                if (_currentWindowConfig != null)
                 {
-                    if (win == _currentWindowConfig) continue; // 当前窗口由下方两轮处理
-                    CollectUsed(win.Panels);
+                    for (int i = 0; i < panelIndex && i < _currentWindowConfig.Panels.Count; i++)
+                        if (!_currentWindowConfig.Panels[i].IsPinned) childIndex++;
                 }
+                if (childIndex > dynamicContent.Children.Count) childIndex = dynamicContent.Children.Count;
+                dynamicContent.Children.Insert(childIndex, widget);
             }
 
-            // Pass 1：保留已有效且唯一的绑定
-            var pending = new List<PanelItem>();
-            foreach (var p in quickPanels)
-            {
-                if (!string.IsNullOrEmpty(p.GroupId) && existingIds.Contains(p.GroupId!) && usedIds.Add(p.GroupId!))
-                    continue; // 有效绑定，保留
-                pending.Add(p);
-            }
-
-            // Pass 2：为未解析面板分配分组——先用现有未占用分组，用完再新建空分组
-            var available = allGroups.Where(g => !usedIds.Contains(g.Id)).ToList();
-            int idx = 0;
-            foreach (var p in pending)
-            {
-                string gid;
-                if (idx < available.Count)
-                {
-                    gid = available[idx].Id;
-                    idx++;
-                }
-                else
-                {
-                    var ng = new QuickGroup { Name = "快捷分组", Columns = 2 };
-                    QuickGroupManager.AddGroup(ng);
-                    gid = ng.Id;
-                }
-                p.GroupId = gid;
-                usedIds.Add(gid);
-                changed = true;
-            }
-
-            if (changed)
-            {
-                QuickGroupManager.Save();
-                _configManager?.Save();
-            }
+            SyncPinnedAreaVisibility(AnyPinnedPanels());
+            if (_teleportedWindows.Count > 0)
+                UpdateTeleportWidget();
         }
 
         /// <summary>
@@ -451,14 +436,16 @@ namespace SideDesk.Controls
         /// <summary>
         /// 通用面板包裹器：基于 ModuleControl 基础组件，提供统一的标题、菜单、外框、拖拽能力
         /// </summary>
-        private UIElement WrapWidget(string defaultTitle, UIElement content, PanelItem item, Action? onAddClick = null, ContextMenu? actionMenu = null)
+        private UIElement WrapWidget(string defaultTitle, UIElement content, PanelItem item, Action? onAddClick = null, ContextMenu? actionMenu = null, string addMenuHeader = "添加")
         {
             var module = CreateModuleControl(defaultTitle, item);
 
-            // 将 onAddClick 转为自定义菜单项
-            if (onAddClick != null && !_isEditMode)
+            // 将 onAddClick 转为自定义菜单项（编辑模式下也保留：
+            // 否则新建模块自动进入编辑模式后，用户找不到“向当前模块添加内容”的入口，
+            // 只能走右键菜单重新新建一个同类模块）
+            if (onAddClick != null)
             {
-                var addMi = new MenuItem { Header = "添加" };
+                var addMi = new MenuItem { Header = addMenuHeader };
                 addMi.Click += (s, e) => onAddClick();
                 module.AddCustomMenuItem(addMi);
             }
@@ -485,6 +472,23 @@ namespace SideDesk.Controls
             return module;
         }
 
+        /// <summary>空状态提示文本：点击直接触发添加动作（透明背景覆盖整个区域，手型光标）</summary>
+        private UIElement BuildEmptyAddTip(string text, Action onAdd, Thickness? margin = null)
+        {
+            var tip = new Emoji.Wpf.TextBlock
+            {
+                Text = text,
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                Background = Brushes.Transparent, // 命中整个区域而非仅文字笔画
+                FontSize = 12,
+                Opacity = 0.7,
+                Margin = margin ?? new Thickness(2, 2, 0, 2),
+                Cursor = Cursors.Hand
+            };
+            tip.MouseLeftButtonUp += (s, e) => onAdd();
+            return tip;
+        }
+
         /// <summary>创建 ModuleControl 实例并注入回调</summary>
         private ModuleControl CreateModuleControl(string defaultTitle, PanelItem item, bool groupMode = false)
         {
@@ -493,16 +497,21 @@ namespace SideDesk.Controls
                 OnRenderPanels = () => RenderPanels(),
                 OnRemovePanel = (p) => RemovePanel(p),
                 OnShowSettings = (p, t) => ShowPanelSettingsDialog(p, t),
-                OnRenamePanel = (p, t) => PromptRenamePanel(p, t)
+                OnRenamePanel = (p, t) => PromptRenamePanel(p, t),
+                // 窗口级引用分享限制下发到每个模块（与模块自身限制叠加）
+                WindowEditBlocked = _currentWindowConfig?.IsShareReadOnly ?? false,
+                WindowDeleteBlocked = _currentWindowConfig?.IsShareDeleteBlocked ?? false
             };
 
-            // 模块级分享（已同步且有窗口 ServerId 时显示）
+            // 模块级分享（已同步且有窗口 ServerId 时显示；引用导入的模块需分享者授予再分享权限）
             var app = (App)Application.Current;
             if (!string.IsNullOrEmpty(item.ServerId)
                 && !string.IsNullOrEmpty(_currentWindowConfig?.ServerId)
-                && !string.IsNullOrEmpty(app.AppSettings.AccountToken))
+                && !string.IsNullOrEmpty(app.AppSettings.AccountToken)
+                && (item.ShareMode != "reference" || item.AllowReShare))
             {
-                var shareMi = new MenuItem { Header = "分享模块" };
+                // Tag=keepWhenReadOnly：只读模块若允许再分享，菜单项不被禁用
+                var shareMi = new MenuItem { Header = "分享模块", Tag = "keepWhenReadOnly" };
                 shareMi.Click += (_, _) => ShareModule_Click(item);
                 module.AddCustomMenuItem(shareMi);
             }
@@ -801,24 +810,44 @@ namespace SideDesk.Controls
             var dialog = new System.Windows.Window
             {
                 Title = "分享模块",
-                Width = 320, Height = 340,
+                Width = 320,
+                SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Owner = Window.GetWindow(this),
-                ResizeMode = ResizeMode.NoResize
+                ResizeMode = ResizeMode.NoResize,
+                Background = (Brush)FindResource("BrushDialogBG"),
+                Foreground = (Brush)FindResource("BrushTextMain")
             };
+            dialog.SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(dialog, App.IsCurrentThemeLight());
+
+            var radioStyle = (Style)FindResource("DarkRadioButtonStyle");
+            var checkStyle = (Style)FindResource("DarkCheckBoxStyle");
 
             var panel = new StackPanel { Margin = new Thickness(20) };
-            panel.Children.Add(new TextBlock { Text = "选择分享模式：", FontSize = 13, Margin = new Thickness(0, 0, 0, 10) });
+            panel.Children.Add(new TextBlock
+            {
+                Text = "选择分享模式：",
+                FontSize = 12,
+                Foreground = (Brush)FindResource("BrushTextSec"),
+                Margin = new Thickness(0, 0, 0, 10)
+            });
 
-            var copyRadio = new RadioButton { Content = "复制（对方获得独立副本）", IsChecked = true, Margin = new Thickness(0, 0, 0, 6) };
-            var refRadio = new RadioButton { Content = "引用（对方看到你的实时数据）", Margin = new Thickness(0, 0, 0, 16) };
+            var copyRadio = new RadioButton { Content = "复制（对方获得独立副本）", Style = radioStyle, IsChecked = true, Margin = new Thickness(0, 0, 0, 8) };
+            var refRadio = new RadioButton { Content = "引用（对方看到你的实时数据）", Style = radioStyle, Margin = new Thickness(0, 0, 0, 16) };
             panel.Children.Add(copyRadio);
             panel.Children.Add(refRadio);
 
-            panel.Children.Add(new TextBlock { Text = "导入者权限：", FontSize = 13, Margin = new Thickness(0, 0, 0, 8) });
-            var cbEdit = new CheckBox { Content = "允许编辑", IsChecked = true, Margin = new Thickness(0, 0, 0, 6) };
-            var cbDelete = new CheckBox { Content = "允许删除", IsChecked = true, Margin = new Thickness(0, 0, 0, 6) };
-            var cbReShare = new CheckBox { Content = "允许再分享", IsChecked = false, Margin = new Thickness(0, 0, 0, 16) };
+            var permLabel = new TextBlock
+            {
+                Text = "导入者权限：",
+                FontSize = 12,
+                Foreground = (Brush)FindResource("BrushTextSec"),
+                Margin = new Thickness(0, 0, 0, 8)
+            };
+            panel.Children.Add(permLabel);
+            var cbEdit = new CheckBox { Content = "允许编辑", Style = checkStyle, IsChecked = true, Margin = new Thickness(0, 0, 0, 8) };
+            var cbDelete = new CheckBox { Content = "允许删除", Style = checkStyle, IsChecked = true, Margin = new Thickness(0, 0, 0, 8) };
+            var cbReShare = new CheckBox { Content = "允许再分享", Style = checkStyle, IsChecked = false, Margin = new Thickness(0, 0, 0, 16) };
             panel.Children.Add(cbEdit);
             panel.Children.Add(cbDelete);
             panel.Children.Add(cbReShare);
@@ -826,11 +855,25 @@ namespace SideDesk.Controls
             var confirmBtn = new Button
             {
                 Content = "创建分享链接",
-                Padding = new Thickness(16, 6, 16, 6),
-                HorizontalAlignment = HorizontalAlignment.Center
+                Style = (Style)FindResource("PrimaryButtonStyle"),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Cursor = Cursors.Hand
             };
             panel.Children.Add(confirmBtn);
             dialog.Content = panel;
+
+            // 分享模式与权限联动：
+            // 复制模式 —— 对方获得独立副本，权限固定为全部允许，整个权限区隐藏；
+            // 引用模式 —— 显示权限区，逐项可配，默认全部不选中
+            void ApplyShareMode(bool isCopy)
+            {
+                var vis = isCopy ? Visibility.Collapsed : Visibility.Visible;
+                permLabel.Visibility = cbEdit.Visibility = cbDelete.Visibility = cbReShare.Visibility = vis;
+                cbEdit.IsChecked = cbDelete.IsChecked = cbReShare.IsChecked = isCopy;
+            }
+            copyRadio.Checked += (_, _) => ApplyShareMode(true);
+            refRadio.Checked += (_, _) => ApplyShareMode(false);
+            ApplyShareMode(true);
 
             confirmBtn.Click += async (_, _) =>
             {
@@ -1086,6 +1129,7 @@ namespace SideDesk.Controls
                             DashboardItems = new List<DataDashboardItem> { customItem }
                         }, pendingGroupInsertIdx);
                         _configManager?.Save();
+                        if (_configManager != null) Services.DataPollingService.Instance.SyncFromConfigs(_configManager);
                         RenderPanels();
                     }
                 });
@@ -1157,7 +1201,8 @@ namespace SideDesk.Controls
             });
             var titleBox = new EmojiTextBox
             {
-                Text = item.Title ?? "",
+                // 未自定义标题的模块 Title 为 null，回退显示默认标题（与模块上实际显示的一致），避免空名称
+                Text = string.IsNullOrEmpty(item.Title) ? defaultTitle : item.Title,
                 Margin = new Thickness(0, 0, 0, 14)
             };
             root.Children.Add(titleBox);
@@ -1348,7 +1393,7 @@ namespace SideDesk.Controls
                 Content = "保存", Width = 75, MinHeight = 30, IsDefault = true,
                 Style = (Style)FindResource("StandardButtonStyle")
             };
-            saveBtn.Click += (s, e) =>
+            saveBtn.Click += async (s, e) =>
             {
                 item.Title = string.IsNullOrWhiteSpace(titleBox.Text) ? null : titleBox.Text.Trim();
                 item.BGColor = selectedColor;
@@ -1365,8 +1410,22 @@ namespace SideDesk.Controls
                     item.OwnerType = newOwnerType;
                     item.TeamId = newTeamId;
                     item.TeamName = newTeamName;
-                    // 实时推送归属变更到后端（fire-and-forget）
-                    _ = Services.CloudSyncService.Instance.UpdateItemOwnershipAsync(item);
+                }
+                // 团队模块每次保存都对齐服务端（修复历史脏数据：本地已是团队但服务器 corp_id 仍为空）；
+                // 个人模块仅在归属变化时推送；分组内子模块不在此补创建，留给全量同步
+                bool needSync = ownerChanged || item.OwnerType == "team";
+                if (needSync)
+                {
+                    var isTopLevel = _currentWindowConfig?.Panels.Contains(item) == true;
+                    var syncResult = await Services.CloudSyncService.Instance.UpdateItemOwnershipAsync(item,
+                        isTopLevel ? _currentWindowConfig : null);
+                    if (syncResult == false)
+                    {
+                        // 同步失败不阻断本地保存（下次全量同步会重试），但明确提示用户
+                        var err = Services.CloudSyncService.Instance.LastOwnershipError;
+                        MessageBox.Show($"归属已保存到本地，但同步服务器失败：\n{err}\n\n下次云同步时会再次尝试。",
+                            "同步提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
                 }
 
                 _configManager?.Save();
@@ -1480,55 +1539,29 @@ namespace SideDesk.Controls
 
         private UIElement BuildQuickGroupWidget(PanelItem item)
         {
+            // 快捷项数据为面板自有（原 quickgroups.json 已一次性迁入面板），每个快捷项走行级存储
+            item.QuickItems ??= new List<QuickItem>();
+
             var container = new StackPanel();
-
-            // 若面板未绑定特定分组（兼容旧数据），显示“+ 添加分组”按钮
-            if (string.IsNullOrEmpty(item.GroupId))
-            {
-                var addBtn = new Button
-                {
-                    Content = "+ 添加分组",
-                    Height = 28,
-                    Margin = new Thickness(0, 0, 0, 5),
-                    Cursor = Cursors.Hand,
-                    Visibility = _isEditMode ? Visibility.Visible : Visibility.Collapsed
-                };
-                addBtn.Click += (s, e) => _quickGroupUIService?.ShowAddMenu(addBtn);
-                container.Children.Add(addBtn);
-            }
-
-            // 分组列表
             _groupPanel = new StackPanel();
             container.Children.Add(_groupPanel);
 
-            // 初始化 QuickGroupUIService（同窗口存在多个快捷分组面板时，
+            // 初始化 QuickGroupUIService（同窗口存在多个快捷面板时，
             // 释放上一个面板服务的计时器，避免泄漏）
             _quickGroupUIService?.StopWatchers();
             _quickGroupUIService = new QuickGroupUIService(_groupPanel);
             _quickGroupUIService.OwnerWindow = _mainWindow;
+            _quickGroupUIService.OwnerWindowConfig = _currentWindowConfig;
 
-            // 1:1 绑定模式：分组删除时同时移除面板
-            if (!string.IsNullOrEmpty(item.GroupId))
+            // 分组删除时门面已移除对应面板，这里只需保存并重绘
+            _quickGroupUIService.OnGroupDeleted = (gid) =>
             {
-                _quickGroupUIService.OnGroupDeleted = (gid) =>
-                {
-                    _currentWindowConfig?.Panels.Remove(item);
-                    _configManager?.Save();
-                    RenderPanels();
-                };
-            }
+                _configManager?.Save();
+                RenderPanels();
+            };
 
-            if (!string.IsNullOrEmpty(item.GroupId))
-                _quickGroupUIService.LoadSingleGroup(item.GroupId);
-            else
-                _quickGroupUIService.LoadGroups();
-
-            // 1:1 绑定时不套 WrapWidget 外框，直接返回内容
-            if (!string.IsNullOrEmpty(item.GroupId))
-                return container;
-
-            // 兼容旧数据：无 GroupId 时用默认标题包裹
-            return WrapWidget("📁 快捷方式", container, item);
+            _quickGroupUIService.LoadSingleGroup(item.Id);
+            return container;
         }
 
         private UIElement BuildStickyNotesWidget(PanelItem item)
@@ -1544,8 +1577,8 @@ namespace SideDesk.Controls
             var notePanel = new StackPanel();
             container.Children.Add(notePanel);
 
-            // 渲染便签
-            RefreshPanelStickyNotes(notePanel, item);
+            // 渲染便签（空列表时点击提示可直接添加）
+            RefreshPanelStickyNotes(notePanel, item, AddNote);
 
             // 添加便签逻辑（用于 WrapWidget 的 onAddClick 回调）
             void AddNote()
@@ -1568,13 +1601,7 @@ namespace SideDesk.Controls
             // 已收藏列表
             if (item.ClipboardItems.Count == 0)
             {
-                container.Children.Add(new Emoji.Wpf.TextBlock
-                {
-                    Text = "（暂无收藏）",
-                    Foreground = (Brush)FindResource("BrushTextMuted"),
-                    FontSize = 11,
-                    Margin = new Thickness(4)
-                });
+                container.Children.Add(BuildEmptyAddTip("（暂无收藏，点击添加）", () => ShowClipboardPickDialog(item)));
             }
             else
             {
@@ -1826,18 +1853,9 @@ namespace SideDesk.Controls
                 container.Children.Add(CreateTodoRow(todo, item));
             }
 
-            // 空列表提示
+            // 空列表提示：点击直接弹出添加待办对话框
             if (item.TodoItems.Count == 0)
-            {
-                container.Children.Add(new Emoji.Wpf.TextBlock
-                {
-                    Text = "暂无待办，点击标题栏 + 添加",
-                    Foreground = (Brush)FindResource("BrushTextMuted"),
-                    FontSize = 12,
-                    Opacity = 0.7,
-                    Margin = new Thickness(2, 2, 0, 2)
-                });
-            }
+                container.Children.Add(BuildEmptyAddTip("暂无待办，点击添加", () => ShowTodoDialog(item)));
 
             if (item.SkipWrapper)
                 return container;
@@ -1903,7 +1921,7 @@ namespace SideDesk.Controls
             };
 
             var lightMenu = new ContextMenu();
-            var editMi = new MenuItem { Header = "编辑信号灯" };
+            var editMi = new MenuItem { Header = "设置信号灯" };
             // 需要找到对应的 PanelItem，通过遍历查找
             editMi.Click += (s, e) =>
             {
@@ -1991,7 +2009,8 @@ namespace SideDesk.Controls
 
             RenderLights();
 
-            return WrapWidget("🚦 信号灯", container, item, () => ShowSignalLightEditDialog(item));
+            // 每个信号灯模块只有一组灯（单个 PanelItem 内记录多个灯），菜单项用“设置信号灯”更达意
+            return WrapWidget("🚦 信号灯", container, item, () => ShowSignalLightEditDialog(item), null, "设置信号灯");
         }
 
         private void ShowSignalLightEditDialog(PanelItem item)
@@ -2000,7 +2019,7 @@ namespace SideDesk.Controls
 
             var dialog = new Window
             {
-                Title = "编辑信号灯",
+                Title = "设置信号灯",
                 Width = 400,
                 SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -2444,28 +2463,22 @@ namespace SideDesk.Controls
                 container.Children.Add(timerCard);
             }
         
-            // 空列表提示
-            if (item.TimerItems.Count == 0)
-            {
-                container.Children.Add(new Emoji.Wpf.TextBlock
-                {
-                    Text = "暂无计时器，点击标题栏 ▾ 添加",
-                    Foreground = (Brush)FindResource("BrushTextMuted"),
-                    FontSize = 12,
-                    Opacity = 0.7,
-                    Margin = new Thickness(2, 2, 0, 2)
-                });
-            }
-        
-            // 基于 ModuleControl 基础组件包装
-            var module = CreateModuleControl("⏱ 计时器", item);
-            var addTimerMi = new MenuItem { Header = "添加计时器" };
-            addTimerMi.Click += (s, e) =>
+            // 添加计时器逻辑（空状态点击与标题栏菜单共用）
+            void AddTimer()
             {
                 item.TimerItems.Add(new TimerItem());
                 _configManager?.Save();
                 RenderPanels();
-            };
+            }
+
+            // 空列表提示：点击直接添加计时器
+            if (item.TimerItems.Count == 0)
+                container.Children.Add(BuildEmptyAddTip("暂无计时器，点击添加", AddTimer));
+        
+            // 基于 ModuleControl 基础组件包装
+            var module = CreateModuleControl("⏱ 计时器", item);
+            var addTimerMi = new MenuItem { Header = "添加计时器" };
+            addTimerMi.Click += (s, e) => AddTimer();
             module.AddCustomMenuItem(addTimerMi);
             module.SetContent(container);
             return module;
@@ -3863,12 +3876,26 @@ namespace SideDesk.Controls
             return ctx;
         }
 
+        /// <summary>云操作登录态校验：未登录时提示用户并返回 false</summary>
+        private bool EnsureLoggedInForCloud()
+        {
+            var app = (App)Application.Current;
+            if (!string.IsNullOrEmpty(app.AppSettings.AccountToken)) return true;
+            ThemedMessageBox.Show(Window.GetWindow(this), "您当前尚未登录，请登录后操作。", "提示");
+            return false;
+        }
+
         /// <summary>处理文件拖拽到文件夹（本地目录执行复制；云目录则上传到对应云盘目录）</summary>
         private void HandleDropOnFolder(object sender, DragEventArgs e, FileAreaItem folderItem, PanelItem panelItem, Grid? cloudIconGrid = null)
         {
-            // 云目录：上传到对应云盘目录
+            // 云目录：上传到对应云盘目录（需要登录）
             if (folderItem.IsCloudFile)
             {
+                if (!EnsureLoggedInForCloud())
+                {
+                    e.Handled = true; // 截止冒泡，避免落到外层被当成“添加到文件区”
+                    return;
+                }
                 HandleDropOnCloudFolder(e, folderItem, cloudIconGrid);
                 return;
             }
@@ -3922,6 +3949,28 @@ namespace SideDesk.Controls
                 RenderPanels();
                 e.Handled = true;
             }
+        }
+
+        /// <summary>将拖入的文件/目录添加到文件区列表（返回是否已处理）</summary>
+        private bool AddDroppedFilesToArea(DragEventArgs e, PanelItem item)
+        {
+            if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return false;
+            var files = (string[])e.Data.GetData(DataFormats.FileDrop);
+            item.FileItems ??= new List<FileAreaItem>();
+            foreach (var path in files)
+            {
+                var isDir = System.IO.Directory.Exists(path);
+                item.FileItems.Add(new FileAreaItem
+                {
+                    Path = path,
+                    Name = System.IO.Path.GetFileName(path),
+                    IsFolder = isDir
+                });
+            }
+            _configManager?.Save();
+            RenderPanels();
+            e.Handled = true;
+            return true;
         }
 
         /// <summary>构建云文件/云目录图标：基础图标 + 右下角云标记</summary>
@@ -3997,14 +4046,10 @@ namespace SideDesk.Controls
             var popupStack = new StackPanel { Orientation = Orientation.Vertical };
             if (item.FileItems.Count == 0)
             {
-                popupStack.Children.Add(new Emoji.Wpf.TextBlock
-                {
-                    Text = "暂无文件，可在右上角菜单中添加",
-                    FontSize = 12,
-                    Foreground = (Brush)FindResource("BrushTextMuted"),
-                    Margin = new Thickness(10, 8, 10, 8),
-                    Opacity = 0.7
-                });
+                // 空状态提示：点击直接打开添加文件对话框（并关闭弹窗）
+                popupStack.Children.Add(BuildEmptyAddTip("暂无文件，点击添加",
+                    () => { itemPopup.IsOpen = false; AddFileToArea(item); },
+                    new Thickness(10, 8, 10, 8)));
             }
             else
             {
@@ -4033,6 +4078,42 @@ namespace SideDesk.Controls
             itemPopup.Child = popupBorder;
 
             triggerBtn.Click += (s, e) => { itemPopup.IsOpen = !itemPopup.IsOpen; };
+
+            // 拖拽支持：拖文件悬停到触发图标时自动浮动出列表，便于继续拖入列表内的目录；
+            // 直接释放在触发图标上 = 添加到本文件区
+            triggerBtn.AllowDrop = true;
+            triggerBtn.DragEnter += (s, e) =>
+            {
+                if (e.Data.GetDataPresent(DataFormats.FileDrop))
+                {
+                    itemPopup.IsOpen = true; // 浮动出列表供选择目标目录
+                    e.Effects = DragDropEffects.Copy;
+                }
+                e.Handled = true;
+            };
+            triggerBtn.DragOver += (s, e) =>
+            {
+                if (e.Data.GetDataPresent(DataFormats.FileDrop)) e.Effects = DragDropEffects.Copy;
+                e.Handled = true;
+            };
+            triggerBtn.Drop += (s, e) =>
+            {
+                itemPopup.IsOpen = false;
+                AddDroppedFilesToArea(e, item); // 拖到主弹出文件夹 = 添加到本文件区
+            };
+
+            // 浮层空白处也可接收拖放：释放 = 添加到本文件区（目录行自己处理并截止冒泡）
+            popupBorder.AllowDrop = true;
+            popupBorder.DragOver += (s, e) =>
+            {
+                if (e.Data.GetDataPresent(DataFormats.FileDrop)) e.Effects = DragDropEffects.Copy;
+                e.Handled = true;
+            };
+            popupBorder.Drop += (s, e) =>
+            {
+                itemPopup.IsOpen = false;
+                AddDroppedFilesToArea(e, item);
+            };
 
             return triggerBtn;
         }
@@ -4078,6 +4159,41 @@ namespace SideDesk.Controls
             var hoverBrush = (Brush)FindResource("BrushListViewItemMouseOver");
             row.MouseEnter += (s, e) => row.Background = hoverBrush;
             row.MouseLeave += (s, e) => row.Background = Brushes.Transparent;
+
+            // 拖拽接收：目录行→复制到该目录（云目录走上传）；文件行→添加到本文件区
+            row.AllowDrop = true;
+            row.DragEnter += (s, e) =>
+            {
+                if (e.Data.GetDataPresent(DataFormats.FileDrop))
+                {
+                    e.Effects = DragDropEffects.Copy;
+                    row.Background = hoverBrush;
+                }
+                e.Handled = true;
+            };
+            row.DragOver += (s, e) =>
+            {
+                if (e.Data.GetDataPresent(DataFormats.FileDrop)) e.Effects = DragDropEffects.Copy;
+                e.Handled = true;
+            };
+            row.DragLeave += (s, e) => row.Background = Brushes.Transparent;
+            row.Drop += (s, e) =>
+            {
+                row.Background = Brushes.Transparent;
+                if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
+                popup.IsOpen = false;
+                if (isFolder)
+                {
+                    // 目录行：把文件复制进该目录（云目录走上传流程）
+                    HandleDropOnFolder(s, e, fileItem, panelItem, cloudIconGrid);
+                }
+                else
+                {
+                    // 文件行：拖到云文件同样需要登录；本地文件则把拖入的文件添加到本文件区
+                    if (fileItem.IsCloudFile && !EnsureLoggedInForCloud()) return;
+                    AddDroppedFilesToArea(e, panelItem);
+                }
+            };
 
             // 点击打开（并关闭浮层）：文件夹用资源管理器打开，文件直接打开，云文件走云逻辑
             row.MouseLeftButtonUp += (s, e) =>
@@ -4427,16 +4543,11 @@ namespace SideDesk.Controls
             else if (type == PanelType.TodoList)
                 newPanel.TodoItems = new List<TodoItem>();
 
-            // 添加到顶层（若需加入分组，请在分组右键菜单里添加）
-            AddPanelToGroupOrTop(newPanel);
-
-            // 自动开启编辑模式
+            // 自动开启编辑模式（需在构建 widget 前，确保新模块挂上编辑模式拖拽手柄）
             _isEditMode = true;
-            if (_currentWindowConfig != null)
-                _currentWindowConfig.IsEditMode = true;
+            _currentWindowConfig.IsEditMode = true;
 
-            _configManager.Save();
-            RenderPanels();
+            AddTopLevelPanel(newPanel);
         }
 
         private void AddQuickGroupPanel_Click(object sender, RoutedEventArgs e)
@@ -4445,31 +4556,33 @@ namespace SideDesk.Controls
 
             var menuItem = sender as UIElement ?? this;
 
-            // 直接弹出分组名称对话框（无需临时面板）
-            var groupId = ShowGroupNameDialog();
-            if (string.IsNullOrEmpty(groupId)) return;
+            // 先输入分组名称，再创建对应的快捷方式面板（面板即分组，数据为面板自有）
+            var name = ShowGroupNameDialog();
+            if (string.IsNullOrEmpty(name)) return;
 
-            // 若已有快捷方式面板，复用并绑定到新分组；否则新增
-            var existingPanel = _currentWindowConfig.Panels.FirstOrDefault(p => p.Type == PanelType.QuickGroup);
-            if (existingPanel != null)
-                existingPanel.GroupId = groupId;
-            else
-                _currentWindowConfig.Panels.Insert(0, new PanelItem { Type = PanelType.QuickGroup, GroupId = groupId });
+            var newPanel = new PanelItem
+            {
+                Type = PanelType.QuickGroup,
+                QuickGroupName = name,
+                QuickColumns = 2,
+                QuickItems = new List<QuickItem>()
+            };
+            _currentWindowConfig.Panels.Add(newPanel);
 
             _configManager.Save();
             RenderPanels();
 
-            // 延迟弹出添加项菜单
+            // 延迟弹出添加项菜单（重绘后 _quickGroupUIService 已指向新面板）
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                _quickGroupUIService?.ShowAddShortcutMenuForGroup(menuItem, groupId);
+                _quickGroupUIService?.ShowAddShortcutMenuForGroup(menuItem, newPanel.Id);
             }), System.Windows.Threading.DispatcherPriority.Background);
         }
 
-        /// <summary>轻量级分组名称输入对话框，返回 groupId；取消返回 null</summary>
+        /// <summary>轻量级分组名称输入对话框，返回分组名；取消返回 null</summary>
         private string ShowGroupNameDialog()
         {
-            string resultId = null;
+            string resultName = null;
             var dialog = new Window
             {
                 Title = "新建快捷方式",
@@ -4500,10 +4613,7 @@ namespace SideDesk.Controls
             {
                 string name = nameBox.Text.Trim();
                 if (string.IsNullOrEmpty(name)) { MessageBox.Show("请输入分组名称"); return; }
-                var group = new QuickGroup { Name = name, Columns = 2 };
-                QuickGroupManager.AddGroup(group);
-                QuickGroupManager.Save();
-                resultId = group.Id;
+                resultName = name;
                 dialog.Close();
             };
             cancelBtn.Click += (s, ev) => dialog.Close();
@@ -4513,20 +4623,18 @@ namespace SideDesk.Controls
 
             dialog.Content = grid;
             dialog.ShowDialog();
-            return resultId;
+            return resultName;
         }
         private void AddGroupPanel_Click(object sender, RoutedEventArgs e)
         {
             if (_currentWindowConfig == null || _configManager == null) return;
-            _currentWindowConfig.Panels.Add(new PanelItem
+            AddTopLevelPanel(new PanelItem
             {
                 Type = PanelType.Group,
                 Title = "新分组",
                 ChildPanels = new List<PanelItem>(),
                 IsExpanded = true
             });
-            _configManager.Save();
-            RenderPanels();
         }
 
         private void AddModuleToGroup(PanelItem groupItem, PanelType type, int insertIndex = -1)
@@ -4614,9 +4722,7 @@ namespace SideDesk.Controls
             window.OnAddItem = panel =>
             {
                 if (_currentWindowConfig == null || _configManager == null) return;
-                _currentWindowConfig.Panels.Add(panel);
-                _configManager.Save();
-                RenderPanels();
+                AddTopLevelPanel(panel);
             };
             window.Show();
         }
@@ -4655,9 +4761,7 @@ namespace SideDesk.Controls
                 PluginId = pluginId,
                 Title = plugin != null ? $"{plugin.Config.Icon} {plugin.Config.Name}" : null
             };
-            AddPanelToGroupOrTop(newPanel);
-            _configManager.Save();
-            RenderPanels();
+            AddTopLevelPanel(newPanel);
         }
         private void AddDataDashboard_Click(object sender, RoutedEventArgs e)
         {
@@ -4668,9 +4772,7 @@ namespace SideDesk.Controls
                 Title = "数据看板",
                 DashboardItems = new List<DataDashboardItem>()
             };
-            AddPanelToGroupOrTop(newPanel);
-            _configManager.Save();
-            RenderPanels();
+            AddTopLevelPanel(newPanel);
         }
 
         /// <summary>添加数据块子菜单展开时，加载设置中的数据项（模版）列表</summary>
@@ -4689,9 +4791,8 @@ namespace SideDesk.Controls
                         Title = "数据看板",
                         DashboardItems = new List<DataDashboardItem> { customItem }
                     };
-                    AddPanelToGroupOrTop(newPanel);
-                    _configManager.Save();
-                    RenderPanels();
+                    AddTopLevelPanel(newPanel);
+                    Services.DataPollingService.Instance.SyncFromConfigs(_configManager);
                 }
             });
         }
@@ -4753,9 +4854,7 @@ namespace SideDesk.Controls
                 Title = "数据看板",
                 DashboardItems = new List<DataDashboardItem> { BuildDashboardItemFromTemplate(tpl) }
             };
-            AddPanelToGroupOrTop(newPanel);
-            _configManager.Save();
-            RenderPanels();
+            AddTopLevelPanel(newPanel);
         }
 
         /// <summary>根据模版向分组内添加一个数据看板模块</summary>
@@ -4779,9 +4878,7 @@ namespace SideDesk.Controls
                 Title = "⏱ 计时器",
                 TimerItems = new List<TimerItem>()
             };
-            AddPanelToGroupOrTop(newPanel);
-            _configManager.Save();
-            RenderPanels();
+            AddTopLevelPanel(newPanel);
         }
 
         private void AddCountdownPanel_Click(object sender, RoutedEventArgs e)
@@ -4793,9 +4890,7 @@ namespace SideDesk.Controls
                 Title = "⏳ 倒计时",
                 CountdownItems = new List<CountdownItem>()
             };
-            AddPanelToGroupOrTop(newPanel);
-            _configManager.Save();
-            RenderPanels();
+            AddTopLevelPanel(newPanel);
         }
 
         private void AddPomodoroPanel_Click(object sender, RoutedEventArgs e)
@@ -4807,13 +4902,11 @@ namespace SideDesk.Controls
                 Title = "🍅 番茄闹钟",
                 Pomodoro = new PomodoroSettings()
             };
-            AddPanelToGroupOrTop(newPanel);
-            _configManager.Save();
-            RenderPanels();
+            AddTopLevelPanel(newPanel);
         }
 
-        /// <summary>顶层「添加模块」新面板添加到顶层（支持按右键位置插入）；分组内部添加请用 AddModuleToGroup</summary>
-        private void AddPanelToGroupOrTop(PanelItem newPanel)
+        /// <summary>顶层「添加模块」新面板添加到顶层（支持按右键位置插入）；分组内部添加请用 AddModuleToGroup。返回插入下标</summary>
+        private int AddPanelToGroupOrTop(PanelItem newPanel)
         {
             // 若右键点击位置落在两个顶层模块之间，则插入到该位置
             if (_pendingInsertIndex is int insertIdx)
@@ -4823,11 +4916,20 @@ namespace SideDesk.Controls
                 if (insertIdx > 0 && insertIdx < count)
                 {
                     _currentWindowConfig.Panels.Insert(insertIdx, newPanel);
-                    return;
+                    return insertIdx;
                 }
             }
             // 顶层「添加模块」始终添加到顶层；只有在分组的右键菜单里添加才会进入分组（走 AddModuleToGroup）
             _currentWindowConfig!.Panels.Add(newPanel);
+            return _currentWindowConfig.Panels.Count - 1;
+        }
+
+        /// <summary>新增顶层模块：保存配置并增量插入 widget，不重建已有模块（避免整 bar 闪烁/丢滚动位置）</summary>
+        private void AddTopLevelPanel(PanelItem newPanel)
+        {
+            int index = AddPanelToGroupOrTop(newPanel);
+            _configManager?.Save();
+            InsertPanelWidgetIncremental(newPanel, index);
         }
 
         private void AddSignalLightPanel_Click(object sender, RoutedEventArgs e)
@@ -4844,9 +4946,7 @@ namespace SideDesk.Controls
                     new() { Color = "#44CC44", Size = 36, Icon = "", IsOn = true }
                 }
             };
-            AddPanelToGroupOrTop(newPanel);
-            _configManager.Save();
-            RenderPanels();
+            AddTopLevelPanel(newPanel);
         }
 
         private void AddDigitalEmployeePanel_Click(object sender, RoutedEventArgs e)
@@ -4860,9 +4960,7 @@ namespace SideDesk.Controls
                 Title = "👥 数字员工",
                 DigitalEmployeeIds = defaultIds
             };
-            AddPanelToGroupOrTop(newPanel);
-            _configManager.Save();
-            RenderPanels();
+            AddTopLevelPanel(newPanel);
         }
 
         #endregion
@@ -5361,20 +5459,103 @@ namespace SideDesk.Controls
             ("本周", "Week")
         };
 
-        /// <summary>每日活跃模块：根据 item.DailyActivityView 渲染 本月热力图 / 今日 / 本周(前后5天) 视图</summary>
+        /// <summary>每日活跃取数统一入口：screen=本地屏幕使用分钟，其他类型=服务端独立数据（缓存，未缓存返回 null）</summary>
+        private double? GetDailyActivityValue(string? corpId, string type, DateTime date)
+        {
+            if (type == "screen")
+                return SideDesk.Windows.WindowUsageStats.GetActiveMinutesForDate(date);
+            return Services.DailyActivityService.Instance.TryGetCachedValue(corpId, type, date);
+        }
+
+        /// <summary>每日活跃数值展示文字：screen=时长格式，其他类型=纯数字</summary>
+        private static string FormatDailyActivityValue(string type, double value)
+            => type == "screen"
+                ? SideDesk.Windows.WindowUsageStats.FormatDuration(TimeSpan.FromMinutes(value), showSeconds: false)
+                : value.ToString("0.##");
+
+        /// <summary>当前窗口的每日活跃作用域（团队窗口=团队，否则个人）</summary>
+        private string? GetDailyActivityCorpId()
+            => _currentWindowConfig?.OwnerType == "team" ? _currentWindowConfig?.CorpId : null;
+
+        /// <summary>确保服务端每日活跃数据已缓存（异步拉取，到达后重绘）</summary>
+        private void EnsureDailyActivityLoaded(string? corpId, string type, DateTime start, DateTime end)
+        {
+            _ = LoadDailyActivityAsync(corpId, type, start, end);
+        }
+
+        private async System.Threading.Tasks.Task LoadDailyActivityAsync(string? corpId, string type, DateTime start, DateTime end)
+        {
+            try
+            {
+                bool fetched = await Services.DailyActivityService.Instance.EnsureLoadedAsync(corpId, type, start, end);
+                if (fetched) await Dispatcher.InvokeAsync(RenderPanels);
+            }
+            catch { }
+        }
+
+        /// <summary>每日活跃模块：根据 item.DailyActivityView 渲染 本月热力图 / 今日 / 本周(前后5天) 视图；
+        /// 数据来源由 item.DailyActivityType 决定（screen=本地屏幕使用，其他=服务端独立数据表类型）</summary>
         private UIElement BuildDailyActivityWidget(PanelItem item)
         {
             string view = string.IsNullOrEmpty(item.DailyActivityView) ? "Month" : item.DailyActivityView;
+            string type = string.IsNullOrEmpty(item.DailyActivityType) ? "screen" : item.DailyActivityType;
+            string? corpId = GetDailyActivityCorpId();
+
+            // 服务端类型：确保当前视图可见范围的日期数据已缓存（未命中时异步拉取，到达后自动重绘）
+            if (type != "screen")
+            {
+                var today = DateTime.Today;
+                (DateTime start, DateTime end) = view switch
+                {
+                    "Today" => (today, today),
+                    "Week" => (today.AddDays(-2), today),
+                    _ => (new DateTime(today.Year, today.Month, 1), today)
+                };
+                EnsureDailyActivityLoaded(corpId, type, start, end);
+            }
 
             UIElement content = view switch
             {
-                "Today" => BuildDailyActivityToday(),
-                "Week" => BuildDailyActivityWeek(),
-                _ => BuildDailyActivityMonth()
+                "Today" => BuildDailyActivityToday(corpId, type),
+                "Week" => BuildDailyActivityWeek(corpId, type),
+                _ => BuildDailyActivityMonth(corpId, type)
             };
 
-            // ===== 右上角下拉菜单：视图切换 + 刷新 =====
+            // ===== 右上角下拉菜单：数据类型 + 视图切换 + 刷新 =====
             var module = CreateModuleControl("每日活跃", item);
+
+            var typeMenu = new MenuItem { Header = "数据类型" };
+            void AddTypeOption(string label, string key)
+            {
+                var tmi = new MenuItem { Header = label, IsCheckable = true, IsChecked = key == type };
+                tmi.Click += (s, e) =>
+                {
+                    item.DailyActivityType = key;
+                    _configManager?.Save();
+                    RenderPanels();
+                };
+                typeMenu.Items.Add(tmi);
+            }
+            AddTypeOption("屏幕使用", "screen");
+            // 内置固定类型（番茄/屏幕时长/健身记录/鼠标键盘活跃）：始终展示，暂无数据时显示 0
+            foreach (var builtIn in Services.DailyActivityTypes.BuiltIn)
+                if (builtIn != type) AddTypeOption(builtIn, builtIn);
+            if (type != "screen") AddTypeOption(type, type);
+            // 异步加载作用域内其他类型（未登录/后端不可达时仅保留当前项）
+            Dispatcher.InvokeAsync(async () =>
+            {
+                var types = await Services.DailyActivityService.Instance.ListTypesAsync(corpId);
+                if (types == null) return;
+                foreach (var t in types)
+                {
+                    bool exists = false;
+                    foreach (MenuItem tmi in typeMenu.Items)
+                        if ((tmi.Header as string) == t) { exists = true; break; }
+                    if (!exists) AddTypeOption(t, t);
+                }
+            });
+            module.AddCustomMenuItem(typeMenu);
+
             var viewMenu = new MenuItem { Header = "视图" };
             foreach (var (label, key) in DailyActivityViews)
             {
@@ -5396,7 +5577,12 @@ namespace SideDesk.Controls
             module.AddCustomMenuItem(viewMenu);
 
             var refreshMi = new MenuItem { Header = "刷新" };
-            refreshMi.Click += (s, e) => RenderPanels();
+            refreshMi.Click += (s, e) =>
+            {
+                if (type != "screen")
+                    Services.DailyActivityService.Instance.Invalidate(corpId, type);
+                RenderPanels();
+            };
             module.AddCustomMenuItem(refreshMi);
 
             module.SetContent(content);
@@ -5404,10 +5590,10 @@ namespace SideDesk.Controls
         }
 
         /// <summary>每日活跃 — 今日视图：只显示当天，大格子 + 活跃时长摘要</summary>
-        private UIElement BuildDailyActivityToday()
+        private UIElement BuildDailyActivityToday(string? corpId, string type)
         {
             var today = DateTime.Today;
-            double minutes = SideDesk.Windows.WindowUsageStats.GetActiveMinutesForDate(today);
+            double minutes = GetDailyActivityValue(corpId, type, today) ?? 0;
             int level = GetActivityLevel(minutes);
             var weekNames = new[] { "周日", "周一", "周二", "周三", "周四", "周五", "周六" };
 
@@ -5434,13 +5620,13 @@ namespace SideDesk.Controls
                 BorderThickness = new Thickness(1.5),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 ToolTip = minutes > 0
-                    ? $"{today:M月d日}  活跃 {SideDesk.Windows.WindowUsageStats.FormatDuration(TimeSpan.FromMinutes(minutes))}"
+                    ? $"{today:M月d日}  活跃 {FormatDailyActivityValue(type, minutes)}"
                     : $"{today:M月d日}  无活跃记录"
             };
             cell.Child = new TextBlock
             {
                 Text = minutes > 0
-                    ? SideDesk.Windows.WindowUsageStats.FormatDuration(TimeSpan.FromMinutes(minutes), showSeconds: false)
+                    ? FormatDailyActivityValue(type, minutes)
                     : "—",
                 FontSize = 13,
                 FontWeight = FontWeights.SemiBold,
@@ -5453,7 +5639,7 @@ namespace SideDesk.Controls
             // 摘要文字
             root.Children.Add(new TextBlock
             {
-                Text = minutes > 0 ? $"今日活跃 {SideDesk.Windows.WindowUsageStats.FormatDuration(TimeSpan.FromMinutes(minutes), showSeconds: false)}" : "今日暂无活跃记录",
+                Text = minutes > 0 ? $"今日活跃 {FormatDailyActivityValue(type, minutes)}" : "今日暂无活跃记录",
                 FontSize = 11,
                 Foreground = (Brush)FindResource("BrushTextSec"),
                 Margin = new Thickness(0, 8, 0, 0),
@@ -5464,7 +5650,7 @@ namespace SideDesk.Controls
         }
 
         /// <summary>每日活跃 — 本周视图：一行一天，显示以今天为中心前后共5天</summary>
-        private UIElement BuildDailyActivityWeek()
+        private UIElement BuildDailyActivityWeek(string? corpId, string type)
         {
             var today = DateTime.Today;
             var weekNames = new[] { "周日", "周一", "周二", "周三", "周四", "周五", "周六" };
@@ -5490,7 +5676,7 @@ namespace SideDesk.Controls
                 var date = today.AddDays(offset);
                 bool isToday = date == today;
                 bool isFuture = date > today;
-                double minutes = isFuture ? 0 : SideDesk.Windows.WindowUsageStats.GetActiveMinutesForDate(date);
+                double minutes = isFuture ? 0 : (GetDailyActivityValue(corpId, type, date) ?? 0);
                 int level = isFuture ? 0 : GetActivityLevel(minutes);
 
                 var row = new Grid { Margin = new Thickness(0, 2, 0, 2) };
@@ -5522,7 +5708,7 @@ namespace SideDesk.Controls
                     ToolTip = isFuture
                         ? $"{date:M月d日}"
                         : minutes > 0
-                            ? $"{date:M月d日}  活跃 {SideDesk.Windows.WindowUsageStats.FormatDuration(TimeSpan.FromMinutes(minutes))}"
+                            ? $"{date:M月d日}  活跃 {FormatDailyActivityValue(type, minutes)}"
                             : $"{date:M月d日}  无活跃记录"
                 };
                 if (isToday)
@@ -5538,7 +5724,7 @@ namespace SideDesk.Controls
                 var duration = new TextBlock
                 {
                     Text = isFuture ? "" : minutes > 0
-                        ? SideDesk.Windows.WindowUsageStats.FormatDuration(TimeSpan.FromMinutes(minutes), showSeconds: false)
+                        ? FormatDailyActivityValue(type, minutes)
                         : "无记录",
                     FontSize = 10,
                     Foreground = (Brush)FindResource("BrushTextSec"),
@@ -5555,7 +5741,7 @@ namespace SideDesk.Controls
         }
 
         /// <summary>每日活跃 — 本月视图：以热力图形式展示当月每天的活跃度（每行 7 个格子 = 一周，周一起）</summary>
-        private UIElement BuildDailyActivityMonth()
+        private UIElement BuildDailyActivityMonth(string? corpId, string type)
         {
             const double CellMargin = 2;   // 格子四周间距
             const double MaxCell = 26;      // 格子最大边长（面板过宽时避免格子过大）
@@ -5630,11 +5816,11 @@ namespace SideDesk.Controls
                 }
                 else
                 {
-                    double minutes = SideDesk.Windows.WindowUsageStats.GetActiveMinutesForDate(date);
+                    double minutes = GetDailyActivityValue(corpId, type, date) ?? 0;
                     int level = GetActivityLevel(minutes);
                     cell.Background = GetActivityLevelBrush(level);
                     cell.ToolTip = minutes > 0
-                        ? $"{date:M月d日}  活跃 {SideDesk.Windows.WindowUsageStats.FormatDuration(TimeSpan.FromMinutes(minutes))}"
+                        ? $"{date:M月d日}  活跃 {FormatDailyActivityValue(type, minutes)}"
                         : $"{date:M月d日}  无活跃记录";
                 }
 
@@ -5989,9 +6175,70 @@ namespace SideDesk.Controls
             catch { /* 忽略加载失败，面板保持占位提示 */ }
         }
 
+        /// <summary>异步加载好友头像（URL 下载 / base64 解码），成功后替换首字占位；失败保留占位</summary>
+        private async void ApplyFriendAvatarAsync(Border border, string? avatar)
+        {
+            if (string.IsNullOrWhiteSpace(avatar)) return;
+            try
+            {
+                byte[] bytes;
+                if (avatar.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+                {
+                    using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+                    bytes = await http.GetByteArrayAsync(avatar);
+                }
+                else
+                {
+                    bytes = Convert.FromBase64String(avatar);
+                }
+                if (bytes.Length == 0) return;
+
+                var bmp = new System.Windows.Media.Imaging.BitmapImage();
+                bmp.BeginInit();
+                bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                bmp.StreamSource = new System.IO.MemoryStream(bytes);
+                bmp.EndInit();
+                bmp.Freeze();
+
+                border.Background = new ImageBrush(bmp) { Stretch = Stretch.UniformToFill };
+                border.Child = null;
+            }
+            catch { /* 加载失败：保留首字占位头像 */ }
+        }
+
+        /// <summary>好友资料变更（后端 WS 推送 friend_profile_updated）：
+        /// 同步更新缓存中对应好友的昵称与头像并重绘面板；缓存未建立时不处理（下次加载会取到最新数据），
+        /// 缓存中找不到该用户（如加密格式升级/新好友）则重拉全量列表兜底</summary>
+        public void UpdateFriendProfile(string userId, string? nickName, string? avatar)
+        {
+            var cache = _friendListCache;
+            if (cache == null) return;
+            var f = cache.FirstOrDefault(x => x.UserId == userId);
+            if (f == null)
+            {
+                _ = LoadFriendListAsync();
+                return;
+            }
+            if (nickName != null) f.NickName = nickName;
+            if (avatar != null) f.Avatar = avatar;
+            RenderPanels();
+        }
+
+        /// <summary>好友上/下线（后端 WS 推送 friend_online/friend_offline）：
+        /// 按 encrypt2 确定性密文匹配缓存好友项并更新在线状态，重绘面板；缓存未建立时不处理</summary>
+        public void UpdateFriendOnlineStatus(string userId, bool online)
+        {
+            var cache = _friendListCache;
+            if (cache == null) return;
+            var f = cache.FirstOrDefault(x => x.UserId == userId);
+            if (f == null) return;
+            f.IsOnline = online ? 1 : 0;
+            RenderPanels();
+        }
+
         private UIElement BuildFriendWidget(PanelItem item)
         {
-            item.FriendUserIds ??= new List<int>();
+            item.FriendUserIds ??= new List<string>();
 
             // 列表展示已勾选的后端好友；未选择时显示“圆加号”引导占位（点击选择好友）
             UIElement content = BuildFriendListContent(item);
@@ -6058,7 +6305,7 @@ namespace SideDesk.Controls
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
                 Cursor = Cursors.Hand,
-                ToolTip = "点击添加好友",
+                ToolTip = "点击选择要展示的好友",
                 Margin = new Thickness(0, 8, 0, 8)
             };
             circle.Child = new TextBlock
@@ -6070,7 +6317,7 @@ namespace SideDesk.Controls
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            circle.MouseLeftButtonUp += (s, e) => { if (!_isEditMode) ((App)Application.Current).OpenSettings(sw => sw.SwitchToFriendsPage()); };
+            circle.MouseLeftButtonUp += (s, e) => { if (!_isEditMode) ShowFriendPickerDialog(item); };
             return circle;
         }
 
@@ -6105,6 +6352,8 @@ namespace SideDesk.Controls
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
             };
+            // 异步加载真实头像（URL 下载 / base64 解码），成功后替换首字占位
+            ApplyFriendAvatarAsync(avatarBorder, f.Avatar);
             avatarGrid.Children.Add(avatarBorder);
             double dotSize = Math.Max(10, size * 0.28);
             avatarGrid.Children.Add(new Border
@@ -6147,7 +6396,7 @@ namespace SideDesk.Controls
         private async void ShowFriendPickerDialog(PanelItem item)
         {
             if (_configManager == null) return;
-            item.FriendUserIds ??= new List<int>();
+            item.FriendUserIds ??= new List<string>();
 
             var app = (App)Application.Current;
             if (string.IsNullOrEmpty(app.AppSettings.AccountToken))
@@ -6262,9 +6511,12 @@ namespace SideDesk.Controls
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto
             });
 
-            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
+            var btnPanel = new DockPanel { Margin = new Thickness(0, 16, 0, 0), LastChildFill = false };
             var okBtn = new Button { Content = "确定", Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)FindResource("PrimaryButtonStyle") };
             var cancelBtn = new Button { Content = "取消", Width = 70, Style = (Style)FindResource("StandardButtonStyle") };
+            bool goAddFriend = false;
+            var addBtn = new Button { Content = "+ 添加好友", Padding = new Thickness(10, 4, 10, 4), Style = (Style)FindResource("StandardButtonStyle") };
+            addBtn.Click += (s, e) => { goAddFriend = true; dialog.DialogResult = false; };
             okBtn.Click += (s, e) =>
             {
                 item.FriendUserIds = checks.Where(c => c.cb.IsChecked == true).Select(c => c.f.UserId).ToList();
@@ -6273,12 +6525,20 @@ namespace SideDesk.Controls
                 dialog.DialogResult = true;
             };
             cancelBtn.Click += (s, e) => dialog.DialogResult = false;
-            btnPanel.Children.Add(okBtn);
+            DockPanel.SetDock(addBtn, Dock.Left);
+            DockPanel.SetDock(cancelBtn, Dock.Right);
+            DockPanel.SetDock(okBtn, Dock.Right);
+            btnPanel.Children.Add(addBtn);
             btnPanel.Children.Add(cancelBtn);
+            btnPanel.Children.Add(okBtn);
             root.Children.Add(btnPanel);
 
             dialog.Content = root;
             dialog.ShowDialog();
+
+            // 关闭后跳转设置页好友管理（搜索/添加好友），添加完成后可再次打开本弹窗勾选
+            if (goAddFriend)
+                ((App)Application.Current).OpenSettings(sw => sw.SwitchToFriendsPage());
         }
 
         private void AddFriendPanel_Click(object sender, RoutedEventArgs e)
@@ -6289,9 +6549,7 @@ namespace SideDesk.Controls
                 Type = PanelType.Friend,
                 Title = "好友"
             };
-            AddPanelToGroupOrTop(newPanel);
-            _configManager.Save();
-            RenderPanels();
+            AddTopLevelPanel(newPanel);
         }
 
         /// <summary>通过邀请码添加新好友（暂无后端，先根据邀请码创建一个新的好友模块）</summary>
@@ -6350,9 +6608,7 @@ namespace SideDesk.Controls
                     FriendStatusText = "在线",
                     FriendOnlineStatus = "online"
                 };
-                AddPanelToGroupOrTop(newPanel);
-                _configManager.Save();
-                RenderPanels();
+                AddTopLevelPanel(newPanel);
                 dialog.DialogResult = true;
             };
             cancelBtn.Click += (s, e) => dialog.DialogResult = false;
@@ -6487,8 +6743,8 @@ namespace SideDesk.Controls
             }
         }
 
-        /// <summary>渲染面板级便签（per-panel 存储）</summary>
-        private void RefreshPanelStickyNotes(StackPanel container, PanelItem item)
+        /// <summary>渲染面板级便签（per-panel 存储）；onEmptyAdd 非空时空列表提示可点击直接添加</summary>
+        private void RefreshPanelStickyNotes(StackPanel container, PanelItem item, Action? onEmptyAdd = null)
         {
             container.Children.Clear();
             var notes = item.StickyNotes ?? new List<StickyNote>();
@@ -6498,13 +6754,15 @@ namespace SideDesk.Controls
             }
             if (notes.Count == 0)
             {
-                container.Children.Add(new Emoji.Wpf.TextBlock
-                {
-                    Text = "（暂无便签）",
-                    Foreground = (Brush)FindResource("BrushTextMuted"),
-                    FontSize = 11,
-                    Margin = new Thickness(4)
-                });
+                container.Children.Add(onEmptyAdd != null
+                    ? BuildEmptyAddTip("（暂无便签，点击添加）", onEmptyAdd)
+                    : new Emoji.Wpf.TextBlock
+                    {
+                        Text = "（暂无便签）",
+                        Foreground = (Brush)FindResource("BrushTextMuted"),
+                        FontSize = 11,
+                        Margin = new Thickness(4)
+                    });
             }
         }
 
@@ -6979,12 +7237,12 @@ namespace SideDesk.Controls
                 .ToList();
             if (serverIds.Count == 0) return;
 
-            int corpId = 0;
+            // 团队窗口的模块排序是团队共享的，透传团队加密串由后端解析
+            string? corpId = null;
             if (_currentWindowConfig.OwnerType == "team"
-                && !string.IsNullOrEmpty(_currentWindowConfig.CorpId)
-                && int.TryParse(_currentWindowConfig.CorpId, out var cid))
+                && !string.IsNullOrEmpty(_currentWindowConfig.CorpId))
             {
-                corpId = cid;
+                corpId = _currentWindowConfig.CorpId;
             }
 
             await Services.CloudSyncService.Instance.PushResourcePosAsync("item", serverIds, corpId).ConfigureAwait(false);
@@ -6998,6 +7256,34 @@ namespace SideDesk.Controls
 
         private void AIChatButton_Click(object sender, RoutedEventArgs e)
         {
+            var app = (App)Application.Current;
+            var mode = app.AppSettings.AIChatMode ?? "client";
+            bool loggedIn = !string.IsNullOrEmpty(app.AppSettings.AccountToken);
+
+            // 默认本地化（保护隐私）；auto：已登录用网页版，未登录用本地化；也可手动强制指定
+            bool useWeb = mode == "web" || (mode == "auto" && loggedIn);
+
+            if (useWeb)
+            {
+                if (_aiChatWebWindow != null && _aiChatWebWindow.IsLoaded)
+                {
+                    _aiChatWebWindow.Activate();
+                    return;
+                }
+
+                _aiChatWebWindow = new SideDesk.Windows.AIChatWebWindow();
+                if (_mainWindow != null)
+                {
+                    _aiChatWebWindow.Left = _mainWindow.Left + _mainWindow.Width;
+                    _aiChatWebWindow.Top = _mainWindow.Top;
+                    _aiChatWebWindow.Width = 420;
+                    _aiChatWebWindow.Height = Math.Max(400, _mainWindow.Height);
+                }
+                _aiChatWebWindow.Show();
+                return;
+            }
+
+            // 客户端内置模式
             if (_aiChatDialog == null)
                 _aiChatDialog = new AIChatDialog();
 
@@ -7288,7 +7574,7 @@ namespace SideDesk.Controls
         #region 右键菜单事件处理
 
         /// <summary>
-        /// "显示设置"菜单展开时动态填充可切换的显示选项
+        /// "显示设置"菜单展开时动态填充可切换的显示选项（工具栏显示开关 + 全局显示开关）
         /// </summary>
         private void DisplaySettingsMenu_SubmenuOpened(object sender, RoutedEventArgs e)
         {
@@ -7297,31 +7583,43 @@ namespace SideDesk.Controls
 
             menu.Items.Clear();
 
-            var settings = AppSettings.Instance;
-            var items = new[]
+            // 工具显示开关（按窗口配置）：勾选 = 底部工具栏显示对应工具按钮
+            if (_currentWindowConfig != null)
             {
-                new { Header = "便签",           Checked = settings.ShowStickyNotes, Key = "ShowStickyNotes" },
-                new { Header = "自定义程序书签", Checked = settings.ShowQuickGroups,  Key = "ShowQuickGroups" },
-                new { Header = "鼠键计数器",   Checked = settings.ShowCounter,      Key = "ShowCounter" },
-                new { Header = "AI 对话",        Checked = settings.ShowAIChat,       Key = "ShowAIChat" },
-                new { Header = "使用时长分析", Checked = settings.ShowUsageStats,   Key = "ShowUsageStats" },
-                new { Header = "剪贴板收藏",   Checked = settings.ShowClipboard,    Key = "ShowClipboard" },
-                new { Header = "剪贴板历史",   Checked = settings.ShowClipboardHistory,    Key = "ShowClipboardHistory" }
-            };
-
-            foreach (var def in items)
-            {
-                var mi = new MenuItem
+                var toolDisplays = new (string Key, string Header, Action Action)[]
                 {
-                    Header = def.Header,
-                    IsCheckable = true,
-                    IsChecked = def.Checked,
-                    Tag = def.Key
+                    ("ClipboardHistory", "📋 剪贴板历史", ShowClipboardHistoryTool),
+                    ("AIChat",           "🤖 AI 助手",    ShowAIChatTool),
+                    ("VoiceInput",       "🎤 语音输入",  ShowVoiceInputTool)
                 };
-                string key = def.Key;
-                mi.Click += (s, ev) => ToggleDisplaySetting(key, mi.IsChecked);
-                menu.Items.Add(mi);
+                foreach (var (key, header, action) in toolDisplays)
+                {
+                    string k = key;
+                    Action act = action;
+                    var mi = new MenuItem
+                    {
+                        Header = header,
+                        IsCheckable = true,
+                        IsChecked = _currentWindowConfig.EnabledTools.Contains(k),
+                        Tag = k
+                    };
+                    mi.Click += (s, ev) => ToggleTool(k, mi.IsChecked, act);
+                    menu.Items.Add(mi);
+                }
+                menu.Items.Add(new Separator());
             }
+
+            // 使用时长分析：全局设置，实际控制后台统计服务的启停
+            var settings = AppSettings.Instance;
+            var usageMi = new MenuItem
+            {
+                Header = "使用时长分析",
+                IsCheckable = true,
+                IsChecked = settings.ShowUsageStats,
+                Tag = "ShowUsageStats"
+            };
+            usageMi.Click += (s, ev) => ToggleDisplaySetting("ShowUsageStats", usageMi.IsChecked);
+            menu.Items.Add(usageMi);
         }
 
         private void ToggleDisplaySetting(string key, bool value)
@@ -7329,16 +7627,10 @@ namespace SideDesk.Controls
             var settings = AppSettings.Instance;
             switch (key)
             {
-                case "ShowStickyNotes": settings.ShowStickyNotes = value; break;
-                case "ShowQuickGroups":  settings.ShowQuickGroups = value; break;
-                case "ShowCounter":      settings.ShowCounter = value; break;
-                case "ShowAIChat":       settings.ShowAIChat = value; break;
                 case "ShowUsageStats":
                     settings.ShowUsageStats = value;
                     SideDesk.Services.WindowUsageService.Instance.ApplyEnabled(value);
                     break;
-                case "ShowClipboard":    settings.ShowClipboard = value; break;
-                case "ShowClipboardHistory": settings.ShowClipboardHistory = value; break;
             }
             settings.Save();
         }
@@ -7378,7 +7670,7 @@ namespace SideDesk.Controls
         #region 布局与屏幕切换
 
         /// <summary>
-        /// 右键菜单打开时，动态设置布局和屏幕的勾选状态
+        /// 右键菜单打开时，同步勾选状态（编辑模式、隐藏模块外框）并记录插入位置
         /// </summary>
         private void ContextMenu_Opened(object sender, RoutedEventArgs e)
         {
@@ -7393,43 +7685,7 @@ namespace SideDesk.Controls
             // 同步“隐藏模块外框”勾选状态
             hideModuleFrameMenu.IsChecked = AppSettings.Instance.HideModuleFrame;
 
-            var app = (App)Application.Current;
-            var currentLayout = app.CurrentLayout;
-
-            // 设置布局菜单勾选
-            if (LayoutMenu?.Items != null)
-            {
-                foreach (var item in LayoutMenu.Items)
-                {
-                    if (item is MenuItem mi)
-                    {
-                        mi.IsChecked = mi.Header switch
-                        {
-                            "左侧停靠" => currentLayout == LayoutMode.Left,
-                            "右侧停靠" => currentLayout == LayoutMode.Right,
-                            "双侧停靠" => currentLayout == LayoutMode.Both,
-                            _ => false
-                        };
-                    }
-                }
-            }
-
             // 设置屏幕菜单勾选（已移除）
-        }
-
-        private void Layout_Left_Click(object sender, RoutedEventArgs e)
-        {
-            ((App)Application.Current).SwitchLayout(LayoutMode.Left);
-        }
-
-        private void Layout_Right_Click(object sender, RoutedEventArgs e)
-        {
-            ((App)Application.Current).SwitchLayout(LayoutMode.Right);
-        }
-
-        private void Layout_Both_Click(object sender, RoutedEventArgs e)
-        {
-            ((App)Application.Current).SwitchLayout(LayoutMode.Both);
         }
 
         #endregion
@@ -7487,7 +7743,14 @@ namespace SideDesk.Controls
                     var refreshItem = new MenuItem { Header = "立即更新数据" };
                     refreshItem.Click += async (s, e) =>
                     {
-                        try { await Services.DataPollingService.Instance.RefreshItemAsync(capturedDash); }
+                        try
+                        {
+                            // 引用项刷新其指向的实际轮询数据项
+                            var target = string.IsNullOrEmpty(capturedDash.RefVarKey)
+                                ? capturedDash
+                                : Services.DataPollingService.Instance.FindItemByVarKey(capturedDash.RefVarKey) ?? capturedDash;
+                            await Services.DataPollingService.Instance.RefreshItemAsync(target);
+                        }
                         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[DataDashboard] 手动刷新失败 {capturedDash.Label}: {ex.Message}"); }
                     };
                     dashItemMenu.Items.Add(refreshItem);
@@ -7506,14 +7769,22 @@ namespace SideDesk.Controls
                     var editItem = new MenuItem { Header = "编辑数据项" };
                     editItem.Click += (s, e) =>
                     {
+                        string? oldRefVarKey = capturedDash.RefVarKey;
                         var updated = ShowAddDashboardItemDialog(capturedDash);
                         if (updated != null)
                         {
                             _configManager?.Save();
                             if (_configManager != null) Services.DataPollingService.Instance.SyncFromConfigs(_configManager);
-                            // 定向更新当前数据项的名称即可，避免 RenderPanels() 全量重建导致整个窗口重载（浏览器面板 reload、闪烁）。
-                            // 编辑对话框改动的字段中只有 Label 会显示在卡片上（样式由「编辑样式」对话框负责）。
-                            labelBlock.Text = updated.Label;
+                            // 引用目标变化（含旧式配置项转为引用）需重建 UI 重新订阅数据源更新；
+                            // 否则仅定向更新名称，避免 RenderPanels() 全量重建导致浏览器面板 reload、闪烁。
+                            if (!string.Equals(oldRefVarKey, updated.RefVarKey, StringComparison.Ordinal))
+                            {
+                                RenderPanels();
+                            }
+                            else
+                            {
+                                labelBlock.Text = updated.Label;
+                            }
                         }
                     };
                     dashItemMenu.Items.Add(editItem);
@@ -7914,13 +8185,22 @@ namespace SideDesk.Controls
 
         /// <summary>
         /// 面板只负责展示：订阅中央轮询服务 DataPollingService 的数据更新事件，不再自行定时抓取。
+        /// 引用项（RefVarKey 非空）订阅其引用的实际轮询数据项的更新。
         /// </summary>
         private void StartDashboardItemRefresh(DataDashboardItem dashItem, Emoji.Wpf.TextBlock valueBlock)
         {
-            // 展示已持久化的值
-            valueBlock.Text = string.IsNullOrEmpty(dashItem.Value) ? "--" : dashItem.Value;
+            // 引用项：解析被引用的运行中数据项作为实际展示数据源（找不到时展示自身持久化值/--）
+            var displayItem = dashItem;
+            if (!string.IsNullOrEmpty(dashItem.RefVarKey))
+            {
+                var source = Services.DataPollingService.Instance.FindItemByVarKey(dashItem.RefVarKey);
+                if (source != null) displayItem = source;
+            }
 
-            var itemId = dashItem.Id;
+            // 展示已持久化的值
+            valueBlock.Text = string.IsNullOrEmpty(displayItem.Value) ? "--" : displayItem.Value;
+
+            var itemId = displayItem.Id;
 
             // 订阅中央轮询服务的数据更新事件
             Action<string, string> handler = (updatedId, value) =>
@@ -7946,6 +8226,9 @@ namespace SideDesk.Controls
 
         private DataDashboardItem? ShowAddDashboardItemDialog(DataDashboardItem? editItem = null)
         {
+            var app = (App)Application.Current;
+            var templates = DataTemplateManager.Load().Templates;
+
             var dialog = new Window
             {
                 Title = editItem != null ? "编辑数据项" : "添加数据项",
@@ -7961,105 +8244,64 @@ namespace SideDesk.Controls
 
             var labelBrush = (Brush)FindResource("BrushTextSec");
             var textBoxStyle = (Style)FindResource("GlobalTextBoxStyle");
-
-            // 加载模板
-            var templateManager = DataTemplateManager.Load();
-            var templates = templateManager.Templates;
-
-            // 加载浏览器列表
-            var browsers = ((App)Application.Current).ProgramRegistry.Browsers;
+            var comboStyle = (Style)FindResource("GlobalComboBoxStyle");
+            var primaryBtnStyle = (Style)FindResource("PrimaryButtonStyle");
+            var standardBtnStyle = (Style)FindResource("StandardButtonStyle");
 
             // ===== 根布局 =====
             var rootPanel = new StackPanel { Margin = new Thickness(20) };
 
-            // ===== 模板选择 =====
-            rootPanel.Children.Add(new Emoji.Wpf.TextBlock
+            // 名称框（两个页签共用；提前创建供 ApplyTemplate 预填使用，稍后才加入布局）
+            var nameBox = new TextBox { Style = textBoxStyle, Margin = new Thickness(0, 0, 0, 12) };
+
+            // ===== 顶部页签：新建 / 从我的数据看板选择 =====
+            var tabRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
+            var tabNew = new Button { Content = "🆕 新建", Style = primaryBtnStyle, Padding = new Thickness(14, 6, 14, 6), Margin = new Thickness(0, 0, 8, 0), Cursor = Cursors.Hand };
+            var tabPick = new Button { Content = "📊 从我的数据看板选择", Style = standardBtnStyle, Padding = new Thickness(14, 6, 14, 6), Cursor = Cursors.Hand };
+            tabRow.Children.Add(tabNew);
+            tabRow.Children.Add(tabPick);
+            rootPanel.Children.Add(tabRow);
+
+            if (templates.Count == 0)
             {
-                Text = "模板选择",
-                Foreground = labelBrush,
-                Margin = new Thickness(0, 0, 0, 4)
-            });
-            var templateCombo = new ComboBox
-            {
-                Style = (Style)FindResource("GlobalComboBoxStyle"),
-                Margin = new Thickness(0, 0, 0, 12),
-                IsEditable = false
-            };
-            templateCombo.Items.Add(new ComboBoxItem { Content = "自定义", Tag = (string?)null });
-            foreach (var t in templates)
-            {
-                templateCombo.Items.Add(new ComboBoxItem { Content = t.Name, Tag = t.Id });
+                tabNew.IsEnabled = false;
+                tabNew.ToolTip = "暂无数据模板，请先在 设置-我的看板 添加后台数据项";
             }
-            templateCombo.SelectedIndex = 0;
-            rootPanel.Children.Add(templateCombo);
 
-            // ===== 基本信息分隔 =====
-            rootPanel.Children.Add(new Emoji.Wpf.TextBlock
-            {
-                Text = "── 基本信息 ──",
-                Foreground = labelBrush,
-                FontWeight = FontWeights.Bold,
-                Margin = new Thickness(0, 4, 0, 8),
-                HorizontalAlignment = HorizontalAlignment.Center
-            });
+            // ===== 页签一：新建（模板驱动，URL/选择器/间隔由模板提供） =====
+            var newPanel = new StackPanel();
 
-            // 数据项名称
-            rootPanel.Children.Add(new Emoji.Wpf.TextBlock
+            newPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = "数据项名称",
+                Text = "数据模板",
                 Foreground = labelBrush,
                 Margin = new Thickness(0, 0, 0, 4)
             });
-            var nameBox = new TextBox
+            var templateCombo = new ComboBox { Style = comboStyle, Margin = new Thickness(0, 0, 0, 12), IsEditable = false };
+            foreach (var t in templates)
+                templateCombo.Items.Add(new ComboBoxItem { Content = string.IsNullOrEmpty(t.Category) ? t.Name : $"{t.Name}  [{t.Category}]", Tag = t.Id, ToolTip = t.Description });
+            if (templates.Count > 0)
             {
-                Style = textBoxStyle,
-                Margin = new Thickness(0, 0, 0, 12)
-            };
-            rootPanel.Children.Add(nameBox);
-
-            // ===== 团队与变量分隔 =====
-            rootPanel.Children.Add(new Emoji.Wpf.TextBlock
+                templateCombo.SelectedIndex = 0;
+            }
+            else
             {
-                Text = "── 团队与变量 ──",
-                Foreground = labelBrush,
-                FontWeight = FontWeights.Bold,
-                Margin = new Thickness(0, 4, 0, 8),
-                HorizontalAlignment = HorizontalAlignment.Center
-            });
+                templateCombo.Items.Add(new ComboBoxItem { Content = "（暂无数据模板）", IsEnabled = false });
+            }
+            newPanel.Children.Add(templateCombo);
 
-            // 所属团队（个人 + 团队列表，异步加载）
-            rootPanel.Children.Add(new Emoji.Wpf.TextBlock
+            // 所属团队（个人 + 团队列表，异步加载；决定变量名唯一性作用域）
+            newPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "所属团队",
                 Foreground = labelBrush,
                 Margin = new Thickness(0, 0, 0, 4)
             });
-            var teamCombo = new ComboBox
-            {
-                Style = (Style)FindResource("GlobalComboBoxStyle"),
-                Margin = new Thickness(0, 0, 0, 12),
-                IsEditable = false
-            };
+            var teamCombo = new ComboBox { Style = comboStyle, Margin = new Thickness(0, 0, 0, 12), IsEditable = false };
             teamCombo.Items.Add(new ComboBoxItem { Content = "个人", Tag = (string?)null });
             teamCombo.SelectedIndex = 0;
-            rootPanel.Children.Add(teamCombo);
-
-            // 变量名（团队/个人内唯一，如 qcoder.count）
-            rootPanel.Children.Add(new Emoji.Wpf.TextBlock
-            {
-                Text = "变量名（可选，如 qcoder.count，团队/个人内唯一）",
-                Foreground = labelBrush,
-                Margin = new Thickness(0, 0, 0, 4)
-            });
-            var varKeyBox = new TextBox
-            {
-                Style = textBoxStyle,
-                Margin = new Thickness(0, 0, 0, 12)
-            };
-            rootPanel.Children.Add(varKeyBox);
-
-            // 异步加载团队列表（对话框立即打开，加载完成后自动填充；编辑模式恢复原团队选中）
-            string? pendingTeamId = editItem?.TeamId;
+            newPanel.Children.Add(teamCombo);
+            string? pendingTeamId = null; // 模板切换时待恢复的团队选中
             _ = Task.Run(async () =>
             {
                 try
@@ -8073,7 +8315,7 @@ namespace SideDesk.Controls
                             foreach (var t in teams)
                                 teamCombo.Items.Add(new ComboBoxItem { Content = t.Name, Tag = t.Id });
                         }
-                        if (!string.IsNullOrEmpty(pendingTeamId))
+                        if (pendingTeamId != null)
                         {
                             for (int i = 1; i < teamCombo.Items.Count; i++)
                             {
@@ -8086,106 +8328,39 @@ namespace SideDesk.Controls
                 catch { }
             });
 
-            // ===== 数据源配置分隔 =====
-            rootPanel.Children.Add(new Emoji.Wpf.TextBlock
+            newPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = "── 数据源配置 ──",
-                Foreground = labelBrush,
-                FontWeight = FontWeights.Bold,
-                Margin = new Thickness(0, 4, 0, 8),
-                HorizontalAlignment = HorizontalAlignment.Center
-            });
-
-            // 目标网址
-            rootPanel.Children.Add(new Emoji.Wpf.TextBlock
-            {
-                Text = "目标网址",
+                Text = "变量名（团队/个人内唯一，如 qcoder.count）",
                 Foreground = labelBrush,
                 Margin = new Thickness(0, 0, 0, 4)
             });
-            var urlBox = new TextBox
-            {
-                Style = textBoxStyle,
-                Margin = new Thickness(0, 0, 0, 12)
-            };
-            rootPanel.Children.Add(urlBox);
+            var varKeyBox = new TextBox { Style = textBoxStyle, Margin = new Thickness(0, 0, 0, 12) };
+            newPanel.Children.Add(varKeyBox);
 
-            // 选择器
-            rootPanel.Children.Add(new Emoji.Wpf.TextBlock
-            {
-                Text = "选择器(CSS/XPath)",
-                Foreground = labelBrush,
-                Margin = new Thickness(0, 0, 0, 4)
-            });
-            var selectorBox = new TextBox
-            {
-                Style = textBoxStyle,
-                Margin = new Thickness(0, 0, 0, 12)
-            };
-            rootPanel.Children.Add(selectorBox);
-
-            // 刷新间隔
-            rootPanel.Children.Add(new Emoji.Wpf.TextBlock
-            {
-                Text = "刷新间隔(秒)",
-                Foreground = labelBrush,
-                Margin = new Thickness(0, 0, 0, 4)
-            });
-            var intervalBox = new TextBox
-            {
-                Text = "60",
-                Style = textBoxStyle,
-                Margin = new Thickness(0, 0, 0, 12)
-            };
-            rootPanel.Children.Add(intervalBox);
-
-            // ===== 浏览器配置分隔 =====
-            rootPanel.Children.Add(new Emoji.Wpf.TextBlock
-            {
-                Text = "── 浏览器配置 ──",
-                Foreground = labelBrush,
-                FontWeight = FontWeights.Bold,
-                Margin = new Thickness(0, 4, 0, 8),
-                HorizontalAlignment = HorizontalAlignment.Center
-            });
-
-            // 浏览器
-            rootPanel.Children.Add(new Emoji.Wpf.TextBlock
+            // 浏览器 / Profile（联动）
+            var browsers = app.ProgramRegistry.Browsers;
+            newPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "浏览器",
                 Foreground = labelBrush,
                 Margin = new Thickness(0, 0, 0, 4)
             });
-            var browserCombo = new ComboBox
-            {
-                Style = (Style)FindResource("GlobalComboBoxStyle"),
-                Margin = new Thickness(0, 0, 0, 12),
-                IsEditable = false
-            };
+            var browserCombo = new ComboBox { Style = comboStyle, Margin = new Thickness(0, 0, 0, 12), IsEditable = false };
             browserCombo.Items.Add(new ComboBoxItem { Content = "默认浏览器", Tag = (string?)null });
             foreach (var b in browsers)
-            {
                 browserCombo.Items.Add(new ComboBoxItem { Content = b.Name, Tag = b.Id });
-            }
             browserCombo.SelectedIndex = 0;
-            rootPanel.Children.Add(browserCombo);
+            newPanel.Children.Add(browserCombo);
 
-            // Profile
-            rootPanel.Children.Add(new Emoji.Wpf.TextBlock
+            newPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "Profile",
                 Foreground = labelBrush,
                 Margin = new Thickness(0, 0, 0, 4)
             });
-            var profileCombo = new ComboBox
-            {
-                Style = (Style)FindResource("GlobalComboBoxStyle"),
-                Margin = new Thickness(0, 0, 0, 16),
-                IsEditable = false
-            };
-            rootPanel.Children.Add(profileCombo);
+            var profileCombo = new ComboBox { Style = comboStyle, Margin = new Thickness(0, 0, 0, 12), IsEditable = false };
+            newPanel.Children.Add(profileCombo);
 
-            // Profile 联动刷新方法
             Action refreshProfiles = () =>
             {
                 profileCombo.Items.Clear();
@@ -8195,91 +8370,240 @@ namespace SideDesk.Controls
                     if (browser != null)
                     {
                         foreach (var p in browser.Profiles)
-                        {
                             profileCombo.Items.Add(new ComboBoxItem { Content = p.Name, Tag = p.Id });
-                        }
                         if (profileCombo.Items.Count > 0)
                             profileCombo.SelectedIndex = 0;
                     }
                 }
             };
-
-            // 初始加载 Profile
-            refreshProfiles();
-
-            // 浏览器切换时联动 Profile
             browserCombo.SelectionChanged += (s, e) => refreshProfiles();
 
-            // 编辑模式：预填已有数据（在所有控件创建之后）
-            if (editItem != null)
+            // 选中模板时预填名称、模板归属团队与模板默认浏览器/Profile
+            void ApplyTemplate()
+            {
+                if (templateCombo.SelectedItem is not ComboBoxItem ci || ci.Tag is not string tplId) return;
+                var tpl = templates.FirstOrDefault(t => t.Id == tplId);
+                if (tpl == null) return;
+                nameBox.Text = tpl.Name;
+                // 预填模板归属团队（列表未加载完时暂存，加载完成后自动恢复）
+                pendingTeamId = tpl.TeamId;
+                teamCombo.SelectedIndex = 0;
+                for (int i = 1; i < teamCombo.Items.Count; i++)
+                {
+                    if ((teamCombo.Items[i] as ComboBoxItem)?.Tag as string == tpl.TeamId)
+                    { teamCombo.SelectedIndex = i; break; }
+                }
+                // 预填模板默认浏览器
+                for (int i = 0; i < browserCombo.Items.Count; i++)
+                {
+                    if (browserCombo.Items[i] is ComboBoxItem bci
+                        && (tpl.DefaultBrowserId == null ? bci.Tag == null : (bci.Tag as string) == tpl.DefaultBrowserId))
+                    { browserCombo.SelectedIndex = i; break; }
+                }
+                refreshProfiles();
+                if (!string.IsNullOrEmpty(tpl.DefaultProfileId))
+                {
+                    for (int i = 0; i < profileCombo.Items.Count; i++)
+                    {
+                        if (profileCombo.Items[i] is ComboBoxItem pci && (pci.Tag as string) == tpl.DefaultProfileId)
+                        { profileCombo.SelectedIndex = i; break; }
+                    }
+                }
+            }
+            templateCombo.SelectionChanged += (s, e) => ApplyTemplate();
+
+            rootPanel.Children.Add(newPanel);
+
+            // ===== 页签二：从我的数据看板选择（引用式，仅展示运行中数据） =====
+            var refPanel = new StackPanel();
+
+            // 后台数据项（已定义变量名的）
+            var bgSources = app.WindowConfigs.BackgroundDashboardItems
+                .Where(d => !string.IsNullOrEmpty(d.VarKey))
+                .ToList();
+
+            // 面板中实际轮询的数据项（已定义变量名且非引用项；编辑时排除自身）
+            var panelSources = new List<DataDashboardItem>();
+            void CollectPanelSources(PanelItem panel)
+            {
+                if (panel.DashboardItems != null)
+                {
+                    foreach (var d in panel.DashboardItems)
+                    {
+                        if (string.IsNullOrEmpty(d.VarKey)) continue;
+                        if (!string.IsNullOrEmpty(d.RefVarKey)) continue;
+                        if (editItem != null && d.Id == editItem.Id) continue;
+                        panelSources.Add(d);
+                    }
+                }
+                if (panel.ChildPanels != null)
+                    foreach (var cp in panel.ChildPanels) CollectPanelSources(cp);
+            }
+            foreach (var win in app.WindowConfigs.Windows)
+                foreach (var p in win.Panels) CollectPanelSources(p);
+
+            // 模板与数据源都没有时直接拦截，避免打开无内容可用的对话框
+            if (templates.Count == 0 && bgSources.Count == 0 && panelSources.Count == 0)
+            {
+                MessageBox.Show("当前没有可用的数据模板或数据源。\n请先在 设置-我的看板 添加后台数据项或创建数据模板。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                return null;
+            }
+
+            refPanel.Children.Add(new Emoji.Wpf.TextBlock
+            {
+                Text = "请选择一个运行中的数据源，本数据项仅展示其数据，无需配置网址/选择器。",
+                Foreground = labelBrush,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 12)
+            });
+
+            refPanel.Children.Add(new Emoji.Wpf.TextBlock
+            {
+                Text = "从后台数据选择",
+                Foreground = labelBrush,
+                Margin = new Thickness(0, 0, 0, 4)
+            });
+            var bgCombo = new ComboBox { Style = comboStyle, Margin = new Thickness(0, 0, 0, 12), IsEditable = false };
+            if (bgSources.Count == 0)
+            {
+                bgCombo.Items.Add(new ComboBoxItem { Content = "（暂无后台数据项）", IsEnabled = false });
+            }
+            else
+            {
+                foreach (var d in bgSources)
+                    bgCombo.Items.Add(new ComboBoxItem { Content = $"{d.Label}（{d.VarKey}）", Tag = d });
+            }
+            refPanel.Children.Add(bgCombo);
+
+            refPanel.Children.Add(new Emoji.Wpf.TextBlock
+            {
+                Text = "或使用变量名（运行中的数据项）",
+                Foreground = labelBrush,
+                Margin = new Thickness(0, 0, 0, 4)
+            });
+            var varCombo = new ComboBox { Style = comboStyle, Margin = new Thickness(0, 0, 0, 12), IsEditable = false };
+            if (panelSources.Count == 0)
+            {
+                varCombo.Items.Add(new ComboBoxItem { Content = "（暂无运行中的数据项）", IsEnabled = false });
+            }
+            else
+            {
+                foreach (var d in panelSources)
+                    varCombo.Items.Add(new ComboBoxItem { Content = $"{d.VarKey}（{d.Label}）", Tag = d });
+            }
+            refPanel.Children.Add(varCombo);
+
+            rootPanel.Children.Add(refPanel);
+
+            // ===== 两个页签共用的名称 =====
+            rootPanel.Children.Add(new Emoji.Wpf.TextBlock
+            {
+                Text = "数据项名称",
+                Foreground = labelBrush,
+                Margin = new Thickness(0, 4, 0, 4)
+            });
+            rootPanel.Children.Add(nameBox);
+
+            // 页签切换
+            void SwitchMode(bool isNew)
+            {
+                tabNew.Style = isNew ? primaryBtnStyle : standardBtnStyle;
+                tabPick.Style = isNew ? standardBtnStyle : primaryBtnStyle;
+                newPanel.Visibility = isNew ? Visibility.Visible : Visibility.Collapsed;
+                refPanel.Visibility = isNew ? Visibility.Collapsed : Visibility.Visible;
+            }
+            tabNew.Click += (s, e) => SwitchMode(true);
+            tabPick.Click += (s, e) => SwitchMode(false);
+
+            // 初始模式与预填：新建时默认进入「新建」页（无模板则进入选择页）；编辑时按项类型进入对应页
+            if (editItem == null)
+            {
+                if (templates.Count > 0) ApplyTemplate();
+                SwitchMode(templates.Count > 0);
+            }
+            else
             {
                 nameBox.Text = editItem.Label ?? "";
-                varKeyBox.Text = editItem.VarKey ?? "";
-                urlBox.Text = editItem.TargetUrl ?? "";
-                selectorBox.Text = editItem.Selector ?? "";
-                intervalBox.Text = editItem.RefreshIntervalSeconds > 0 ? editItem.RefreshIntervalSeconds.ToString() : "60";
-                if (!string.IsNullOrEmpty(editItem.TemplateId))
+                bool isRef = !string.IsNullOrEmpty(editItem.RefVarKey);
+                SwitchMode(!isRef);
+                if (isRef)
                 {
-                    for (int i = 0; i < templateCombo.Items.Count; i++)
+                    // 引用项：恢复已选引用源
+                    for (int i = 0; i < bgCombo.Items.Count; i++)
                     {
-                        if (templateCombo.Items[i] is ComboBoxItem ci && ci.Tag is string tid && tid == editItem.TemplateId)
+                        if (bgCombo.Items[i] is ComboBoxItem ci && ci.Tag is DataDashboardItem d
+                            && string.Equals(d.VarKey, editItem.RefVarKey, StringComparison.OrdinalIgnoreCase))
+                        { bgCombo.SelectedIndex = i; break; }
+                    }
+                    if (bgCombo.SelectedIndex < 0)
+                    {
+                        for (int i = 0; i < varCombo.Items.Count; i++)
                         {
-                            templateCombo.SelectedIndex = i;
-                            break;
+                            if (varCombo.Items[i] is ComboBoxItem ci && ci.Tag is DataDashboardItem d
+                                && string.Equals(d.VarKey, editItem.RefVarKey, StringComparison.OrdinalIgnoreCase))
+                            { varCombo.SelectedIndex = i; break; }
                         }
                     }
                 }
-                if (!string.IsNullOrEmpty(editItem.BrowserId))
+                else
                 {
-                    for (int i = 0; i < browserCombo.Items.Count; i++)
+                    // 自轮询项：预填模板/变量名/团队/浏览器
+                    varKeyBox.Text = editItem.VarKey ?? "";
+                    pendingTeamId = editItem.TeamId;
+                    if (!string.IsNullOrEmpty(editItem.TemplateId))
                     {
-                        if (browserCombo.Items[i] is ComboBoxItem ci && ci.Tag is string bid && bid == editItem.BrowserId)
+                        for (int i = 0; i < templateCombo.Items.Count; i++)
                         {
-                            browserCombo.SelectedIndex = i;
-                            break;
+                            if (templateCombo.Items[i] is ComboBoxItem ci && ci.Tag is string tid && tid == editItem.TemplateId)
+                            { templateCombo.SelectedIndex = i; break; }
                         }
                     }
-                    refreshProfiles();
-                    if (!string.IsNullOrEmpty(editItem.ProfileId))
+                    // 模板选择联动会用模板名覆盖名称，恢复用户自定义名称
+                    nameBox.Text = editItem.Label ?? "";
+                    // 模板联动也会把团队重置为模板归属团队，恢复数据项自身团队
+                    pendingTeamId = editItem.TeamId;
+                    teamCombo.SelectedIndex = 0;
+                    for (int i = 1; i < teamCombo.Items.Count; i++)
                     {
-                        for (int i = 0; i < profileCombo.Items.Count; i++)
+                        if ((teamCombo.Items[i] as ComboBoxItem)?.Tag as string == editItem.TeamId)
+                        { teamCombo.SelectedIndex = i; break; }
+                    }
+                    if (!string.IsNullOrEmpty(editItem.BrowserId))
+                    {
+                        for (int i = 0; i < browserCombo.Items.Count; i++)
                         {
-                            if (profileCombo.Items[i] is ComboBoxItem ci && ci.Tag is string pid && pid == editItem.ProfileId)
+                            if (browserCombo.Items[i] is ComboBoxItem ci && ci.Tag is string bid && bid == editItem.BrowserId)
+                            { browserCombo.SelectedIndex = i; break; }
+                        }
+                        refreshProfiles();
+                        if (!string.IsNullOrEmpty(editItem.ProfileId))
+                        {
+                            for (int i = 0; i < profileCombo.Items.Count; i++)
                             {
-                                profileCombo.SelectedIndex = i;
-                                break;
+                                if (profileCombo.Items[i] is ComboBoxItem ci && ci.Tag is string pid && pid == editItem.ProfileId)
+                                { profileCombo.SelectedIndex = i; break; }
                             }
                         }
                     }
                 }
             }
 
-            // ===== 模板选择联动 =====
-            templateCombo.SelectionChanged += (s, e) =>
+            // 两个数据源互斥；选中后预填名称
+            void OnSourceSelected(DataDashboardItem src, ComboBox other)
             {
-                if (templateCombo.SelectedItem is ComboBoxItem selectedItem)
-                {
-                    var templateId = selectedItem.Tag as string;
-                    if (templateId != null)
-                    {
-                        var tmpl = templates.FirstOrDefault(t => t.Id == templateId);
-                        if (tmpl != null)
-                        {
-                            nameBox.Text = tmpl.Name;
-                            urlBox.Text = tmpl.TargetUrl;
-                            selectorBox.Text = tmpl.Selector;
-                            intervalBox.Text = tmpl.RefreshIntervalSeconds.ToString();
-                        }
-                    }
-                    else
-                    {
-                        // 自定义：清空
-                        nameBox.Text = "";
-                        urlBox.Text = "";
-                        selectorBox.Text = "";
-                        intervalBox.Text = "60";
-                    }
-                }
+                other.SelectedIndex = -1;
+                if (string.IsNullOrWhiteSpace(nameBox.Text))
+                    nameBox.Text = src.Label ?? "";
+            }
+            bgCombo.SelectionChanged += (s, e) =>
+            {
+                if (bgCombo.SelectedItem is ComboBoxItem ci && ci.Tag is DataDashboardItem src)
+                    OnSourceSelected(src, varCombo);
+            };
+            varCombo.SelectionChanged += (s, e) =>
+            {
+                if (varCombo.SelectedItem is ComboBoxItem ci && ci.Tag is DataDashboardItem src)
+                    OnSourceSelected(src, bgCombo);
             };
 
             // ===== 按钮区域 =====
@@ -8311,39 +8635,38 @@ namespace SideDesk.Controls
             };
             confirmBtn.Click += async (s, e) =>
             {
-                // 验证必填字段
-                if (string.IsNullOrWhiteSpace(nameBox.Text))
+                bool isNewMode = newPanel.Visibility == Visibility.Visible;
+                if (isNewMode)
                 {
-                    MessageBox.Show("请输入数据项名称", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    nameBox.Focus();
-                    return;
-                }
-                if (string.IsNullOrWhiteSpace(urlBox.Text))
-                {
-                    MessageBox.Show("请输入目标网址", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    urlBox.Focus();
-                    return;
-                }
-                if (string.IsNullOrWhiteSpace(selectorBox.Text))
-                {
-                    MessageBox.Show("请输入选择器", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    selectorBox.Focus();
-                    return;
-                }
-
-                // 变量名唯一性校验（团队/个人作用域内不能重复）
-                var varKey = varKeyBox.Text.Trim();
-                if (!string.IsNullOrEmpty(varKey))
-                {
+                    // 新建：模板 + 名称 + 变量名（唯一性校验）
+                    var tplId = (templateCombo.SelectedItem as ComboBoxItem)?.Tag as string;
+                    var tpl = templates.FirstOrDefault(t => t.Id == tplId);
+                    if (tpl == null)
+                    {
+                        MessageBox.Show("请选择数据模板", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        return;
+                    }
+                    if (string.IsNullOrWhiteSpace(nameBox.Text))
+                    {
+                        MessageBox.Show("请输入数据项名称", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        nameBox.Focus();
+                        return;
+                    }
+                    string varKey = varKeyBox.Text.Trim();
+                    if (string.IsNullOrEmpty(varKey))
+                    {
+                        MessageBox.Show("请输入变量名", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        varKeyBox.Focus();
+                        return;
+                    }
                     var teamId = (teamCombo.SelectedItem as ComboBoxItem)?.Tag as string;
-                    // 本地校验：所有窗口中同作用域不能有同名变量
+                    // 变量名唯一性校验：本地（全部面板 + 后台数据项）+ 后端权威校验
                     if (IsVarKeyDuplicateLocally(varKey, teamId, editItem?.Id))
                     {
                         MessageBox.Show($"变量名 \"{varKey}\" 在当前范围（团队/个人）内已存在，请换一个名称。", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
                         varKeyBox.Focus();
                         return;
                     }
-                    // 后端校验（登录后为权威：涵盖其他设备与团队成员；后端不可达时不阻断）
                     confirmBtn.IsEnabled = false;
                     bool available;
                     try { available = await Services.DataVariableService.Instance.CheckAsync(varKey, teamId); }
@@ -8355,7 +8678,23 @@ namespace SideDesk.Controls
                         return;
                     }
                 }
-
+                else
+                {
+                    // 选择：必须选中一个数据源（后台数据或变量名二选一）
+                    var srcBg = (bgCombo.SelectedItem as ComboBoxItem)?.Tag as DataDashboardItem;
+                    var srcVar = (varCombo.SelectedItem as ComboBoxItem)?.Tag as DataDashboardItem;
+                    if (srcBg == null && srcVar == null)
+                    {
+                        MessageBox.Show("请选择一个数据源（后台数据或变量名）", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        return;
+                    }
+                    if (string.IsNullOrWhiteSpace(nameBox.Text))
+                    {
+                        MessageBox.Show("请输入数据项名称", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        nameBox.Focus();
+                        return;
+                    }
+                }
                 dialog.DialogResult = true;
                 dialog.Close();
             };
@@ -8371,50 +8710,43 @@ namespace SideDesk.Controls
             {
                 var item = editItem ?? new DataDashboardItem();
                 item.Label = nameBox.Text.Trim();
-                item.TargetUrl = urlBox.Text.Trim();
-                item.Selector = selectorBox.Text.Trim();
-                item.RefreshIntervalSeconds = int.TryParse(intervalBox.Text.Trim(), out var interval) && interval > 0 ? interval : 60;
 
-                // 记录模板ID
-                if (templateCombo.SelectedItem is ComboBoxItem selItem && selItem.Tag is string tmplId)
+                if (newPanel.Visibility == Visibility.Visible)
                 {
-                    item.TemplateId = tmplId;
+                    // 新建/自轮询：配置取自模板与表单
+                    var tplId = (templateCombo.SelectedItem as ComboBoxItem)?.Tag as string;
+                    var tpl = templates.First(t => t.Id == tplId);
+                    item.TemplateId = tpl.Id;
+                    item.TargetUrl = tpl.TargetUrl;
+                    item.Selector = tpl.Selector;
+                    item.RefreshIntervalSeconds = tpl.RefreshIntervalSeconds > 0 ? tpl.RefreshIntervalSeconds : 60;
+                    item.BrowserId = (browserCombo.SelectedItem as ComboBoxItem)?.Tag as string;
+                    item.ProfileId = (profileCombo.SelectedItem as ComboBoxItem)?.Tag as string;
+                    item.TeamId = (teamCombo.SelectedItem as ComboBoxItem)?.Tag as string;
+                    item.TeamName = teamCombo.SelectedIndex > 0 ? (teamCombo.SelectedItem as ComboBoxItem)?.Content as string : null;
+                    item.VarKey = varKeyBox.Text.Trim();
+                    item.RefVarKey = null;
+                    if (string.IsNullOrEmpty(item.Value)) item.Value = "--";
                 }
                 else
                 {
-                    item.TemplateId = null;
-                }
-
-                // 记录浏览器和Profile
-                if (browserCombo.SelectedItem is ComboBoxItem browserItem && browserItem.Tag is string bId)
-                {
-                    item.BrowserId = bId;
-                }
-                else
-                {
-                    item.BrowserId = null;
-                }
-                if (profileCombo.SelectedItem is ComboBoxItem profileItem && profileItem.Tag is string pId)
-                {
-                    item.ProfileId = pId;
-                }
-                else
-                {
-                    item.ProfileId = null;
-                }
-
-                // 记录所属团队与变量名
-                if (teamCombo.SelectedItem is ComboBoxItem teamItem && teamItem.Tag is string tId)
-                {
-                    item.TeamId = tId;
-                    item.TeamName = teamItem.Content as string;
-                }
-                else
-                {
+                    // 引用式：仅展示同变量名运行中数据项的值，自身不参与轮询
+                    var src = ((bgCombo.SelectedItem as ComboBoxItem)?.Tag as DataDashboardItem)
+                           ?? ((varCombo.SelectedItem as ComboBoxItem)?.Tag as DataDashboardItem)!;
+                    item.RefVarKey = src!.VarKey;
+                    // 快照源项采集配置（供点击卡片打开 URL 等使用）
+                    item.TemplateId = src.TemplateId;
+                    item.TargetUrl = src.TargetUrl;
+                    item.Selector = src.Selector;
+                    item.RefreshIntervalSeconds = src.RefreshIntervalSeconds;
+                    item.BrowserId = src.BrowserId;
+                    item.ProfileId = src.ProfileId;
+                    // 引用项不定义自己的变量与团队归属
+                    item.VarKey = null;
                     item.TeamId = null;
                     item.TeamName = null;
+                    item.Value = string.IsNullOrEmpty(src.Value) ? "--" : src.Value;
                 }
-                item.VarKey = string.IsNullOrWhiteSpace(varKeyBox.Text) ? null : varKeyBox.Text.Trim();
 
                 return item;
             }
@@ -8423,45 +8755,34 @@ namespace SideDesk.Controls
         }
 
         /// <summary>
-        /// 变量名本地唯一性校验：跨所有窗口，同作用域（同为个人，或同一团队）内不能有同名变量。
+        /// 变量名本地唯一性校验：跨所有窗口面板与后台数据项，同作用域（同为个人，或同一团队）内不能有同名变量。
         /// excludeItemId 用于编辑时排除数据项自身。
         /// </summary>
         private bool IsVarKeyDuplicateLocally(string varKey, string? teamId, string? excludeItemId)
         {
+            bool SameScope(DataDashboardItem di)
+            {
+                if (di.Id == excludeItemId) return false;
+                if (string.IsNullOrEmpty(di.VarKey)) return false;
+                if (!string.Equals(di.VarKey, varKey, StringComparison.OrdinalIgnoreCase)) return false;
+                bool diPersonal = string.IsNullOrEmpty(di.TeamId);
+                bool targetPersonal = string.IsNullOrEmpty(teamId);
+                return (diPersonal && targetPersonal) || (!diPersonal && !targetPersonal && di.TeamId == teamId);
+            }
+            bool PanelHas(PanelItem panel)
+            {
+                if (panel.DashboardItems != null && panel.DashboardItems.Any(SameScope)) return true;
+                if (panel.ChildPanels != null)
+                    foreach (var child in panel.ChildPanels)
+                        if (PanelHas(child)) return true;
+                return false;
+            }
+
             var app = (App)Application.Current;
             foreach (var win in app.WindowConfigs.Windows)
-            {
                 foreach (var panel in win.Panels)
-                {
-                    if (PanelHasDuplicateVarKey(panel, varKey, teamId, excludeItemId)) return true;
-                }
-            }
-            return false;
-        }
-
-        /// <summary>递归检查面板（含分组子面板）内是否存在同作用域同名变量。</summary>
-        private static bool PanelHasDuplicateVarKey(PanelItem panel, string varKey, string? teamId, string? excludeItemId)
-        {
-            if (panel.DashboardItems != null)
-            {
-                foreach (var di in panel.DashboardItems)
-                {
-                    if (di.Id == excludeItemId) continue;
-                    if (string.IsNullOrEmpty(di.VarKey)) continue;
-                    if (!string.Equals(di.VarKey, varKey, StringComparison.OrdinalIgnoreCase)) continue;
-                    // 同作用域：两者都是个人（TeamId 为空），或属于同一团队
-                    bool diPersonal = string.IsNullOrEmpty(di.TeamId);
-                    bool targetPersonal = string.IsNullOrEmpty(teamId);
-                    if ((diPersonal && targetPersonal) || (!diPersonal && !targetPersonal && di.TeamId == teamId))
-                        return true;
-                }
-            }
-            if (panel.ChildPanels != null)
-            {
-                foreach (var child in panel.ChildPanels)
-                    if (PanelHasDuplicateVarKey(child, varKey, teamId, excludeItemId)) return true;
-            }
-            return false;
+                    if (PanelHas(panel)) return true;
+            return app.WindowConfigs.BackgroundDashboardItems.Any(SameScope);
         }
 
         #endregion
@@ -8475,7 +8796,15 @@ namespace SideDesk.Controls
         {
             var menu = sender as MenuItem;
             if (menu == null) return;
+            PopulateToolsMenu(menu);
+        }
 
+        /// <summary>
+        /// 填充"工具"菜单项（底部右键菜单与窗口右上角菜单共用，保证两处内容一致）。
+        /// 均为直接执行类工具；可勾选的显示开关在“显示设置”中。
+        /// </summary>
+        public void PopulateToolsMenu(MenuItem menu)
+        {
             menu.Items.Clear();
 
             if (_currentWindowConfig == null)
@@ -8484,57 +8813,79 @@ namespace SideDesk.Controls
                 return;
             }
 
-            // 定义可用工具列表
-            var availableTools = new dynamic[]
+            var availableTools = new (string Header, Action Action)[]
             {
-                new { Key = "ClipboardHistory", Header = "📋 剪贴板历史", Action = (Action)ShowClipboardHistoryTool, IsCheckable = true },
-                new { Key = "AIChat", Header = "🤖 AI 助手", Action = (Action)ShowAIChatTool, IsCheckable = true },
-                new { Key = "VoiceInput", Header = "🎤 语音输入", Action = (Action)ShowVoiceInputTool, IsCheckable = true },
-                new { Key = "WindowTeleport", Header = "🚀 窗口瞬移", Action = (Action)ShowWindowTeleportTool, IsCheckable = false },
-                new { Key = "TitleLock", Header = "🔒 窗口标题锁定器", Action = (Action)ShowTitleLockTool, IsCheckable = false },
-                new { Key = "PluginEditor", Header = "🧩 插件编辑器", Action = (Action)ShowPluginEditorTool, IsCheckable = false },
+                ("🚀 窗口瞬移", (Action)ShowWindowTeleportTool),
+                ("🔒 窗口标题锁定器", (Action)ShowTitleLockTool),
+                ("🧩 插件编辑器", (Action)ShowPluginEditorTool),
                 // 后续可以在这里添加更多工具
             };
 
-            foreach (var tool in availableTools)
+            foreach (var (header, action) in availableTools)
             {
-                // 先将 dynamic 值提取为静态类型局部变量，避免 dynamic 污染表达式
-                string headerText = tool.Header;
-                string key = tool.Key;
-                Action action = tool.Action;
-                bool isCheckable = tool.IsCheckable;
-
+                Action act = action;
                 // Header 用纯字符串：Styles.xaml 的全局 MenuItem 隐式样式会通过 HeaderTemplate
                 // 自动将字符串渲染为彩色 emoji。不能手动设为 Emoji.Wpf.TextBlock（UIElement），
                 // 否则会与 HeaderTemplate 冲突，绑定到该对象并调 ToString 显示类型名
-                var mi = new MenuItem
-                {
-                    Header = headerText,
-                    IsCheckable = isCheckable,
-                    Tag = key
-                };
-                
-                // 只有可勾选的工具才显示勾选状态
-                if (isCheckable && _currentWindowConfig != null)
-                {
-                    mi.IsChecked = _currentWindowConfig.EnabledTools.Contains(key);
-                }
-                
-                mi.Click += (s, ev) =>
-                {
-                    if (isCheckable)
-                    {
-                        // 可勾选工具：切换状态
-                        ToggleTool(key, mi.IsChecked, action);
-                    }
-                    else
-                    {
-                        // 直接使用的工具：立即执行
-                        action();
-                    }
-                };
+                var mi = new MenuItem { Header = header };
+                mi.Click += (s, ev) => act();
                 menu.Items.Add(mi);
             }
+        }
+
+        /// <summary>
+        /// 填充"添加模块"菜单项（窗口右上角菜单使用，与空白处右键的 addModuleMenu 保持一致；
+        /// 复用同一组 Click 处理函数，新模块添加到当前窗口顶层）。
+        /// </summary>
+        public void PopulateAddModuleMenu(MenuItem menu)
+        {
+            menu.Items.Clear();
+
+            MenuItem Make(string header, RoutedEventHandler click)
+            {
+                var mi = new MenuItem { Header = header };
+                mi.Click += click;
+                return mi;
+            }
+
+            menu.Items.Add(Make("分组", AddGroupPanel_Click));
+            menu.Items.Add(new Separator());
+            menu.Items.Add(Make("快捷方式", AddQuickGroupPanel_Click));
+            menu.Items.Add(Make("便签", AddStickyNotesPanel_Click));
+            menu.Items.Add(Make("今日待办", AddTodoPanel_Click));
+            menu.Items.Add(Make("剪贴板收藏", AddClipboardPanel_Click));
+            menu.Items.Add(Make("系统信息", AddSystemMonitorPanel_Click));
+            menu.Items.Add(Make("使用统计", AddUsageStatsPanel_Click));
+            menu.Items.Add(Make("屏幕时长", AddScreenTimePanel_Click));
+            menu.Items.Add(Make("AI 对话", AddAIChatPanel_Click));
+            menu.Items.Add(Make("文件区", AddFileAreaPanel_Click));
+            menu.Items.Add(Make("数据看板", AddDataDashboard_Click));
+
+            menu.Items.Add(Make("计时器", AddTimerPanel_Click));
+            menu.Items.Add(Make("倒计时", AddCountdownPanel_Click));
+            menu.Items.Add(Make("番茄闹钟", AddPomodoroPanel_Click));
+            menu.Items.Add(Make("信号灯", AddSignalLightPanel_Click));
+            menu.Items.Add(Make("图片轮播", AddImageCarouselPanel_Click));
+            menu.Items.Add(Make("每日活跃", AddDailyActivityPanel_Click));
+            menu.Items.Add(Make("日历", AddCalendarPanel_Click));
+            menu.Items.Add(Make("数字员工", AddDigitalEmployeePanel_Click));
+            menu.Items.Add(Make("好友", AddFriendPanel_Click));
+            menu.Items.Add(new Separator());
+
+            // 添加数据块：子菜单展开时动态加载（与右键菜单共用 AddDataBlockMenu_SubmenuOpened）
+            var dataBlockSub = new MenuItem { Header = "添加数据块" };
+            dataBlockSub.Items.Add(new MenuItem { Header = "(加载中...)", IsEnabled = false });
+            dataBlockSub.SubmenuOpened += AddDataBlockMenu_SubmenuOpened;
+            menu.Items.Add(dataBlockSub);
+
+            // 插件子菜单：展开时动态加载已安装插件（与右键菜单共用 AddPluginMenu_SubmenuOpened）
+            var pluginSub = new MenuItem { Header = "插件" };
+            pluginSub.Items.Add(new MenuItem { Header = "(加载中...)", IsEnabled = false });
+            pluginSub.SubmenuOpened += AddPluginMenu_SubmenuOpened;
+            menu.Items.Add(pluginSub);
+
+            menu.Items.Add(new Separator());
+            menu.Items.Add(Make("从团队组件库添加...", AddFromTeamLibrary_Click));
         }
 
         /// <summary>

@@ -16,7 +16,7 @@ namespace SideDesk.Services
         private NativeMethods.LowLevelKeyboardProc? _keyboardProc;
         private int _todayKeyCount = 0;
         private string _todayKeyCountDate = DateTime.Now.ToString("yyyy-MM-dd");
-        private string _logFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SideDesk", "keyboard.log");
+        private string _logFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SideDesk", "Logs", "keyboard.log");
 
         private const int WH_KEYBOARD_LL = 13;
         private const int WM_KEYDOWN = 0x0100;

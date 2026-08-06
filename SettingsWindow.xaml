@@ -47,10 +47,10 @@
                     <ListBoxItem Content="云空间"/>
                     <ListBoxItem Content="外观"/>
                     <ListBoxItem Content="程序管理"/>
-                    <ListBoxItem Content="扩展管理"/>
                     <ListBoxItem Content="插件"/>
                     <ListBoxItem Content="工具"/>
                     <ListBoxItem Content="模块"/>
+                    <ListBoxItem Content="我的数据"/>
                     <ListBoxItem Content="快捷键"/>
                     <ListBoxItem Content="关于"/>
                     <ListBoxItem Content="开发者"/>
@@ -110,6 +110,56 @@
                             </StackPanel>
                         </StackPanel>
                     </Border>
+
+                    <!-- AI 对话模式（本地化 / 网页版） -->
+                    <Border Background="{DynamicResource BrushInputBG}" 
+                            BorderBrush="{DynamicResource BrushBorder}" 
+                            BorderThickness="1" CornerRadius="8" 
+                            Padding="16" Margin="0,0,0,16">
+                        <DockPanel>
+                            <ComboBox x:Name="aiChatModeCombo" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                      Width="140" Height="28"
+                                      Style="{StaticResource GlobalComboBoxStyle}"
+                                      SelectionChanged="AIChatModeCombo_Changed">
+                                <ComboBoxItem Content="本地化" Tag="client"/>
+                                <ComboBoxItem Content="网页版" Tag="web"/>
+                                <ComboBoxItem Content="自动" Tag="auto"/>
+                            </ComboBox>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="AI 对话模式"
+                                           Foreground="{DynamicResource BrushTextMain}"
+                                           FontSize="{DynamicResource FontSizeNormal}"
+                                           FontWeight="SemiBold"/>
+                                <TextBlock Text="本地化：完全本机运行（保护隐私）；网页版：功能可随时云端更新；自动：已登录用网页版，未登录用本地化"
+                                           Foreground="{DynamicResource BrushTextMuted}"
+                                           FontSize="{DynamicResource FontSizeTiny}"
+                                           TextWrapping="Wrap" Margin="0,2,8,0"/>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+
+                    <!-- MCP 工具配置（服务端下载更新） -->
+                    <Border Background="{DynamicResource BrushInputBG}" 
+                            BorderBrush="{DynamicResource BrushBorder}" 
+                            BorderThickness="1" CornerRadius="8" 
+                            Padding="16" Margin="0,0,0,16">
+                        <DockPanel>
+                            <Button x:Name="downloadMcpConfigBtn" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                    Content="下载更新" Width="90" MinHeight="28" Padding="8,3"
+                                    Style="{StaticResource StandardButtonStyle}"
+                                    Cursor="Hand" Click="DownloadMcpConfig_Click"/>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="MCP 工具配置"
+                                           Foreground="{DynamicResource BrushTextMain}"
+                                           FontSize="{DynamicResource FontSizeNormal}"
+                                           FontWeight="SemiBold"/>
+                                <TextBlock x:Name="mcpConfigStatusText" Text="未下载，使用内置工具"
+                                           Foreground="{DynamicResource BrushTextMuted}"
+                                           FontSize="{DynamicResource FontSizeTiny}"
+                                           TextWrapping="Wrap" Margin="0,2,8,0"/>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
                 </StackPanel>
 
                 <!-- 账户页面 -->
@@ -156,14 +206,39 @@
                                         <TextBlock Text="昵称"
                                                    Foreground="{DynamicResource BrushTextMuted}"
                                                    FontSize="{DynamicResource FontSizeSmall}" Margin="0,0,0,6"/>
-                                        <DockPanel>
+                                        <!-- 展示态：默认只显示昵称，悬停浮现编辑提示，点击进入编辑 -->
+                                        <Border x:Name="nicknameDisplayHost" Background="Transparent"
+                                                BorderBrush="Transparent" BorderThickness="1" CornerRadius="6"
+                                                Padding="8,6" MinHeight="30" Cursor="Hand"
+                                                ToolTip="点击修改昵称"
+                                                MouseEnter="NicknameDisplay_MouseEnter"
+                                                MouseLeave="NicknameDisplay_MouseLeave"
+                                                MouseLeftButtonUp="NicknameDisplay_Click">
+                                            <DockPanel>
+                                                <TextBlock x:Name="nicknameEditHint" DockPanel.Dock="Right" Text="✎ 编辑"
+                                                           Visibility="Collapsed" VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource BrushTextMuted}"
+                                                           FontSize="{DynamicResource FontSizeSmall}" Margin="8,0,0,0"/>
+                                                <TextBlock x:Name="nicknameDisplayText" Text="-"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource BrushTextMain}"
+                                                           FontSize="{DynamicResource FontSizeNormal}"/>
+                                            </DockPanel>
+                                        </Border>
+                                        <!-- 编辑态：点击进入后出现输入框 + 保存按钮 -->
+                                        <DockPanel x:Name="nicknameEditHost" Visibility="Collapsed">
+                                            <Button x:Name="cancelNicknameBtn" Content="取消" DockPanel.Dock="Right"
+                                                    Click="CancelNickname_Click"
+                                                    Style="{DynamicResource StandardButtonStyle}"
+                                                    Padding="14,6" Height="30" Margin="8,0,0,0"/>
                                             <Button x:Name="saveNicknameBtn" Content="保存" DockPanel.Dock="Right"
                                                     Click="SaveNickname_Click"
                                                     Style="{DynamicResource PrimaryButtonStyle}"
                                                     Padding="14,6" Height="30" Margin="8,0,0,0"/>
                                             <TextBox x:Name="nicknameBox"
                                                      Style="{StaticResource GlobalTextBoxStyle}"
-                                                     Height="30" VerticalContentAlignment="Center"/>
+                                                     Height="30" VerticalContentAlignment="Center"
+                                                     PreviewKeyDown="NicknameBox_PreviewKeyDown"/>
                                         </DockPanel>
                                     </StackPanel>
                                 </DockPanel>
@@ -552,6 +627,50 @@
                                   Checked="ShowNotificationStripSwitch_Changed"
                                   Unchecked="ShowNotificationStripSwitch_Changed"/>
                     </Grid>
+
+                    <!-- 分享组件边框颜色 -->
+                    <Grid Margin="0,0,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="分享组件边框颜色" Foreground="{DynamicResource BrushTextMain}"
+                                       FontSize="{DynamicResource FontSizeNormal}"/>
+                            <TextBlock Text="通过分享导入的组件，外框使用此颜色标识" Foreground="{DynamicResource BrushTextMuted}"
+                                       FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <WrapPanel x:Name="shareBorderSwatches"/>
+                            <TextBox x:Name="shareBorderHexBox" Width="90" Margin="0,6,0,0" HorizontalAlignment="Right"
+                                     Style="{StaticResource GlobalTextBoxStyle}"
+                                     Tag="share"
+                                     LostFocus="BorderHex_LostFocus"
+                                     KeyDown="BorderHex_KeyDown"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- 团队组件边框颜色 -->
+                    <Grid Margin="0,0,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="团队组件边框颜色" Foreground="{DynamicResource BrushTextMain}"
+                                       FontSize="{DynamicResource FontSizeNormal}"/>
+                            <TextBlock Text="归属团队的组件，外框使用此颜色标识" Foreground="{DynamicResource BrushTextMuted}"
+                                       FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <WrapPanel x:Name="teamBorderSwatches"/>
+                            <TextBox x:Name="teamBorderHexBox" Width="90" Margin="0,6,0,0" HorizontalAlignment="Right"
+                                     Style="{StaticResource GlobalTextBoxStyle}"
+                                     Tag="team"
+                                     LostFocus="BorderHex_LostFocus"
+                                     KeyDown="BorderHex_KeyDown"/>
+                        </StackPanel>
+                    </Grid>
                 </StackPanel>
                 
                 <!-- 程序管理页面 -->
@@ -628,26 +747,6 @@
                     </StackPanel>
                 </StackPanel>
                 
-                <!-- 扩展管理页面 -->
-                <StackPanel x:Name="pageExtensions" Visibility="Collapsed" Margin="0,0,0,20">
-                    <TextBlock Text="扩展管理" 
-                               FontSize="{DynamicResource FontSizeSubtitle}" 
-                               FontWeight="Bold"
-                               Foreground="{DynamicResource BrushTextMain}"
-                               Margin="0,0,0,8"/>
-                    <TextBlock Text="管理已创建的扩展，或新建扩展" 
-                               Foreground="{DynamicResource BrushTextMuted}" 
-                               FontSize="{DynamicResource FontSizeSmall}" 
-                               Margin="0,0,0,16"/>
-                    
-                    <StackPanel x:Name="extensionListPanel"/>
-                    
-                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                        <Button Content="+ 新建扩展" Click="NewExtension_Click"
-                                Style="{StaticResource GhostButtonStyle}" Padding="12,6"/>
-                    </StackPanel>
-                </StackPanel>
-                
                 <!-- 插件管理页面 -->
                 <StackPanel x:Name="pagePlugins" Visibility="Collapsed" Margin="0,0,0,20">
                     <TextBlock Text="插件" 
@@ -718,11 +817,11 @@
                                       Checked="McpServerSwitch_Changed" 
                                       Unchecked="McpServerSwitch_Changed"/>
                             <StackPanel VerticalAlignment="Center">
-                                <TextBlock Text="MCP 服务器" 
+                                <TextBlock Text="MCP 服务器"
                                            Foreground="{DynamicResource BrushTextMain}"
                                            FontSize="{DynamicResource FontSizeNormal}"
                                            FontWeight="SemiBold"/>
-                                <TextBlock Text="开启后在 127.0.0.1:19192 提供 MCP 协议接口，供 AI 助手调用" 
+                                <TextBlock Text="开启后在 127.0.0.1:19192 提供 MCP 协议接口，供 AI 助手调用"
                                            Foreground="{DynamicResource BrushTextMuted}"
                                            FontSize="{DynamicResource FontSizeTiny}"
                                            Margin="0,2,0,0"/>
@@ -908,6 +1007,20 @@
                     </StackPanel>
                 </StackPanel>
                 
+                <!-- 我的数据页面 -->
+                <StackPanel x:Name="pageMyData" Visibility="Collapsed" Margin="0,0,0,20">
+                    <TextBlock Text="我的数据" 
+                               FontSize="{DynamicResource FontSizeSubtitle}" 
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource BrushTextMain}"
+                               Margin="0,0,0,8"/>
+                    <TextBlock Text="SideDesk 采集的各类个人数据概述，点击卡片查看详情" 
+                               Foreground="{DynamicResource BrushTextMuted}" 
+                               FontSize="{DynamicResource FontSizeSmall}" 
+                               Margin="0,0,0,20"/>
+                    <UniformGrid x:Name="myDataCardsGrid" Columns="2"/>
+                </StackPanel>
+
                 <!-- 快捷键页面 -->
                 <StackPanel x:Name="pageShortcuts" Visibility="Collapsed" Margin="0,0,0,20">
                     <TextBlock Text="快捷键" 

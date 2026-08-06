@@ -30,6 +30,8 @@ namespace SideDesk.Services
                 _logger.Start();
                 IsRunning = true;
             }
+            // 联动小时粒度落库：补齐历史 + 定期重算今天
+            ScreenTimeHourlyService.Instance.Start();
         }
 
         /// <summary>停止采集并释放资源（幂等）</summary>
@@ -42,6 +44,7 @@ namespace SideDesk.Services
                 _logger = null;
                 IsRunning = false;
             }
+            ScreenTimeHourlyService.Instance.Stop();
         }
 
         /// <summary>根据开关状态启动/停止采集</summary>

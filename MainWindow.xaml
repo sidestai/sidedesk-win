@@ -79,12 +79,14 @@
                             <Separator x:Name="menuSeparator1"/>
                             <MenuItem Header="创建小屏" Click="NewSideScreen_Click"/>
                             <MenuItem Header="导入分享" Click="ImportShare_Click"/>
+                            <MenuItem Header="添加模块" SubmenuOpened="AddModuleMenu_SubmenuOpened">
+                                <MenuItem Header="(加载中...)"/>
+                            </MenuItem>
                             <MenuItem Header="小屏管理" Click="ScreenManager_Click"/>
                             <MenuItem x:Name="notificationCenterMenu" Header="通知中心" Click="NotificationCenter_Click"/>
                             <MenuItem Header="设置" Click="Settings_Click"/>
-                            <MenuItem x:Name="toolsMenu" Header="工具">
-                                <MenuItem x:Name="titleLockMenuItem" Header="窗口标题锁定器" Click="TitleLock_Click"/>
-                                <MenuItem Header="插件编辑器" Click="PluginEditor_Click"/>
+                            <MenuItem x:Name="toolsMenu" Header="工具" SubmenuOpened="ToolsMenu_SubmenuOpened">
+                                <MenuItem Header="(加载中...)"/>
                             </MenuItem>
                             <Separator x:Name="closeWindowSeparator"/>
                             <MenuItem x:Name="closeWindowMenu" Header="关闭面板" Click="CloseWindow_Click"/>

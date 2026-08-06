@@ -25,6 +25,7 @@
     <PackageReference Include="ChromeProtocol.Runtime" Version="2.1.1" />
     <PackageReference Include="Emoji.Wpf" Version="0.3.4" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.*" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.*" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.*" />
     <PackageReference Include="MinimalMcp" Version="0.1.0-alpha" />
     <PackageReference Include="Newtonsoft.Json" Version="13.*" />

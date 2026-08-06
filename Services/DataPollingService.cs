@@ -80,18 +80,18 @@ public class DataPollingService : IDisposable
         {
             _items.Clear();
 
-            // 面板数据项
+            // 面板数据项（引用项仅展示、不轮询，不纳入）
             foreach (var win in configs.Windows)
             {
                 foreach (var panel in win.Panels)
                 {
                     if (panel.DashboardItems == null || panel.DashboardItems.Count == 0) continue;
-                    _items.AddRange(panel.DashboardItems);
+                    _items.AddRange(panel.DashboardItems.Where(d => string.IsNullOrEmpty(d.RefVarKey)));
                 }
             }
 
             // 后台数据项
-            _items.AddRange(configs.BackgroundDashboardItems);
+            _items.AddRange(configs.BackgroundDashboardItems.Where(d => string.IsNullOrEmpty(d.RefVarKey)));
         }
 
         RebuildTimers();
@@ -102,6 +102,14 @@ public class DataPollingService : IDisposable
     public List<DataDashboardItem> GetAllItems()
     {
         lock (_itemsLock) return new List<DataDashboardItem>(_items);
+    }
+
+    /// <summary>按变量名查找实际轮询中的数据项（供引用项展示取值；找不到返回 null）</summary>
+    public DataDashboardItem? FindItemByVarKey(string? varKey)
+    {
+        if (string.IsNullOrEmpty(varKey)) return null;
+        lock (_itemsLock)
+            return _items.FirstOrDefault(i => string.Equals(i.VarKey, varKey, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>获取指定数据项的连接状态</summary>
@@ -431,7 +439,8 @@ public class DataPollingService : IDisposable
     }
 
     /// <summary>
-    /// 启动隐藏浏览器（headless 或 hidden 窗口模式）
+    /// 启动隐藏浏览器（headless 或 hidden 窗口模式）。
+    /// 注：headless Chrome 可能只监听 IPv6 回环，连接侧已由 DiscoverWsUrisAsync 双栈探测兼容。
     /// </summary>
     private async Task<BrowserConnection?> LaunchHiddenBrowserAsync(string key, string exePath, string userDataDir, int port, string url, Settings appSettings)
     {
@@ -509,44 +518,50 @@ public class DataPollingService : IDisposable
         var deadline = DateTime.UtcNow + timeout;
         while (DateTime.UtcNow < deadline)
         {
-            var client = new DefaultProtocolClient(new Uri($"ws://127.0.0.1:{port}/devtools/browser"), NullLogger.Instance);
-            try
+            // headless Chrome 150 可能只监听 IPv6，且需带 GUID 的完整路径，逐个候选尝试
+            foreach (var wsUri in await CdpBrowserService.DiscoverWsUrisAsync(port))
             {
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-                await client.ConnectAsync(cts.Token);
-                var n = Interlocked.Increment(ref _totalConnections);
-                Debug.WriteLine($"[DataPolling] ★ 建立 CDP 连接 #{n}（隐藏浏览器就绪）: port={port}");
-                return client; // 连接成功，直接复用，不 Dispose
-            }
-            catch
-            {
-                client.Dispose();
+                var client = new DefaultProtocolClient(wsUri, NullLogger.Instance);
+                try
+                {
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                    await client.ConnectAsync(cts.Token);
+                    var n = Interlocked.Increment(ref _totalConnections);
+                    Debug.WriteLine($"[DataPolling] ★ 建立 CDP 连接 #{n}（隐藏浏览器就绪）: {wsUri}");
+                    return client; // 连接成功，直接复用，不 Dispose
+                }
+                catch
+                {
+                    client.Dispose();
+                }
             }
             await Task.Delay(500);
         }
         return null;
     }
 
-    /// <summary>通过 WebSocket CDP 连接到浏览器</summary>
+    /// <summary>通过 WebSocket CDP 连接到浏览器（兼容 IPv4/IPv6 双栈与带 GUID 路径）</summary>
     private static async Task<DefaultProtocolClient?> ConnectBrowserAsync(int port)
     {
-        var wsUri = new Uri($"ws://127.0.0.1:{port}/devtools/browser");
-        var client = new DefaultProtocolClient(wsUri, NullLogger.Instance);
-        try
+        foreach (var wsUri in await CdpBrowserService.DiscoverWsUrisAsync(port))
         {
-            // 超时适当放宽：Edge “允许远程调试”弹窗需用户手动确认，太短会在确认前超时重试、叠加弹窗
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            await client.ConnectAsync(cts.Token);
-            var n = Interlocked.Increment(ref _totalConnections);
-            Debug.WriteLine($"[DataPolling] ★ 建立 CDP 连接 #{n}（连接已运行浏览器）: {wsUri}");
-            return client;
+            var client = new DefaultProtocolClient(wsUri, NullLogger.Instance);
+            try
+            {
+                // 超时适当放宽：Edge “允许远程调试”弹窗需用户手动确认，太短会在确认前超时重试、叠加弹窗
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                await client.ConnectAsync(cts.Token);
+                var n = Interlocked.Increment(ref _totalConnections);
+                Debug.WriteLine($"[DataPolling] ★ 建立 CDP 连接 #{n}（连接已运行浏览器）: {wsUri}");
+                return client;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[DataPolling] 连接 {wsUri} 失败: {ex.Message}");
+                client.Dispose();
+            }
         }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"[DataPolling] 连接 {wsUri} 失败: {ex.Message}");
-            client.Dispose();
-            return null;
-        }
+        return null;
     }
 
     /// <summary>查找匹配 URL 的 page Tab</summary>

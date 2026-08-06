@@ -37,6 +37,70 @@ public class CdpBrowserService : IDisposable
 
     private CdpBrowserService() { }
 
+    private static readonly HttpClient _discoverHttp = new() { Timeout = TimeSpan.FromSeconds(10) };
+
+    /// <summary>
+    /// 发现浏览器 CDP WebSocket 端点，返回按优先级排列的候选 URI。
+    /// Chrome 150 的 headless 模式可能只监听 IPv6 回环（::1），且无 GUID 的
+    /// /devtools/browser 路径返回 404，因此需同时探测 IPv4/IPv6 并从
+    /// DevToolsActivePort 文件或 HTTP /json/version 获取完整路径。
+    /// </summary>
+    public static async Task<List<Uri>> DiscoverWsUrisAsync(int port)
+    {
+        var result = new List<Uri>();
+        void Add(string s) { if (Uri.TryCreate(s, UriKind.Absolute, out var u) && !result.Contains(u)) result.Add(u); }
+
+        // 1. DevToolsActivePort 文件（含 SideDesk 自启动的 HeadlessProfile）：首行端口，次行 WS 路径；
+        //    逐个候选校验端口匹配，避免读到其他浏览器实例的文件
+        foreach (var activePortFile in FindDevToolsActivePortFiles())
+        {
+            try
+            {
+                var lines = await File.ReadAllLinesAsync(activePortFile);
+                if (lines.Length >= 2 && int.TryParse(lines[0].Trim(), out int filePort) && filePort == port)
+                {
+                    var path = lines[1].Trim();
+                    if (path.StartsWith("/"))
+                    {
+                        Add($"ws://127.0.0.1:{port}{path}");
+                        Add($"ws://[::1]:{port}{path}");
+                    }
+                }
+            }
+            catch { /* 文件可能被占用，忽略 */ }
+        }
+
+        // 2. HTTP /json/version 发现（双栈探测：可能只监听 IPv4 或 IPv6）
+        foreach (var (host, display) in new[] { ("127.0.0.1", "127.0.0.1"), ("[::1]", "::1") })
+        {
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                var resp = await _discoverHttp.GetAsync($"http://{host}:{port}/json/version", cts.Token);
+                if (!resp.IsSuccessStatusCode) continue;
+                var json = JObject.Parse(await resp.Content.ReadAsStringAsync(cts.Token));
+
+                // 该地址可达：无 GUID 的标准路径排前兼容旧版浏览器
+                Add($"ws://{host}:{port}/devtools/browser");
+
+                var wsUrl = json["webSocketDebuggerUrl"]?.Value<string>();
+                if (!string.IsNullOrEmpty(wsUrl) && Uri.TryCreate(wsUrl, UriKind.Absolute, out var wsUri))
+                {
+                    // 响应里的主机可能是 localhost/IPv6，统一替换为实际可达的地址
+                    var builder = new UriBuilder(wsUri) { Host = display };
+                    Add(builder.Uri.ToString());
+                }
+            }
+            catch { /* 该地址未监听，继续探测另一地址 */ }
+        }
+
+        // 3. 兜底：直接尝试标准路径（双栈）
+        Add($"ws://127.0.0.1:{port}/devtools/browser");
+        Add($"ws://[::1]:{port}/devtools/browser");
+
+        return result;
+    }
+
     /// <summary>
     /// 连接已运行的浏览器（用户主浏览器，已开启远程调试），获取网页元素文本值。
     /// 不启动新进程，直接通过 WebSocket CDP 连接（Chrome 144+ 不再支持 HTTP /json 发现端点）。
@@ -131,34 +195,13 @@ public class CdpBrowserService : IDisposable
 
     /// <summary>
     /// 通过 WebSocket CDP 连接到已运行的浏览器，返回协议客户端。
-    /// Chrome 144+ 移除了 HTTP /json 发现端点，需通过 DevToolsActivePort 文件获取 WebSocket 路径，
-    /// 或直接尝试连接 ws://127.0.0.1:{port}/devtools/browser。
+    /// 依次尝试 DiscoverWsUrisAsync 发现的候选端点（DevToolsActivePort 文件路径、
+    /// /json/version 返回的带 GUID 路径、IPv4/IPv6 双栈标准路径）。
     /// </summary>
     public async Task<DefaultProtocolClient?> ConnectBrowserAsync(int port)
     {
-        // 尝试从 DevToolsActivePort 文件读取 WebSocket 路径（Edge/Chrome 均会写入）
-        var wsPaths = new List<string>();
-        var activePortPath = FindDevToolsActivePortFile(port);
-        if (activePortPath != null)
+        foreach (var wsUri in await DiscoverWsUrisAsync(port))
         {
-            try
-            {
-                var lines = await File.ReadAllLinesAsync(activePortPath);
-                if (lines.Length >= 2 && int.TryParse(lines[0].Trim(), out int filePort) && filePort == port)
-                {
-                    var path = lines[1].Trim();
-                    if (path.StartsWith("/")) wsPaths.Add(path);
-                }
-            }
-            catch { /* 文件可能被锁定，忽略 */ }
-        }
-
-        // 回退：直接尝试标准路径
-        wsPaths.Add("/devtools/browser");
-
-        foreach (var path in wsPaths)
-        {
-            var wsUri = new Uri($"ws://127.0.0.1:{port}{path}");
             var client = new DefaultProtocolClient(wsUri, NullLogger.Instance);
             try
             {
@@ -180,18 +223,32 @@ public class CdpBrowserService : IDisposable
     }
 
     /// <summary>
-    /// 查找浏览器 DevToolsActivePort 文件（Edge/Chrome 用户数据目录）
+    /// 枚举可能的浏览器 DevToolsActivePort 文件（Edge/Chrome 用户数据目录 + SideDesk 自启动的 HeadlessProfile）
     /// </summary>
-    private static string? FindDevToolsActivePortFile(int port)
+    private static IEnumerable<string> FindDevToolsActivePortFiles()
     {
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var candidates = new[]
+        var candidates = new List<string>
         {
             Path.Combine(localAppData, "Microsoft", "Edge", "User Data", "DevToolsActivePort"),
             Path.Combine(localAppData, "Google", "Chrome", "User Data", "DevToolsActivePort"),
             Path.Combine(localAppData, "BraveSoftware", "Brave-Browser", "User Data", "DevToolsActivePort"),
         };
-        return candidates.FirstOrDefault(File.Exists);
+
+        // SideDesk 自启动隐藏浏览器的专属 userData 目录优先（端口匹配概率最高）
+        var headlessRoot = Path.Combine(localAppData, "SideDesk", "HeadlessProfile");
+        var result = new List<string>();
+        try
+        {
+            if (Directory.Exists(headlessRoot))
+                result.AddRange(Directory.GetDirectories(headlessRoot)
+                    .Select(d => Path.Combine(d, "DevToolsActivePort"))
+                    .Where(File.Exists));
+        }
+        catch { }
+
+        result.AddRange(candidates.Where(File.Exists));
+        return result;
     }
 
     /// <summary>
@@ -374,22 +431,27 @@ public class CdpBrowserService : IDisposable
     }
 
     /// <summary>
-    /// 等待 CDP 端口就绪
+    /// 等待 CDP 端口就绪：以 WS 连接尝试探测（兼容只监听 IPv6 的 headless 浏览器）。
     /// </summary>
     private async Task<bool> WaitForCdpReadyAsync(int port, TimeSpan timeout)
     {
-        using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
         var deadline = DateTime.UtcNow + timeout;
 
         while (DateTime.UtcNow < deadline)
         {
-            try
+            foreach (var wsUri in await DiscoverWsUrisAsync(port))
             {
-                var response = await httpClient.GetAsync($"http://localhost:{port}/json/version");
-                if (response.IsSuccessStatusCode) return true;
+                try
+                {
+                    using var ws = new ClientWebSocket();
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                    await ws.ConnectAsync(wsUri, cts.Token);
+                    try { await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None); } catch { }
+                    return true;
+                }
+                catch { }
             }
-            catch { }
-            await Task.Delay(500);
+            await Task.Delay(1000);
         }
         return false;
     }
@@ -573,28 +635,53 @@ public class CdpBrowserService : IDisposable
         // 等待页面加载
         await Task.Delay(3000);
 
-        using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+        // 新版浏览器已移除 HTTP /json 端点，改用浏览器级 WS 连接 + Target.getTargets 获取页面 WS 地址
         string? wsUrl = null;
+
+        var browserClient = await ConnectBrowserAsync(port);
+        if (browserClient == null)
+        {
+            Debug.WriteLine($"[CDP] 获取 Tab 列表失败：无法连接浏览器 CDP (port={port})");
+            return null;
+        }
 
         try
         {
-            var json = await httpClient.GetStringAsync($"http://localhost:{port}/json");
-            var tabs = JArray.Parse(json);
-
-            foreach (var tab in tabs)
+            // 探测实际可达的环回地址（headless Chrome 150 可能只监听 IPv6）
+            string? reachableHost = null;
+            using (var probeHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(5) })
             {
-                var tabUrl = tab["url"]?.ToString() ?? "";
+                foreach (var h in new[] { "127.0.0.1", "[::1]" })
+                {
+                    try
+                    {
+                        var r = await probeHttp.GetAsync($"http://{h}:{port}/json/version");
+                        if (r.IsSuccessStatusCode) { reachableHost = h; break; }
+                    }
+                    catch { }
+                }
+            }
+
+            var targets = await browserClient.SendCommandAsync(ChromeProtocol.Domains.Target.GetTargets());
+            foreach (var tab in targets.TargetInfos.Where(t => t.Type == "page"))
+            {
+                var tabUrl = tab.Url ?? "";
                 if (tabUrl.StartsWith(url, StringComparison.OrdinalIgnoreCase) || url.StartsWith(tabUrl, StringComparison.OrdinalIgnoreCase))
                 {
-                    wsUrl = tab["webSocketDebuggerUrl"]?.ToString();
-                    if (!string.IsNullOrEmpty(wsUrl)) break;
+                    // 页面级 WS 端点直接按 targetId 构造（/json 端点已移除后的标准做法）
+                    var host = reachableHost ?? "127.0.0.1";
+                    wsUrl = $"ws://{host}:{port}/devtools/page/{tab.TargetId}";
+                    break;
                 }
             }
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"[CDP] 获取 Tab 列表失败: {ex.Message}");
-            return null;
+        }
+        finally
+        {
+            browserClient.Dispose();
         }
 
         if (string.IsNullOrEmpty(wsUrl)) return null;

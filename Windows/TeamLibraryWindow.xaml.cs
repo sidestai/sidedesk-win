@@ -15,24 +15,64 @@ public partial class TeamLibraryWindow : Window
     /// <summary>添加模块时的回调（将构造好的 PanelItem 传回调用方）</summary>
     public Action<PanelItem>? OnAddItem { get; set; }
 
+    /// <summary>加载序号令牌：快速切换团队时丢弃过期加载结果，避免旧结果覆盖新列表</summary>
+    private int _loadToken;
+
     public TeamLibraryWindow()
     {
         InitializeComponent();
         SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(this);
-        Loaded += async (_, _) => await LoadLibraryAsync();
+        Loaded += async (_, _) => await InitTeamSelectorAsync();
+        teamCombo.SelectionChanged += async (_, _) =>
+        {
+            if ((teamCombo.SelectedItem as ComboBoxItem)?.Tag is string corpId)
+                await LoadLibraryAsync(corpId);
+        };
     }
 
-    private async System.Threading.Tasks.Task LoadLibraryAsync()
+    /// <summary>拉取团队列表填充切换下拉；默认选中设置里的当前团队，未设置则选第一个，随后加载其组件库</summary>
+    private async System.Threading.Tasks.Task InitTeamSelectorAsync()
     {
-        listPanel.Children.Clear();
-
-        var app = (App)Application.Current;
-        string? corpId = app.AppSettings.SelectedCorpId;
-        if (string.IsNullOrEmpty(corpId))
+        listPanel.Children.Add(new TextBlock
         {
-            listPanel.Children.Add(BuildHint("请先在设置中切换到某个团队"));
+            Text = "加载团队列表...",
+            FontSize = 12,
+            Foreground = (Brush)FindResource("BrushTextMuted"),
+            Margin = new Thickness(0, 20, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Center
+        });
+
+        var teams = await TeamService.Instance.ListTeamsAsync();
+        if (teams == null || teams.Count == 0)
+        {
+            listPanel.Children.Clear();
+            listPanel.Children.Add(BuildHint("暂无可切换的团队\n请先在设置中创建或加入团队"));
+            teamCombo.IsEnabled = false;
             return;
         }
+
+        foreach (var t in teams)
+            teamCombo.Items.Add(new ComboBoxItem { Content = t.Name, Tag = t.Id });
+
+        // 默认选中设置里的当前团队；未设置时选第一个
+        var app = (App)Application.Current;
+        string? selectedCorpId = app.AppSettings.SelectedCorpId;
+        int selIdx = 0;
+        if (!string.IsNullOrEmpty(selectedCorpId))
+        {
+            for (int i = 0; i < teamCombo.Items.Count; i++)
+            {
+                if ((teamCombo.Items[i] as ComboBoxItem)?.Tag as string == selectedCorpId)
+                { selIdx = i; break; }
+            }
+        }
+        teamCombo.SelectedIndex = selIdx; // 触发 SelectionChanged 加载该团队的组件列表
+    }
+
+    private async System.Threading.Tasks.Task LoadLibraryAsync(string corpId)
+    {
+        int token = ++_loadToken;
+        listPanel.Children.Clear();
 
         listPanel.Children.Add(new TextBlock
         {
@@ -44,6 +84,9 @@ public partial class TeamLibraryWindow : Window
         });
 
         var items = await TeamService.Instance.GetTeamLibraryAsync(corpId);
+
+        // 期间又切换了团队，丢弃过期结果
+        if (token != _loadToken) return;
 
         listPanel.Children.Clear();
 
@@ -159,12 +202,12 @@ public partial class TeamLibraryWindow : Window
     {
         if (sender is not Button btn || btn.Tag is not TeamLibraryItem libItem) return;
 
-        // 构造本地 PanelItem：引用同一条服务端记录（数据共享）
+        // 构造本地 PanelItem：引用同一条服务端记录（数据共享）；TeamId 为团队加密串
         var panel = new PanelItem
         {
             ServerId = libItem.ItemServerId,
             OwnerType = "team",
-            TeamId = libItem.CorpId.ToString(),
+            TeamId = libItem.CorpId,
             Title = libItem.Title
         };
 
@@ -241,6 +284,8 @@ public partial class TeamLibraryWindow : Window
             }
 
             string listJson = rows.ToString();
+            // 缓存服务端行主键 ID（供后续行级操作使用）
+            SideDesk.Services.CloudSyncService.CacheRowServerIds(rowsArr);
             await Dispatcher.InvokeAsync(() =>
             {
                 switch (panel.Type)

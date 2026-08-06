@@ -53,16 +53,26 @@ namespace SideDesk.Windows
         static WindowUsageStats()
         {
             string appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            LogFolder = Path.Combine(appData, "SideDesk", "WindowLogs");
+            LogFolder = Path.Combine(appData, "SideDesk", "Logs");
         }
 
         /// <summary>
         /// 解析今天的日志文件，返回所有记录（已计算 Duration）
         /// </summary>
-        public static List<WindowRecord> ParseTodayLog()
+        public static List<WindowRecord> ParseTodayLog() => ParseLog(DateTime.Now);
+
+        /// <summary>日志目录是否存在指定日期的日志文件</summary>
+        public static bool HasLogForDate(DateTime date)
+            => File.Exists(Path.Combine(LogFolder, $"windowlog_{date:yyyyMMdd}.txt"));
+
+        /// <summary>
+        /// 解析指定日期的日志文件，返回所有记录（已计算 Duration）。
+        /// 非今天时最后一条记录不延续计时（Duration 为 0），保证历史统计稳定。
+        /// </summary>
+        public static List<WindowRecord> ParseLog(DateTime date)
         {
             var records = new List<WindowRecord>();
-            string filePath = Path.Combine(LogFolder, $"windowlog_{DateTime.Now:yyyyMMdd}.txt");
+            string filePath = Path.Combine(LogFolder, $"windowlog_{date:yyyyMMdd}.txt");
             if (!File.Exists(filePath))
                 return records;
 
@@ -109,8 +119,8 @@ namespace SideDesk.Windows
                 records[i].Duration = diff;
             }
 
-            // 最后一条记录：持续到当前时间，上限5分钟
-            if (records.Count > 0)
+            // 仅今天：最后一条记录持续到当前时间（上限 5 分钟）；历史日期不延续计时
+            if (date.Date == DateTime.Now.Date && records.Count > 0)
             {
                 var last = records[records.Count - 1];
                 var diff = DateTime.Now - last.Timestamp;

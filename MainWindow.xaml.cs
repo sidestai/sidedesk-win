@@ -145,6 +145,14 @@ namespace SideDesk
         /// <summary>重新渲染原生模式面板（设置变更后调用）。</summary>
         public void RefreshNativePanels() => sidebarPanel.RefreshNativePanels();
 
+        /// <summary>好友资料变更通知（WS 推送）：更新原生面板的好友缓存并刷新展示。</summary>
+        public void UpdateFriendProfile(string userId, string? nickName, string? avatar)
+            => sidebarPanel.UpdateFriendProfile(userId, nickName, avatar);
+
+        /// <summary>好友上/下线通知（WS 推送）：更新原生面板好友缓存的在线状态并刷新展示。</summary>
+        public void UpdateFriendOnlineStatus(string userId, bool online)
+            => sidebarPanel.UpdateFriendOnlineStatus(userId, online);
+
         /// <summary>
         /// 重新加载悬停浮动配置：按当前 DockSide 从设置读取该侧的开关与宽度，
         /// 动态启动或停止悬停计时器。可在设置变更后热重载调用。
@@ -262,11 +270,31 @@ namespace SideDesk
             var showClose = isBothSide ? Visibility.Visible : Visibility.Collapsed;
             closeWindowMenu.Visibility = showClose;
             closeWindowSeparator.Visibility = showClose;
+        }
 
-            // 未在设置中开启标题锁定时，隐藏"工具-窗口标题锁定器"（工具子菜单为空则一并隐藏）
-            bool titleLockEnabled = app.AppSettings.EnableTitleLock;
-            titleLockMenuItem.Visibility = titleLockEnabled ? Visibility.Visible : Visibility.Collapsed;
-            toolsMenu.Visibility = titleLockEnabled ? Visibility.Visible : Visibility.Collapsed;
+        /// <summary>
+        /// "工具"子菜单展开时动态填充：与底部右键菜单共用同一份工具列表（NativeModePanel.PopulateToolsMenu）
+        /// </summary>
+        private void ToolsMenu_SubmenuOpened(object sender, RoutedEventArgs e)
+        {
+            var menu = sender as MenuItem;
+            if (menu == null) return;
+            // SubmenuOpened 是冒泡事件：需过滤子级子菜单冒泡上来的事件，只响应本菜单项自身展开
+            if (!ReferenceEquals(e.OriginalSource, sender)) return;
+            sidebarPanel.PopulateToolsMenu(menu);
+        }
+
+        /// <summary>
+        /// "添加模块"子菜单展开时动态填充：与空白处右键菜单的 addModuleMenu 内容一致（NativeModePanel.PopulateAddModuleMenu）
+        /// </summary>
+        private void AddModuleMenu_SubmenuOpened(object sender, RoutedEventArgs e)
+        {
+            var menu = sender as MenuItem;
+            if (menu == null) return;
+            // SubmenuOpened 是冒泡事件：内部的“添加数据块/插件”子菜单展开时也会冒泡到这里，
+            // 若在此重建 Items 会导致整个菜单崩塌，只响应本菜单项自身展开
+            if (!ReferenceEquals(e.OriginalSource, sender)) return;
+            sidebarPanel.PopulateAddModuleMenu(menu);
         }
 
         /// <summary>“小屏管理”菜单入口：弹出独立管理窗口。</summary>
@@ -370,21 +398,6 @@ namespace SideDesk
             }
             _settingsWindow.Show();
             _settingsWindow.Activate();
-        }
-
-        /// <summary>
-        /// 打开窗口标题锁定器（选择窗口界面，与设置-工具入口一致）
-        /// </summary>
-        private void TitleLock_Click(object sender, RoutedEventArgs e)
-        {
-            var window = new TitleLockPickerWindow { Owner = this };
-            window.ShowDialog();
-        }
-
-        private void PluginEditor_Click(object sender, RoutedEventArgs e)
-        {
-            var window = new Windows.PluginEditorWindow();
-            window.Show();
         }
 
         private void CloseWindow_Click(object sender, RoutedEventArgs e)
@@ -955,6 +968,12 @@ namespace SideDesk
             string resultBarServerId = data["barServerId"]?.ToString() ?? "";
             string resultShareMode   = data["shareMode"]?.ToString() ?? "";
             string? sourceBarId      = data["sourceBarId"]?.ToString();
+            string? resultShareId    = data["shareId"]?.ToString();
+            string? resultShareCode  = data["shareCode"]?.ToString();
+            // 权限快照（服务端导入时固化）：引用模式下客户端据此拦截编辑/删除
+            bool resultAllowEdit     = data["allowEdit"]?.ToObject<bool>() ?? true;
+            bool resultAllowDelete   = data["allowDelete"]?.ToObject<bool>() ?? true;
+            bool resultAllowReShare  = data["allowReShare"]?.ToObject<bool>() ?? false;
             string  resultItemTitle  = data["itemTitle"]?.ToString() ?? "";
             string  resultItemType   = data["itemType"]?.ToString() ?? "";
             string  resultItemData   = data["itemData"]?.ToString() ?? "";
@@ -1004,6 +1023,15 @@ namespace SideDesk
                         }
                     }
 
+                    // 记录分享来源（itemData 应用之后赋值，避免被覆盖）：
+                    // ShareId 可用于后续查分享详情/对账，ShareMode 用于区分副本与真共享
+                    newPanel.ShareId = resultShareId;
+                    newPanel.ShareCode = resultShareCode;
+                    newPanel.ShareMode = resultShareMode;
+                    newPanel.AllowEdit = resultAllowEdit;
+                    newPanel.AllowDelete = resultAllowDelete;
+                    newPanel.AllowReShare = resultAllowReShare;
+
                     // 添加到当前窗口
                     var activeId = _dockState.WindowIds.Count > _dockState.ActiveIndex
                         ? _dockState.WindowIds[_dockState.ActiveIndex]
@@ -1047,6 +1075,11 @@ namespace SideDesk
                     ServerId = resultBarServerId,
                     ShareMode = resultShareMode,
                     SourceBarId = sourceBarId,
+                    ShareId = resultShareId,
+                    ShareCode = resultShareCode,
+                    AllowEdit = resultAllowEdit,
+                    AllowDelete = resultAllowDelete,
+                    AllowReShare = resultAllowReShare,
                     OwnerType = "personal"
                 };
                 _configManager?.Add(newWin);
@@ -1210,7 +1243,7 @@ namespace SideDesk
                 notificationBar.Visibility = Visibility.Collapsed;
         }
 
-        /// <summary>构建单条通知 UI：主题色块 + 文字（点击触发动作）+ 悬浮关闭按钮</summary>
+        /// <summary>构建单条通知 UI：主题色块 + 文字（点击触发动作）+ 悬浮关闭按钮（覆盖层，不占布局）</summary>
         private Border CreateNotificationItem(string text, Action? clickAction, Brush? background = null)
         {
             var bg = background ?? (Brush)FindResource("BrushAccent");
@@ -1226,30 +1259,71 @@ namespace SideDesk
                 IsHitTestVisible = false // 命中测试穿透到外层色块 Border，保证整块（含 Padding）响应一致
             };
 
+            // 关闭按钮：悬浮在右上角（与文字同一单元格、不参与布局测量），
+            // 显隐只切透明度，文字始终占据全部可用宽度，布局不受任何影响。
+            // 背景用不透明的通知条同色（主题悬停色是半透明的，会透出底下文字，故不用 GhostButtonStyle）；
+            // 悬停色 = 在 opaqueBg 上预合成一层半透明黑遮罩，保证任何状态下都不透明
+            SolidColorBrush opaqueBg;
+            if (bg is SolidColorBrush sc)
+            {
+                var c = sc.Color;
+                opaqueBg = new SolidColorBrush(Color.FromArgb(255, c.R, c.G, c.B));
+            }
+            else
+            {
+                opaqueBg = new SolidColorBrush(Colors.Black);
+            }
+            opaqueBg.Freeze();
+            var hoverBrush = new SolidColorBrush(BlendOver(Color.FromArgb(0x22, 0, 0, 0), opaqueBg.Color));
+            hoverBrush.Freeze();
+
+            // 自绘模板：只画 Background（不透明）+ 居中内容，无系统默认外观。
+            // 注意：必须先完整搭建 FrameworkElementFactory 树再赋给 ControlTemplate，
+            // 模板一经使用即被密封，之后再对 Factory 调用 SetValue 会抛 InvalidOperationException
+            var tplRoot = new FrameworkElementFactory(typeof(Border));
+            tplRoot.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(Button.BackgroundProperty));
+            tplRoot.SetValue(Border.CornerRadiusProperty, new CornerRadius(6));
+            var presenter = new FrameworkElementFactory(typeof(ContentPresenter));
+            presenter.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+            presenter.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
+            tplRoot.AppendChild(presenter);
+
             var closeBtn = new Button
             {
                 Content = "✕",
-                HorizontalAlignment = HorizontalAlignment.Right,
-                VerticalAlignment = VerticalAlignment.Top,
                 FontSize = 11,
                 Width = 18,
                 Height = 18,
-                Background = bg,
+                Padding = new Thickness(0),
+                Background = opaqueBg,
                 Foreground = (Brush)FindResource("BrushAccentText"),
-                BorderThickness = new Thickness(0),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Top,
                 Cursor = Cursors.Hand,
                 ToolTip = "关闭通知",
-                Visibility = Visibility.Collapsed
+                Opacity = 0,
+                IsHitTestVisible = false,
+                Template = new ControlTemplate
+                {
+                    TargetType = typeof(Button),
+                    VisualTree = tplRoot
+                }
             };
+
+            // 悬停/按下反馈：只切不透明背景色，始终盖得住底下文字
+            closeBtn.MouseEnter += (s, e) => closeBtn.Background = hoverBrush;
+            closeBtn.MouseLeave += (s, e) => closeBtn.Background = opaqueBg;
+            closeBtn.PreviewMouseLeftButtonDown += (s, e) => closeBtn.Background = opaqueBg;
+            closeBtn.PreviewMouseLeftButtonUp += (s, e) => closeBtn.Background = hoverBrush;
 
             var grid = new Grid();
             grid.Children.Add(textBlock);
-            grid.Children.Add(closeBtn);
+            grid.Children.Add(closeBtn); // 同单元格叠加，不定义列、不挤占文字宽度
 
             var item = new Border
             {
                 Background = bg,
-                Padding = new Thickness(8, 4, 8, 4),
+                Padding = new Thickness(8, 4, 4, 4), // 右侧收窄到 4px，让文字尽量铺满窄栏
                 Margin = new Thickness(0, 0, 0, 4), // 多条通知之间的间隔
                 Child = grid,
                 Cursor = Cursors.Hand
@@ -1276,12 +1350,22 @@ namespace SideDesk
                 else ShowNotificationDetail(text);
             };
 
-            // 鼠标悬停时显示关闭按钮（不占布局，文字始终铺满）
-            item.MouseEnter += (s, e) => closeBtn.Visibility = Visibility.Visible;
-            item.MouseLeave += (s, e) => closeBtn.Visibility = Visibility.Collapsed;
+            // 鼠标悬停时显示关闭按钮：按钮为覆盖层不占布局，只切透明度，显隐不引起任何布局变化
+            item.MouseEnter += (s, e) => { closeBtn.Opacity = 1; closeBtn.IsHitTestVisible = true; };
+            item.MouseLeave += (s, e) => { closeBtn.Opacity = 0; closeBtn.IsHitTestVisible = false; };
             closeBtn.Click += (s, e) => RemoveNotificationItem(item);
 
             return item;
+        }
+
+        /// <summary>将 top 半透明色叠加到 bottom 底色上（alpha 混合），返回完全不透明的结果色</summary>
+        private static Color BlendOver(Color top, Color bottom)
+        {
+            double a = top.A / 255.0;
+            byte r = (byte)(top.R * a + bottom.R * (1 - a));
+            byte g = (byte)(top.G * a + bottom.G * (1 - a));
+            byte b = (byte)(top.B * a + bottom.B * (1 - a));
+            return Color.FromArgb(255, r, g, b);
         }
 
         /// <summary>默认通知详情弹窗（主题化）</summary>
@@ -1312,7 +1396,7 @@ namespace SideDesk
         }
 
         /// <summary>显示好友请求通知（顶部通知栏 + 右侧通知条色块）</summary>
-        public void ShowFriendRequestNotification(string fromName, int requestId)
+        public void ShowFriendRequestNotification(string fromName, string requestId)
         {
             // 顶部通知栏
             ShowNotification($"👤 您收到来自「{fromName}」的添加好友通知，点击这里同意或拒绝", () =>
@@ -1327,7 +1411,7 @@ namespace SideDesk
         }
 
         /// <summary>好友请求处理弹窗（同意/拒绝，主题化）</summary>
-        private void ShowFriendRequestDialog(string fromName, int requestId)
+        private void ShowFriendRequestDialog(string fromName, string requestId)
         {
             var (dialog, content) = CreateThemedDialog("好友请求", 320, 170);
 
@@ -1433,6 +1517,8 @@ namespace SideDesk
                 Width = 26,
                 Height = 26,
                 FontSize = 11,
+                // GhostButtonStyle 默认 Padding=16,10 会把 26px 按钮的内容区压没，必须置 0
+                Padding = new Thickness(0),
                 HorizontalAlignment = HorizontalAlignment.Right,
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, 10, 0),

@@ -290,7 +290,8 @@ namespace SideDesk
                 // 写入文件日志
                 string logDir = System.IO.Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "SideDesk");
+                    "SideDesk",
+                    "Logs");
                 System.IO.Directory.CreateDirectory(logDir);
                 
                 string logFile = System.IO.Path.Combine(logDir, $"window-{DateTime.Now:yyyy-MM-dd}.log");

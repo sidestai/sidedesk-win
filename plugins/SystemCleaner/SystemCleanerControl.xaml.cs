@@ -24,6 +24,9 @@ public partial class SystemCleanerControl : UserControl
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
+        // 优先适配宿主主题（避免固定色在深/浅主题下看不清）
+        ApplyHostTheme();
+
         // 初始化 CPU 计数器
         try
         {
@@ -57,6 +60,44 @@ public partial class SystemCleanerControl : UserControl
     private void Timer_Tick(object? sender, EventArgs e)
     {
         RefreshSystemInfo();
+    }
+
+    /// <summary>
+    /// 适配宿主主题：插件控件寄宿在 SideDesk 窗口内，可沿视觉树找到应用级主题画刷，
+    /// 文字/卡片背景/进度条轨道全部跟随主题，避免固定颜色与当前主题背景对比度过低；
+    /// 找不到资源时（如设计器预览）回退到深色硬编码值。
+    /// </summary>
+    private void ApplyHostTheme()
+    {
+        var main = TryFindResource("BrushTextMain") as System.Windows.Media.Brush
+            ?? System.Windows.Media.Brushes.WhiteSmoke;
+        var muted = TryFindResource("BrushTextMuted") as System.Windows.Media.Brush
+            ?? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(0xB3, 0xFF, 0xFF, 0xFF));
+        var cardBG = TryFindResource("BrushInputBG") as System.Windows.Media.Brush
+            ?? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF));
+        var track = TryFindResource("BrushBorder") as System.Windows.Media.Brush
+            ?? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF));
+
+        // 全部文字默认用次要色，再把标题与数值改为主色
+        foreach (var tb in FindTextBlocks(this)) tb.Foreground = muted;
+        foreach (var tb in new[] { txtMemTitle, txtCpuTitle, txtTotalMemory, txtUsedMemory, txtAvailMemory, txtMemoryPercent, txtCpuPercent, txtCpuCores })
+            tb.Foreground = main;
+
+        memoryCard.Background = cardBG;
+        cpuCard.Background = cardBG;
+        memoryBar.Background = track;
+        cpuBar.Background = track;
+    }
+
+    /// <summary>递归遍历视觉树找出所有 TextBlock</summary>
+    private static IEnumerable<TextBlock> FindTextBlocks(DependencyObject parent)
+    {
+        for (int i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = System.Windows.Media.VisualTreeHelper.GetChild(parent, i);
+            if (child is TextBlock tb) yield return tb;
+            foreach (var sub in FindTextBlocks(child)) yield return sub;
+        }
     }
 
     /// <summary>刷新内存和 CPU 数据</summary>

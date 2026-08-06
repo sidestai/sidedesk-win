@@ -68,7 +68,7 @@ public class PanelItem
     public string? FriendStatusText { get; set; }                // 好友模块：状态文字
     public string FriendOnlineStatus { get; set; } = "online";   // 好友模块：在线状态 online/away/busy/offline
     public string FriendDisplayMode { get; set; } = "HorizontalSmall"; // 好友模块：显示方式 HorizontalSmall/VerticalLarge
-    public List<int>? FriendUserIds { get; set; }                // 好友模块：展示的好友 userId 列表（引用后端真实好友，与实际数据分离的显示副本）
+    public List<string>? FriendUserIds { get; set; }             // 好友模块：展示的好友 userId 加密串列表（引用后端真实好友，与实际数据分离的显示副本）
     public string? CarouselFolder { get; set; }                  // 图片轮播：图片所在目录
     public int CarouselIntervalSeconds { get; set; } = 5;        // 图片轮播：切换间隔（秒）
     public bool CarouselRandom { get; set; } = false;            // 图片轮播：随机播放（否则顺序）
@@ -77,8 +77,16 @@ public class PanelItem
     public double CarouselHeight { get; set; } = 140;            // 图片轮播：显示区高度（px）
     public bool CarouselAutoPlay { get; set; } = true;           // 图片轮播：自动播放
     public string? PluginId { get; set; }                        // 插件模块：插件 ID（对应 plugin.json 中的 id）
+    // ===== 快捷方式组件（原 quickgroups.json 分组数据，已改为面板自有 + item_row 行级存储）=====
+    public List<QuickItem>? QuickItems { get; set; }             // 快捷方式组件：快捷项列表（行级存储）
+    public string QuickGroupName { get; set; } = "快捷方式";      // 快捷方式组件：分组名
+    public int QuickColumns { get; set; } = 1;                   // 快捷方式组件：布局列数（1~4）
+    public string QuickDisplayMode { get; set; } = "grid";       // 快捷方式组件：显示模式 grid/list/popup
+    public bool QuickHideFrame { get; set; } = false;            // 快捷方式组件：隐藏外框（背景/边框/标题栏/内边距）
+    public int QuickOrder { get; set; }                          // 快捷方式组件：排序序号（原分组 Order）
     public string ScreenTimeStyle { get; set; } = "List";        // 屏幕时长组件展示风格：List/Pie/Category/Window
     public string DailyActivityView { get; set; } = "Month";      // 每日活跃视图模式：Month(当月热力图)/Today(仅今日)/Week(前后5天逐日)
+    public string DailyActivityType { get; set; } = "screen";     // 每日活跃组件展示的数据类型：screen=本地屏幕使用时长，其他=服务端类型（含内置固定类型番茄/屏幕时长/健身记录/鼠标键盘活跃）
     public PomodoroSettings? Pomodoro { get; set; }                    // 番茄闹钟数据
     /// <summary>归属类型: personal=个人, team=团队</summary>
     public string OwnerType { get; set; } = "personal";
@@ -86,6 +94,42 @@ public class PanelItem
     public string? TeamId { get; set; }
     /// <summary>团队名称快照（显示用）</summary>
     public string? TeamName { get; set; }
+    /// <summary>来源分享记录ID（分享导入时有值，服务端加密ID，可查分享详情/对账）</summary>
+    public string? ShareId { get; set; }
+    /// <summary>来源分享短码（分享导入时有值，展示/再分享用）</summary>
+    public string? ShareCode { get; set; }
+    /// <summary>分享导入模式: null=本地创建/非分享来源, copy=复制, reference=引用</summary>
+    public string? ShareMode { get; set; }
+    /// <summary>导入权限快照（仅 reference 有意义）：允许编辑数据（含便签/todo 等行数据）</summary>
+    public bool AllowEdit { get; set; } = true;
+    /// <summary>导入权限快照（仅 reference 有意义）：允许删除行/模块</summary>
+    public bool AllowDelete { get; set; } = true;
+    /// <summary>导入权限快照（仅 reference 有意义）：允许再分享</summary>
+    public bool AllowReShare { get; set; } = false;
+    /// <summary>引用分享且不允许编辑 → 内容只读（拦截一切行数据修改）</summary>
+    [Newtonsoft.Json.JsonIgnore]
+    public bool IsShareReadOnly => ShareMode == "reference" && !AllowEdit;
+    /// <summary>引用分享且不允许删除 → 禁止删除模块/行</summary>
+    [Newtonsoft.Json.JsonIgnore]
+    public bool IsShareDeleteBlocked => ShareMode == "reference" && !AllowDelete;
+}
+
+/// <summary>
+/// 数字员工组件行包装：行级存储/同步用（原始数据为 List&lt;string&gt; 员工 Id 引用）
+/// </summary>
+public class DigitalEmployeeRow
+{
+    public string Id { get; set; } = "";      // = EmployeeId（行唯一标识）
+    public string EmployeeId { get; set; } = ""; // 全局员工库中的员工 Id
+}
+
+/// <summary>
+/// 好友组件行包装：行级存储/同步用（原始数据为 List&lt;string&gt; 好友 userId 加密串引用）
+/// </summary>
+public class FriendUserRow
+{
+    public string Id { get; set; } = "";      // = UserId（行唯一标识）
+    public string UserId { get; set; } = "";  // 好友 userId 加密串
 }
 
 public class FileAreaItem
@@ -204,6 +248,9 @@ public class SignalLightItem
 /// </summary>
 public class PomodoroSettings
 {
+    /// <summary>行级同步用的稳定 GUID（每个番茄钟仅一条行记录）</summary>
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+
     // 时长配置
     public int WorkMinutes { get; set; } = 25;          // 番茄钟时长（分钟）
     public int ShortBreakMinutes { get; set; } = 5;     // 短休息时长（分钟）
@@ -215,7 +262,7 @@ public class PomodoroSettings
     public bool RemindFlash { get; set; } = true;       // 结束时闪烁窗口
     public bool RemindPopup { get; set; } = true;       // 结束时弹出提示窗口
 
-    // 运行状态
+    // 运行状态（仅本地持久化，不参与云同步/分享；同步只带番茄数与时长等配置）
     public string Mode { get; set; } = "Work";          // 当前模式：Work/ShortBreak/LongBreak
     public double RemainingSeconds { get; set; } = 25 * 60;
     public bool IsRunning { get; set; } = false;
@@ -278,6 +325,22 @@ public class WindowConfig
     public string? ShareMode { get; set; }
     /// <summary>引用模式时指向源窗口的 serverId</summary>
     public string? SourceBarId { get; set; }
+    /// <summary>来源分享记录ID（分享导入时有值，服务端加密ID，可查分享详情/对账）</summary>
+    public string? ShareId { get; set; }
+    /// <summary>来源分享短码（分享导入时有值，展示/再分享用）</summary>
+    public string? ShareCode { get; set; }
+    /// <summary>导入权限快照（仅 reference 有意义）：允许编辑数据（含模块内行数据）</summary>
+    public bool AllowEdit { get; set; } = true;
+    /// <summary>导入权限快照（仅 reference 有意义）：允许删除</summary>
+    public bool AllowDelete { get; set; } = true;
+    /// <summary>导入权限快照（仅 reference 有意义）：允许再分享</summary>
+    public bool AllowReShare { get; set; } = false;
+    /// <summary>引用分享且不允许编辑 → 窗口内所有模块内容只读</summary>
+    [Newtonsoft.Json.JsonIgnore]
+    public bool IsShareReadOnly => ShareMode == "reference" && !AllowEdit;
+    /// <summary>引用分享且不允许删除 → 窗口内模块禁止删除</summary>
+    [Newtonsoft.Json.JsonIgnore]
+    public bool IsShareDeleteBlocked => ShareMode == "reference" && !AllowDelete;
 }
 
 public class DockWindowState
@@ -300,10 +363,50 @@ public class WindowConfigManager
 
     public static WindowConfigManager Load()
     {
+        var mgr = LoadCore();
+        // 快捷分组门面：将全局配置管理器注入 QuickGroupManager（快捷数据已改存面板）
+        QuickGroupManager.Init(mgr);
+        return mgr;
+    }
+
+    private static WindowConfigManager LoadCore()
+    {
+        // 主存储：SQLite（sidedesk.db）；windows.json 仅作迁移来源/备份快照兜底
         try
         {
+            if (Services.LocalDbService.DbExists)
+            {
+                try
+                {
+                    var mgr = Services.LocalDbService.LoadManager();
+                    MigrateLegacyStickyNotesOnce(mgr);
+                    return mgr;
+                }
+                catch (Exception dbEx)
+                {
+                    // db 损坏/读取失败：降级从 JSON 快照加载，并删除坏 db（下次 Save 会重建）
+                    System.Diagnostics.Debug.WriteLine($"[LocalDb] 数据库读取失败，降级 JSON 快照: {dbEx.Message}");
+                    try { if (File.Exists(Services.LocalDbService.DbPath)) File.Delete(Services.LocalDbService.DbPath); } catch { }
+                    if (File.Exists(_filePath))
+                    {
+                        var jsonSnap = File.ReadAllText(_filePath);
+                        var mgrSnap = JsonConvert.DeserializeObject<WindowConfigManager>(jsonSnap) ?? new WindowConfigManager();
+                        MigrateLegacyStickyNotesOnce(mgrSnap);
+                        return mgrSnap;
+                    }
+                    return new WindowConfigManager();
+                }
+            }
             if (File.Exists(_filePath))
             {
+                // 首次升级：windows.json 导入 SQLite（成功后原文件改名 .bak-migrated 保留）
+                if (Services.LocalDbService.ImportFromJsonFile(_filePath))
+                {
+                    var mgrDb = Services.LocalDbService.LoadManager();
+                    MigrateLegacyStickyNotesOnce(mgrDb);
+                    return mgrDb;
+                }
+                // 导入失败兜底：仍按旧 JSON 方式加载（下次 Save 会再次尝试写入 SQLite）
                 var json = File.ReadAllText(_filePath);
                 var mgr = JsonConvert.DeserializeObject<WindowConfigManager>(json) ?? new WindowConfigManager();
                 MigrateLegacyStickyNotesOnce(mgr);
@@ -361,14 +464,17 @@ public class WindowConfigManager
 
     public void Save()
     {
+        // 主存储：SQLite 单事务写入（原子、防写坏）
         try
         {
-            var dir = Path.GetDirectoryName(_filePath)!;
-            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-            var json = JsonConvert.SerializeObject(this, Formatting.Indented);
-            File.WriteAllText(_filePath, json);
+            Services.LocalDbService.SaveManager(this);
+            // 同步导出 JSON 快照：供本地备份打包使用，并在 db 损坏时作为恢复兜底
+            Services.LocalDbService.ExportJsonSnapshot(this, _filePath);
         }
-        catch { }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[LocalDb] 保存失败: {ex.Message}");
+        }
 
         // 行级同步：任何配置保存后通知 CloudSyncService（防抖 2s + 快照对比确保不重复推送）
         try { Services.CloudSyncService.Instance.NotifyRowsChanged(); } catch { }

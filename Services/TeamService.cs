@@ -34,10 +34,19 @@ namespace SideDesk.Services
         [JsonProperty("title")] public string? Title { get; set; }
         [JsonProperty("itemType")] public string ItemType { get; set; } = "";
         [JsonProperty("itemData")] public string? ItemData { get; set; }
-        [JsonProperty("corpId")] public int CorpId { get; set; }
+        [JsonProperty("corpId")] public string? CorpId { get; set; }  // 服务端加密串，与团队列表的 id 格式一致
         [JsonProperty("isMine")] public bool IsMine { get; set; }
         [JsonProperty("creatorName")] public string CreatorName { get; set; } = "";
         [JsonProperty("createdAt")] public DateTime? CreatedAt { get; set; }
+    }
+
+    /// <summary>模块归属信息（批量查创建者/团队）</summary>
+    public class ItemOwnerInfo
+    {
+        [JsonProperty("itemServerId")] public string ItemServerId { get; set; } = "";
+        [JsonProperty("creatorName")] public string CreatorName { get; set; } = "";
+        [JsonProperty("ownerType")] public string OwnerType { get; set; } = "personal"; // personal/team
+        [JsonProperty("corpName")] public string CorpName { get; set; } = "";
     }
 
     #endregion
@@ -168,6 +177,31 @@ namespace SideDesk.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[Team] 获取团队组件库失败: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>GET /api/sidebar/item/creators?ids=... — 批量查询模块创建者与归属（供「我的数据」展示）</summary>
+        public async Task<Dictionary<string, ItemOwnerInfo>?> GetItemCreatorsAsync(IEnumerable<string> serverIds)
+        {
+            try
+            {
+                var ids = string.Join(",", serverIds.Where(s => !string.IsNullOrEmpty(s)).Distinct());
+                if (string.IsNullOrEmpty(ids)) return new Dictionary<string, ItemOwnerInfo>();
+
+                using var req = CreateRequest(HttpMethod.Get, $"{BaseUrl}/api/sidebar/item/creators?ids={Uri.EscapeDataString(ids)}");
+                using var resp = await _http.SendAsync(req).ConfigureAwait(false);
+                var data = await ParseResponseTokenAsync(resp).ConfigureAwait(false);
+                if (data is not JArray arr) return null;
+
+                var list = arr.ToObject<List<ItemOwnerInfo>>() ?? new List<ItemOwnerInfo>();
+                return list.Where(x => !string.IsNullOrEmpty(x.ItemServerId))
+                           .GroupBy(x => x.ItemServerId)
+                           .ToDictionary(g => g.Key, g => g.First());
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Team] 查询模块创建者失败: {ex.Message}");
                 return null;
             }
         }

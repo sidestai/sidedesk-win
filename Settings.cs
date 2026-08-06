@@ -90,6 +90,9 @@ namespace SideDesk
         /// <summary>是否开启 MCP Server（HTTP/SSE，端口 19192）</summary>
         public bool EnableMcpServer { get; set; } = false;
 
+        /// <summary>AI 对话模式："client" = 本地化（默认，完全本机运行保护隐私），"web" = 网页版，"auto" = 已登录用网页版/未登录用本地化</summary>
+        public string AIChatMode { get; set; } = "client";
+
         /// <summary>是否开启内置 HTTP Server（默认开启，监听 127.0.0.1:HttpServerPort）</summary>
         public bool EnableHttpServer { get; set; } = true;
 
@@ -131,7 +134,7 @@ namespace SideDesk
         /// <summary>是否启用加密同步（敏感设置项加密后再上传）</summary>
         public bool SyncEncryptEnabled { get; set; } = false;
 
-        /// <summary>是否记录网络请求日志（request/response 写入 %LocalAppData%\SideDesk\http.log，默认开启便于排查）</summary>
+        /// <summary>是否记录网络请求日志（request/response 写入 %LocalAppData%\SideDesk\Logs\http.log，默认开启便于排查）</summary>
         public bool HttpLogEnabled { get; set; } = true;
 
         /// <summary>DPAPI 加密后的派生密钥（base64，仅本机可解）</summary>
@@ -309,6 +312,24 @@ namespace SideDesk
                             }
                         };
                     }
+                    // 一次性清理：后端已废弃 encrypt3（xid- 前缀密文）统一改用 encrypt2，
+                    // 旧团队 ID 与云同步映射中的 xid- 密文已失效，清除后避免带无效密文请求
+                    bool xidDirty = false;
+                    if (!string.IsNullOrEmpty(settings.SelectedCorpId) && settings.SelectedCorpId.StartsWith("xid-"))
+                    {
+                        settings.SelectedCorpId = null;
+                        settings.SelectedCorpName = null;
+                        xidDirty = true;
+                    }
+                    if (settings.CloudIdMap != null && settings.CloudIdMap.Count > 0)
+                    {
+                        var badKeys = new List<string>();
+                        foreach (var kv in settings.CloudIdMap)
+                            if (kv.Value != null && kv.Value.StartsWith("xid-")) badKeys.Add(kv.Key);
+                        foreach (var k in badKeys) settings.CloudIdMap.Remove(k);
+                        if (badKeys.Count > 0) xidDirty = true;
+                    }
+                    if (xidDirty) settings.Save();
                     return settings;
                 }
             }

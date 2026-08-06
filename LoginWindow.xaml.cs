@@ -8,7 +8,8 @@ namespace SideDesk
 {
     public partial class LoginWindow : Window
     {
-        private const string LoginUrl = "http://localhost:3007";
+        // 客户端专用登录页（无滑动验证，前端 hash 路由）
+        private const string LoginUrl = "http://localhost:3007/#/client-login";
         // 需要拦截的登录接口路径（匹配请求 URL 中包含该片段的响应）
         // 登录接口：POST /api/auth/login，响应 { code:200, msg, data:{ token } }
         private const string TargetApiPath = "/api/auth/login";

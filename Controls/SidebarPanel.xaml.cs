@@ -97,7 +97,7 @@ namespace SideDesk.Controls
         /// </summary>
         public void NavigateToUrl(string url)
         {
-            webViewPanel.Navigate(url);
+            webViewPanel.Navigate(AppendTokenForFrontend(url));
         }
 
         /// <summary>
@@ -116,7 +116,7 @@ namespace SideDesk.Controls
                 {
                     if (!string.IsNullOrEmpty(config.Url))
                     {
-                        webViewPanel.Navigate(config.Url);
+                        webViewPanel.Navigate(AppendTokenForFrontend(config.Url));
                     }
                     _currentWebViewWindowId = config.Id;
                 }
@@ -131,8 +131,40 @@ namespace SideDesk.Controls
             }
         }
 
+        /// <summary>
+        /// 为指向本地前端站点的 URL 追加 token 参数（内嵌页从 query 读取 token 完成认证）；
+        /// 其它 URL 原样返回。URL 本身不存 token，避免持久化泄露。
+        /// </summary>
+        private static string AppendTokenForFrontend(string url)
+        {
+            const string prefix = "http://localhost:3007/";
+            if (string.IsNullOrEmpty(url) || !url.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                return url;
+
+            var app = (App)Application.Current;
+            string token = app.AppSettings.AccountToken ?? "";
+            if (string.IsNullOrEmpty(token)) return url;
+
+            string sep = url.Contains('?') ? "&" : "?";
+            return $"{url}{sep}token={Uri.EscapeDataString(token)}";
+        }
+
         /// <summary>重新渲染原生模式面板（设置变更后调用）。</summary>
         public void RefreshNativePanels() => nativePanel.RefreshLayout();
+
+        /// <summary>好友资料变更通知（WS 推送）：转发给原生面板更新好友缓存。</summary>
+        public void UpdateFriendProfile(string userId, string? nickName, string? avatar)
+            => nativePanel.UpdateFriendProfile(userId, nickName, avatar);
+
+        /// <summary>好友上/下线通知（WS 推送）：转发给原生面板更新好友在线状态。</summary>
+        public void UpdateFriendOnlineStatus(string userId, bool online)
+            => nativePanel.UpdateFriendOnlineStatus(userId, online);
+
+        /// <summary>填充"工具"菜单（窗口右上角菜单与底部右键菜单共用同一份工具列表）。</summary>
+        public void PopulateToolsMenu(System.Windows.Controls.MenuItem menu) => nativePanel.PopulateToolsMenu(menu);
+        
+        /// <summary>填充"添加模块"菜单（窗口右上角菜单使用，与空白处右键菜单内容一致）。</summary>
+        public void PopulateAddModuleMenu(System.Windows.Controls.MenuItem menu) => nativePanel.PopulateAddModuleMenu(menu);
 
         /// <summary>清空内容区域，显示空白（所有小屏均不可见时调用）。</summary>
         public void ClearContent()

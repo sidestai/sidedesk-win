@@ -65,27 +65,46 @@ namespace SideDesk.Models
         }
     }
 
+    /// <summary>
+    /// 快捷组件「分组」内存门面：与 PanelItem(Type=QuickGroup) 一一对应，所有属性代理到面板。
+    /// 历史上快捷分组存于 quickgroups.json；改造后设置存面板 item_data、快捷项存 item_row，
+    /// 本类仅为兼容 UI 层（QuickGroupUIService 等）调用而保留，不再参与任何持久化。
+    /// </summary>
     public class QuickGroup
     {
-        public string Id { get; set; }
-        public string Name { get; set; }
-        /// <summary>布局列数 (1~4)</summary>
-        public int Columns { get; set; } = 1;
-        public bool IsExpanded { get; set; } = true;
-        public int Order { get; set; }
-        /// <summary>是否隐藏该快捷组外框（背景/边框/标题栏/内边距），仅用于视觉裸露显示</summary>
-        public bool HideFrame { get; set; } = false;
-        /// <summary>显示模式："grid"=大图标网格（默认）、"list"=列表、"popup"=弹出菜单</summary>
-        public string DisplayMode { get; set; } = "grid";
-        public List<QuickItem> Items { get; set; }
-        /// <summary>分组内子模块列表（用于添加便签、剪贴板等模块）</summary>
-        public List<PanelItem>? ChildPanels { get; set; }
+        /// <summary>底层面板（所有属性的真实存储处）</summary>
+        [JsonIgnore]
+        public PanelItem Panel { get; }
 
-        public QuickGroup()
+        public QuickGroup() : this(new PanelItem { Type = PanelType.QuickGroup }) { }
+
+        public QuickGroup(PanelItem panel)
         {
-            Id = Guid.NewGuid().ToString("N");
-            Items = new List<QuickItem>();
+            Panel = panel;
+            panel.Type = PanelType.QuickGroup;
         }
+
+        /// <summary>分组 Id = 面板本地 Id（稳定 GUID，行级同步寻址基础）</summary>
+        [JsonIgnore]
+        public string Id => Panel.Id;
+
+        public string Name { get => Panel.QuickGroupName; set => Panel.QuickGroupName = value; }
+        public int Columns { get => Panel.QuickColumns; set => Panel.QuickColumns = value; }
+        public bool IsExpanded { get => Panel.IsExpanded; set => Panel.IsExpanded = value; }
+        public bool HideFrame { get => Panel.QuickHideFrame; set => Panel.QuickHideFrame = value; }
+        public string DisplayMode { get => Panel.QuickDisplayMode; set => Panel.QuickDisplayMode = value; }
+        public int Order { get => Panel.QuickOrder; set => Panel.QuickOrder = value; }
+        public string OwnerType { get => Panel.OwnerType; set => Panel.OwnerType = value; }
+        public string? TeamId { get => Panel.TeamId; set => Panel.TeamId = value; }
+        public string? TeamName { get => Panel.TeamName; set => Panel.TeamName = value; }
+
+        /// <summary>快捷项：直接引用面板列表本体，增删即时生效</summary>
+        [JsonIgnore]
+        public List<QuickItem> Items => Panel.QuickItems ??= new List<QuickItem>();
+
+        /// <summary>分组内子模块列表（用于添加便签、剪贴板等模块）</summary>
+        [JsonIgnore]
+        public List<PanelItem>? ChildPanels { get => Panel.ChildPanels; set => Panel.ChildPanels = value; }
     }
 
     // ===== 浏览器 Profile 管理 =====
@@ -234,254 +253,303 @@ namespace SideDesk.Models
         }
     }
 
+    /// <summary>
+    /// 快捷分组管理门面：全部操作代理到 WindowConfigManager 内的快捷面板（Type=QuickGroup），
+    /// 替代历史上的 quickgroups.json 文件存储。保留同名 API 以兼容 UI 层调用点。
+    /// </summary>
     public static class QuickGroupManager
     {
-        /// <summary>默认分组的固定 ID。</summary>
-        public const string DEFAULT_GROUP_ID = "__default__";
+        /// <summary>旧版默认分组的固定 ID（仅迁移时用于匹配未绑定面板）。</summary>
+        private const string LEGACY_DEFAULT_GROUP_ID = "__default__";
 
-        private static readonly string _filePath;
-        private static List<QuickGroup> _groups;
-        private static readonly object _lock = new object();
+        private static WindowConfigManager? _mgr;
 
-        static QuickGroupManager()
+        /// <summary>WindowConfigManager.Load 完成后注入全局配置管理器（仅一次）。</summary>
+        public static void Init(WindowConfigManager mgr) => _mgr = mgr;
+
+        private static string SideDeskFolder => Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SideDesk");
+
+        /// <summary>按声明顺序枚举全部快捷面板（含嵌套子面板）。</summary>
+        private static List<PanelItem> EnumerateQuickPanels()
         {
-            string appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            string folder = Path.Combine(appData, "SideDesk");
-            if (!Directory.Exists(folder))
-                Directory.CreateDirectory(folder);
-            _filePath = Path.Combine(folder, "quickgroups.json");
-            Load();
-        }
-
-        public static List<QuickGroup> GetAll()
-        {
-            lock (_lock)
-                return _groups.OrderBy(g => g.Order).ToList();
-        }
-
-        public static void Save()
-        {
-            lock (_lock)
+            var result = new List<PanelItem>();
+            if (_mgr == null) return result;
+            void Collect(List<PanelItem> panels)
             {
-                try
+                foreach (var p in panels)
                 {
-                    string json = JsonConvert.SerializeObject(_groups, Formatting.Indented);
-                    File.WriteAllText(_filePath, json);
+                    if (p.Type == PanelType.QuickGroup) result.Add(p);
+                    if (p.ChildPanels != null) Collect(p.ChildPanels);
                 }
-                catch { }
             }
+            foreach (var win in _mgr.Windows)
+                if (win.Panels != null) Collect(win.Panels);
+            return result;
         }
 
-        public static void AddGroup(QuickGroup group)
+        private static PanelItem? FindPanel(string groupId) =>
+            EnumerateQuickPanels().FirstOrDefault(p => p.Id == groupId);
+
+        public static List<QuickGroup> GetAll() =>
+            EnumerateQuickPanels().Select(p => new QuickGroup(p)).ToList();
+
+        public static void Save() => _mgr?.Save();
+
+        /// <summary>新增快捷面板：优先 targetWindow，缺省落第一个窗口。</summary>
+        public static void AddGroup(QuickGroup group, WindowConfig? targetWindow = null)
         {
-            lock (_lock)
-            {
-                if (group.Order == 0)
-                    group.Order = _groups.Count > 0 ? _groups.Max(g => g.Order) + 1 : 1;
-                _groups.Add(group);
-            }
+            if (_mgr == null || _mgr.Windows.Count == 0) return;
+            var win = targetWindow ?? _mgr.Windows[0];
+            win.Panels ??= new List<PanelItem>();
+            win.Panels.Add(group.Panel);
         }
 
-        /// <summary>获取默认分组的 ID；不存在则创建并插入到顶部。</summary>
-        public static string GetOrCreateDefaultGroup()
-        {
-            lock (_lock)
-            {
-                var existing = _groups.FirstOrDefault(g => g.Id == DEFAULT_GROUP_ID);
-                if (existing != null) return existing.Id;
-
-                int minOrder = _groups.Count > 0 ? _groups.Min(g => g.Order) : 1;
-                var grp = new QuickGroup
-                {
-                    Id = DEFAULT_GROUP_ID,
-                    Name = "默认",
-                    Columns = 2,
-                    IsExpanded = true,
-                    Order = minOrder - 1
-                };
-                _groups.Add(grp);
-                return grp.Id;
-            }
-        }
-
+        /// <summary>按 Id 删除快捷面板（递归查找嵌套子面板）。</summary>
         public static void RemoveGroup(string groupId)
         {
-            lock (_lock)
+            if (_mgr == null) return;
+            bool RemoveFrom(List<PanelItem> panels)
             {
-                _groups.RemoveAll(g => g.Id == groupId);
+                var target = panels.FirstOrDefault(p => p.Id == groupId);
+                if (target != null) { panels.Remove(target); return true; }
+                foreach (var p in panels)
+                    if (p.ChildPanels != null && RemoveFrom(p.ChildPanels)) return true;
+                return false;
             }
+            foreach (var win in _mgr.Windows)
+                if (win.Panels != null && RemoveFrom(win.Panels)) return;
+        }
+
+        /// <summary>获取可用快捷面板 Id：已有面板取第一个，否则新建一个。</summary>
+        public static string GetOrCreateDefaultGroup()
+        {
+            var panels = EnumerateQuickPanels();
+            if (panels.Count > 0) return panels[0].Id;
+            var g = new QuickGroup { Name = "快捷方式", Columns = 2 };
+            AddGroup(g);
+            return g.Id;
         }
 
         public static void AddItem(string groupId, QuickItem item)
         {
-            lock (_lock)
-            {
-                var g = _groups.FirstOrDefault(x => x.Id == groupId);
-                if (g != null)
-                {
-                    g.Items.Add(item);
-                }
-            }
+            var p = FindPanel(groupId);
+            if (p != null)
+                (p.QuickItems ??= new List<QuickItem>()).Add(item);
         }
 
         public static void RemoveItem(string groupId, string itemId)
         {
-            lock (_lock)
-            {
-                var g = _groups.FirstOrDefault(x => x.Id == groupId);
-                if (g != null)
-                {
-                    g.Items.RemoveAll(i => i.Id == itemId);
-                }
-            }
+            var p = FindPanel(groupId);
+            p?.QuickItems?.RemoveAll(i => i.Id == itemId);
         }
 
-        public static void UpdateGroup(QuickGroup group)
-        {
-            lock (_lock)
-            {
-                int idx = _groups.FindIndex(g => g.Id == group.Id);
-                if (idx >= 0)
-                {
-                    _groups[idx] = group;
-                }
-            }
-        }
+        /// <summary>门面模式下属性直接代理到面板，无需额外回写（保留方法签名兼容调用点）。</summary>
+        public static void UpdateGroup(QuickGroup group) { }
 
         /// <summary>退出时调用：删除「来自添加窗口」且未勾选长期窗口的临时项。返回删除数量。</summary>
         public static int RemoveTransientWindowItems()
         {
-            lock (_lock)
+            int count = 0;
+            foreach (var p in EnumerateQuickPanels())
             {
-                int count = 0;
-                foreach (var g in _groups)
-                {
-                    if (g?.Items == null) continue;
-                    count += g.Items.RemoveAll(it => it != null && it.Source == "window" && !it.IsLongTermWindow);
-                }
-                return count;
+                if (p.QuickItems == null) continue;
+                count += p.QuickItems.RemoveAll(it => it != null && it.Source == "window" && !it.IsLongTermWindow);
             }
+            return count;
+        }
+
+        /// <summary>旧版 quickgroups.json 分组结构（仅迁移反序列化用）。</summary>
+        private class LegacyQuickGroup
+        {
+            public string Id { get; set; } = "";
+            public string Name { get; set; } = "";
+            public int Columns { get; set; } = 1;
+            public bool IsExpanded { get; set; } = true;
+            public int Order { get; set; }
+            public bool HideFrame { get; set; }
+            public string DisplayMode { get; set; } = "grid";
+            public string OwnerType { get; set; } = "personal";
+            public string? TeamId { get; set; }
+            public string? TeamName { get; set; }
+            public List<QuickItem> Items { get; set; } = new List<QuickItem>();
+            public List<PanelItem>? ChildPanels { get; set; }
+        }
+
+        /// <summary>更早的 bookmarks/aitools/programs 遗留文件结构（仅迁移反序列化用）。</summary>
+        private class LegacyBookmark
+        {
+            public string Id { get; set; } = "";
+            public string Name { get; set; } = "";
+            public string Url { get; set; } = "";
+            public bool UseAppMode { get; set; } = true;
+            public string BackgroundColor { get; set; }
+            public DateTime CreatedAt { get; set; }
+        }
+
+        private class LegacyAiTool
+        {
+            public string Id { get; set; } = "";
+            public string Name { get; set; } = "";
+            public string Url { get; set; } = "";
+            public string BackgroundColor { get; set; }
+            public DateTime CreatedAt { get; set; }
+        }
+
+        private class LegacyProgram
+        {
+            public string Id { get; set; } = "";
+            public string Name { get; set; } = "";
+            public string Command { get; set; } = "";
+            public string Arguments { get; set; } = "";
+            public string BackgroundColor { get; set; }
+            public DateTime CreatedAt { get; set; }
         }
 
         /// <summary>
-        /// 首次启动时，将旧 bookmarks/aitools/programs JSON 迁移为新分组。
-        /// 仅在 quickgroups.json 不存在时执行。
+        /// 一次性历史数据迁移（由 LocalDbService 在首次行级落库前调用）：
+        /// 1) quickgroups.json 的分组设置与快捷项写入对应快捷面板（按 GroupId 匹配，未绑定面板接收默认组），
+        ///    孤儿分组新建快捷面板承载；
+        /// 2) 无 quickgroups.json 时，从更早的 bookmarks/aitools/programs JSON 迁移（保持原语义）；
+        /// 3) 处理完的文件改名 .bak 留存。返回是否有数据变更。
         /// </summary>
-        public static void MigrateFromLegacy()
+        public static bool MigrateLegacyOnce()
         {
-            if (File.Exists(_filePath)) return;
+            if (_mgr == null || _mgr.Windows.Count == 0) return false;
+            bool changed = false;
+            string folder = SideDeskFolder;
 
-            string appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            string folder = Path.Combine(appData, "SideDesk");
-            int order = 1;
-
-            // 迁移书签
-            string bookmarksFile = Path.Combine(folder, "bookmarks.json");
-            if (File.Exists(bookmarksFile))
+            string quickFile = Path.Combine(folder, "quickgroups.json");
+            if (File.Exists(quickFile))
             {
                 try
                 {
-                    var bookmarks = JsonConvert.DeserializeObject<List<Bookmark>>(File.ReadAllText(bookmarksFile));
-                    if (bookmarks != null && bookmarks.Count > 0)
+                    var groups = JsonConvert.DeserializeObject<List<LegacyQuickGroup>>(File.ReadAllText(quickFile));
+                    if (groups != null)
                     {
-                        var g = new QuickGroup { Name = "书签", Order = order++, Columns = 1 };
-                        foreach (var b in bookmarks)
+                        foreach (var g in groups.OrderBy(x => x.Order))
                         {
-                            g.Items.Add(new QuickItem
+                            // GroupId 绑定的面板优先；未绑定面板接收旧默认组
+                            var panel = EnumerateQuickPanels().FirstOrDefault(p => p.GroupId == g.Id)
+                                ?? (g.Id == LEGACY_DEFAULT_GROUP_ID
+                                    ? EnumerateQuickPanels().FirstOrDefault(p => string.IsNullOrEmpty(p.GroupId))
+                                    : null);
+                            if (panel != null)
                             {
-                                Id = b.Id,
-                                Name = b.Name,
-                                Type = "url",
-                                Target = b.Url,
-                                UseAppMode = b.UseAppMode,
-                                BackgroundColor = b.BackgroundColor,
-                                CreatedAt = b.CreatedAt
-                            });
+                                ApplyLegacyGroup(panel, g);
+                                panel.GroupId = null; // 迁移完成后 GroupId 不再使用
+                                changed = true;
+                                continue;
+                            }
+                            // 孤儿分组：新建快捷面板承载
+                            var np = new PanelItem { Type = PanelType.QuickGroup };
+                            ApplyLegacyGroup(np, g);
+                            var win = _mgr.Windows[0];
+                            win.Panels ??= new List<PanelItem>();
+                            win.Panels.Add(np);
+                            changed = true;
                         }
-                        lock (_lock) _groups.Add(g);
+                        // 未匹配到任何分组的 GroupId 清理，避免残留引用
+                        foreach (var p in EnumerateQuickPanels())
+                        {
+                            if (!string.IsNullOrEmpty(p.GroupId))
+                            {
+                                p.GroupId = null;
+                                changed = true;
+                            }
+                        }
                     }
+                    File.Move(quickFile, quickFile + ".bak", true);
                 }
-                catch { }
-            }
-
-            // 迁移 AI 工具
-            string aiFile = Path.Combine(folder, "aitools.json");
-            if (File.Exists(aiFile))
-            {
-                try
+                catch (Exception ex)
                 {
-                    var tools = JsonConvert.DeserializeObject<List<AITool>>(File.ReadAllText(aiFile));
-                    if (tools != null && tools.Count > 0)
-                    {
-                        var g = new QuickGroup { Name = "AI 工具", Order = order++, Columns = 1 };
-                        foreach (var t in tools)
-                        {
-                            g.Items.Add(new QuickItem
-                            {
-                                Id = t.Id,
-                                Name = t.Name,
-                                Type = "url",
-                                Target = t.Url,
-                                UseAppMode = true,
-                                BackgroundColor = t.BackgroundColor,
-                                CreatedAt = t.CreatedAt
-                            });
-                        }
-                        lock (_lock) _groups.Add(g);
-                    }
+                    System.Diagnostics.Debug.WriteLine($"[QuickGroup] quickgroups.json 迁移失败: {ex.Message}");
                 }
-                catch { }
+                return changed;
             }
 
-            // 迁移程序快捷方式
-            string progFile = Path.Combine(folder, "programs.json");
-            if (File.Exists(progFile))
+            // 更早的遗留文件（原 MigrateFromLegacy 语义：仅无 quickgroups.json 时执行）
+            changed |= MigrateLegacyFile<LegacyBookmark>("bookmarks.json", "书签", b => new QuickItem
             {
-                try
-                {
-                    var progs = JsonConvert.DeserializeObject<List<ProgramShortcut>>(File.ReadAllText(progFile));
-                    if (progs != null && progs.Count > 0)
-                    {
-                        var g = new QuickGroup { Name = "程序", Order = order++, Columns = 1 };
-                        foreach (var p in progs)
-                        {
-                            g.Items.Add(new QuickItem
-                            {
-                                Id = p.Id,
-                                Name = p.Name,
-                                Type = "program",
-                                Target = string.IsNullOrEmpty(p.Arguments) ? p.Command : p.Command + " " + p.Arguments,
-                                UseAppMode = false,
-                                BackgroundColor = p.BackgroundColor,
-                                CreatedAt = p.CreatedAt
-                            });
-                        }
-                        lock (_lock) _groups.Add(g);
-                    }
-                }
-                catch { }
-            }
-
-            Save();
+                Id = b.Id,
+                Name = b.Name,
+                Type = "url",
+                Target = b.Url,
+                UseAppMode = b.UseAppMode,
+                BackgroundColor = b.BackgroundColor,
+                CreatedAt = b.CreatedAt
+            });
+            changed |= MigrateLegacyFile<LegacyAiTool>("aitools.json", "AI 工具", t => new QuickItem
+            {
+                Id = t.Id,
+                Name = t.Name,
+                Type = "url",
+                Target = t.Url,
+                UseAppMode = true,
+                BackgroundColor = t.BackgroundColor,
+                CreatedAt = t.CreatedAt
+            });
+            changed |= MigrateLegacyFile<LegacyProgram>("programs.json", "程序", p => new QuickItem
+            {
+                Id = p.Id,
+                Name = p.Name,
+                Type = "program",
+                Target = string.IsNullOrEmpty(p.Arguments) ? p.Command : p.Command + " " + p.Arguments,
+                UseAppMode = false,
+                BackgroundColor = p.BackgroundColor,
+                CreatedAt = p.CreatedAt
+            });
+            return changed;
         }
 
-        private static void Load()
+        private static void ApplyLegacyGroup(PanelItem panel, LegacyQuickGroup g)
         {
+            panel.QuickGroupName = string.IsNullOrEmpty(g.Name) ? "快捷方式" : g.Name;
+            panel.QuickColumns = g.Columns > 0 ? g.Columns : 1;
+            panel.IsExpanded = g.IsExpanded;
+            panel.QuickHideFrame = g.HideFrame;
+            panel.QuickDisplayMode = string.IsNullOrEmpty(g.DisplayMode) ? "grid" : g.DisplayMode;
+            panel.QuickOrder = g.Order;
+            panel.OwnerType = string.IsNullOrEmpty(g.OwnerType) ? "personal" : g.OwnerType;
+            panel.TeamId = g.TeamId;
+            panel.TeamName = g.TeamName;
+            panel.QuickItems = g.Items ?? new List<QuickItem>();
+            if (g.ChildPanels != null && g.ChildPanels.Count > 0)
+            {
+                panel.ChildPanels ??= new List<PanelItem>();
+                panel.ChildPanels.AddRange(g.ChildPanels);
+            }
+        }
+
+        private static bool MigrateLegacyFile<T>(string fileName, string panelName, Func<T, QuickItem> convert)
+        {
+            string path = Path.Combine(SideDeskFolder, fileName);
+            if (!File.Exists(path)) return false;
             try
             {
-                if (File.Exists(_filePath))
+                var legacy = JsonConvert.DeserializeObject<List<T>>(File.ReadAllText(path));
+                if (legacy == null || legacy.Count == 0)
                 {
-                    string json = File.ReadAllText(_filePath);
-                    _groups = JsonConvert.DeserializeObject<List<QuickGroup>>(json) ?? new List<QuickGroup>();
+                    File.Move(path, path + ".bak", true);
+                    return false;
                 }
-                else
+                var panel = new PanelItem
                 {
-                    _groups = new List<QuickGroup>();
-                }
+                    Type = PanelType.QuickGroup,
+                    QuickGroupName = panelName,
+                    QuickColumns = 1,
+                    QuickItems = legacy.Select(convert).ToList()
+                };
+                var win = _mgr!.Windows[0];
+                win.Panels ??= new List<PanelItem>();
+                win.Panels.Add(panel);
+                File.Move(path, path + ".bak", true);
+                return true;
             }
-            catch
+            catch (Exception ex)
             {
-                _groups = new List<QuickGroup>();
+                System.Diagnostics.Debug.WriteLine($"[QuickGroup] {fileName} 迁移失败: {ex.Message}");
+                return false;
             }
         }
     }

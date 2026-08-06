@@ -27,6 +27,9 @@ public class DataDashboardItem
     public string? TeamName { get; set; }            // 团队名称快照（显示用）
     public string? VarKey { get; set; }              // 变量名（如 qcoder.count，团队/个人内唯一，供其他地方条件判断/显示引用）
 
+    // 引用展示（非空=仅展示同变量名运行中数据项的值，自身不参与轮询）
+    public string? RefVarKey { get; set; }           // 引用的变量名（指向实际轮询的数据项）
+
     // 样式配置
     public string LabelColor { get; set; } = "";         // 标题文字颜色（空=默认）
     public double LabelFontSize { get; set; } = 0;       // 标题字号（0=默认11）

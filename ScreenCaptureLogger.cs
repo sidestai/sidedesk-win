@@ -1,3 +1,4 @@
+#if false // 已禁用：微信窗口截图功能不再启用（整个文件被排除编译）
 using System;
 using System.Diagnostics;
 using System.Drawing;
@@ -74,7 +75,7 @@ namespace SideDesk
         public ScreenCaptureLogger()
         {
             string appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            _logFolder = Path.Combine(appData, "SideDesk", "ScreenCaptureLogs");
+            _logFolder = Path.Combine(appData, "SideDesk", "Logs");
             if (!Directory.Exists(_logFolder))
             {
                 Directory.CreateDirectory(_logFolder);
@@ -306,3 +307,4 @@ namespace SideDesk
         }
     }
 }
+#endif

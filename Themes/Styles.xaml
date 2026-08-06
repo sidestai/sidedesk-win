@@ -892,6 +892,45 @@
         </Setter>
     </Style>
 
+    <!-- Dark RadioButton Style (暗色主题通用单选钮，与 DarkCheckBoxStyle 风格一致) -->
+    <Style x:Key="DarkRadioButtonStyle" TargetType="RadioButton">
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeNormal}" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RadioButton">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Grid Width="18" Height="18" Margin="0,0,8,0">
+                            <Ellipse x:Name="Circle"
+                                     Width="18" Height="18"
+                                     Fill="{DynamicResource BrushInputBG}"
+                                     Stroke="{DynamicResource BrushBorder}"
+                                     StrokeThickness="1.5" />
+                            <Ellipse x:Name="Dot"
+                                     Width="9" Height="9"
+                                     Fill="{DynamicResource BrushAccent}"
+                                     Opacity="0" />
+                        </Grid>
+                        <ContentPresenter VerticalAlignment="Center" />
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Circle" Property="Stroke" Value="{DynamicResource BrushAccent}" />
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Circle" Property="Stroke" Value="{DynamicResource BrushAccent}" />
+                            <Setter TargetName="Dot" Property="Opacity" Value="1" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- Standard Button Style (用于对话框确定/取消等) -->
     <Style x:Key="StandardButtonStyle" TargetType="Button">
         <Setter Property="Background" Value="{DynamicResource BrushInputBG}" />

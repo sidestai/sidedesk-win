@@ -31,6 +31,15 @@ namespace SideDesk.Controls
         public WindowConfigManager? ConfigManager { get; set; }
         /// <summary>背景色覆盖（优先于 Item.BGColor，用于 Group 等需要特殊背景色的模块）</summary>
         public string? BGColorOverride { get; set; }
+        /// <summary>窗口级限制：引用导入的窗口不允许编辑（由 NativeModePanel 注入），与模块级限制叠加</summary>
+        public bool WindowEditBlocked { get; set; }
+        /// <summary>窗口级限制：引用导入的窗口不允许删除（由 NativeModePanel 注入）</summary>
+        public bool WindowDeleteBlocked { get; set; }
+
+        /// <summary>编辑受限（模块自身或所属窗口的引用分享不允许编辑）</summary>
+        private bool EditBlocked => Item.IsShareReadOnly || WindowEditBlocked;
+        /// <summary>删除受限（模块自身或所属窗口的引用分享不允许删除）</summary>
+        private bool DeleteBlocked => Item.IsShareDeleteBlocked || WindowDeleteBlocked;
 
         // ===== 回调（由 NativeModePanel 注入）=====
         /// <summary>请求重新渲染所有面板</summary>
@@ -80,13 +89,15 @@ namespace SideDesk.Controls
         public void SetContent(UIElement content)
         {
             _moduleContent = content;
+            // 引用分享只读：包一层拦截层，阻断内容区一切点击操作（行数据的增删改），保留浏览与滚动
+            var effective = EditBlocked ? WrapShareReadOnly(content) : content;
             if (_groupMode)
             {
                 // Group 模式：内容直接放入主容器（无 ScrollViewer）
-                _mainStack.Children.Add(content);
+                _mainStack.Children.Add(effective);
                 return;
             }
-            _contentHost!.Content = content;
+            _contentHost!.Content = effective;
             // 固定高度时让内容至少填满可视区域
             if (Item.PanelHeight.HasValue && Item.PanelHeight.Value > 0 && content is FrameworkElement cfe)
             {
@@ -199,6 +210,8 @@ namespace SideDesk.Controls
                 {
                     if (e.ClickCount == 2)
                     {
+                        // 引用分享只读：禁止重命名
+                        if (EditBlocked) { ShowReadOnlyHint(_titleBlock); e.Handled = true; return; }
                         OnRenamePanel?.Invoke(Item, DefaultTitle);
                         e.Handled = true;
                     }
@@ -250,15 +263,16 @@ namespace SideDesk.Controls
                 _mainStack.Children.Add(_resizeGrip);
             }
 
-            // 外框
+            // 外框（分享导入/团队归属模块使用设置中的标识边框色）
+            var (specialBrush, specialThickness) = ResolveSpecialBorder();
             _rootBorder = new Border
             {
                 Margin = new Thickness(0, 0, 0, 6),
                 Padding = new Thickness(3),
                 CornerRadius = new CornerRadius(6),
                 Background = ApplyDashColor(BGColorOverride ?? Item.BGColor, "BrushInputBG"),
-                BorderBrush = GetBrush("BrushBorder"),
-                BorderThickness = new Thickness(1),
+                BorderBrush = specialBrush ?? GetBrush("BrushBorder"),
+                BorderThickness = new Thickness(specialThickness),
                 Child = _mainStack
             };
 
@@ -439,14 +453,20 @@ namespace SideDesk.Controls
         {
             _moduleMenu = new ContextMenu();
 
-            // 模块设置
+            // 模块设置（引用分享只读时禁止修改标题/背景色/归属）
             var settingsMi = new MenuItem { Header = "模块设置" };
+            if (EditBlocked) { settingsMi.IsEnabled = false; settingsMi.ToolTip = "引用分享的模块，分享者不允许修改设置"; }
             settingsMi.Click += (s, e) => OnShowSettings?.Invoke(Item, DefaultTitle);
             _moduleMenu.Items.Add(settingsMi);
 
-            // 自定义菜单项
+            // 自定义菜单项（引用分享只读时一并禁用，避免绕过拦截层修改数据；Tag="keepWhenReadOnly" 的除外，如再分享）
             foreach (var custom in _customMenuItems)
             {
+                if (EditBlocked && custom is MenuItem cmi && !Equals(cmi.Tag, "keepWhenReadOnly"))
+                {
+                    cmi.IsEnabled = false;
+                    cmi.ToolTip = "引用分享的模块，分享者不允许修改内容";
+                }
                 _moduleMenu.Items.Add(custom);
             }
 
@@ -486,8 +506,9 @@ namespace SideDesk.Controls
             };
             _moduleMenu.Items.Add(pinMi);
 
-            // 删除模块
+            // 删除模块（引用分享不允许删除时禁用）
             var deleteMi = new MenuItem { Header = "删除模块" };
+            if (DeleteBlocked) { deleteMi.IsEnabled = false; deleteMi.ToolTip = "引用分享的模块，分享者不允许删除"; }
             deleteMi.Click += (s, e) => OnRemovePanel?.Invoke(Item);
             _moduleMenu.Items.Add(deleteMi);
 
@@ -498,7 +519,67 @@ namespace SideDesk.Controls
             }
         }
 
+        // ===== 分享只读拦截 =====
+
+        private DateTime _lastReadOnlyHintAt = DateTime.MinValue;
+
+        /// <summary>分享只读拦截层：包裹内容区，阻断鼠标按下/抬起（按钮点击、双击编辑、复选框、右键行菜单等），不影响浏览与滚动</summary>
+        private UIElement WrapShareReadOnly(UIElement content)
+        {
+            var wrapper = new Grid
+            {
+                Background = Brushes.Transparent,
+                ToolTip = "引用分享的模块，分享者不允许修改内容"
+            };
+            wrapper.Children.Add(content);
+            MouseButtonEventHandler block = (s, e) =>
+            {
+                e.Handled = true;
+                ShowReadOnlyHint(wrapper);
+            };
+            wrapper.PreviewMouseLeftButtonDown += block;
+            wrapper.PreviewMouseLeftButtonUp += block;
+            wrapper.PreviewMouseRightButtonDown += block;
+            wrapper.PreviewMouseRightButtonUp += block;
+            return wrapper;
+        }
+
+        /// <summary>点击被拦截时短暂弹出提示（3 秒节流，避免刷屏）</summary>
+        private void ShowReadOnlyHint(FrameworkElement host)
+        {
+            if ((DateTime.Now - _lastReadOnlyHintAt).TotalSeconds < 3) return;
+            _lastReadOnlyHintAt = DateTime.Now;
+            var tip = new ToolTip
+            {
+                Content = "引用分享的模块，分享者不允许编辑/删除内容",
+                PlacementTarget = host,
+                Placement = PlacementMode.MousePoint,
+                IsOpen = true
+            };
+            var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1.6) };
+            timer.Tick += (s, e) => { tip.IsOpen = false; timer.Stop(); };
+            timer.Start();
+        }
+
         // ===== 工具方法 =====
+
+        /// <summary>分享/团队组件的标识边框：分享导入优先于团队归属；无标识时返回 null（用默认边框）</summary>
+        private (Brush? brush, double thickness) ResolveSpecialBorder()
+        {
+            var s = AppSettings.Instance;
+            if (!string.IsNullOrEmpty(Item.ShareId))
+                return (TryParseBrush(s.ShareBorderColor) ?? GetBrush("BrushBorder"), 1.5);
+            if (Item.OwnerType == "team")
+                return (TryParseBrush(s.TeamBorderColor) ?? GetBrush("BrushBorder"), 1.5);
+            return (null, 1);
+        }
+
+        private static Brush? TryParseBrush(string? hex)
+        {
+            if (string.IsNullOrEmpty(hex)) return null;
+            try { return (SolidColorBrush)new BrushConverter().ConvertFrom(hex)!; }
+            catch { return null; }
+        }
 
         private Brush GetBrush(string resourceKey)
         {

@@ -485,6 +485,26 @@ namespace SideDesk.Framework
             set { _separatorColor = value; NotifyPropertyChanged("SeparatorColor"); }
         }
 
+        private string _shareBorderColor { get; set; } = "#A855F7";
+
+        /// <summary>分享导入组件的边框颜色（默认紫色）</summary>
+        [JsonProperty]
+        public string ShareBorderColor
+        {
+            get { return _shareBorderColor; }
+            set { _shareBorderColor = value; NotifyPropertyChanged("ShareBorderColor"); }
+        }
+
+        private string _teamBorderColor { get; set; } = "#3B82F6";
+
+        /// <summary>团队归属组件的边框颜色（默认蓝色）</summary>
+        [JsonProperty]
+        public string TeamBorderColor
+        {
+            get { return _teamBorderColor; }
+            set { _teamBorderColor = value; NotifyPropertyChanged("TeamBorderColor"); }
+        }
+
         private string _fontFamily { get; set; } = "Microsoft YaHei UI";
 
         [JsonProperty]

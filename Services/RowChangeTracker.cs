@@ -120,6 +120,11 @@ public class RowChangeTracker
         PanelType.SignalLight => "signal_light",
         PanelType.Clipboard => "clipboard",
         PanelType.FileArea => "file_area",
+        PanelType.Pomodoro => "pomodoro",
+        PanelType.DataDashboard => "dashboard",
+        PanelType.DigitalEmployee => "digital_employee",
+        PanelType.Friend => "friend_user",
+        PanelType.QuickGroup => "shortcut",
         _ => "unknown"
     };
 
@@ -128,7 +133,10 @@ public class RowChangeTracker
     {
         PanelType.StickyNotes or PanelType.TodoList or PanelType.Timer
             or PanelType.Countdown or PanelType.SignalLight
-            or PanelType.Clipboard or PanelType.FileArea => true,
+            or PanelType.Clipboard or PanelType.FileArea
+            or PanelType.Pomodoro or PanelType.DataDashboard
+            or PanelType.DigitalEmployee or PanelType.Friend
+            or PanelType.QuickGroup => true,
         _ => false
     };
 }

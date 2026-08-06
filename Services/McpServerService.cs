@@ -27,7 +27,19 @@ namespace SideDesk.Services
         /// <summary>服务是否正在运行</summary>
         public bool IsRunning => _running;
 
-        private McpServerService() { }
+        private McpServerService()
+        {
+            // 工具注册表变化（网页上改了配置 / 登录态变化）：重建工具列表
+            McpToolRegistryService.Instance.RegistryChanged += () =>
+            {
+                if (!_running) return;
+                _ = Task.Run(() =>
+                {
+                    try { Restart(); }
+                    catch (Exception ex) { Debug.WriteLine($"[McpServer] 注册表重建异常: {ex.Message}"); }
+                });
+            };
+        }
 
         /// <summary>
         /// 启动 MCP Server（幂等）
@@ -80,12 +92,36 @@ namespace SideDesk.Services
             Debug.WriteLine("[McpServer] 已停止");
         }
 
+        /// <summary>重启 MCP Server（工具注册表变化时重建，SSE 客户端会自动重连拿到新工具列表）</summary>
+        public void Restart()
+        {
+            Stop();
+            Start();
+        }
+
         /// <summary>
         /// 构建 MCP App 实例，注册所有 Tools / Resources
         /// </summary>
         private McpApp BuildMcpApp()
         {
             var mcp = McpApp.Create("SideDesk", "1.0.0");
+
+            // ═══════════ 网页版工具注册表生效时：按服务端清单动态注册（执行统一走 AIToolService） ═══════════
+            if (McpToolRegistryService.Instance.IsActive)
+            {
+                var tools = McpToolRegistryService.Instance.Tools.Where(t => t.Enabled).ToList();
+                if (tools.Count > 0)
+                {
+                    foreach (var t in tools)
+                        RegisterDynamicTool(mcp, t);
+
+                    RegisterResources(mcp);
+                    Debug.WriteLine($"[McpServer] 已按服务端注册表注册 {tools.Count} 个工具");
+                    return mcp;
+                }
+            }
+
+            // ═══════════ 未登录/未拉取到：内置硬编码工具（隐私模式兼容） ═══════════
 
             // ═══════════ Tools（统一委托 AIToolService，与 AI Chat Function Calling 共用同一套逻辑） ═══════════
 
@@ -121,6 +157,28 @@ namespace SideDesk.Services
 
             mcp.AddTool("search_clipboard_favorites", "根据关键词搜索剪贴板收藏内容（模糊匹配）", (string keyword) => AIToolService.Tool_SearchClipboardFavorites(keyword));
 
+            // ═══════════ 番茄闹钟 ═══════════
+
+            mcp.AddTool("get_pomodoro_status", "获取番茄闹钟组件当前状态（模式、是否运行中、剩余时间、今日完成数）。window 传窗口名称或序号（如'2'、'主页'）定位特定窗口，传空则返回所有窗口", (string window) => AIToolService.Tool_GetPomodoroStatus(window));
+
+            mcp.AddTool("start_pomodoro", "开始番茄钟（切换到工作模式并开始计时）。window 传窗口名称或序号定位特定窗口，传空则作用于所有窗口", (string window) => AIToolService.Tool_StartPomodoro(window));
+
+            mcp.AddTool("stop_pomodoro", "停止/暂停当前番茄闹钟计时（剩余时间保留，可随时继续）。window 传窗口名称或序号定位特定窗口，传空则作用于所有窗口", (string window) => AIToolService.Tool_StopPomodoro(window));
+
+            mcp.AddTool("start_short_break", "开始短休息（切换到短休息模式并开始计时）。window 传窗口名称或序号定位特定窗口，传空则作用于所有窗口", (string window) => AIToolService.Tool_StartShortBreak(window));
+
+            mcp.AddTool("start_long_break", "开始长休息（切换到长休息模式并开始计时）。window 传窗口名称或序号定位特定窗口，传空则作用于所有窗口", (string window) => AIToolService.Tool_StartLongBreak(window));
+
+            mcp.AddTool("get_pomodoro_count", "获取今日已完成的番茄数量。window 传窗口名称或序号定位特定窗口，传空则合计所有窗口", (string window) => AIToolService.Tool_GetPomodoroCount(window));
+
+            RegisterResources(mcp);
+
+            return mcp;
+        }
+
+        /// <summary>Resources 注册（两种工具来源路径共用）</summary>
+        private void RegisterResources(McpApp mcp)
+        {
             // ═══════════ Resources ═══════════
 
             mcp.AddResource("sidedesk://status", "SideDesk Status", "SideDesk 应用运行状态", () =>
@@ -147,8 +205,90 @@ namespace SideDesk.Services
                     panelCount = w.Panels.Count
                 }).ToList();
             });
+        }
 
-            return mcp;
+        /// <summary>
+        /// 按注册表定义动态注册工具：从 paramsSchema 解析参数名，按参数个数选用
+        /// 0~3 个 string 参数的 lambda（MinimalMcp 按 lambda 签名自动生成 Schema），
+        /// 执行统一委托 AIToolService.ExecuteTool（返回 JToken 避免二次 JSON 转义）。
+        /// </summary>
+        private static void RegisterDynamicTool(McpApp mcp, McpToolDef t)
+        {
+            var paramNames = ParseParamNames(t.ParamsSchema);
+            string name = t.Name;
+
+            object Exec(System.Collections.Generic.Dictionary<string, string> args)
+            {
+                var argsObj = new Newtonsoft.Json.Linq.JObject();
+                foreach (var kv in args) argsObj[kv.Key] = kv.Value;
+                var resultJson = AIToolService.ExecuteTool(name, argsObj.ToString(Newtonsoft.Json.Formatting.None));
+                try { return Newtonsoft.Json.Linq.JToken.Parse(resultJson); }
+                catch { return resultJson; }
+            }
+
+            switch (paramNames.Count)
+            {
+                case 0:
+                    mcp.AddTool(t.Name, t.Description, () => Exec(new System.Collections.Generic.Dictionary<string, string>()));
+                    break;
+                case 1:
+                    {
+                        var p1 = paramNames[0];
+                        mcp.AddTool(t.Name, t.Description, (string a1) => Exec(new() { [p1] = a1 ?? "" }));
+                    }
+                    break;
+                case 2:
+                    {
+                        var p1 = paramNames[0]; var p2 = paramNames[1];
+                        mcp.AddTool(t.Name, t.Description, (string a1, string a2) => Exec(new() { [p1] = a1 ?? "", [p2] = a2 ?? "" }));
+                    }
+                    break;
+                case 3:
+                    {
+                        var p1 = paramNames[0]; var p2 = paramNames[1]; var p3 = paramNames[2];
+                        mcp.AddTool(t.Name, t.Description, (string a1, string a2, string a3) =>
+                            Exec(new() { [p1] = a1 ?? "", [p2] = a2 ?? "", [p3] = a3 ?? "" }));
+                    }
+                    break;
+                default:
+                    // 参数 > 3：退化为单参数 JSON 串，描述中说明用法
+                    mcp.AddTool(t.Name, $"{t.Description}（参数以 JSON 对象字符串传入）",
+                        (string arguments) =>
+                        {
+                            try
+                            {
+                                var obj = Newtonsoft.Json.Linq.JObject.Parse(string.IsNullOrWhiteSpace(arguments) ? "{}" : arguments);
+                                var dict = obj.Properties().ToDictionary(p => p.Name, p => p.Value.ToString());
+                                return Exec(dict);
+                            }
+                            catch (Exception ex)
+                            {
+                                return new { error = $"arguments 不是合法 JSON: {ex.Message}" };
+                            }
+                        });
+                    break;
+            }
+        }
+
+        /// <summary>从参数 Schema 解析参数名列表（required 优先，其次 properties 全部）</summary>
+        private static System.Collections.Generic.List<string> ParseParamNames(string? paramsSchema)
+        {
+            var names = new System.Collections.Generic.List<string>();
+            if (string.IsNullOrWhiteSpace(paramsSchema)) return names;
+            try
+            {
+                var schema = Newtonsoft.Json.Linq.JObject.Parse(paramsSchema);
+                if (schema["required"] is Newtonsoft.Json.Linq.JArray req)
+                    foreach (var r in req)
+                    {
+                        var s = r.ToString();
+                        if (!string.IsNullOrEmpty(s)) names.Add(s);
+                    }
+                if (names.Count == 0 && schema["properties"] is Newtonsoft.Json.Linq.JObject props)
+                    foreach (var p in props.Properties()) names.Add(p.Name);
+            }
+            catch { }
+            return names;
         }
     }
 }

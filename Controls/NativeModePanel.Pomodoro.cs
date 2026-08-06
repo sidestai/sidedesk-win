@@ -270,6 +270,12 @@ namespace SideDesk.Controls
             {
                 p.EnsureTodayCount();
                 p.CompletedCount++;
+
+                // 每日活跃记录：固定向内置类型「番茄」当日数值 +1（作用域跟随当前窗口，后端不存在时自动建行）
+                {
+                    string? corpId = _currentWindowConfig?.OwnerType == "team" ? _currentWindowConfig?.CorpId : null;
+                    _ = Services.DailyActivityService.Instance.AddAsync(corpId, Services.DailyActivityTypes.Pomodoro, DateTime.Now, 1);
+                }
             }
 
             // 决定下一阶段
@@ -359,6 +365,17 @@ namespace SideDesk.Controls
             var popupChk = new CheckBox { Content = "结束时弹出提示窗口", IsChecked = p.RemindPopup, Foreground = (Brush)FindResource("BrushTextMain"), Margin = new Thickness(0, 0, 0, 16) };
             root.Children.Add(popupChk);
 
+            // ===== 每日活跃记录说明（固定类型「番茄」，每完成一个番茄当日数值 +1）=====
+            root.Children.Add(MakeLabel("每日活跃记录"));
+            root.Children.Add(new TextBlock
+            {
+                Text = $"每完成一个番茄，自动记录到每日活跃「{Services.DailyActivityTypes.Pomodoro}」（当日数值 +1）",
+                Foreground = (Brush)FindResource("BrushTextSec"),
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 12)
+            });
+
             // 按钮
             var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
             var okBtn = new Button { Content = "确定", Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)Application.Current.FindResource("PrimaryButtonStyle") };
@@ -437,11 +454,12 @@ namespace SideDesk.Controls
                 Margin = new Thickness(0, 0, 0, 16)
             });
 
+            // 不设固定宽高：PrimaryButtonStyle 自带 16,8 内边距，
+            // 强制 Height=28 会把文字裁掉，改为由内容自适应
             var okBtn = new Button
             {
                 Content = "知道了",
-                Width = 80,
-                Height = 28,
+                MinWidth = 80,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Style = (Style)Application.Current.FindResource("PrimaryButtonStyle")
             };

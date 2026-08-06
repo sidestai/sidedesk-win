@@ -34,18 +34,9 @@ namespace SideDesk.Controls
                 container.Children.Add(CreateCountdownCard(cd, item));
             }
 
-            // 空列表提示
+            // 空列表提示：点击直接弹出添加倒计时对话框
             if (item.CountdownItems.Count == 0)
-            {
-                container.Children.Add(new Emoji.Wpf.TextBlock
-                {
-                    Text = "暂无倒计时，点击标题栏 ▾ 添加",
-                    Foreground = (Brush)FindResource("BrushTextMuted"),
-                    FontSize = 12,
-                    Opacity = 0.7,
-                    Margin = new Thickness(2, 2, 0, 2)
-                });
-            }
+                container.Children.Add(BuildEmptyAddTip("暂无倒计时，点击添加", () => ShowAddCountdownDialog(item)));
 
             // 基于 ModuleControl 基础组件包装
             var module = CreateModuleControl("⏳ 倒计时", item);
@@ -352,11 +343,12 @@ namespace SideDesk.Controls
                 Margin = new Thickness(0, 0, 0, 16)
             });
 
+            // 不设固定宽高：PrimaryButtonStyle 自带 16,8 内边距，
+            // 强制 Height=28 会把文字裁掉，改为由内容自适应
             var okBtn = new Button
             {
                 Content = "知道了",
-                Width = 80,
-                Height = 28,
+                MinWidth = 80,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Style = (Style)Application.Current.FindResource("PrimaryButtonStyle")
             };

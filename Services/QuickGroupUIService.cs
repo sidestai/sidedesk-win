@@ -79,6 +79,9 @@ namespace SideDesk.Services
         /// <summary>请求主窗口作为对话框的 Owner</summary>
         public Window? OwnerWindow { get; set; }
 
+        /// <summary>本服务所属的窗口配置（新建快捷面板时的落位窗口）</summary>
+        public WindowConfig? OwnerWindowConfig { get; set; }
+
         /// <summary>分组被删除时触发，参数为 groupId；用于 1:1 面板绑定模式下通知上层移除 PanelItem</summary>
         public Action<string>? OnGroupDeleted { get; set; }
 
@@ -93,8 +96,14 @@ namespace SideDesk.Services
         /// <summary>加载所有分组到 UI</summary>
         public void LoadGroups()
         {
+            // 分组已改为面板自有数据：绑定模式只渲染本面板的分组，
+            // 避免把其他窗口/面板的快捷面板误渲染进当前容器
+            if (!string.IsNullOrEmpty(_boundGroupId))
+            {
+                LoadSingleGroup(_boundGroupId);
+                return;
+            }
             _boundGroupId = null;
-            QuickGroupManager.MigrateFromLegacy();
             _container.Children.Clear();
             _itemButtonRefs.Clear();
             var groups = QuickGroupManager.GetAll();
@@ -195,7 +204,7 @@ namespace SideDesk.Services
                 string name = nameBox.Text.Trim();
                 if (string.IsNullOrEmpty(name)) { MessageBox.Show("请输入名称"); return; }
                 var group = new QuickGroup { Name = name, Columns = colCombo.SelectedIndex + 1 };
-                QuickGroupManager.AddGroup(group);
+                QuickGroupManager.AddGroup(group, OwnerWindowConfig);
                 QuickGroupManager.Save();
                 _container.Children.Add(BuildGroupPanel(group));
                 dialog.Close();
@@ -206,6 +215,175 @@ namespace SideDesk.Services
             grid.Children.Add(btnPanel);
 
             dialog.Content = grid;
+            dialog.ShowDialog();
+        }
+
+        /// <summary>编辑快捷组对话框：分组名 / 列数 / 显示模式 / 所属团队（右键标题栏与 ▼ 菜单的“编辑快捷组”入口）</summary>
+        private void ShowEditGroupDialog(QuickGroup group)
+        {
+            var dialog = new Window
+            {
+                Title = "编辑快捷组",
+                Width = 360,
+                SizeToContent = SizeToContent.Height,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                ResizeMode = ResizeMode.NoResize,
+                Background = (Brush)Application.Current.FindResource("BrushDialogBG"),
+                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
+                Owner = OwnerWindow
+            };
+            dialog.SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(dialog, App.IsCurrentThemeLight());
+
+            var radioStyle = (Style)Application.Current.FindResource("DarkRadioButtonStyle");
+            var root = new StackPanel { Margin = new Thickness(20) };
+
+            // 分组名
+            root.Children.Add(new Emoji.Wpf.TextBlock
+            {
+                Text = "分组名",
+                Foreground = (Brush)Application.Current.FindResource("BrushTextSec"),
+                FontSize = (double)Application.Current.FindResource("FontSizeSmall"),
+                Margin = new Thickness(0, 0, 0, 6)
+            });
+            var nameBox = new TextBox { Text = group.Name, Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
+            root.Children.Add(nameBox);
+
+            // 列数
+            root.Children.Add(new Emoji.Wpf.TextBlock
+            {
+                Text = "列数",
+                Foreground = (Brush)Application.Current.FindResource("BrushTextSec"),
+                FontSize = (double)Application.Current.FindResource("FontSizeSmall"),
+                Margin = new Thickness(0, 14, 0, 6)
+            });
+            int selectedCol = Math.Clamp(group.Columns, 1, 4);
+            var colPanel = new StackPanel { Orientation = Orientation.Horizontal };
+            for (int c = 1; c <= 4; c++)
+            {
+                int col = c;
+                var r = new RadioButton
+                {
+                    Content = $"{col} 列",
+                    Style = radioStyle,
+                    IsChecked = col == selectedCol,
+                    Margin = new Thickness(0, 0, 16, 0)
+                };
+                r.Checked += (s, ev) => selectedCol = col;
+                colPanel.Children.Add(r);
+            }
+            root.Children.Add(colPanel);
+
+            // 显示模式
+            root.Children.Add(new Emoji.Wpf.TextBlock
+            {
+                Text = "显示模式",
+                Foreground = (Brush)Application.Current.FindResource("BrushTextSec"),
+                FontSize = (double)Application.Current.FindResource("FontSizeSmall"),
+                Margin = new Thickness(0, 14, 0, 6)
+            });
+            string selectedMode = group.DisplayMode ?? "grid";
+            var modePanel = new StackPanel { Orientation = Orientation.Horizontal };
+            var modes = new[] { ("grid", "大图标"), ("list", "列表"), ("popup", "弹出菜单") };
+            foreach (var (modeKey, modeLabel) in modes)
+            {
+                var r = new RadioButton
+                {
+                    Content = modeLabel,
+                    Style = radioStyle,
+                    IsChecked = modeKey == selectedMode,
+                    Margin = new Thickness(0, 0, 16, 0)
+                };
+                r.Checked += (s, ev) => selectedMode = modeKey;
+                modePanel.Children.Add(r);
+            }
+            root.Children.Add(modePanel);
+
+            // 所属团队（个人 + 团队列表，异步加载）
+            root.Children.Add(new Emoji.Wpf.TextBlock
+            {
+                Text = "所属团队",
+                Foreground = (Brush)Application.Current.FindResource("BrushTextSec"),
+                FontSize = (double)Application.Current.FindResource("FontSizeSmall"),
+                Margin = new Thickness(0, 14, 0, 6)
+            });
+            var teamCombo = new ComboBox
+            {
+                Style = (Style)Application.Current.FindResource("GlobalComboBoxStyle"),
+                IsEditable = false
+            };
+            teamCombo.Items.Add(new ComboBoxItem { Content = "个人", Tag = (string?)null });
+            teamCombo.SelectedIndex = 0;
+            root.Children.Add(teamCombo);
+
+            // 异步拉取团队列表，加载完成后恢复当前所属团队的选中项
+            string? pendingTeamId = group.TeamId;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var teams = await TeamService.Instance.ListTeamsAsync();
+                    await _dispatcher.InvokeAsync(() =>
+                    {
+                        if (teamCombo.Items.Count > 1) return; // 已加载过，避免重复
+                        if (teams != null)
+                        {
+                            foreach (var t in teams)
+                                teamCombo.Items.Add(new ComboBoxItem { Content = t.Name, Tag = t.Id });
+                        }
+                        if (!string.IsNullOrEmpty(pendingTeamId))
+                        {
+                            for (int i = 1; i < teamCombo.Items.Count; i++)
+                            {
+                                if ((teamCombo.Items[i] as ComboBoxItem)?.Tag as string == pendingTeamId)
+                                { teamCombo.SelectedIndex = i; break; }
+                            }
+                        }
+                    });
+                }
+                catch { }
+            });
+
+            // 按钮
+            var btnPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 20, 0, 0)
+            };
+            var cancelBtn = new Button
+            {
+                Content = "取消",
+                Style = (Style)Application.Current.FindResource("StandardButtonStyle"),
+                Margin = new Thickness(0, 0, 10, 0)
+            };
+            cancelBtn.Click += (s, ev) => dialog.Close();
+            var okBtn = new Button
+            {
+                Content = "保存",
+                Style = (Style)Application.Current.FindResource("PrimaryButtonStyle")
+            };
+            okBtn.Click += (s, ev) =>
+            {
+                string name = nameBox.Text.Trim();
+                if (string.IsNullOrEmpty(name)) { MessageBox.Show("请输入分组名"); return; }
+                group.Name = name;
+                group.Columns = selectedCol;
+                group.DisplayMode = selectedMode;
+                // 所属团队：选中“个人”（Tag=null）则清空团队标识
+                var selTeam = teamCombo.SelectedItem as ComboBoxItem;
+                group.TeamId = selTeam?.Tag as string;
+                group.TeamName = string.IsNullOrEmpty(group.TeamId) ? null : selTeam?.Content?.ToString();
+                group.OwnerType = string.IsNullOrEmpty(group.TeamId) ? "personal" : "team";
+                QuickGroupManager.UpdateGroup(group);
+                QuickGroupManager.Save();
+                dialog.Close();
+                RefreshGroupView();
+            };
+            btnPanel.Children.Add(cancelBtn);
+            btnPanel.Children.Add(okBtn);
+            root.Children.Add(btnPanel);
+
+            dialog.Content = root;
             dialog.ShowDialog();
         }
 
@@ -315,7 +493,7 @@ namespace SideDesk.Services
                 string name = nameBox.Text.Trim();
                 if (string.IsNullOrEmpty(name)) { MessageBox.Show("请输入分组名称"); return; }
                 var group = new QuickGroup { Name = name, Columns = 2 };
-                QuickGroupManager.AddGroup(group);
+                QuickGroupManager.AddGroup(group, OwnerWindowConfig);
                 QuickGroupManager.Save();
                 resultId = group.Id;
                 dialog.Close();
@@ -500,10 +678,13 @@ namespace SideDesk.Services
             };
             titleBar.MouseLeftButtonUp += (s, ev) => { dragReady = false; };
 
-            // 右键菜单：删除整个快捷组
+            // 右键菜单：编辑/删除整个快捷组
             titleBar.MouseRightButtonUp += (s, ev) =>
             {
                 var rmenu = new ContextMenu();
+                var editGrpItem = new MenuItem { Header = "编辑快捷组" };
+                editGrpItem.Click += (s2, ev2) => ShowEditGroupDialog(group);
+                rmenu.Items.Add(editGrpItem);
                 var delItem = new MenuItem { Header = "删除快捷组" };
                 delItem.Click += (s2, ev2) =>
                 {
@@ -686,42 +867,10 @@ namespace SideDesk.Services
                 popup.Items.Add(expandItem);
                 popup.Items.Add(new Separator());
 
-                var renameItem = new MenuItem { Header = "重命名" };
-                renameItem.Click += (s2, ev2) =>
-                {
-                    var dlg = new Window
-                    {
-                        Title = "重命名分组", Width = 350,
-                        SizeToContent = SizeToContent.Height,
-                        WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                        ResizeMode = ResizeMode.NoResize,
-                        Background = (Brush)Application.Current.FindResource("BrushDialogBG"),
-                        Foreground = (Brush)Application.Current.FindResource("BrushTextMain")
-                    };
-                    dlg.SourceInitialized += (s3, ev3) => App.UpdateWindowDwmTheme(dlg);
-                    var sp = new StackPanel { Margin = new Thickness(20) };
-                    sp.Children.Add(new Emoji.Wpf.TextBlock
-                    {
-                        Text = "重命名分组",
-                        FontWeight = FontWeights.Bold,
-                        FontSize = (double)Application.Current.FindResource("FontSizeSubtitle"),
-                        Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
-                        Margin = new Thickness(0, 0, 0, 12)
-                    });
-                    var tb = new TextBox { Text = group.Name, Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
-                    sp.Children.Add(tb);
-                    var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
-                    var ok = new Button { Content = "确定", Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)Application.Current.FindResource("PrimaryButtonStyle") };
-                    var cancel = new Button { Content = "取消", Width = 70, Style = (Style)Application.Current.FindResource("StandardButtonStyle") };
-                    ok.Click += (s3, ev3) => { group.Name = tb.Text.Trim(); titleText.Text = group.Name; QuickGroupManager.UpdateGroup(group); QuickGroupManager.Save(); dlg.Close(); };
-                    cancel.Click += (s3, ev3) => dlg.Close();
-                    btnPanel.Children.Add(ok);
-                    btnPanel.Children.Add(cancel);
-                    sp.Children.Add(btnPanel);
-                    dlg.Content = sp;
-                    dlg.ShowDialog();
-                };
-                popup.Items.Add(renameItem);
+                // 编辑快捷组（分组名/列数/显示模式/所属团队，与右键标题栏入口同对话框；重命名已合并到此入口）
+                var editGrpMenuItem = new MenuItem { Header = "编辑快捷组" };
+                editGrpMenuItem.Click += (s2, ev2) => ShowEditGroupDialog(group);
+                popup.Items.Add(editGrpMenuItem);
 
                 var colItem = new MenuItem { Header = "修改列数" };
                 for (int c = 1; c <= 4; c++)
