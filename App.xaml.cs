@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
@@ -10,8 +10,6 @@ using Velopack;
 
 namespace SideDesk
 {
-    public enum ScreenType { A, B }
-
     public partial class App : Application
     {
         public LayoutMode CurrentLayout => AppSettings.GetCurrentMonitor(0, GetCurrentDesktopId()).Layout;
@@ -23,14 +21,27 @@ namespace SideDesk
         /// <summary>启动时 Token 验证失败的提示信息（非空表示登录已过期，设置页显示提示）</summary>
         public static string? AccountTokenExpiredMessage { get; set; }
 
-        public string ScreenAUrl { get; set; } = "https://www.baidu.com";
-        public string ScreenBUrl { get; set; } = "https://www.bing.com";
+        /// <summary>运行时离线标记：auth 接口请求失败、无法确认登录态，账户页视为未登录（不清本地 Token，恢复后重新验证）</summary>
+        public static bool AccountOffline { get; private set; }
+
+        /// <summary>设置离线标记并同步 UI：离线→账户页视为未登录 + 橙色离线通知；恢复→关闭通知并刷新账户页</summary>
+        public static void MarkAccountOffline(bool offline)
+        {
+            if (AccountOffline == offline) return;
+            AccountOffline = offline;
+            var app = Current as App;
+            if (app == null) return;
+            if (offline) app.ShowLoggedOutNotification();
+            else app.DismissLoggedOutNotification();
+            app.Dispatcher.Invoke(() =>
+            {
+                foreach (Window w in Current.Windows)
+                    if (w is SettingsWindow sw) sw.RefreshAccountPage();
+            });
+        }
 
         private readonly System.Collections.Generic.List<MainWindow> _windows = new();
         private System.Windows.Forms.NotifyIcon? _notifyIcon;
-
-        /// <summary>记住每个(桌面ID, 显示器索引, 停靠边)对应的 ScreenType，切换虚拟桌面后恢复</summary>
-        private readonly ConcurrentDictionary<(Guid desktopId, int monitor, DockEdge side), ScreenType> _screenMemory = new();
 
         /// <summary>主题变更事件</summary>
         public static event Action? ThemeChanged;
@@ -66,6 +77,12 @@ namespace SideDesk
             // 加载上次保存的设置
             AppSettings = Settings.Load();
 
+            // 开机自启：按设置同步注册表 Run 项（每次启动同步，可自动修正 exe 路径变化）
+            Services.AutoStartService.Apply(Framework.AppSettings.Instance.RunAtStartup);
+
+            // 多语言：按已保存的语言偏好初始化（auto/zh-CN/en）
+            Framework.Lang.Init(AppSettings.Language ?? Framework.Lang.Auto);
+
             // 旧日志文件迁移到统一的 Logs 目录（需在各类日志器写入前执行）
             MigrateLogsToLogsFolder();
 
@@ -81,6 +98,11 @@ namespace SideDesk
 
             // 初始化数据轮询服务（中央数据源）
             Services.DataPollingService.Instance.SyncFromConfigs(WindowConfigs);
+
+            // 初始化变量集服务（多变量聚合生成本地新变量，依赖中央数据源的运行中变量）
+            Services.VariableSetService.Instance.Init(WindowConfigs);
+            // 拉取云端登记的变量集（个人 + 已加入团队）并入聚合计算；未登录/后端不可达时静默跳过
+            _ = Services.VariableSetService.Instance.PullRemoteAsync();
 
             // 加载程序注册表
             ProgramRegistry = ProgramRegistryManager.Load();
@@ -125,12 +147,12 @@ namespace SideDesk
             // 初始化系统托盘图标
             InitNotifyIcon();
 
-            // 启动本地 WebSocket 服务端 (127.0.0.1:19191)，仅在浏览器插件模式下启动
+            // 启动本地 WebSocket 服务端 (127.0.0.1:19191)，无条件启动：
+            // 除浏览器插件外，插件市场 / 插件编辑器也依赖此桥与宿主通信
             try
             {
                 WebSocketServerService.Instance.MessageReceived += OnWebSocketMessageReceived;
-                if (AppSettings.DataConnectionMode == "extension")
-                    WebSocketServerService.Instance.Start();
+                WebSocketServerService.Instance.Start();
             }
             catch (Exception ex)
             {
@@ -282,6 +304,13 @@ namespace SideDesk
                 string body = await resp.Content.ReadAsStringAsync();
                 System.Diagnostics.Debug.WriteLine($"[Auth] Token 验证响应 ({(int)resp.StatusCode}): {body}");
 
+                // HTTP 层失败（502/504/证书错误等）→ 视为离线，不清 Token
+                if (!resp.IsSuccessStatusCode)
+                {
+                    MarkAccountOffline(true);
+                    return;
+                }
+
                 // 后端统一返回 HTTP 200，真实状态码在 JSON 的 code 字段中
                 int bizCode = 0;
                 try
@@ -295,6 +324,7 @@ namespace SideDesk
                 {
                     // Token 有效，清除过期提示，更新最后登录时间
                     AccountTokenExpiredMessage = null;
+                    MarkAccountOffline(false);
                     AppSettings.AccountLoginTime = DateTime.Now;
                     AppSettings.HasLoggedInBefore = true; // 确认会员身份
                     AppSettings.Save();
@@ -315,7 +345,7 @@ namespace SideDesk
                 if (bizCode == 401 || bizCode == 403)
                 {
                     System.Diagnostics.Debug.WriteLine($"[Auth] Token 验证失败 (code={bizCode})，清除本地登录状态");
-                    AccountTokenExpiredMessage = "登录已过期，请重新登录";
+                    AccountTokenExpiredMessage = Framework.Lang.T("登录已过期，请重新登录");
 
                     // 清除本地登录状态
                     AppSettings.AccountToken = null;
@@ -338,12 +368,15 @@ namespace SideDesk
                     // 显示橙色掉线通知
                     ShowLoggedOutNotification();
                 }
-                // 其他 code（如 500、0=解析失败）不做处理，避免服务器临时故障时误清除
+                // 其他 code（如 500、0=解析失败）：服务器未确认登录态 → 视为离线（不清 Token，避免临时故障误清除）
+                MarkAccountOffline(true);
             }
             catch (Exception ex)
             {
-                // 网络不可达等异常：不做任何处理（服务器可能未启动）
+                // 网络不可达等异常：视为离线，账户页显示未登录 + 离线通知
                 System.Diagnostics.Debug.WriteLine($"[Auth] 启动时 Token 验证跳过: {ex.Message}");
+                if (!string.IsNullOrEmpty(AppSettings.AccountToken))
+                    MarkAccountOffline(true);
             }
         }
 
@@ -358,7 +391,7 @@ namespace SideDesk
                 foreach (var mw in _windows)
                 {
                     if (mw.IsLoaded)
-                        mw.ShowNotification("⚠️ 您已掉线，点击这里登录", orange, () =>
+                        mw.ShowNotification(Framework.Lang.T("⚠️ 您已掉线，点击这里登录"), orange, () =>
                             OpenSettings(sw => sw.SwitchToAccountPage()), "logged-out");
                 }
             });
@@ -442,11 +475,6 @@ namespace SideDesk
             }
         }
 
-        public string GetUrlForScreen(ScreenType screen)
-        {
-            return screen == ScreenType.A ? ScreenAUrl : ScreenBUrl;
-        }
-
         /// <summary>
         /// 全局布局切换（菜单入口）：作用于主显示器（下标 0）。
         /// </summary>
@@ -480,18 +508,10 @@ namespace SideDesk
         /// <summary>
         /// 根据每个显示器的停靠配置重建所有停靠窗口。
         /// 支持按当前虚拟桌面选择对应的停靠配置。
-        /// 切换虚拟桌面时会记住并恢复每个桌面的 ScreenType 选择。
         /// </summary>
         public void ApplyLayout(bool save)
         {
             var desktopId = GetCurrentDesktopId();
-
-            // 关闭前记住每个窗口当前的 ScreenType
-            foreach (var w in _windows)
-            {
-                var key = (desktopId, w.ScreenIndex, w.DockSide);
-                _screenMemory[key] = w.CurrentScreen;
-            }
 
             // 关闭并释放现有窗口
             foreach (var w in _windows.ToList())
@@ -546,15 +566,6 @@ namespace SideDesk
         public void SaveState()
         {
             AppSettings.Save();
-        }
-
-        /// <summary>
-        /// 记住指定窗口的 ScreenType，用于虚拟桌面切换后恢复
-        /// </summary>
-        public void RememberScreen(int monitorIndex, DockEdge side, ScreenType screen)
-        {
-            var desktopId = GetCurrentDesktopId();
-            _screenMemory[(desktopId, monitorIndex, side)] = screen;
         }
 
         /// <summary>重新渲染所有停靠窗口的原生面板（数据变更后调用）。</summary>
@@ -640,6 +651,9 @@ namespace SideDesk
             // 停止窗口使用时长采集
             try { Services.WindowUsageService.Instance.Stop(); } catch { }
 
+            // 释放数据轮询服务：关闭看板打开的浏览器窗口/进程，避免退出后残留
+            try { Services.DataPollingService.Instance.Dispose(); } catch { }
+
             // 停止虚拟桌面服务
             try { VirtualDesktop?.Dispose(); } catch { }
 
@@ -679,6 +693,8 @@ namespace SideDesk
                     w.UnregisterAppBar();
                 _windows.Clear();
                 RestoreWorkAreaOnExit();
+                // 系统关机/注销时同样清理看板拉起的浏览器窗口/进程
+                try { Services.DataPollingService.Instance.Dispose(); } catch { }
             }
             catch { }
             base.OnSessionEnding(e);
@@ -778,7 +794,7 @@ namespace SideDesk
                 catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[App] WS消息解析异常: {ex.Message}"); }
 
                 // 非 fetchResult/register 消息弹窗提示
-                MessageBox.Show(message, "收到扩展消息", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(message, Framework.Lang.T("收到扩展消息"), MessageBoxButton.OK, MessageBoxImage.Information);
             });
         }
 
@@ -796,7 +812,7 @@ namespace SideDesk
 
                 if (evt == "friend_request" && data != null)
                 {
-                    var fromName = (string?)data["fromName"] ?? "未知用户";
+                    var fromName = (string?)data["fromName"] ?? Framework.Lang.T("未知用户");
                     var requestId = (string?)data["requestId"] ?? "";
 
                     Dispatcher.Invoke(() =>
@@ -815,7 +831,7 @@ namespace SideDesk
                             {
                                 System.Diagnostics.Debug.WriteLine($"[BackendWS] 主窗口显示好友请求通知失败: {ex}");
                                 // 降级为简单气泡通知（不走富通知卡的模板/ToolTip 构建路径）
-                                try { mw.ShowBubbleNotification($"👤 {fromName} 请求添加您为好友"); anyShown = true; } catch { }
+                                try { mw.ShowBubbleNotification(Framework.Lang.TF("👤 {0} 请求添加您为好友", fromName)); anyShown = true; } catch { }
                             }
                         }
                         // 设置窗口打开时同步刷新好友请求列表（避免只弹主窗口通知、设置页看不到的问题）
@@ -837,7 +853,7 @@ namespace SideDesk
                 else if (evt == "friend_online" && data != null)
                 {
                     var userId = (string?)data["userId"] ?? "";
-                    var userName = (string?)data["userName"] ?? "好友";
+                    var userName = (string?)data["userName"] ?? Framework.Lang.T("好友");
                     Dispatcher.Invoke(() =>
                     {
                         foreach (var mw in _windows)
@@ -846,7 +862,7 @@ namespace SideDesk
                             // 更新好友模块在线状态（按 encrypt2 密文匹配缓存项）
                             if (!string.IsNullOrEmpty(userId))
                                 mw.UpdateFriendOnlineStatus(userId, true);
-                            mw.ShowBubbleNotification($"🟢 {userName} 上线了");
+                            mw.ShowBubbleNotification(Framework.Lang.TF("🟢 {0} 上线了", userName));
                         }
                         // 设置窗口打开时同步刷新好友页的在线状态点
                         foreach (Window w in Windows)
@@ -866,7 +882,7 @@ namespace SideDesk
                 else if (evt == "friend_offline" && data != null)
                 {
                     var userId = (string?)data["userId"] ?? "";
-                    var userName = (string?)data["userName"] ?? "好友";
+                    var userName = (string?)data["userName"] ?? Framework.Lang.T("好友");
                     Dispatcher.Invoke(() =>
                     {
                         foreach (var mw in _windows)
@@ -874,7 +890,7 @@ namespace SideDesk
                             if (!mw.IsLoaded) continue;
                             if (!string.IsNullOrEmpty(userId))
                                 mw.UpdateFriendOnlineStatus(userId, false);
-                            mw.ShowBubbleNotification($"⚪ {userName} 下线了");
+                            mw.ShowBubbleNotification(Framework.Lang.TF("⚪ {0} 下线了", userName));
                         }
                         foreach (Window w in Windows)
                         {
@@ -941,10 +957,93 @@ namespace SideDesk
                     // pushLocal=false 只拉不推，避免多设备间循环触发
                     _ = Services.CloudSyncService.Instance.ReconcileAsync(pushLocal: false);
                 }
+                else if (evt == "team_join_request" && data != null)
+                {
+                    // 团队加入申请（管理员收到）：气泡通知 + 设置窗团队页刷新
+                    var applicantName = (string?)data["applicantName"] ?? Framework.Lang.T("未知用户");
+                    var teamName = (string?)data["teamName"] ?? "";
+                    Dispatcher.Invoke(() =>
+                    {
+                        foreach (var mw in _windows)
+                        {
+                            if (!mw.IsLoaded) continue;
+                            try { mw.ShowBubbleNotification(Framework.Lang.TF("👥 {0} 申请加入团队「{1}」", applicantName, teamName)); } catch { }
+                        }
+                        NotifySettingsTeamChanged(membershipChanged: false);
+                    });
+                }
+                else if (evt == "team_application_result" && data != null)
+                {
+                    // 加入申请审批结果（申请人收到）：通过/拒绝气泡；通过时成员关系变化需刷新团队切换下拉
+                    bool accepted = data["accepted"]?.ToObject<bool>() == true;
+                    var teamName = (string?)data["teamName"] ?? "";
+                    Dispatcher.Invoke(() =>
+                    {
+                        foreach (var mw in _windows)
+                        {
+                            if (!mw.IsLoaded) continue;
+                            try
+                            {
+                                mw.ShowBubbleNotification(accepted
+                                    ? Framework.Lang.TF("🎉 您加入团队「{0}」的申请已通过", teamName)
+                                    : Framework.Lang.TF("您加入团队「{0}」的申请被拒绝", teamName));
+                            }
+                            catch { }
+                        }
+                        NotifySettingsTeamChanged(membershipChanged: accepted);
+                    });
+                }
+                else if (evt == "team_invite" && data != null)
+                {
+                    // 团队邀请（被邀请人收到）
+                    var inviterName = (string?)data["inviterName"] ?? Framework.Lang.T("管理员");
+                    var teamName = (string?)data["teamName"] ?? "";
+                    Dispatcher.Invoke(() =>
+                    {
+                        foreach (var mw in _windows)
+                        {
+                            if (!mw.IsLoaded) continue;
+                            try { mw.ShowBubbleNotification(Framework.Lang.TF("✉️ {0} 邀请您加入团队「{1}」", inviterName, teamName)); } catch { }
+                        }
+                        NotifySettingsTeamChanged(membershipChanged: false);
+                    });
+                }
+                else if (evt == "team_member_joined" && data != null)
+                {
+                    // 成员入团通知（管理员/邀请人收到）
+                    var memberName = (string?)data["memberName"] ?? Framework.Lang.T("新成员");
+                    var teamName = (string?)data["teamName"] ?? "";
+                    Dispatcher.Invoke(() =>
+                    {
+                        foreach (var mw in _windows)
+                        {
+                            if (!mw.IsLoaded) continue;
+                            try { mw.ShowBubbleNotification(Framework.Lang.TF("✅ {0} 已加入团队「{1}」", memberName, teamName)); } catch { }
+                        }
+                        NotifySettingsTeamChanged(membershipChanged: false);
+                    });
+                }
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[App] 后端WS消息解析异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>团队相关事件发生时刷新设置窗口（若打开）的团队页</summary>
+        private void NotifySettingsTeamChanged(bool membershipChanged)
+        {
+            foreach (Window w in Windows)
+            {
+                try
+                {
+                    if (w is SettingsWindow sw && sw.IsLoaded)
+                        sw.OnTeamEventReceived(membershipChanged);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[BackendWS] 设置窗口刷新团队页失败: {ex}");
+                }
             }
         }
 
@@ -1024,6 +1123,19 @@ namespace SideDesk
                 {
                     if (mw.IsLoaded)
                         mw.RefreshNativePanels();
+                }
+            }));
+        }
+
+        /// <summary>刷新所有已加载主窗口顶部的窗口标签栏（小屏增删/改名等结构变更后调用，保证多窗口同步）</summary>
+        public void RefreshAllWindowTabs()
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                foreach (var mw in _windows)
+                {
+                    if (mw.IsLoaded)
+                        mw.RefreshWindowTabs();
                 }
             }));
         }
@@ -1245,7 +1357,7 @@ namespace SideDesk
                 type = "pluginLoadResult",
                 success = plugin != null,
                 pluginId,
-                message = plugin != null ? $"插件 {plugin.Config.Name} 已加载" : $"插件 {pluginId} 加载失败"
+                message = plugin != null ? Framework.Lang.TF("插件 {0} 已加载", plugin.Config.Name) : Framework.Lang.TF("插件 {0} 加载失败", pluginId)
             });
             await Services.WebSocketServerService.Instance.SendAsync(clientId, response);
         }
@@ -1262,7 +1374,7 @@ namespace SideDesk
                 type = "pluginUnloadResult",
                 success = true,
                 pluginId,
-                message = $"插件 {pluginId} 已卸载"
+                message = Framework.Lang.TF("插件 {0} 已卸载", pluginId)
             });
             await Services.WebSocketServerService.Instance.SendAsync(clientId, response);
         }
@@ -1308,7 +1420,7 @@ namespace SideDesk
                 {
                     type = "pluginSaveResult",
                     success = false,
-                    message = "插件尚未编译，请先编译构建"
+                    message = Framework.Lang.T("插件尚未编译，请先编译构建")
                 });
                 await Services.WebSocketServerService.Instance.SendAsync(clientId, errResponse);
                 return;
@@ -1320,8 +1432,8 @@ namespace SideDesk
             {
                 var dlg = new Microsoft.Win32.SaveFileDialog
                 {
-                    Title = "保存插件",
-                    Filter = "插件包 (*.zip)|*.zip",
+                    Title = Framework.Lang.T("保存插件"),
+                    Filter = Framework.Lang.T("插件包 (*.zip)|*.zip"),
                     FileName = $"{assemblyName}.zip",
                     InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Desktop)
                 };
@@ -1335,7 +1447,7 @@ namespace SideDesk
                 {
                     type = "pluginSaveResult",
                     success = false,
-                    message = "已取消保存"
+                    message = Framework.Lang.T("已取消保存")
                 });
                 await Services.WebSocketServerService.Instance.SendAsync(clientId, cancelResponse);
                 return;
@@ -1352,7 +1464,7 @@ namespace SideDesk
                 {
                     type = "pluginSaveResult",
                     success = true,
-                    message = $"插件已保存: {savePath}",
+                    message = Framework.Lang.TF("插件已保存: {0}", savePath),
                     path = savePath
                 });
                 await Services.WebSocketServerService.Instance.SendAsync(clientId, okResponse);
@@ -1363,7 +1475,7 @@ namespace SideDesk
                 {
                     type = "pluginSaveResult",
                     success = false,
-                    message = $"保存失败: {ex.Message}"
+                    message = Framework.Lang.TF("保存失败: {0}", ex.Message)
                 });
                 await Services.WebSocketServerService.Instance.SendAsync(clientId, failResponse);
             }
@@ -1423,7 +1535,7 @@ namespace SideDesk
                 {
                     type = "pluginDevLoadResult",
                     success = false,
-                    message = "项目目录不存在"
+                    message = Framework.Lang.T("项目目录不存在")
                 });
                 await Services.WebSocketServerService.Instance.SendAsync(clientId, errResp);
                 return;
@@ -1492,11 +1604,7 @@ namespace SideDesk
 
         private MainWindow CreatePanel(DockEdge side, int monitorIndex, Guid desktopId)
         {
-            // 恢复记忆的 ScreenType，如果之前在该桌面+显示器+侧边选择过则恢复，否则默认 A
-            var key = (desktopId, monitorIndex, side);
-            var screen = _screenMemory.GetValueOrDefault(key, ScreenType.A);
-
-            var window = new MainWindow(side, screen, monitorIndex);
+            var window = new MainWindow(side, monitorIndex);
             // 按停靠边取该显示器各自的停靠宽度：左侧用 LeftPanelWidth，右侧用 RightPanelWidth
             var cfg = AppSettings.GetCurrentMonitor(monitorIndex, desktopId);
             window.AppBarWidth = side == DockEdge.Left
@@ -1918,7 +2026,7 @@ namespace SideDesk
             e.Handled = true; // 阻止程序崩溃
             
             MessageBox.Show(
-                $"发生错误：{e.Exception.Message}\n\n{e.Exception.StackTrace}",
+                Framework.Lang.TF("发生错误：{0}\n\n{1}", e.Exception.Message, e.Exception.StackTrace),
                 "程序异常",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
@@ -2087,14 +2195,14 @@ namespace SideDesk
                 catch { }
 
                 var contextMenu = new System.Windows.Forms.ContextMenuStrip();
-                contextMenu.Items.Add("设置", null, (s, e) => OpenSettings());
+                contextMenu.Items.Add(Framework.Lang.T("设置"), null, (s, e) => OpenSettings());
                 contextMenu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
-                contextMenu.Items.Add("退出 元桌小屏", null, (s, e) => CloseAll());
+                contextMenu.Items.Add(Framework.Lang.T("退出 元桌小屏"), null, (s, e) => CloseAll());
 
                 _notifyIcon = new System.Windows.Forms.NotifyIcon
                 {
                     Icon = appIcon ?? System.Drawing.SystemIcons.Application,
-                    Text = "元桌小屏",
+                    Text = Framework.Lang.T("元桌小屏"),
                     Visible = true,
                     ContextMenuStrip = contextMenu
                 };

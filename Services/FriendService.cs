@@ -36,7 +36,7 @@ namespace SideDesk.Services
     #endregion
 
     /// <summary>
-    /// 好友服务：对接后端好友接口（localhost:3007，与团队服务同一鉴权与响应格式）。
+    /// 好友服务：对接后端好友接口（基址见 Constants.URLs.ServerBaseUrl，与团队服务同一鉴权与响应格式）。
     /// </summary>
     public sealed class FriendService
     {
@@ -145,7 +145,7 @@ namespace SideDesk.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[Friend] 发送好友请求失败: {ex.Message}");
-                return (false, "网络错误");
+                return (false, Framework.Lang.T("网络错误"));
             }
         }
 
@@ -189,7 +189,7 @@ namespace SideDesk.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[Friend] 处理好友请求失败: {ex.Message}");
-                return (false, "网络错误");
+                return (false, Framework.Lang.T("网络错误"));
             }
         }
 
@@ -233,7 +233,7 @@ namespace SideDesk.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[Friend] 删除好友失败: {ex.Message}");
-                return (false, "网络错误");
+                return (false, Framework.Lang.T("网络错误"));
             }
         }
 
@@ -300,7 +300,7 @@ namespace SideDesk.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[Friend] 设置可搜索状态失败: {ex.Message}");
-                return (false, "网络错误");
+                return (false, Framework.Lang.T("网络错误"));
             }
         }
 
@@ -324,7 +324,7 @@ namespace SideDesk.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[Friend] 修改本人资料失败: {ex.Message}");
-                return (false, "网络错误");
+                return (false, Framework.Lang.T("网络错误"));
             }
         }
 

@@ -107,12 +107,12 @@ namespace SideDesk.Services
             var settings = app.AppSettings;
             if (string.IsNullOrEmpty(settings.AccountToken))
             {
-                StatusChanged?.Invoke(CloudSyncState.NotLoggedIn, "未登录，无法同步");
+                StatusChanged?.Invoke(CloudSyncState.NotLoggedIn, Framework.Lang.T("未登录，无法同步"));
                 return false;
             }
 
             _reconciling = true;
-            StatusChanged?.Invoke(CloudSyncState.Syncing, "正在同步...");
+            StatusChanged?.Invoke(CloudSyncState.Syncing, Framework.Lang.T("正在同步..."));
             try
             {
                 // 1) 推送本地未同步的结构与行级离线变更（先推后拉，避免全量拉取覆盖本地新数据）
@@ -147,15 +147,17 @@ namespace SideDesk.Services
                 {
                     System.Windows.Application.Current?.Dispatcher?.Invoke(() => app.WindowConfigs.Save());
                     app.RefreshAllMainWindows();
+                    // 结构变更可能增删窗口，同步刷新所有窗口的顶部标签栏
+                    app.RefreshAllWindowTabs();
                 }
 
-                StatusChanged?.Invoke(CloudSyncState.Success, $"已同步 · {settings.LastCloudSyncTime:yyyy-MM-dd HH:mm}");
+                StatusChanged?.Invoke(CloudSyncState.Success, Framework.Lang.TF("已同步 · {0:yyyy-MM-dd HH:mm}", settings.LastCloudSyncTime));
                 return true;
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[CloudSync] 对账失败: {ex.Message}");
-                StatusChanged?.Invoke(CloudSyncState.Failed, "同步失败：" + ex.Message);
+                StatusChanged?.Invoke(CloudSyncState.Failed, Framework.Lang.T("同步失败：") + ex.Message);
                 return false;
             }
             finally
@@ -174,17 +176,17 @@ namespace SideDesk.Services
 
             if (string.IsNullOrEmpty(settings.AccountToken))
             {
-                StatusChanged?.Invoke(CloudSyncState.NotLoggedIn, "未登录，无法同步");
+                StatusChanged?.Invoke(CloudSyncState.NotLoggedIn, Framework.Lang.T("未登录，无法同步"));
                 return false;
             }
 
             _syncing = true;
-            StatusChanged?.Invoke(CloudSyncState.Syncing, "正在同步...");
+            StatusChanged?.Invoke(CloudSyncState.Syncing, Framework.Lang.T("正在同步..."));
             try
             {
                 if (!await UploadStructureAsync(settings, app.WindowConfigs).ConfigureAwait(false))
                 {
-                    StatusChanged?.Invoke(CloudSyncState.Failed, "同步失败（结构上传失败）");
+                    StatusChanged?.Invoke(CloudSyncState.Failed, Framework.Lang.T("同步失败（结构上传失败）"));
                     return false;
                 }
 
@@ -195,13 +197,13 @@ namespace SideDesk.Services
                 await PushAllRowsAsync(app.WindowConfigs, settings).ConfigureAwait(false);
                 await PullAllRowsAsync(app.WindowConfigs, settings).ConfigureAwait(false);
 
-                StatusChanged?.Invoke(CloudSyncState.Success, $"已同步 · {settings.LastCloudSyncTime:yyyy-MM-dd HH:mm}");
+                StatusChanged?.Invoke(CloudSyncState.Success, Framework.Lang.TF("已同步 · {0:yyyy-MM-dd HH:mm}", settings.LastCloudSyncTime));
                 return true;
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[CloudSync] 同步失败: {ex.Message}");
-                StatusChanged?.Invoke(CloudSyncState.Failed, "同步失败：" + ex.Message);
+                StatusChanged?.Invoke(CloudSyncState.Failed, Framework.Lang.T("同步失败：") + ex.Message);
                 return false;
             }
             finally
@@ -339,7 +341,7 @@ namespace SideDesk.Services
             {
                 if (!await CreateBarOnServerAsync(win))
                 {
-                    LastOwnershipError = "窗口同步到服务器失败";
+                    LastOwnershipError = Framework.Lang.T("窗口同步到服务器失败");
                     return false;
                 }
             }
@@ -352,7 +354,7 @@ namespace SideDesk.Services
                 var sid = await EnsureItemServerIdAsync(item, win.ServerId!);
                 if (string.IsNullOrEmpty(sid))
                 {
-                    LastOwnershipError = "模块同步到服务器失败";
+                    LastOwnershipError = Framework.Lang.T("模块同步到服务器失败");
                     return false;
                 }
                 return true;
@@ -378,7 +380,7 @@ namespace SideDesk.Services
                 System.Diagnostics.Debug.WriteLine($"[CloudSync] 模块归属变更响应: {responseJson}");
                 if (!resp.IsSuccessStatusCode)
                 {
-                    LastOwnershipError = $"服务器拒绝（HTTP {(int)resp.StatusCode}）";
+                    LastOwnershipError = Framework.Lang.TF("服务器拒绝（HTTP {0}）", (int)resp.StatusCode);
                     return false;
                 }
                 // HTTP 200 也可能业务失败（如后端返回“仅创建者可修改模块归属”），解析 code/msg
@@ -387,7 +389,7 @@ namespace SideDesk.Services
                     var root = JObject.Parse(responseJson);
                     if (root["code"]?.ToObject<int>() != 200)
                     {
-                        var msg = root["msg"]?.ToString() ?? "服务器处理失败";
+                        var msg = root["msg"]?.ToString() ?? Framework.Lang.T("服务器处理失败");
                         // 他人创建的模块：服务端归属保持原样（导入组件本就不应改归属），视为无需同步，不报错
                         if (msg.Contains("仅创建者")) return null;
                         LastOwnershipError = msg;
@@ -564,20 +566,43 @@ namespace SideDesk.Services
                         // 团队窗口不自动创建；个人窗口直接新建并补齐模块
                         if (barToken["ownerType"]?.ToString() == "team") continue;
 
-                        var win = new WindowConfig
+                        string barTitle = barToken["title"]?.ToString() ?? Framework.Lang.T("云端窗口");
+
+                        // 认领优先：本地存在未同步（ServerId 为空）的同名个人窗口时回写 ServerId，
+                        // 避免每次拉取都因匹配失败而重复新建整套窗口
+                        foreach (var w in mgr.Windows)
                         {
-                            Id = Guid.NewGuid().ToString(),
-                            ServerId = barServerId,
-                            Name = barToken["title"]?.ToString() ?? "云端窗口",
-                            OwnerType = "personal",
-                        };
-                        if (MergeServerItemsIntoWindow(win, items, newPanelsOut) || items.Count == 0)
-                        {
-                            mgr.Add(win);
-                            changed = true;
-                            System.Diagnostics.Debug.WriteLine($"[CloudSync] 从云端补齐缺失窗口: {win.Name} ({items.Count} 个模块)");
+                            if (w.ServerId == null && w.ShareMode == null && w.Name == barTitle)
+                            {
+                                w.ServerId = barServerId;
+                                localWin = w;
+                                System.Diagnostics.Debug.WriteLine($"[CloudSync] 认领本地未同步窗口: {w.Name} -> {barServerId}");
+                                break;
+                            }
                         }
-                        continue;
+
+                        if (localWin == null)
+                        {
+                            var win = new WindowConfig
+                            {
+                                Id = Guid.NewGuid().ToString(),
+                                ServerId = barServerId,
+                                Name = barTitle,
+                                OwnerType = "personal",
+                            };
+                            if (MergeServerItemsIntoWindow(win, items, newPanelsOut) || items.Count == 0)
+                            {
+                                // 云端补齐的窗口同步进入两侧 dock，所有窗口顶部标签可见
+                                mgr.AddToAllDocks(win);
+                                changed = true;
+                                System.Diagnostics.Debug.WriteLine($"[CloudSync] 从云端补齐缺失窗口: {win.Name} ({items.Count} 个模块)");
+                            }
+                            continue;
+                        }
+
+                        // 认领成功：回写 ServerId 需持久化，防止中途失败后下次拉取再次新建
+                        mgr.Save();
+                        changed = true;
                     }
 
                     // 窗口已存在：补齐缺失模块
@@ -1612,6 +1637,16 @@ namespace SideDesk.Services
             [NJson.JsonProperty("corpId")] public string? CorpId { get; set; }  // 团队ID（服务端加密串，null=个人）
         }
 
+        /// <summary>云同步上传的数据看板变量集 DTO（多变量聚合配置，团队/个人作用域）。</summary>
+        private class SyncVariableSet
+        {
+            [NJson.JsonProperty("varKey")] public string VarKey { get; set; } = "";
+            [NJson.JsonProperty("op")] public string? Op { get; set; }
+            [NJson.JsonProperty("sourceKeys")] public List<string>? SourceKeys { get; set; }
+            [NJson.JsonProperty("pattern")] public string? Pattern { get; set; }
+            [NJson.JsonProperty("corpId")] public string? CorpId { get; set; }  // 团队ID（服务端加密串，null=个人）
+        }
+
         private static readonly NJson.JsonSerializerSettings _syncPayloadSettings = new()
         {
             NullValueHandling = NJson.NullValueHandling.Ignore
@@ -1648,6 +1683,20 @@ namespace SideDesk.Services
             foreach (var di in mgr.BackgroundDashboardItems)
                 CollectDataItemFromItem(di, dataItems);
 
+            // 收集变量集配置（多变量聚合；团队归属透传加密串，空=个人）
+            var variableSets = new List<SyncVariableSet>();
+            foreach (var s in mgr.VariableSets)
+            {
+                variableSets.Add(new SyncVariableSet
+                {
+                    VarKey = s.VarKey,
+                    Op = s.Op,
+                    SourceKeys = s.SourceKeys,
+                    Pattern = string.IsNullOrEmpty(s.Pattern) ? null : s.Pattern,
+                    CorpId = string.IsNullOrEmpty(s.TeamId) ? null : s.TeamId,
+                });
+            }
+
             // 当前选中的团队 ID（个人模式为 null，由后端自行处理）
             string? corpId = null;
             try
@@ -1665,7 +1714,8 @@ namespace SideDesk.Services
                 syncedAt = DateTime.Now.ToString("o"),
                 bars,
                 variables,
-                dataItems
+                dataItems,
+                variableSets
             };
             return NJson.JsonConvert.SerializeObject(payload,
                 indented ? NJson.Formatting.Indented : NJson.Formatting.None,

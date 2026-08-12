@@ -139,7 +139,7 @@ namespace SideDesk.Services
         /// <summary>弹出消息框（按钮列表来自 payload.buttons，点击按钮递归执行对应 action）</summary>
         private static void ShowMessagebox(NotificationAction action, NotificationPayload? context)
         {
-            var title = action.GetPayloadString("title", context?.Title ?? "提示");
+            var title = action.GetPayloadString("title", context?.Title ?? Framework.Lang.T("提示"));
             var message = action.GetPayloadString("message", context?.Body ?? "");
 
             // 解析子按钮列表
@@ -290,7 +290,7 @@ namespace SideDesk.Services
             {
                 var dialog = new Window
                 {
-                    Title = "快速回复",
+                    Title = Framework.Lang.T("快速回复"),
                     Width = 320,
                     SizeToContent = SizeToContent.Height,
                     WindowStartupLocation = WindowStartupLocation.CenterScreen,
@@ -344,7 +344,7 @@ namespace SideDesk.Services
 
                 var sendBtn = new Button
                 {
-                    Content = "发送",
+                    Content = Framework.Lang.T("发送"),
                     MinWidth = 60,
                     MinHeight = 26,
                     IsDefault = true,
@@ -379,7 +379,7 @@ namespace SideDesk.Services
 
                 var cancelBtn = new Button
                 {
-                    Content = "取消",
+                    Content = Framework.Lang.T("取消"),
                     MinWidth = 60,
                     MinHeight = 26,
                     Margin = new Thickness(8, 0, 0, 0),

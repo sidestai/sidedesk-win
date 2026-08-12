@@ -36,7 +36,7 @@ namespace SideDesk.Services
     }
 
     /// <summary>
-    /// 每日活跃数据服务：对接后端独立数据表 sidedesk_daily_activity（localhost:3007，与数据看板变量同一鉴权与响应格式）。
+    /// 每日活跃数据服务：对接后端独立数据表 sidedesk_daily_activity（基址见 Constants.URLs.ServerBaseUrl，与数据看板变量同一鉴权与响应格式）。
     /// 每行 = 作用域(userId/corpId) + 类型 + 日期 + 当天数值。
     /// 作用域：corpId 有值=团队共享；为空=个人。
     /// 失败时返回 null/false 由 UI 优雅降级（不阻断用户操作）。

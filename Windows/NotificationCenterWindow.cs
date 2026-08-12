@@ -18,7 +18,7 @@ namespace SideDesk.Windows
 
         public NotificationCenterWindow()
         {
-            Title = "通知中心";
+            Title = Framework.Lang.T("通知中心");
             Width = 380;
             Height = 520;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -51,7 +51,7 @@ namespace SideDesk.Windows
 
             var titleText = new TextBlock
             {
-                Text = "🔔 通知中心",
+                Text = Framework.Lang.T("🔔 通知中心"),
                 FontSize = 13,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = (Brush)FindResource("BrushTextMain"),
@@ -69,12 +69,12 @@ namespace SideDesk.Windows
 
             var clearBtn = new Button
             {
-                Content = "清空",
+                Content = Framework.Lang.T("清空"),
                 FontSize = 11,
                 Padding = new Thickness(8, 3, 8, 3),
                 Style = (Style)FindResource("GhostButtonStyle"),
                 Cursor = Cursors.Hand,
-                ToolTip = "清空全部通知"
+                ToolTip = Framework.Lang.T("清空全部通知")
             };
             clearBtn.Click += (s, e) =>
             {
@@ -91,7 +91,7 @@ namespace SideDesk.Windows
                 Margin = new Thickness(8, 0, 0, 0),
                 Style = (Style)FindResource("GhostButtonStyle"),
                 Cursor = Cursors.Hand,
-                ToolTip = "关闭",
+                ToolTip = Framework.Lang.T("关闭"),
                 // 用矢量 Path 画 ✕，不依赖字体字形渲染（✕ 字符在部分字体下不可见）
                 Content = new System.Windows.Shapes.Path
                 {
@@ -155,7 +155,7 @@ namespace SideDesk.Windows
             {
                 _listPanel.Children.Add(new TextBlock
                 {
-                    Text = "暂无通知",
+                    Text = Framework.Lang.T("暂无通知"),
                     FontSize = 12,
                     Foreground = (Brush)FindResource("BrushTextMuted"),
                     HorizontalAlignment = HorizontalAlignment.Center,

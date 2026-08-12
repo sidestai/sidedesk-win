@@ -9,7 +9,9 @@ using System.Threading.Tasks;
 namespace SideDesk.Services
 {
     /// <summary>
-    /// 后端 WebSocket 客户端服务：与后端服务器 (ws://localhost:19190) 建立长连接。
+    /// 后端 WebSocket 客户端服务：与后端建立长连接。
+    /// 地址从 Constants.URLs.ServerBaseUrl 派生：生产 wss://api.sidedesk.bigjing.com/ws（网关 /ws 反代到后端 19190）；
+    /// 本地开发（localhost）回退直连 ws://127.0.0.1:19190。
     /// 已登录时调用 Start(token) 以用户身份连接；未登录时调用 Start(null) 以访客（设备）身份连接。
     /// 连接 URL 始终携带 deviceId（设备指纹），供后端“按设备推送”与“给未登录用户广播”使用。
     /// 支持自动重连（指数退避）、心跳保活（30s ping）、断线检测。
@@ -20,9 +22,26 @@ namespace SideDesk.Services
             new(() => new BackendWebSocketService());
         public static BackendWebSocketService Instance => _instance.Value;
 
-        /// <summary>后端 WebSocket 服务地址</summary>
-        private const string WsHost = "127.0.0.1";
-        private const int WsPort = 19190;
+        /// <summary>本地开发回退：直连本机后端 WS 网关端口（生产由网关 443 反代，不走此端口）</summary>
+        private const string LocalWsHost = "127.0.0.1";
+        private const int LocalWsPort = 19190;
+
+        /// <summary>
+        /// WebSocket 基址（不含 query）：由 ServerBaseUrl 派生，https→wss、http→ws，去掉 /console 等子路径，并拼接网关 WS 反代路径 /ws（nginx location /ws → 后端 19190）。
+        /// 本地开发（localhost）无网关反代，回退直连 127.0.0.1:19190。
+        /// </summary>
+        private static string WsBaseUrl
+        {
+            get
+            {
+                var serverUri = new Uri(Constants.URLs.ServerBaseUrl);
+                if (serverUri.IsLoopback)
+                    return $"ws://{LocalWsHost}:{LocalWsPort}";
+                var scheme = serverUri.Scheme == Uri.UriSchemeHttps ? "wss" : "ws";
+                var defaultPort = serverUri.IsDefaultPort ? "" : $":{serverUri.Port}";
+                return $"{scheme}://{serverUri.Host}{defaultPort}/ws";
+            }
+        }
 
         /// <summary>心跳间隔（毫秒）</summary>
         private const int HeartbeatIntervalMs = 30_000;
@@ -79,7 +98,7 @@ namespace SideDesk.Services
             _running = true;
             _reconnectAttempts = 0;
             _cts = new CancellationTokenSource();
-            Debug.WriteLine(_token == null ? "[BackendWS] 服务启动（访客模式），准备连接后端 WebSocket" : "[BackendWS] 服务启动（已登录模式），准备连接后端 WebSocket");
+            Debug.WriteLine(_token == null ? Framework.Lang.T("[BackendWS] 服务启动（访客模式），准备连接后端 WebSocket") : Framework.Lang.T("[BackendWS] 服务启动（已登录模式），准备连接后端 WebSocket"));
             _ = ConnectLoopAsync(_cts.Token);
         }
 
@@ -131,17 +150,19 @@ namespace SideDesk.Services
                     // 不能像旧实现那样 WhenAny 超时后丢弃 probeTask —— 被丢弃的探测任务
                     // 在 TcpClient Dispose 时会以 OperationCanceledException("已中止 I/O 操作") 失败，
                     // 无人观察导致 UnobservedTaskException 反复写入崩溃日志。
+                    var wsBase = new Uri(WsBaseUrl);
+                    var probePort = wsBase.Port > 0 ? wsBase.Port : (wsBase.Scheme == "wss" ? 443 : 80);
                     using (var probe = new System.Net.Sockets.TcpClient())
                     using (var probeCts = CancellationTokenSource.CreateLinkedTokenSource(token))
                     {
                         probeCts.CancelAfter(2000);
                         try
                         {
-                            await probe.ConnectAsync(WsHost, WsPort, probeCts.Token).ConfigureAwait(false);
+                            await probe.ConnectAsync(wsBase.Host, probePort, probeCts.Token).ConfigureAwait(false);
                         }
                         catch (OperationCanceledException) when (!token.IsCancellationRequested)
                         {
-                            throw new TimeoutException($"端口 {WsPort} 探测超时");
+                            throw new TimeoutException($"端口 {probePort} 探测超时");
                         }
                     }
 
@@ -153,8 +174,8 @@ namespace SideDesk.Services
                     var query = string.IsNullOrEmpty(_token)
                         ? $"?deviceId={Uri.EscapeDataString(deviceId)}"
                         : $"?token={Uri.EscapeDataString(_token)}&deviceId={Uri.EscapeDataString(deviceId)}";
-                    var uri = new Uri($"ws://{WsHost}:{WsPort}/{query}");
-                    Debug.WriteLine($"[BackendWS] 正在连接 {WsHost}:{WsPort} ({(string.IsNullOrEmpty(_token) ? "访客" : "已登录")}) ...");
+                    var uri = new Uri($"{wsBase}{query}");
+                    Debug.WriteLine($"[BackendWS] 正在连接 {wsBase.Host}:{probePort} ({(string.IsNullOrEmpty(_token) ? "访客" : "已登录")}) ...");
 
                     using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(token);
                     connectCts.CancelAfter(TimeSpan.FromSeconds(10)); // 连接超时 10 秒

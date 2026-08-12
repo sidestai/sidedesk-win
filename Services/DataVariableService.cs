@@ -19,10 +19,20 @@ namespace SideDesk.Services
         [Newtonsoft.Json.JsonProperty("itemLocalId")] public string? ItemLocalId { get; set; }
     }
 
+    /// <summary>数据看板变量集（后端 sidedesk_variable_set 表的一行）</summary>
+    public class VariableSetInfo
+    {
+        [Newtonsoft.Json.JsonProperty("varKey")] public string VarKey { get; set; } = "";
+        [Newtonsoft.Json.JsonProperty("op")] public string Op { get; set; } = "SUM";
+        [Newtonsoft.Json.JsonProperty("sourceKeys")] public List<string>? SourceKeys { get; set; }
+        [Newtonsoft.Json.JsonProperty("pattern")] public string? Pattern { get; set; }
+        [Newtonsoft.Json.JsonProperty("corpId")] public string? CorpId { get; set; } // 团队加密串；null=个人
+    }
+
     #endregion
 
     /// <summary>
-    /// 数据看板变量服务：对接后端变量接口（localhost:3007，与团队服务同一鉴权与响应格式）。
+    /// 数据看板变量服务：对接后端变量接口（基址见 Constants.URLs.ServerBaseUrl，与团队服务同一鉴权与响应格式）。
     /// 变量作用域：corpId 有值=团队内唯一；为空=个人内唯一。
     /// 失败时返回 null/true 由 UI 优雅降级（不阻断用户操作）。
     /// </summary>
@@ -107,6 +117,62 @@ namespace SideDesk.Services
             {
                 System.Diagnostics.Debug.WriteLine($"[DataVariable] 获取变量列表失败: {ex.Message}");
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// GET /api/sidebar/data-variable/sets — 列出作用域内全部变量集。
+        /// corpId 为空=个人。失败返回 null。
+        /// </summary>
+        public async Task<List<VariableSetInfo>?> ListSetsAsync(string? corpId)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(GetToken())) return null;
+                var url = $"{BaseUrl}/api/sidebar/data-variable/sets";
+                if (!string.IsNullOrEmpty(corpId)) url += $"?corpId={Uri.EscapeDataString(corpId)}";
+                using var req = CreateRequest(HttpMethod.Get, url);
+                using var resp = await _http.SendAsync(req).ConfigureAwait(false);
+                var data = await ParseResponseTokenAsync(resp).ConfigureAwait(false);
+                if (data is not JArray arr) return null;
+                return arr.ToObject<List<VariableSetInfo>>() ?? new List<VariableSetInfo>();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DataVariable] 获取变量集列表失败: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// POST /api/sidebar/data-variable/set/delete — 删除服务端登记的变量集（按 作用域 + 变量集名）。
+        /// corpId 为空=个人。请求失败返回 false。
+        /// </summary>
+        public async Task<bool> DeleteSetAsync(string varKey, string? corpId)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(GetToken())) return false;
+                var url = $"{BaseUrl}/api/sidebar/data-variable/set/delete";
+                var body = new JObject
+                {
+                    ["varKey"] = varKey,
+                    ["corpId"] = string.IsNullOrEmpty(corpId) ? null : corpId,
+                };
+                using var req = CreateRequest(HttpMethod.Post, url);
+                req.Content = new StringContent(body.ToString(Newtonsoft.Json.Formatting.None), System.Text.Encoding.UTF8, "application/json");
+                using var resp = await _http.SendAsync(req).ConfigureAwait(false);
+                string json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                System.Diagnostics.Debug.WriteLine($"[DataVariable] {(int)resp.StatusCode}: {json}");
+                if (!resp.IsSuccessStatusCode) return false;
+                // 业务码兑底：ResultData.ok() 无载荷，仅校验 code=200
+                var root = JObject.Parse(json);
+                return (root["code"]?.Value<int>() ?? 0) == 200;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DataVariable] 删除服务端变量集失败: {ex.Message}");
+                return false;
             }
         }
     }

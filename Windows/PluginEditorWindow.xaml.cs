@@ -9,7 +9,7 @@ namespace SideDesk.Windows;
 public partial class PluginEditorWindow : Window
 {
     /// <summary>前端编辑器页面基础地址（基址统一在 Constants.URLs.ServerBaseUrl）</summary>
-    private static readonly string EditorBaseUrl = Constants.URLs.ServerBaseUrl + "/#/plugin-editor";
+    private static readonly string EditorBaseUrl = Constants.URLs.FrontendBaseUrl + "/#/plugin-editor";
 
     public PluginEditorWindow()
     {
@@ -35,7 +35,7 @@ public partial class PluginEditorWindow : Window
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[PluginEditor] WebView2 初始化失败: {ex.Message}");
-            MessageBox.Show($"WebView2 初始化失败: {ex.Message}", "插件编辑器", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(Framework.Lang.TF("WebView2 初始化失败: {0}", ex.Message), Framework.Lang.T("插件编辑器"), MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 }

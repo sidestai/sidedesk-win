@@ -29,7 +29,7 @@ public partial class ClipboardPickDialog : Window
             selectAllCheck.Visibility = Visibility.Collapsed;
             listPanel.Children.Add(new TextBlock
             {
-                Text = "剪贴板暂无可收藏的内容",
+                Text = Framework.Lang.T("剪贴板暂无可收藏的内容"),
                 Foreground = (Brush)FindResource("BrushTextMuted"),
                 Margin = new Thickness(4, 24, 4, 24),
                 HorizontalAlignment = HorizontalAlignment.Center
@@ -101,7 +101,7 @@ public partial class ClipboardPickDialog : Window
         SelectedItems = _rows.Where(r => r.Check.IsChecked == true).Select(r => r.Item).ToList();
         if (SelectedItems.Count == 0)
         {
-            MessageBox.Show("请至少选择一项", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(Framework.Lang.T("请至少选择一项"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         DialogResult = true;

@@ -48,7 +48,7 @@ namespace SideDesk.Controls
 
             _dialog = new Window
             {
-                Title = "使用统计",
+                Title = Framework.Lang.T("使用统计"),
                 Width = 420,
                 Height = height,
                 Left = left,  // left 已经是 sidebar 右侧边缘的 X 坐标，直接使用
@@ -91,7 +91,7 @@ namespace SideDesk.Controls
 
             var titleText = new Emoji.Wpf.TextBlock
             {
-                Text = "今日使用统计",
+                Text = Framework.Lang.T("今日使用统计"),
                 FontSize = 16,
                 FontWeight = FontWeights.Bold,
                 Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
@@ -102,7 +102,7 @@ namespace SideDesk.Controls
 
             var refreshBtn = new Button
             {
-                Content = "刷新",
+                Content = Framework.Lang.T("刷新"),
                 Width = 50,
                 Height = 26,
                 Margin = new Thickness(0)
@@ -136,7 +136,7 @@ namespace SideDesk.Controls
             // 使用时长排行区
             var summaryHeader = new Emoji.Wpf.TextBlock
             {
-                Text = "应用使用时长",
+                Text = Framework.Lang.T("应用使用时长"),
                 FontSize = 14,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
@@ -159,7 +159,7 @@ namespace SideDesk.Controls
             // 最近窗口记录区
             var recentHeader = new Emoji.Wpf.TextBlock
             {
-                Text = "最近窗口记录",
+                Text = Framework.Lang.T("最近窗口记录"),
                 FontSize = 14,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
@@ -211,7 +211,7 @@ namespace SideDesk.Controls
             var filteredTotal = summaryForTotal
                 .Where(x => x.Category != "忽略")
                 .Sum(x => x.TotalDuration.TotalSeconds);
-            _totalTimeText.Text = $"总计: {WindowUsageStats.FormatDuration(TimeSpan.FromSeconds(filteredTotal))}";
+            _totalTimeText.Text = Framework.Lang.TF("总计: {0}", WindowUsageStats.FormatDuration(TimeSpan.FromSeconds(filteredTotal)));
 
             // 饼状图
             DrawPieChart();
@@ -229,7 +229,7 @@ namespace SideDesk.Controls
             {
                 _summaryStack.Children.Add(new Emoji.Wpf.TextBlock
                 {
-                    Text = "暂无数据",
+                    Text = Framework.Lang.T("暂无数据"),
                     Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
                     Margin = new Thickness(0, 4, 0, 4)
                 });
@@ -248,7 +248,7 @@ namespace SideDesk.Controls
             {
                 _recentStack.Children.Add(new Emoji.Wpf.TextBlock
                 {
-                    Text = "暂无记录",
+                    Text = Framework.Lang.T("暂无记录"),
                     Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
                     Margin = new Thickness(0, 4, 0, 4)
                 });
@@ -681,7 +681,7 @@ namespace SideDesk.Controls
             // 添加"清除分类"选项
             var clearBtn = new Button
             {
-                Content = "清除分类",
+                Content = Framework.Lang.T("清除分类"),
                 Width = 100,
                 Height = 28,
                 Margin = new Thickness(4, 2, 4, 4),

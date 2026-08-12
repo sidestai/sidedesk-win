@@ -1,0 +1,16 @@
+<StackPanel xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+            Margin="12">
+  <TextBlock Text="👋"
+             FontSize="30"
+             HorizontalAlignment="Center" />
+  <TextBlock Text="{Binding Greeting}"
+             FontSize="15"
+             Foreground="White"
+             TextWrapping="Wrap"
+             TextAlignment="Center"
+             Margin="0,8,0,10" />
+  <Button Content="换一句"
+          Command="{Binding NextCommand}"
+          Padding="14,5"
+          HorizontalAlignment="Center" />
+</StackPanel>

@@ -1,8 +1,11 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -54,12 +57,21 @@ public class DataPollingService : IDisposable
     /// <summary>连接状态变化事件 (connectionKey, newState)</summary>
     public event Action<string, ConnectionState>? ConnectionStateChanged;
 
-    // 所有数据项（面板项 + 后台项的引用）
+    // 所有数据项（按身份去重：同一看板模板/同一变量分布在多个窗口时只轮询一次）
     private readonly List<DataDashboardItem> _items = new();
+    // 数据项分组：身份 key -> 所有重复实例（含轮询代表实例）。
+    // 值更新后同步给全部重复实例并按各自 Id 发事件，保证多个小屏窗口的面板同步刷新。
+    private readonly Dictionary<string, List<DataDashboardItem>> _itemGroups = new();
     private readonly object _itemsLock = new();
 
-    // 每个数据项的定时器
+    // 每个去重后数据源一个定时器：相同看板（同一数据源）只起一个轮询实例，不同看板各跑各的
     private readonly Dictionary<string, DispatcherTimer> _timers = new();
+    // “是否允许远程调试?”确认弹窗自动允许：开启数据模块时每 5 秒扫一次，检测到就模拟点击“允许”；
+    // _lastRemoteDebugNotified 限流气泡通知（15 秒内只提一次）
+    private DispatcherTimer? _remoteDebugPromptTimer;
+    private DateTime _lastRemoteDebugNotified = DateTime.MinValue;
+    // 正在轮询中的数据项（防重叠：上一次抓取未完成时跳过本轮，避免重复建连/重复打开页面）
+    private static readonly ConcurrentDictionary<string, byte> _pollingItems = new();
 
     // CDP 连接池: key = "{browserId}_{profileId}" 或 "default"
     private readonly Dictionary<string, BrowserConnection> _connections = new();
@@ -69,16 +81,58 @@ public class DataPollingService : IDisposable
     // 全局建连计数器（用于诊断：每建立一条 CDP 连接就 +1，浏览器每收到一条新连接都会弹一次提示）
     private static int _totalConnections = 0;
 
+    // 自动启动浏览器尝试记录：key = "{connectionKey}|{targetUrl}"（app 模式）或 "hiddenlaunch|{connectionKey}"（隐藏浏览器）。
+    // value 存尝试次数：app 模式打开目标页每会话最多自动尝试 MaxAutoOpenAttempts 次（页面加载慢/重定向等
+    // 首次等待超时的场景还有机会）；隐藏浏览器只自动尝试 1 次。预算用尽后安静显示 --，不再反复拉起浏览器；
+    // 手动「立即刷新」重置该数据源预算。注意：SyncFromConfigs 不得清空该记录——新数据源的 key 本来就不在记录里、
+    // 首次轮询自然允许尝试；若清空会导致每次增删改数据项后所有数据源重新拉起浏览器。
+    private const byte MaxAutoOpenAttempts = 3;
+    private static readonly ConcurrentDictionary<string, byte> _autoLaunchDone = new();
+    // 防并发启动：已有启动流程在执行时，重叠的轮询跳过
+    private static readonly ConcurrentDictionary<string, byte> _launchingItems = new();
+
+    // 本服务拉起/打开的浏览器资源记录，关闭软件时统一清理：
+    // - _launchedProcesses：自启动的浏览器进程（隐藏浏览器 / app 模式独立实例；委托给已运行浏览器而自行退出的进程自然跳过，不会误杀用户浏览器）
+    // - _openedAppTargets：在浏览器中以 app 模式打开的页面 target（含网址，供点击时复用显示），退出时经 CDP 逐个关闭
+    private static readonly ConcurrentBag<Process> _launchedProcesses = new();
+    private static readonly List<(DefaultProtocolClient client, Target.TargetIDType targetId, string url)> _openedAppTargets = new();
+    private static readonly object _openedAppTargetsLock = new();
+    // 以 app 模式启动的窗口进程（含网址）：窗口属于我们启动的进程时直接用 Win32 激活显示，无需 CDP
+    private static readonly List<(Process proc, string url)> _appModeWindows = new();
+    private static readonly object _appModeWindowsLock = new();
+    // app 模式隐藏新窗口（Win32）：--app 常委托给已运行浏览器、启动进程立即退出，拿不到进程窗口句柄；
+    // 改为启动前白名单已有浏览器窗口，启动后短轮询把新出现的同浏览器窗口 ShowWindow(SW_HIDE)。
+    // 记录被隐藏窗口（句柄 -> 网址）：点击对应数据项时按网址恢复显示
+    private static readonly Dictionary<IntPtr, string> _appModeHiddenHwnds = new();
+    private static readonly List<IntPtr> _appModeWinWhitelist = new();
+    // 经 CDP 窗口控制隐藏（最小化）的 app 窗口 target：委托给已运行浏览器的窗口无法用进程句柄隐藏，
+    // 改用 CDP Browser.SetWindowBounds 最小化；点击数据项显示时先恢复窗口状态
+    private static readonly ConcurrentDictionary<Target.TargetIDType, byte> _cdpHiddenTargets = new();
+
     private DataPollingService() { }
 
     /// <summary>
-    /// 从 WindowConfigs 同步数据项（面板项 + 后台项），重建定时器
+    /// 数据项身份标识 = 数据模块（后端实例）：同模板+同浏览器+同网址/选择器即同一数据模块，
+    /// 同一模块出现在多个小屏窗口时共享同一个轮询实例。
+    /// 变量名（VarKey）是模块的属性、不参与身份——避免同一模块因一个组件设了变量、另一个没设而被拆成两个实例。
+    /// </summary>
+    public static string GetItemIdentity(DataDashboardItem item)
+    {
+        return $"tpl|{item.TemplateId}|{item.BrowserId ?? ""}|{item.ProfileId ?? ""}|{item.TargetUrl}|{item.Selector}|{item.ApiMethod ?? ""}|{item.ResponseExtract ?? ""}".ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// 从 WindowConfigs 同步数据项（面板项 + 后台项），按身份去重后重建定时器
     /// </summary>
     public void SyncFromConfigs(WindowConfigManager configs)
     {
+        int totalBefore;
         lock (_itemsLock)
         {
             _items.Clear();
+            _itemGroups.Clear();
+
+            var candidates = new List<DataDashboardItem>();
 
             // 面板数据项（引用项仅展示、不轮询，不纳入）
             foreach (var win in configs.Windows)
@@ -86,16 +140,40 @@ public class DataPollingService : IDisposable
                 foreach (var panel in win.Panels)
                 {
                     if (panel.DashboardItems == null || panel.DashboardItems.Count == 0) continue;
-                    _items.AddRange(panel.DashboardItems.Where(d => string.IsNullOrEmpty(d.RefVarKey)));
+                    candidates.AddRange(panel.DashboardItems.Where(d => string.IsNullOrEmpty(d.RefVarKey)));
                 }
             }
 
             // 后台数据项
-            _items.AddRange(configs.BackgroundDashboardItems.Where(d => string.IsNullOrEmpty(d.RefVarKey)));
+            candidates.AddRange(configs.BackgroundDashboardItems.Where(d => string.IsNullOrEmpty(d.RefVarKey)));
+
+            totalBefore = candidates.Count;
+
+            // 按身份去重：同一数据模块只保留一个轮询实例，同时记录全部重复实例用于值/事件同步
+            foreach (var d in candidates)
+            {
+                var key = GetItemIdentity(d);
+                if (!_itemGroups.TryGetValue(key, out var group))
+                {
+                    group = new List<DataDashboardItem>();
+                    _itemGroups[key] = group;
+                    _items.Add(d);
+                }
+                else if (!string.IsNullOrEmpty(d.VarKey) && string.IsNullOrEmpty(group[0].VarKey))
+                {
+                    // 变量是模块属性：代表实例没变量而新成员有则提升为代表，保证按变量名可查到该模块
+                    var idx = _items.IndexOf(group[0]);
+                    if (idx >= 0) _items[idx] = d;
+                }
+                group.Add(d);
+            }
         }
 
+        // 新数据源的启动 key 不在 _autoLaunchDone 中，首次轮询自然允许自动尝试一次；
+        // 已有数据源失败后保持安静，配置变更不重置该限制（避免增删改后浏览器反复弹出）。
+
         RebuildTimers();
-        Debug.WriteLine($"[DataPolling] SyncFromConfigs: 共 {_items.Count} 个数据项");
+        Debug.WriteLine($"[DataPolling] SyncFromConfigs: 共 {totalBefore} 个数据项，去重后 {_items.Count} 个轮询实例");
     }
 
     /// <summary>获取当前所有数据项（只读副本引用）</summary>
@@ -104,13 +182,20 @@ public class DataPollingService : IDisposable
         lock (_itemsLock) return new List<DataDashboardItem>(_items);
     }
 
-    /// <summary>按变量名查找实际轮询中的数据项（供引用项展示取值；找不到返回 null）</summary>
+    /// <summary>按变量名查找实际轮询中的数据项（供引用项展示取值；找不到再查变量集虚拟项；仍无返回 null）</summary>
     public DataDashboardItem? FindItemByVarKey(string? varKey)
     {
         if (string.IsNullOrEmpty(varKey)) return null;
         lock (_itemsLock)
-            return _items.FirstOrDefault(i => string.Equals(i.VarKey, varKey, StringComparison.OrdinalIgnoreCase));
+        {
+            var found = _items.FirstOrDefault(i => string.Equals(i.VarKey, varKey, StringComparison.OrdinalIgnoreCase));
+            if (found != null) return found;
+        }
+        return VariableSetService.Instance.FindItemByVarKey(varKey);
     }
+
+    /// <summary>广播外部数据项（如变量集虚拟项）的值更新，供订阅方（引用展示/格式渲染/信号灯）刷新</summary>
+    public void PublishUpdate(string itemId, string value) => DataUpdated?.Invoke(itemId, value);
 
     /// <summary>获取指定数据项的连接状态</summary>
     public ConnectionState GetItemState(DataDashboardItem item)
@@ -169,21 +254,21 @@ public class DataPollingService : IDisposable
         Debug.WriteLine($"[DataPolling] 已断开连接: {key}");
     }
 
-    /// <summary>立即刷新指定数据项</summary>
+    /// <summary>立即刷新指定数据项（手动触发：允许再试一次自动启动浏览器）</summary>
     public async Task RefreshItemAsync(DataDashboardItem item)
     {
-        await PollItemAsync(item);
+        await PollItemAsync(item, true);
     }
 
-    /// <summary>立即刷新所有数据项</summary>
+    /// <summary>立即刷新所有数据项（手动触发：允许再试一次自动启动浏览器）</summary>
     public async Task RefreshAllAsync()
     {
         var items = GetAllItems();
         foreach (var item in items)
-            await PollItemAsync(item);
+            await PollItemAsync(item, true);
     }
 
-    /// <summary>重建所有定时器</summary>
+    /// <summary>重建所有定时器（每个去重后的数据源一个轮询实例）</summary>
     private void RebuildTimers()
     {
         var app = Application.Current;
@@ -204,20 +289,109 @@ public class DataPollingService : IDisposable
                 var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(interval) };
                 timer.Tick += async (s, e) =>
                 {
-                    try { await PollItemAsync(capturedItem); }
+                    // 上一次抓取还没跑完（如等待页面加载）则跳过本轮，避免重叠执行
+                    if (!_pollingItems.TryAdd(capturedItem.Id, 0)) return;
+                    try
+                    {
+                        await PollItemAsync(capturedItem);
+                    }
                     catch (Exception ex) { Debug.WriteLine($"[DataPolling] 定时轮询失败 {capturedItem.Label}: {ex.Message}"); }
+                    finally { _pollingItems.TryRemove(capturedItem.Id, out _); }
                 };
                 timer.Start();
                 _timers[item.Id] = timer;
             }
+
+            // 数据模块开启（存在数据项）时启动远程调试确认弹窗扫描；没有数据项则停掉
+            if (_remoteDebugPromptTimer == null)
+            {
+                _remoteDebugPromptTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+                _remoteDebugPromptTimer.Tick += (s, e) => _ = Task.Run(ScanRemoteDebugPrompt);
+            }
+            if (items.Count > 0) _remoteDebugPromptTimer.Start();
+            else _remoteDebugPromptTimer.Stop();
         });
     }
 
-    /// <summary>
-    /// 轮询单个数据项：获取连接 → 查找 Tab → 执行 JS → 更新值
-    /// </summary>
-    private async Task PollItemAsync(DataDashboardItem item)
+    /// <summary>扫描浏览器的“是否允许远程调试?”确认弹窗：找到后向其内类名为 Intermediate D3D Window 的
+    /// 渲染面（父窗口即该弹窗）发送模拟点击 (350, 180) 自动确认“允许”，并在主窗口气泡通知。
+    /// 点击落空时弹窗仍在，下个周期自动重试。</summary>
+    private void ScanRemoteDebugPrompt()
     {
+        try
+        {
+            IntPtr dialogHwnd = IntPtr.Zero;
+            IntPtr surfaceHwnd = IntPtr.Zero;
+            NativeMethods.EnumWindows((hwnd, _) =>
+            {
+                if (!NativeMethods.IsWindowVisible(hwnd)) return true;
+                var title = new StringBuilder(256);
+                NativeMethods.GetWindowText(hwnd, title, title.Capacity);
+                var t = title.ToString();
+                if (t.IndexOf("允许远程调试", StringComparison.OrdinalIgnoreCase) < 0
+                    && t.IndexOf("allow remote debugging", StringComparison.OrdinalIgnoreCase) < 0)
+                    return true;
+                // 确认弹窗的子窗口中存在 Intermediate D3D Window（渲染面，其 parent 即本弹窗）
+                NativeMethods.EnumChildWindows(hwnd, (child, __) =>
+                {
+                    var cls = new StringBuilder(64);
+                    NativeMethods.GetClassName(child, cls, cls.Capacity);
+                    if (cls.ToString() == "Intermediate D3D Window")
+                    {
+                        dialogHwnd = hwnd;
+                        surfaceHwnd = child;
+                        return false; // 找到即停
+                    }
+                    return true;
+                }, IntPtr.Zero);
+                return surfaceHwnd == IntPtr.Zero;
+            }, IntPtr.Zero);
+
+            if (surfaceHwnd == IntPtr.Zero) return;
+
+            // 模拟点击 (350, 180)（“允许”按钮位置）：WM_LBUTTONDOWN + WM_LBUTTONUP 完成确认
+            var lParam = (IntPtr)((180 << 16) | (350 & 0xFFFF));
+            NativeMethods.SendMessage(surfaceHwnd, NativeMethods.WM_LBUTTONDOWN, (IntPtr)NativeMethods.MK_LBUTTON, lParam);
+            NativeMethods.SendMessage(surfaceHwnd, NativeMethods.WM_LBUTTONUP, IntPtr.Zero, lParam);
+            Debug.WriteLine($"[DataPolling] ✓ 已自动允许远程调试（弹窗 hwnd=0x{dialogHwnd.ToInt64():X}，点击 350,180）");
+
+            // 主窗口气泡通知（15 秒内只提一次，避免弹窗未消失时反复提醒）
+            var now = DateTime.Now;
+            if ((now - _lastRemoteDebugNotified).TotalSeconds >= 15)
+            {
+                _lastRemoteDebugNotified = now;
+                var text = Framework.Lang.T("✅ 已自动允许浏览器远程调试");
+                Application.Current?.Dispatcher.InvokeAsync(() =>
+                {
+                    foreach (var w in Application.Current.Windows)
+                    {
+                        if (w is MainWindow mw && mw.IsLoaded)
+                        {
+                            try { mw.ShowBubbleNotification(text, 4000); } catch { }
+                        }
+                    }
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[DataPolling] 远程调试弹窗扫描异常: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 轮询单个数据项：获取连接 → 查找 Tab → 执行 JS → 更新值。
+    /// forceLaunch=true（手动刷新）时允许再试一次自动启动浏览器；定时轮询默认 false，失败后不再重复启动。
+    /// </summary>
+    private async Task PollItemAsync(DataDashboardItem item, bool forceLaunch = false)
+    {
+        // API 请求模式：HTTP 直连取数，无需浏览器
+        if (!string.IsNullOrEmpty(item.ApiMethod))
+        {
+            await PollApiAsync(item);
+            return;
+        }
+
         var appSettings = ((App)Application.Current).AppSettings;
         var key = GetConnectionKey(item);
 
@@ -226,7 +400,7 @@ public class DataPollingService : IDisposable
         try
         {
             // 1. 获取或建立 CDP 连接
-            var conn = await GetOrCreateConnectionAsync(item, appSettings);
+            var conn = await GetOrCreateConnectionAsync(item, appSettings, forceLaunch);
             if (conn?.Client == null)
             {
                 Debug.WriteLine($"[DataPolling] ✗ 无法建立连接: {key}");
@@ -234,23 +408,58 @@ public class DataPollingService : IDisposable
                 return;
             }
 
-            // 2. 查找匹配 URL 的 Tab
-            var targetId = await FindTabByUrlAsync(conn.Client, item.TargetUrl);
+            // 2. 查找匹配 URL 的 Tab（优先复用本服务记录过的 app 窗口，
+            //    覆盖页面重定向改写了 URL 导致 URL 匹配失败的场景）
+            var targetId = await FindRecordedAppTargetAsync(conn.Client, item.TargetUrl);
+            if (targetId == null)
+                targetId = await FindTabByUrlAsync(conn.Client, item.TargetUrl);
 
-            // 3. 找不到 Tab → 尝试自动打开
+            // 3. 找不到 Tab → 尝试自动打开（每会话最多自动尝试 MaxAutoOpenAttempts 次，预算用尽后不再拉起）
             if (targetId == null)
             {
+                var launchKey = $"{key}|{item.TargetUrl}";
+
                 if (appSettings.EnableAutoLaunchHiddenBrowser && conn.IsSelfLaunched)
                 {
-                    // 自启动的浏览器：导航到目标 URL
+                    // 自启动的浏览器：导航已有 Tab 到目标 URL（不新开浏览器）
                     targetId = await NavigateToUrlAsync(conn.Client, item.TargetUrl);
                 }
                 else if (appSettings.EnableAutoLaunchHiddenBrowser && !conn.IsSelfLaunched)
                 {
-                    // 用户浏览器：以 app 模式启动（干净独立窗口，不在主浏览器开普通标签页）
-                    var (exePath, userDataDir, _) = ResolveBrowserConfig(item, appSettings);
-                    if (!string.IsNullOrEmpty(exePath))
-                        targetId = await LaunchAppModeAsync(conn.Client, exePath, userDataDir, item.TargetUrl);
+                    // 用户浏览器：目标页未打开时需自动打开才能拉到数据；
+                    // 按尝试次数预算限制（首次等待超时但页面随后加载完成的场景仍有重试机会，SyncFromConfigs 不重置），
+                    // 预算用尽后安静显示 --，不再反复弹窗；手动「立即刷新」/点击卡片重置预算、不受限。
+                    var attempts = _autoLaunchDone.TryGetValue(launchKey, out var tried) ? tried : (byte)0;
+                    var allowOpen = forceLaunch || attempts < MaxAutoOpenAttempts;
+                    if (!allowOpen)
+                    {
+                        Debug.WriteLine($"[DataPolling] ↷ 目标页面 {item.TargetUrl} 已自动尝试打开 {MaxAutoOpenAttempts} 次仍未取到数据，不再重复打开（可右键「立即更新数据」重试）");
+                        UpdateItemValue(item, "--");
+                        return;
+                    }
+                    // 记录一次尝试（手动刷新时重置计数重新起算）
+                    _autoLaunchDone[launchKey] = forceLaunch ? (byte)1 : (byte)(attempts + 1);
+
+                    // 同一数据项并发轮询时只允许一个启动流程在执行
+                    if (_launchingItems.TryAdd(launchKey, 0))
+                    {
+                        try
+                        {
+                            var (exePath, userDataDir, _) = ResolveBrowserConfig(item, appSettings);
+                            if (!string.IsNullOrEmpty(exePath))
+                                targetId = await LaunchAppModeAsync(conn.Client, exePath, userDataDir, item.TargetUrl);
+                        }
+                        finally
+                        {
+                            _launchingItems.TryRemove(launchKey, out _);
+                        }
+                    }
+                    else
+                    {
+                        Debug.WriteLine($"[DataPolling] ↷ 目标页面 {item.TargetUrl} 已有启动流程在执行，跳过");
+                        UpdateItemValue(item, "--");
+                        return;
+                    }
                 }
             }
 
@@ -275,17 +484,88 @@ public class DataPollingService : IDisposable
         }
     }
 
-    /// <summary>更新数据项的值并触发事件</summary>
+    /// <summary>API 请求模式轮询：直接 HTTP GET/POST 取数，不经浏览器</summary>
+    private static readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(20) };
+
+    private async Task PollApiAsync(DataDashboardItem item)
+    {
+        try
+        {
+            var isPost = string.Equals(item.ApiMethod, "POST", StringComparison.OrdinalIgnoreCase);
+            using var req = new HttpRequestMessage(isPost ? HttpMethod.Post : HttpMethod.Get, item.TargetUrl);
+            if (isPost)
+                req.Content = new StringContent(item.ApiBody ?? "", Encoding.UTF8, "application/json");
+
+            string body;
+            using (var resp = await _httpClient.SendAsync(req))
+            {
+                if (!resp.IsSuccessStatusCode)
+                    Debug.WriteLine($"[DataPolling] ✗ API 请求失败 \"{item.Label}\": HTTP {(int)resp.StatusCode}");
+                body = await resp.Content.ReadAsStringAsync();
+            }
+
+            var value = ExtractApiValue(body, item.ResponseExtract);
+            UpdateItemValue(item, value);
+            Debug.WriteLine($"[DataPolling] ✓ API \"{item.Label}\" = \"{value}\"");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[DataPolling] ✗ API 请求异常 \"{item.Label}\": {ex.GetType().Name}: {ex.Message}");
+            UpdateItemValue(item, "--");
+        }
+    }
+
+    /// <summary>从 API 响应中提取值：按 JSON 路径（如 data.list[0].count）取值；留空返回整个响应；非 JSON 时回退返回原文</summary>
+    private static string ExtractApiValue(string body, string? extract)
+    {
+        if (string.IsNullOrWhiteSpace(extract))
+            return string.IsNullOrWhiteSpace(body) ? "--" : body.Trim();
+        try
+        {
+            var token = Newtonsoft.Json.Linq.JToken.Parse(body).SelectToken(extract);
+            if (token == null) return "--";
+            var text = token.Type == Newtonsoft.Json.Linq.JTokenType.Object || token.Type == Newtonsoft.Json.Linq.JTokenType.Array
+                ? token.ToString(Newtonsoft.Json.Formatting.None)
+                : token.ToString();
+            return string.IsNullOrWhiteSpace(text) ? "--" : text;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[DataPolling] 响应提取失败（{extract}）: {ex.Message}");
+            return string.IsNullOrWhiteSpace(body) ? "--" : body.Trim();
+        }
+    }
+
+    /// <summary>更新数据项的值并触发事件（同一数据源的重复实例一并同步，保证多个窗口面板都收到更新）</summary>
     private void UpdateItemValue(DataDashboardItem item, string value)
     {
         item.Value = value;
-        DataUpdated?.Invoke(item.Id, value);
+
+        List<DataDashboardItem>? group = null;
+        lock (_itemsLock)
+        {
+            _itemGroups.TryGetValue(GetItemIdentity(item), out group);
+        }
+
+        if (group != null)
+        {
+            foreach (var dup in group)
+            {
+                if (!ReferenceEquals(dup, item)) dup.Value = value;
+                DataUpdated?.Invoke(dup.Id, value);
+            }
+        }
+        else
+        {
+            DataUpdated?.Invoke(item.Id, value);
+        }
     }
 
     /// <summary>
-    /// 获取或建立浏览器 CDP 连接（连接池复用）
+    /// 获取或建立浏览器 CDP 连接（连接池复用）。
+    /// forceLaunch=true 时允许再试一次自动启动隐藏浏览器。
     /// </summary>
-    private async Task<BrowserConnection?> GetOrCreateConnectionAsync(DataDashboardItem item, Settings appSettings)
+    private async Task<BrowserConnection?> GetOrCreateConnectionAsync(DataDashboardItem item, Settings appSettings, bool forceLaunch = false)
     {
         var key = GetConnectionKey(item);
 
@@ -322,10 +602,20 @@ public class DataPollingService : IDisposable
                 return conn;
             }
 
-            // 连接失败 → 自动启动隐藏浏览器
+            // 连接失败 → 自动启动隐藏浏览器（每会话只自动尝试一次，失败后不再反复拉起浏览器实例）
             if (!appSettings.EnableAutoLaunchHiddenBrowser || string.IsNullOrEmpty(exePath))
             {
                 SetConnectionState(key, ConnectionState.Error);
+                return null;
+            }
+
+            var hiddenLaunchKey = $"hiddenlaunch|{key}";
+            var allowLaunch = forceLaunch || _autoLaunchDone.TryAdd(hiddenLaunchKey, 0);
+            if (forceLaunch) _autoLaunchDone[hiddenLaunchKey] = 0;
+            if (!allowLaunch)
+            {
+                SetConnectionState(key, ConnectionState.Error);
+                Debug.WriteLine($"[DataPolling] ↷ 隐藏浏览器 {key} 已自动启动过一次，失败后不再重复启动");
                 return null;
             }
 
@@ -478,6 +768,7 @@ public class DataPollingService : IDisposable
             Debug.WriteLine($"[DataPolling] 启动隐藏浏览器: {exePath} {args}");
             var process = Process.Start(psi);
             if (process == null) return null;
+            _launchedProcesses.Add(process);
 
             // 等待 CDP 就绪并直接建立正式连接（全程只建立 1 条连接，
             // 避免“就绪探测 + 正式连接”重复建连触发多次浏览器弹窗）
@@ -564,7 +855,33 @@ public class DataPollingService : IDisposable
         return null;
     }
 
-    /// <summary>查找匹配 URL 的 page Tab</summary>
+    /// <summary>查找本服务记录过的 app 模式页面（按 URL 匹配并校验 target 仍存活，失效记录顺手清理）</summary>
+    private static async Task<Target.TargetIDType?> FindRecordedAppTargetAsync(DefaultProtocolClient client, string url)
+    {
+        List<(DefaultProtocolClient client, Target.TargetIDType targetId, string url)> snapshot;
+        lock (_openedAppTargetsLock)
+        {
+            snapshot = _openedAppTargets.Where(t => t.client == client && UrlMatches(t.url, url)).ToList();
+        }
+        if (snapshot.Count == 0) return null;
+        try
+        {
+            var result = await client.SendCommandAsync(Target.GetTargets());
+            foreach (var rec in snapshot)
+            {
+                if (result.TargetInfos.Any(t => t.TargetId == rec.targetId)) return rec.targetId;
+                // target 已不存在（窗口被关闭）→ 移除失效记录
+                lock (_openedAppTargetsLock)
+                {
+                    _openedAppTargets.RemoveAll(t => t.client == rec.client && t.targetId == rec.targetId && t.url == rec.url);
+                }
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    /// <summary>查找匹配 URL 的 page Tab（含重定向归属判定：登录跳转页的回调参数指向目标 URL 也算；单 Tab 兜底）</summary>
     private static async Task<Target.TargetIDType?> FindTabByUrlAsync(DefaultProtocolClient client, string url)
     {
         var result = await client.SendCommandAsync(Target.GetTargets());
@@ -572,13 +889,54 @@ public class DataPollingService : IDisposable
 
         foreach (var tab in pages)
         {
-            var tabUrl = tab.Url ?? "";
-            if (tabUrl.StartsWith(url, StringComparison.OrdinalIgnoreCase) || url.StartsWith(tabUrl, StringComparison.OrdinalIgnoreCase))
+            if (PageBelongsToUrl(tab.Url, url))
                 return tab.TargetId;
         }
 
         if (pages.Count == 1) return pages[0].TargetId;
         return null;
+    }
+
+    /// <summary>查找 URL 严格匹配的 page Tab（不做单 Tab 兜底，供复用显示已打开窗口，避免误切无关窗口）</summary>
+    private static async Task<Target.TargetIDType?> FindTabByUrlStrictAsync(DefaultProtocolClient client, string url)
+    {
+        var result = await client.SendCommandAsync(Target.GetTargets());
+        foreach (var tab in result.TargetInfos)
+        {
+            if (tab.Type != "page") continue;
+            if (string.IsNullOrEmpty(tab.Url)) continue;
+            if (PageBelongsToUrl(tab.Url, url))
+                return tab.TargetId;
+        }
+        return null;
+    }
+
+    /// <summary>判定页面是否属于目标 URL：URL 前缀匹配，或登录重定向页的回调参数
+    /// （oauth_callback/redirect_uri/return_to/redirect/next）携带目标 URL（页面 URL 被重定向改写的场景）</summary>
+    private static bool PageBelongsToUrl(string? pageUrl, string targetUrl)
+    {
+        if (string.IsNullOrEmpty(pageUrl)) return false;
+        if (UrlMatches(pageUrl, targetUrl)) return true;
+        if (!Uri.TryCreate(pageUrl, UriKind.Absolute, out var uri) || string.IsNullOrEmpty(uri.Query)) return false;
+        foreach (var kv in uri.Query.TrimStart('?').Split('&'))
+        {
+            var eq = kv.IndexOf('=');
+            if (eq <= 0) continue;
+            var name = kv.Substring(0, eq);
+            if (!string.Equals(name, "oauth_callback", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(name, "redirect_uri", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(name, "return_to", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(name, "redirect", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(name, "next", StringComparison.OrdinalIgnoreCase))
+                continue;
+            try
+            {
+                var val = Uri.UnescapeDataString(kv.Substring(eq + 1));
+                if (UrlMatches(val, targetUrl)) return true;
+            }
+            catch { }
+        }
+        return false;
     }
 
     /// <summary>在已连接的浏览器中新建 Tab 并导航到 URL</summary>
@@ -601,35 +959,84 @@ public class DataPollingService : IDisposable
     /// <summary>以 app 模式在用户浏览器中启动 URL（干净独立窗口，不在主浏览器新建普通标签页）</summary>
     private async Task<Target.TargetIDType?> LaunchAppModeAsync(DefaultProtocolClient client, string exePath, string userDataDir, string url)
     {
-        if (!LaunchAppModeProcess(exePath, userDataDir, url)) return null;
-
         try
         {
-            // app 窗口会在已运行的浏览器进程中打开，等待其页面出现在 CDP target 列表（严格 URL 匹配，不做单 Tab 兜底）
+            // 启动前快照已有 page target：新窗口 URL 被重定向改写（登录/语言跳转）时，
+            // 也能按“新增 target”识别出我们打开的窗口
+            var beforeResult = await client.SendCommandAsync(Target.GetTargets());
+            var beforePages = beforeResult.TargetInfos.Where(t => t.Type == "page").ToList();
+            var beforeIds = beforePages.Select(t => t.TargetId).ToList();
+
+            // 已存在属于该 URL 的页面（上次打开的窗口还在、或页面停在登录重定向页）→ 直接复用，
+            // 不再启动新窗口（避免每次超时都多弹一个窗口）
+            var matches = beforePages.Where(t => PageBelongsToUrl(t.Url, url)).ToList();
+            if (matches.Count > 0)
+            {
+                // 历史失败遗留的重复窗口（修复前每次超时多弹一个）：保留一个，其余经 CDP 关掉
+                foreach (var extra in matches.Skip(1))
+                {
+                    try
+                    {
+                        await client.SendCommandAsync(Target.CloseTarget(extra.TargetId));
+                        Debug.WriteLine($"[DataPolling] 🧹 关闭重复的 app 模式窗口: {extra.TargetId}（{extra.Url}）");
+                    }
+                    catch (Exception ex) { Debug.WriteLine($"[DataPolling] 关闭重复窗口失败: {ex.Message}"); }
+                }
+                var existing = matches[0];
+                lock (_openedAppTargetsLock) { _openedAppTargets.Add((client, existing.TargetId, url)); }
+                Debug.WriteLine($"[DataPolling] ✓ 复用已存在的 app 模式页面: {url} -> {existing.TargetId}（实际 URL: {existing.Url}）");
+                // 仅当页面位于单标签窗口（我们打开的 app 窗口）才最小化；
+                // 多标签窗口说明可能是用户自己在主浏览器开的页，不能把用户整个浏览器最小化
+                if (await IsSingleTabWindowAsync(client, existing.TargetId))
+                    await MinimizeTargetWindowAsync(client, existing.TargetId);
+                else
+                    Debug.WriteLine("[DataPolling] 复用页面位于多标签窗口（非 app 窗口），跳过隐藏避免影响用户浏览器");
+                return existing.TargetId;
+            }
+
+            var proc = LaunchAppModeProcess(exePath, userDataDir, url, hideWindow: true);
+            if (proc == null) return null;
+
+            // app 窗口会在已运行的浏览器进程中打开，等待其页面出现在 CDP target 列表
+            var host = GetUrlHost(url);
+            List<string>? lastUrls = null;
             for (int i = 0; i < 10; i++)
             {
                 await Task.Delay(1000);
                 var result = await client.SendCommandAsync(Target.GetTargets());
-                Target.TargetIDType? found = null;
-                foreach (var t in result.TargetInfos)
-                {
-                    if (t.Type != "page") continue;
-                    var tabUrl = t.Url ?? "";
-                    if (string.IsNullOrEmpty(tabUrl)) continue;
-                    if (tabUrl.StartsWith(url, StringComparison.OrdinalIgnoreCase) || url.StartsWith(tabUrl, StringComparison.OrdinalIgnoreCase))
-                    {
-                        found = t.TargetId;
-                        break;
-                    }
-                }
+                var pages = result.TargetInfos.Where(t => t.Type == "page" && !string.IsNullOrEmpty(t.Url)).ToList();
+                lastUrls = pages.Select(p => p.Url ?? "").ToList();
+
+                // 1) URL 归属匹配（含页面被重定向到登录页、回调参数指向目标 URL 的情形）
+                var found = pages.FirstOrDefault(t => PageBelongsToUrl(t.Url, url));
+                // 2) 归属匹配不上 → 按新增 target 识别，限同域名避免误抓用户另开的页面
+                if (found == null && host != null)
+                    found = pages.FirstOrDefault(t => !beforeIds.Any(id => id == t.TargetId) && GetUrlHost(t.Url ?? "") == host);
                 if (found != null)
                 {
-                    Debug.WriteLine($"[DataPolling] ✓ app 模式页面已就绪: {url} -> {found}");
-                    return found;
+                    // 记录本次打开的页面，关闭软件时经 CDP 关闭该窗口；点击数据项时也用它直接显示已打开的窗口
+                    lock (_openedAppTargetsLock) { _openedAppTargets.Add((client, found.TargetId, url)); }
+                    Debug.WriteLine($"[DataPolling] ✓ app 模式页面已就绪: {url} -> {found.TargetId}（实际 URL: {found.Url}）");
+                    // 稍候委托完成（启动进程退出）再判断隐藏方式，避免过早判定“进程还活着”而漏隐藏：
+                    // 进程自持 → HideAppWindowWhenReadyAsync 已用 SW_HIDE 处理；已委托 → 经 CDP 最小化
+                    for (int w = 0; w < 8; w++)
+                    {
+                        bool exitedNow;
+                        try { exitedNow = proc.HasExited; } catch { exitedNow = false; }
+                        if (exitedNow) break;
+                        await Task.Delay(250);
+                    }
+                    await HideDelegatedAppWindowAsync(client, found.TargetId, proc);
+                    return found.TargetId;
                 }
             }
 
-            Debug.WriteLine($"[DataPolling] ✗ app 模式页面等待超时: {url}");
+            // 诊断：打印当前 CDP 连接可见的全部页面，帮助定位“页面明明打开了却找不到”：
+            // - 列表中根本没有目标页 → 窗口开在了另一个浏览器进程（--app 未带 --user-data-dir，
+            //   被委托给拥有默认用户数据目录的实例，而 SideDesk 连接的不是它）；
+            // - 列表中有目标页但 URL 不同 → 页面重定向改写了地址
+            var visible = lastUrls == null || lastUrls.Count == 0 ? "（无页面）" : string.Join(" | ", lastUrls);
+            Debug.WriteLine($"[DataPolling] ✗ app 模式页面等待超时: {url}；当前连接可见页面: {visible}");
             return null;
         }
         catch (Exception ex)
@@ -639,8 +1046,13 @@ public class DataPollingService : IDisposable
         }
     }
 
-    /// <summary>启动 app 模式浏览器进程（干净独立窗口，无地址栏/标签栏）。返回是否启动成功。</summary>
-    private static bool LaunchAppModeProcess(string exePath, string userDataDir, string url)
+    /// <summary>取 URL 的域名（无法解析时返回 null）</summary>
+    private static string? GetUrlHost(string url)
+        => Uri.TryCreate(url, UriKind.Absolute, out var u) ? u.Host : null;
+
+    /// <summary>启动 app 模式浏览器进程（干净独立窗口，无地址栏/标签栏）。启动成功返回进程，失败返回 null。
+    /// hideWindow=true 时（数据模块后台抓取）在窗口出现后用 ShowWindow(SW_HIDE) 隐藏，不占用屏幕。</summary>
+    private static Process? LaunchAppModeProcess(string exePath, string userDataDir, string url, bool hideWindow = false)
     {
         try
         {
@@ -655,36 +1067,388 @@ public class DataPollingService : IDisposable
                 UseShellExecute = false,
                 CreateNoWindow = true
             };
-            Process.Start(psi);
+            // 隐藏模式：启动前白名单该浏览器的已有窗口（用户的都在这），
+            // 启动后新出现的同浏览器窗口即为我们打开的 app 窗口，经 ShowWindow(SW_HIDE) 隐藏
+            if (hideWindow)
+            {
+                var browserName = Path.GetFileNameWithoutExtension(exePath);
+                lock (_appModeWindowsLock)
+                {
+                    _appModeWinWhitelist.Clear();
+                    _appModeWinWhitelist.AddRange(EnumerateBrowserWindows(browserName));
+                }
+            }
+            var proc = Process.Start(psi);
+            if (proc != null)
+            {
+                _launchedProcesses.Add(proc);
+                lock (_appModeWindowsLock) { _appModeWindows.Add((proc, url)); }
+                if (hideWindow)
+                {
+                    var browserName = Path.GetFileNameWithoutExtension(exePath);
+                    _ = Task.Run(() => HideNewBrowserWindowsWatcherAsync(browserName, url));
+                }
+            }
             Debug.WriteLine($"[DataPolling] 以 app 模式启动: {exePath} {args}");
-            return true;
+            return proc;
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"[DataPolling] ✗ app 模式启动失败: {ex.Message}");
-            return false;
+            return null;
         }
     }
 
-    /// <summary>以 app 模式（干净独立窗口）打开数据项的目标网址，供外部调用（如点击数据看板项）</summary>
+    /// <summary>轮询等待 app 窗口句柄出现，然后用 ShowWindow(SW_HIDE) 隐藏（数据模块后台窗口，不占用屏幕）。
+    /// 窗口委托给已运行浏览器（启动进程自身退出）时拿不到本进程句柄，则放弃隐藏。</summary>
+    private static async Task HideAppWindowWhenReadyAsync(Process proc)
+    {
+        try
+        {
+            for (int i = 0; i < 40; i++) // 最长约 8 秒
+            {
+                bool exited;
+                try { exited = proc.HasExited; } catch { exited = true; }
+                if (exited) return; // 已委托给运行中的浏览器，窗口不归本进程管
+                var hwnd = proc.MainWindowHandle;
+                if (hwnd != IntPtr.Zero)
+                {
+                    NativeMethods.ShowWindow(hwnd, NativeMethods.SW_HIDE);
+                    Debug.WriteLine("[DataPolling] 🙈 已隐藏 app 模式窗口（数据模块后台窗口，点击数据项可再显示）");
+                    return;
+                }
+                await Task.Delay(200);
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[DataPolling] 隐藏 app 窗口失败: {ex.Message}");
+        }
+    }
+
+    /// <summary>判断窗口是否指定浏览器的顶层窗口：可见 + Chrome_WidgetWin_1 类 + 归属浏览器进程</summary>
+    private static bool IsBrowserTopWindow(IntPtr hwnd, string browserName)
+    {
+        if (!NativeMethods.IsWindowVisible(hwnd)) return false;
+        var cls = new StringBuilder(64);
+        NativeMethods.GetClassName(hwnd, cls, cls.Capacity);
+        if (cls.ToString() != "Chrome_WidgetWin_1") return false;
+        try
+        {
+            NativeMethods.GetWindowThreadProcessId(hwnd, out var pid);
+            if (pid == 0) return false;
+            using var p = Process.GetProcessById((int)pid);
+            return string.Equals(p.ProcessName, browserName, StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
+    }
+
+    /// <summary>枚举指定浏览器当前可见的顶层窗口句柄（供启动前白名单）</summary>
+    private static List<IntPtr> EnumerateBrowserWindows(string browserName)
+    {
+        var list = new List<IntPtr>();
+        NativeMethods.EnumWindows((hwnd, _) =>
+        {
+            try { if (IsBrowserTopWindow(hwnd, browserName)) list.Add(hwnd); } catch { }
+            return true;
+        }, IntPtr.Zero);
+        return list;
+    }
+
+    /// <summary>app 模式启动后的新窗口监视器：短时间内反复枚举，把白名单之外新出现的浏览器窗口
+    /// 用 ShowWindow(SW_HIDE) 隐藏。不依赖启动进程句柄——窗口委托给已运行浏览器（进程已退出）也能藏住。
+    /// 按窗口创建时间过滤：只藏启动之后创建的窗口，白名单漏记的老窗口不受影响。</summary>
+    private static async Task HideNewBrowserWindowsWatcherAsync(string browserName, string url)
+    {
+        var startTicks = DateTime.Now.Ticks;
+        List<IntPtr> whitelist;
+        lock (_appModeWindowsLock) { whitelist = new List<IntPtr>(_appModeWinWhitelist); }
+        try
+        {
+            for (int i = 0; i < 100; i++) // 最长约 20 秒，覆盖页面加载/委托延迟
+            {
+                NativeMethods.EnumWindows((hwnd, _) =>
+                {
+                    try
+                    {
+                        lock (_appModeHiddenHwnds) { if (_appModeHiddenHwnds.ContainsKey(hwnd)) return true; }
+                        lock (_appModeWindowsLock) { if (whitelist.Contains(hwnd)) return true; }
+                        if (!IsBrowserTopWindow(hwnd, browserName)) return true;
+                        var created = NativeMethods.GetWindowLong(hwnd, NativeMethods.GWL_HWNDPARENT);
+                        if (created != 0 && created < startTicks) return true; // 启动前创建的窗口不动
+                        NativeMethods.ShowWindow(hwnd, NativeMethods.SW_HIDE);
+                        lock (_appModeHiddenHwnds) { _appModeHiddenHwnds[hwnd] = url; }
+                        Debug.WriteLine($"[DataPolling] 🙈 已隐藏新开的 app 模式窗口 (hwnd=0x{hwnd.ToInt64():X})（点击数据项可再显示）");
+                    }
+                    catch { }
+                    return true;
+                }, IntPtr.Zero);
+                await Task.Delay(200);
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[DataPolling] app 窗口监视器异常: {ex.Message}");
+        }
+    }
+
+    /// <summary>显示被新窗口监视器 SW_HIDE 隐藏的窗口（点击数据项时按网址匹配恢复）；无对应隐藏窗口返回 false</summary>
+    private static bool ShowHiddenAppHwnds(string url)
+    {
+        List<IntPtr> targets;
+        lock (_appModeHiddenHwnds)
+        {
+            targets = _appModeHiddenHwnds.Where(kv => UrlMatches(kv.Value, url)).Select(kv => kv.Key).ToList();
+        }
+        if (targets.Count == 0) return false;
+        bool shown = false;
+        foreach (var hwnd in targets)
+        {
+            try
+            {
+                if (!NativeMethods.IsWindow(hwnd))
+                {
+                    lock (_appModeHiddenHwnds) { _appModeHiddenHwnds.Remove(hwnd); }
+                    continue;
+                }
+                NativeMethods.ShowWindow(hwnd, NativeMethods.SW_SHOW);
+                NativeMethods.SetForegroundWindow(hwnd);
+                lock (_appModeHiddenHwnds) { _appModeHiddenHwnds.Remove(hwnd); }
+                shown = true;
+            }
+            catch { }
+        }
+        if (shown) Debug.WriteLine($"[DataPolling] ✓ 已显示被隐藏的 app 模式窗口: {url}");
+        return shown;
+    }
+
+    /// <summary>判断页面所在窗口是否为单标签窗口（app 模式窗口的特征）：
+    /// 同窗口内还有其他 page target 则返回 false（说明是用户的多标签浏览器窗口）</summary>
+    private static async Task<bool> IsSingleTabWindowAsync(DefaultProtocolClient client, Target.TargetIDType targetId)
+    {
+        try
+        {
+            var win = await client.SendCommandAsync(Browser.GetWindowForTarget(targetId));
+            var result = await client.SendCommandAsync(Target.GetTargets());
+            foreach (var p in result.TargetInfos.Where(t => t.Type == "page" && t.TargetId != targetId))
+            {
+                try
+                {
+                    var w2 = await client.SendCommandAsync(Browser.GetWindowForTarget(p.TargetId));
+                    if (Equals(w2.WindowId, win.WindowId)) return false;
+                }
+                catch { }
+            }
+            return true;
+        }
+        catch { return true; }
+    }
+
+    /// <summary>经 CDP 把 app 窗口最小化隐藏（委托给已运行浏览器的窗口拿不到进程句柄，只能走窗口控制）。
+    /// CDP 无真正的 hide，最小化是最佳近似；点击数据项时经 RestoreCdpHiddenTargetAsync 恢复</summary>
+    private static async Task MinimizeTargetWindowAsync(DefaultProtocolClient client, Target.TargetIDType targetId)
+    {
+        try
+        {
+            var win = await client.SendCommandAsync(Browser.GetWindowForTarget(targetId));
+            await client.SendCommandAsync(Browser.SetWindowBounds(win.WindowId,
+                new Browser.BoundsType(null, null, null, null, new Browser.WindowStateType("minimized"))));
+            _cdpHiddenTargets[targetId] = 0;
+            Debug.WriteLine("[DataPolling] 🙈 窗口委托给已运行浏览器，经 CDP 隐藏（最小化，点击数据项可显示）");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[DataPolling] CDP 隐藏窗口失败: {ex.Message}");
+        }
+    }
+
+    /// <summary>启动进程已退出（窗口委托给已运行浏览器）时经 CDP 最小化隐藏；
+    /// 进程还活着则 HideAppWindowWhenReadyAsync 已用 ShowWindow(SW_HIDE) 处理，跳过</summary>
+    private static async Task HideDelegatedAppWindowAsync(DefaultProtocolClient client, Target.TargetIDType targetId, Process proc)
+    {
+        bool exited;
+        try { exited = proc.HasExited; } catch { exited = false; }
+        if (!exited) return;
+        await MinimizeTargetWindowAsync(client, targetId);
+    }
+
+    /// <summary>恢复经 CDP 最小化隐藏的窗口（点击数据项显示时调用；未隐藏过则直接跳过）</summary>
+    private static async Task RestoreCdpHiddenTargetAsync(DefaultProtocolClient client, Target.TargetIDType targetId)
+    {
+        if (!_cdpHiddenTargets.TryRemove(targetId, out _)) return;
+        try
+        {
+            var win = await client.SendCommandAsync(Browser.GetWindowForTarget(targetId));
+            await client.SendCommandAsync(Browser.SetWindowBounds(win.WindowId,
+                new Browser.BoundsType(null, null, null, null, new Browser.WindowStateType("normal"))));
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[DataPolling] 恢复窗口失败: {ex.Message}");
+        }
+    }
+
+    /// <summary>以 app 模式（干净独立窗口）打开数据项的目标网址，供外部调用（如点击数据看板项）。
+    /// 若该网址的 app 窗口已经打开过，则直接把它切到前台，不再重复启动新窗口。</summary>
     public void OpenItemUrlInAppMode(DataDashboardItem item)
     {
         var url = item?.TargetUrl;
         if (string.IsNullOrEmpty(url)) return;
+        _ = OpenOrShowAppModeAsync(item!);
+    }
+
+    /// <summary>先尝试显示已打开的 app 窗口；没有才启动新窗口，启动成功后记录 target 供下次复用</summary>
+    private async Task OpenOrShowAppModeAsync(DataDashboardItem item)
+    {
+        if (await TryShowOpenedAppWindowAsync(item)) return;
 
         var appSettings = ((App)Application.Current).AppSettings;
-        var (exePath, userDataDir, _) = ResolveBrowserConfig(item!, appSettings);
+        var (exePath, userDataDir, _) = ResolveBrowserConfig(item, appSettings);
 
         // 未指定 Profile 时，自动检测浏览器默认 User Data 目录以复用登录态
         if (string.IsNullOrEmpty(userDataDir) && !string.IsNullOrEmpty(exePath))
             userDataDir = DetectDefaultUserDataDir(exePath);
 
         // 优先用数据项配置的浏览器 + Profile 以 app 模式打开（复用登录态）
-        if (!string.IsNullOrEmpty(exePath) && LaunchAppModeProcess(exePath, userDataDir, url))
+        if (!string.IsNullOrEmpty(exePath) && LaunchAppModeProcess(exePath, userDataDir, item.TargetUrl) != null)
+        {
+            await RecordClickedAppTargetAsync(item);
             return;
+        }
 
         // 回退：找不到浏览器或启动失败 → 系统默认方式打开
-        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); } catch { }
+        try { Process.Start(new ProcessStartInfo(item.TargetUrl) { UseShellExecute = true }); } catch { }
+    }
+
+    /// <summary>查找已打开的 app 模式窗口并显示：优先用启动进程句柄直接激活（我们打开的窗口），
+    /// 其次查 CDP 记录/同浏览器内匹配页面（窗口被委托给已运行浏览器时的兜底）</summary>
+    private async Task<bool> TryShowOpenedAppWindowAsync(DataDashboardItem item)
+    {
+        var url = item.TargetUrl;
+
+        // 1. 我们启动的 app 窗口进程还活着 → 直接激活显示（最小化则恢复）
+        List<(Process proc, string url)> procSnapshot;
+        lock (_appModeWindowsLock) { procSnapshot = new List<(Process, string)>(_appModeWindows); }
+        foreach (var (proc, procUrl) in procSnapshot)
+        {
+            if (!UrlMatches(procUrl, url)) continue;
+            bool exited;
+            try { exited = proc.HasExited; } catch { exited = true; }
+            if (exited)
+            {
+                lock (_appModeWindowsLock) { _appModeWindows.Remove((proc, procUrl)); }
+                continue;
+            }
+            try
+            {
+                proc.WaitForInputIdle(500);
+                var hwnd = proc.MainWindowHandle;
+                if (hwnd != IntPtr.Zero)
+                {
+                    // 恢复最小化或被隐藏的窗口（数据模块后台窗口默认以 SW_HIDE 隐藏）
+                    NativeMethods.ShowWindow(hwnd, NativeMethods.IsIconic(hwnd) ? NativeMethods.SW_RESTORE : NativeMethods.SW_SHOW);
+                    NativeMethods.SetForegroundWindow(hwnd);
+                    Debug.WriteLine($"[DataPolling] ✓ 已把打开过的 app 窗口激活显示: {url}");
+                    return true;
+                }
+            }
+            catch (Exception ex) { Debug.WriteLine($"[DataPolling] 激活 app 窗口失败: {ex.Message}"); }
+        }
+
+        // 2. 委托给已运行浏览器的窗口被新窗口监视器 SW_HIDE 隐藏过 → 按句柄直接恢复显示
+        if (ShowHiddenAppHwnds(url)) return true;
+
+        // 3. 本服务经 CDP 记录过的 app 页面（如窗口被委托给已运行浏览器，启动进程已退出）
+        List<(DefaultProtocolClient client, Target.TargetIDType targetId, string url)> snapshot;
+        lock (_openedAppTargetsLock) { snapshot = new List<(DefaultProtocolClient, Target.TargetIDType, string)>(_openedAppTargets); }
+        foreach (var t in snapshot)
+        {
+            if (!UrlMatches(t.url, url)) continue;
+            await RestoreCdpHiddenTargetAsync(t.client, t.targetId);
+            if (await BringTargetToFrontAsync(t.client, t.targetId)) return true;
+            // target 已不存在（窗口被手动关闭）→ 移除失效记录
+            lock (_openedAppTargetsLock) { _openedAppTargets.Remove(t); }
+        }
+
+        // 4. 同浏览器内匹配 URL 的其他页面（覆盖此前打开但未记录的窗口）
+        var conn = GetConnection(GetConnectionKey(item));
+        if (conn?.Client != null)
+        {
+            try
+            {
+                var targetId = await FindTabByUrlStrictAsync(conn.Client, url);
+                if (targetId != null)
+                {
+                    await RestoreCdpHiddenTargetAsync(conn.Client, targetId);
+                    if (await BringTargetToFrontAsync(conn.Client, targetId))
+                    {
+                        lock (_openedAppTargetsLock) { _openedAppTargets.Add((conn.Client, targetId, url)); }
+                        return true;
+                    }
+                }
+            }
+            catch { }
+        }
+        return false;
+    }
+
+    private static bool UrlMatches(string a, string b)
+    {
+        if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b)) return false;
+        return a.StartsWith(b, StringComparison.OrdinalIgnoreCase) || b.StartsWith(a, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Attach 到 target 并把页面切到前台（app 模式窗口即被激活显示）；target 已失效时返回 false</summary>
+    private static async Task<bool> BringTargetToFrontAsync(DefaultProtocolClient client, Target.TargetIDType targetId)
+    {
+        try
+        {
+            var result = await client.SendCommandAsync(Target.GetTargets());
+            if (!result.TargetInfos.Any(t => t.TargetId == targetId)) return false;
+            var attachResult = await client.SendCommandAsync(Target.AttachToTarget(targetId, Flatten: true));
+            await client.SendCommandAsync(Page.BringToFront(), sessionId: attachResult.SessionId.Value);
+            Debug.WriteLine($"[DataPolling] ✓ 已把打开过的 app 窗口切到前台: {targetId}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[DataPolling] 显示已打开窗口失败: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>点击启动 app 窗口后，若该浏览器已有 CDP 连接则等待页面出现并记录，供下次点击直接复用</summary>
+    private async Task RecordClickedAppTargetAsync(DataDashboardItem item)
+    {
+        try
+        {
+            var key = GetConnectionKey(item);
+
+            // 连接可能稍晚于窗口出现才可用（如浏览器刚以调试端口启动），最多等约 8 秒
+            BrowserConnection? conn = null;
+            for (int i = 0; i < 10 && conn?.Client == null; i++)
+            {
+                conn = GetConnection(key);
+                if (conn?.Client == null) await Task.Delay(800);
+            }
+            if (conn?.Client == null) return; // 浏览器未开 CDP 时无法跟踪，保持原行为
+
+            for (int i = 0; i < 10; i++)
+            {
+                await Task.Delay(800);
+                var targetId = await FindTabByUrlStrictAsync(conn.Client, item.TargetUrl);
+                if (targetId != null)
+                {
+                    lock (_openedAppTargetsLock) { _openedAppTargets.Add((conn.Client, targetId, item.TargetUrl)); }
+                    Debug.WriteLine($"[DataPolling] ✓ 已记录点击打开的 app 窗口: {item.TargetUrl}");
+                    return;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[DataPolling] 记录 app 窗口失败: {ex.Message}");
+        }
     }
 
     /// <summary>探测浏览器默认的 User Data 目录</summary>
@@ -783,12 +1547,36 @@ public class DataPollingService : IDisposable
         ConnectionStateChanged?.Invoke(key, state);
     }
 
-    /// <summary>释放所有资源（关闭自启动的浏览器进程）</summary>
+    /// <summary>释放所有资源：关闭本服务打开的 app 模式页面、杀死自启动的浏览器进程、断开连接</summary>
     public void Dispose()
     {
         foreach (var timer in _timers.Values)
             timer.Stop();
         _timers.Clear();
+        _remoteDebugPromptTimer?.Stop();
+
+        // 关闭软件时把数据看板打开的 app 模式窗口一并关掉（只关本服务打开的页面，不动用户其他标签页）
+        List<(DefaultProtocolClient client, Target.TargetIDType targetId, string url)> closeSnapshot;
+        lock (_openedAppTargetsLock)
+        {
+            closeSnapshot = new List<(DefaultProtocolClient, Target.TargetIDType, string)>(_openedAppTargets);
+            _openedAppTargets.Clear();
+        }
+        var closeTasks = closeSnapshot.Select(t => Task.Run(async () =>
+        {
+            try { await t.client.SendCommandAsync(Target.CloseTarget(t.targetId)); }
+            catch { }
+        })).ToArray();
+        if (closeTasks.Length > 0)
+        {
+            try { Task.WaitAll(closeTasks, TimeSpan.FromSeconds(2)); } catch { }
+        }
+
+        // 杀死本服务拉起的浏览器进程（已委托退出的进程 HasExited=true，自然跳过）
+        foreach (var p in _launchedProcesses)
+        {
+            try { if (!p.HasExited) p.Kill(); } catch { }
+        }
 
         lock (_connections)
         {

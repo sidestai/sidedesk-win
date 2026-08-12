@@ -62,8 +62,6 @@ namespace SideDesk
     public class Settings
     {
         public LayoutMode Layout { get; set; } = LayoutMode.Left;
-        public ScreenType LeftScreen { get; set; } = ScreenType.A;
-        public ScreenType RightScreen { get; set; } = ScreenType.B;
         public int PanelWidth { get; set; } = 105;
 
         // 左侧停靠宽度与浮动配置
@@ -78,6 +76,8 @@ namespace SideDesk
 
         public string ThemeName { get; set; } = "";
         public string ThemeMode { get; set; } = "Dark"; // 支持 "Dark", "Light", "System"
+        /// <summary>界面语言偏好：auto（跟随系统）/ zh-CN / en</summary>
+        public string Language { get; set; } = "auto";
         public double BackgroundOpacity { get; set; } = 50; // 背景透明度 0-100%
 
         /// <summary>是否显示通知条（窗口最右侧约 5px 宽的竖条，展示各种颜色的通知提醒）</summary>

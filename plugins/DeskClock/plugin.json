@@ -1,0 +1,13 @@
+{
+  "id": "desk-clock",
+  "name": "桌面时钟",
+  "version": "1.0.0",
+  "description": "桌面悬浮时钟与倒计时，专注工作好帮手",
+  "author": "SideDesk 官方",
+  "entry": "DeskClock.dll",
+  "pluginClass": "DeskClock.DeskClockPlugin",
+  "xaml": null,
+  "icon": "⏰",
+  "minHostVersion": "1.0.0",
+  "enabled": true
+}

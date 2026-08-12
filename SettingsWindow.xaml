@@ -1,7 +1,9 @@
 <Window x:Class="SideDesk.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="设置" Height="500" Width="700"
+        xmlns:l="clr-namespace:SideDesk.Framework"
+        xmlns:emoji="clr-namespace:Emoji.Wpf;assembly=Emoji.Wpf"
+        Title="{l:T 设置}" Height="500" Width="700"
         WindowStartupLocation="CenterScreen" ResizeMode="NoResize"
         PreviewKeyDown="SettingsWindow_PreviewKeyDown"
         Background="{DynamicResource BrushBG}">
@@ -18,7 +20,7 @@
                 <!-- 顶部标题 + 团队切换 -->
                 <StackPanel DockPanel.Dock="Top" Margin="20,20,12,20">
                     <DockPanel>
-                        <TextBlock Text="设置" 
+                        <TextBlock Text="{l:T 设置}" 
                                    FontSize="{DynamicResource FontSizeTitle}" 
                                    FontWeight="Bold"
                                    Foreground="{DynamicResource BrushTextMain}"
@@ -39,21 +41,21 @@
                          ItemContainerStyle="{StaticResource GlobalListBoxItemStyle}"
                          SelectionChanged="Nav_Changed"
                          Padding="8,0">
-                    <ListBoxItem Content="常规" IsSelected="True"/>
-                    <ListBoxItem Content="小屏窗口"/>
-                    <ListBoxItem Content="账户"/>
-                    <ListBoxItem Content="团队"/>
-                    <ListBoxItem Content="好友"/>
-                    <ListBoxItem Content="云空间"/>
-                    <ListBoxItem Content="外观"/>
-                    <ListBoxItem Content="程序管理"/>
-                    <ListBoxItem Content="插件"/>
-                    <ListBoxItem Content="工具"/>
-                    <ListBoxItem Content="模块"/>
-                    <ListBoxItem Content="我的数据"/>
-                    <ListBoxItem Content="快捷键"/>
-                    <ListBoxItem Content="关于"/>
-                    <ListBoxItem Content="开发者"/>
+                    <ListBoxItem Content="{l:T 常规}" IsSelected="True"/>
+                    <ListBoxItem Content="{l:T 小屏窗口}"/>
+                    <ListBoxItem Content="{l:T 账户}"/>
+                    <ListBoxItem Content="{l:T 团队}"/>
+                    <ListBoxItem Content="{l:T 好友}"/>
+                    <ListBoxItem Content="{l:T 云空间}"/>
+                    <ListBoxItem Content="{l:T 外观}"/>
+                    <ListBoxItem Content="{l:T 程序管理}"/>
+                    <ListBoxItem Content="{l:T 插件}"/>
+                    <ListBoxItem Content="{l:T 工具}"/>
+                    <ListBoxItem Content="{l:T 模块}"/>
+                    <ListBoxItem Content="{l:T 我的数据}"/>
+                    <ListBoxItem Content="{l:T 快捷键}"/>
+                    <ListBoxItem Content="{l:T 关于}"/>
+                    <ListBoxItem Content="{l:T 开发者}"/>
                 </ListBox>
             </DockPanel>
         </Border>
@@ -63,7 +65,7 @@
             <Grid>
                 <!-- 常规页面 -->
                 <StackPanel x:Name="pageGeneral">
-                    <TextBlock Text="常规" 
+                    <TextBlock Text="{l:T 常规}" 
                                FontSize="{DynamicResource FontSizeSubtitle}" 
                                FontWeight="Bold"
                                Foreground="{DynamicResource BrushTextMain}"
@@ -71,6 +73,44 @@
                     
                     <!-- 停靠配置（每显示器一个卡片，代码动态生成） -->
                     <StackPanel x:Name="dockConfigContainer"/>
+
+                    <!-- 界面语言 -->
+                    <Border Background="{DynamicResource BrushInputBG}"
+                            BorderBrush="{DynamicResource BrushBorder}"
+                            BorderThickness="1" CornerRadius="8"
+                            Padding="16" Margin="0,0,0,16">
+                        <DockPanel>
+                            <ComboBox x:Name="languageCombo" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                      Width="140" Height="28"
+                                      Style="{StaticResource GlobalComboBoxStyle}"
+                                      SelectionChanged="LanguageCombo_Changed">
+                                <ComboBoxItem Content="{l:T 跟随系统}" Tag="auto"/>
+                                <ComboBoxItem Content="{l:T 简体中文}" Tag="zh-CN"/>
+                                <ComboBoxItem Content="繁體中文" Tag="zh-TW"/>
+                                <ComboBoxItem Content="English" Tag="en"/>
+                                <ComboBoxItem Content="日本語" Tag="ja"/>
+                                <ComboBoxItem Content="한국어" Tag="ko"/>
+                                <ComboBoxItem Content="Deutsch" Tag="de"/>
+                                <ComboBoxItem Content="Español" Tag="es"/>
+                                <ComboBoxItem Content="Français" Tag="fr"/>
+                                <ComboBoxItem Content="Italiano" Tag="it"/>
+                                <ComboBoxItem Content="Polski" Tag="pl"/>
+                                <ComboBoxItem Content="Русский" Tag="ru"/>
+                                <ComboBoxItem Content="Português (Brasil)" Tag="pt-BR"/>
+                                <ComboBoxItem Content="Türkçe" Tag="tr"/>
+                            </ComboBox>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="{l:T 界面语言}"
+                                           Foreground="{DynamicResource BrushTextMain}"
+                                           FontSize="{DynamicResource FontSizeNormal}"
+                                           FontWeight="SemiBold"/>
+                                <TextBlock Text="{l:T '切换界面显示语言；跟随系统时按 Windows 显示语言自动选择'}"
+                                           Foreground="{DynamicResource BrushTextMuted}"
+                                           FontSize="{DynamicResource FontSizeTiny}"
+                                           TextWrapping="Wrap" Margin="0,2,8,0"/>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
 
                     <!-- 虚拟桌面独立配置开关 -->
                     <Border Background="{DynamicResource BrushInputBG}"
@@ -84,11 +124,11 @@
                                           Checked="PerVirtualDesktopSwitch_Changed"
                                           Unchecked="PerVirtualDesktopSwitch_Changed"/>
                                 <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="虚拟桌面独立配置"
+                                    <TextBlock Text="{l:T 虚拟桌面独立配置}"
                                                Foreground="{DynamicResource BrushTextMain}"
                                                FontSize="{DynamicResource FontSizeNormal}"
                                                FontWeight="SemiBold"/>
-                                    <TextBlock Text="开启后每个虚拟桌面可独立设置停靠布局、宽度等参数"
+                                    <TextBlock Text="{l:T 开启后每个虚拟桌面可独立设置停靠布局、宽度等参数}"
                                                Foreground="{DynamicResource BrushTextMuted}"
                                                FontSize="{DynamicResource FontSizeTiny}"
                                                TextWrapping="Wrap" Margin="0,2,8,0"/>
@@ -98,7 +138,7 @@
                             <StackPanel x:Name="desktopSelectorPanel" Visibility="Collapsed" Margin="0,12,0,0">
                                 <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,0,0,12"/>
                                 <DockPanel>
-                                    <TextBlock Text="当前编辑桌面" VerticalAlignment="Center"
+                                    <TextBlock Text="{l:T 当前编辑桌面}" VerticalAlignment="Center"
                                                Foreground="{DynamicResource BrushTextMain}"
                                                FontSize="{DynamicResource FontSizeNormal}"
                                                DockPanel.Dock="Left"/>
@@ -121,16 +161,16 @@
                                       Width="140" Height="28"
                                       Style="{StaticResource GlobalComboBoxStyle}"
                                       SelectionChanged="AIChatModeCombo_Changed">
-                                <ComboBoxItem Content="本地化" Tag="client"/>
-                                <ComboBoxItem Content="网页版" Tag="web"/>
-                                <ComboBoxItem Content="自动" Tag="auto"/>
+                                <ComboBoxItem Content="{l:T 本地化}" Tag="client"/>
+                                <ComboBoxItem Content="{l:T 网页版}" Tag="web"/>
+                                <ComboBoxItem Content="{l:T 自动}" Tag="auto"/>
                             </ComboBox>
                             <StackPanel VerticalAlignment="Center">
-                                <TextBlock Text="AI 对话模式"
+                                <TextBlock Text="{l:T 'AI 对话模式'}"
                                            Foreground="{DynamicResource BrushTextMain}"
                                            FontSize="{DynamicResource FontSizeNormal}"
                                            FontWeight="SemiBold"/>
-                                <TextBlock Text="本地化：完全本机运行（保护隐私）；网页版：功能可随时云端更新；自动：已登录用网页版，未登录用本地化"
+                                <TextBlock Text="{l:T 本地化：完全本机运行（保护隐私）；网页版：功能可随时云端更新；自动：已登录用网页版，未登录用本地化}"
                                            Foreground="{DynamicResource BrushTextMuted}"
                                            FontSize="{DynamicResource FontSizeTiny}"
                                            TextWrapping="Wrap" Margin="0,2,8,0"/>
@@ -145,15 +185,15 @@
                             Padding="16" Margin="0,0,0,16">
                         <DockPanel>
                             <Button x:Name="downloadMcpConfigBtn" DockPanel.Dock="Right" VerticalAlignment="Center"
-                                    Content="下载更新" Width="90" MinHeight="28" Padding="8,3"
+                                    Content="{l:T 下载更新}" Width="90" MinHeight="28" Padding="8,3"
                                     Style="{StaticResource StandardButtonStyle}"
                                     Cursor="Hand" Click="DownloadMcpConfig_Click"/>
                             <StackPanel VerticalAlignment="Center">
-                                <TextBlock Text="MCP 工具配置"
+                                <TextBlock Text="{l:T 'MCP 工具配置'}"
                                            Foreground="{DynamicResource BrushTextMain}"
                                            FontSize="{DynamicResource FontSizeNormal}"
                                            FontWeight="SemiBold"/>
-                                <TextBlock x:Name="mcpConfigStatusText" Text="未下载，使用内置工具"
+                                <TextBlock x:Name="mcpConfigStatusText" Text="{l:T 未下载，使用内置工具}"
                                            Foreground="{DynamicResource BrushTextMuted}"
                                            FontSize="{DynamicResource FontSizeTiny}"
                                            TextWrapping="Wrap" Margin="0,2,8,0"/>
@@ -164,7 +204,7 @@
 
                 <!-- 账户页面 -->
                 <StackPanel x:Name="pageAccount" Visibility="Collapsed" Margin="0,0,0,20">
-                    <TextBlock Text="账户"
+                    <TextBlock Text="{l:T 账户}"
                                FontSize="{DynamicResource FontSizeSubtitle}"
                                FontWeight="Bold"
                                Foreground="{DynamicResource BrushTextMain}"
@@ -178,7 +218,7 @@
                         <StackPanel>
                             <!-- 个人资料详情（仅登录后显示） -->
                             <StackPanel x:Name="accountProfileSection" Visibility="Collapsed">
-                                <TextBlock Text="个人资料"
+                                <TextBlock Text="{l:T 个人资料}"
                                            Foreground="{DynamicResource BrushTextMain}"
                                            FontSize="{DynamicResource FontSizeNormal}"
                                            FontWeight="SemiBold"/>
@@ -189,7 +229,7 @@
                                             Background="{DynamicResource BrushAccent}"
                                             DockPanel.Dock="Left" Margin="0,0,16,0"
                                             Cursor="Hand" MouseLeftButtonUp="AccountAvatar_Click"
-                                            ToolTip="点击更换头像">
+                                            ToolTip="{l:T 点击更换头像}">
                                         <Grid>
                                             <TextBlock x:Name="accountAvatarFallbackText" Text="?"
                                                        Foreground="White" FontSize="26"
@@ -203,19 +243,19 @@
                                     </Border>
                                     <!-- 昵称编辑 -->
                                     <StackPanel VerticalAlignment="Center">
-                                        <TextBlock Text="昵称"
+                                        <TextBlock Text="{l:T 昵称}"
                                                    Foreground="{DynamicResource BrushTextMuted}"
                                                    FontSize="{DynamicResource FontSizeSmall}" Margin="0,0,0,6"/>
                                         <!-- 展示态：默认只显示昵称，悬停浮现编辑提示，点击进入编辑 -->
                                         <Border x:Name="nicknameDisplayHost" Background="Transparent"
                                                 BorderBrush="Transparent" BorderThickness="1" CornerRadius="6"
                                                 Padding="8,6" MinHeight="30" Cursor="Hand"
-                                                ToolTip="点击修改昵称"
+                                                ToolTip="{l:T 点击修改昵称}"
                                                 MouseEnter="NicknameDisplay_MouseEnter"
                                                 MouseLeave="NicknameDisplay_MouseLeave"
                                                 MouseLeftButtonUp="NicknameDisplay_Click">
                                             <DockPanel>
-                                                <TextBlock x:Name="nicknameEditHint" DockPanel.Dock="Right" Text="✎ 编辑"
+                                                <TextBlock x:Name="nicknameEditHint" DockPanel.Dock="Right" Text="{l:T '✎ 编辑'}"
                                                            Visibility="Collapsed" VerticalAlignment="Center"
                                                            Foreground="{DynamicResource BrushTextMuted}"
                                                            FontSize="{DynamicResource FontSizeSmall}" Margin="8,0,0,0"/>
@@ -227,11 +267,11 @@
                                         </Border>
                                         <!-- 编辑态：点击进入后出现输入框 + 保存按钮 -->
                                         <DockPanel x:Name="nicknameEditHost" Visibility="Collapsed">
-                                            <Button x:Name="cancelNicknameBtn" Content="取消" DockPanel.Dock="Right"
+                                            <Button x:Name="cancelNicknameBtn" Content="{l:T 取消}" DockPanel.Dock="Right"
                                                     Click="CancelNickname_Click"
                                                     Style="{DynamicResource StandardButtonStyle}"
                                                     Padding="14,6" Height="30" Margin="8,0,0,0"/>
-                                            <Button x:Name="saveNicknameBtn" Content="保存" DockPanel.Dock="Right"
+                                            <Button x:Name="saveNicknameBtn" Content="{l:T 保存}" DockPanel.Dock="Right"
                                                     Click="SaveNickname_Click"
                                                     Style="{DynamicResource PrimaryButtonStyle}"
                                                     Padding="14,6" Height="30" Margin="8,0,0,0"/>
@@ -246,16 +286,16 @@
                             </StackPanel>
                             <!-- 登录状态 -->
                             <DockPanel>
-                                <Button x:Name="accountActionBtn" DockPanel.Dock="Right" Content="登录"
+                                <Button x:Name="accountActionBtn" DockPanel.Dock="Right" Content="{l:T 登录}"
                                         Click="AccountAction_Click"
                                         Style="{DynamicResource PrimaryButtonStyle}"
                                         Padding="16,6" Height="32" VerticalAlignment="Center"/>
                                 <StackPanel VerticalAlignment="Center">
-                                    <TextBlock x:Name="accountStatusText" Text="未登录"
+                                    <TextBlock x:Name="accountStatusText" Text="{l:T 未登录}"
                                                Foreground="{DynamicResource BrushTextMain}"
                                                FontSize="{DynamicResource FontSizeNormal}"
                                                FontWeight="SemiBold"/>
-                                    <TextBlock x:Name="accountSubText" Text="登录后可开启云同步备份"
+                                    <TextBlock x:Name="accountSubText" Text="{l:T 登录后可开启云同步备份}"
                                                Foreground="{DynamicResource BrushTextMuted}"
                                                FontSize="{DynamicResource FontSizeSmall}"
                                                Margin="0,4,0,0"/>
@@ -275,11 +315,11 @@
                                           Checked="CloudSyncSwitch_Changed"
                                           Unchecked="CloudSyncSwitch_Changed"/>
                                 <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="云同步"
+                                    <TextBlock Text="{l:T 云同步}"
                                                Foreground="{DynamicResource BrushTextMain}"
                                                FontSize="{DynamicResource FontSizeNormal}"
                                                FontWeight="SemiBold"/>
-                                    <TextBlock Text="开启后每 30 分钟自动把本地全部配置备份到服务器，并在退出时再同步一次"
+                                    <TextBlock Text="{l:T '开启后每 30 分钟自动把本地全部配置备份到服务器，并在退出时再同步一次'}"
                                                Foreground="{DynamicResource BrushTextMuted}"
                                                FontSize="{DynamicResource FontSizeTiny}"
                                                TextWrapping="Wrap" Margin="0,2,8,0"/>
@@ -291,11 +331,11 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock x:Name="cloudSyncStatusText" Text="尚未同步"
+                                <TextBlock x:Name="cloudSyncStatusText" Text="{l:T 尚未同步}"
                                            Foreground="{DynamicResource BrushTextSec}"
                                            FontSize="{DynamicResource FontSizeNormal}"
                                            VerticalAlignment="Center"/>
-                                <Button x:Name="syncNowBtn" Grid.Column="1" Content="立即同步"
+                                <Button x:Name="syncNowBtn" Grid.Column="1" Content="{l:T 立即同步}"
                                         Click="SyncNow_Click"
                                         Style="{StaticResource GhostButtonStyle}"
                                         Padding="14,6" Height="30"/>
@@ -308,10 +348,10 @@
                                           Checked="EncryptSyncSwitch_Changed"
                                           Unchecked="EncryptSyncSwitch_Changed"/>
                                 <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="加密同步"
+                                    <TextBlock Text="{l:T 加密同步}"
                                                Foreground="{DynamicResource BrushTextMain}"
                                                FontSize="{DynamicResource FontSizeNormal}"/>
-                                    <TextBlock Text="敏感设置（云盘密钥、Token）加密后再上传，基于登录密码派生密钥"
+                                    <TextBlock Text="{l:T 敏感设置（云盘密钥、Token）加密后再上传，基于登录密码派生密钥}"
                                                Foreground="{DynamicResource BrushTextMuted}"
                                                FontSize="{DynamicResource FontSizeTiny}"
                                                TextWrapping="Wrap" Margin="0,2,8,0"/>
@@ -320,15 +360,15 @@
                             <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,12,0,12"/>
                             <!-- 恢复设置 -->
                             <DockPanel>
-                                <Button x:Name="restoreSettingsBtn" DockPanel.Dock="Right" Content="从云端恢复"
+                                <Button x:Name="restoreSettingsBtn" DockPanel.Dock="Right" Content="{l:T 从云端恢复}"
                                         Click="RestoreSettings_Click"
                                         Style="{StaticResource GhostButtonStyle}"
                                         Padding="14,6" Height="30"/>
                                 <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="恢复设置"
+                                    <TextBlock Text="{l:T 恢复设置}"
                                                Foreground="{DynamicResource BrushTextMain}"
                                                FontSize="{DynamicResource FontSizeNormal}"/>
-                                    <TextBlock Text="从服务器拉取已同步的设置覆盖本地（换电脑后使用）"
+                                    <TextBlock Text="{l:T 从服务器拉取已同步的设置覆盖本地（换电脑后使用）}"
                                                Foreground="{DynamicResource BrushTextMuted}"
                                                FontSize="{DynamicResource FontSizeTiny}"
                                                TextWrapping="Wrap" Margin="0,2,8,0"/>
@@ -342,11 +382,11 @@
                             BorderBrush="{DynamicResource BrushBorder}"
                             BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,16,0,0">
                         <StackPanel>
-                            <TextBlock Text="备份与导出"
+                            <TextBlock Text="{l:T 备份与导出}"
                                        Foreground="{DynamicResource BrushTextMain}"
                                        FontSize="{DynamicResource FontSizeNormal}"
                                        FontWeight="SemiBold"/>
-                            <TextBlock Text="在本地保存最近一次的配置快照（仅保留最后一个），可随时点“恢复”还原；导出可将全部配置保存为 JSON 文件。"
+                            <TextBlock Text="{l:T '在本地保存最近一次的配置快照（仅保留最后一个），可随时点“恢复”还原；导出可将全部配置保存为 JSON 文件。'}"
                                        Foreground="{DynamicResource BrushTextMuted}"
                                        FontSize="{DynamicResource FontSizeTiny}"
                                        TextWrapping="Wrap" Margin="0,2,0,0"/>
@@ -356,18 +396,18 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock x:Name="backupStatusText" Text="尚无本地备份"
+                                <TextBlock x:Name="backupStatusText" Text="{l:T 尚无本地备份}"
                                            Foreground="{DynamicResource BrushTextSec}"
                                            FontSize="{DynamicResource FontSizeNormal}"
                                            VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                    <Button Content="备份" Click="Backup_Click"
+                                    <Button Content="{l:T 备份}" Click="Backup_Click"
                                             Style="{StaticResource GhostButtonStyle}"
                                             Padding="14,6" Height="30" Margin="0,0,8,0"/>
-                                    <Button x:Name="restoreBtn" Content="恢复" Click="Restore_Click"
+                                    <Button x:Name="restoreBtn" Content="{l:T 恢复}" Click="Restore_Click"
                                             Style="{StaticResource GhostButtonStyle}"
                                             Padding="14,6" Height="30" Margin="0,0,8,0"/>
-                                    <Button Content="导出配置" Click="ExportConfig_Click"
+                                    <Button Content="{l:T 导出配置}" Click="ExportConfig_Click"
                                             Style="{StaticResource GhostButtonStyle}"
                                             Padding="14,6" Height="30"/>
                                 </StackPanel>
@@ -378,12 +418,12 @@
                 
                 <!-- 云空间页面 -->
                 <StackPanel x:Name="pageCloudSpaces" Visibility="Collapsed" Margin="0,0,0,20">
-                    <TextBlock Text="云空间"
+                    <TextBlock Text="{l:T 云空间}"
                                FontSize="{DynamicResource FontSizeSubtitle}"
                                FontWeight="Bold"
                                Foreground="{DynamicResource BrushTextMain}"
                                Margin="0,0,0,8"/>
-                    <TextBlock Text="管理常用网盘/云存储入口，系统已内置常见云盘，可自由添加或删除"
+                    <TextBlock Text="{l:T 管理常用网盘/云存储入口，系统已内置常见云盘，可自由添加或删除}"
                                Foreground="{DynamicResource BrushTextMuted}"
                                FontSize="{DynamicResource FontSizeSmall}"
                                Margin="0,0,0,16"/>
@@ -395,22 +435,30 @@
                         <StackPanel x:Name="cloudSpaceListPanel"/>
                     </Border>
                     <StackPanel Orientation="Horizontal">
-                        <Button Content="+ 添加云空间" Click="AddCloudSpace_Click"
+                        <Button Content="{l:T '+ 添加云空间'}" Click="AddCloudSpace_Click"
                                 Style="{StaticResource GhostButtonStyle}" Padding="12,6" Margin="0,0,8,0"/>
-                        <Button Content="恢复内置" Click="RestoreBuiltinSpaces_Click"
+                        <Button Content="{l:T 恢复内置}" Click="RestoreBuiltinSpaces_Click"
                                 Style="{StaticResource GhostButtonStyle}" Padding="12,6"
-                                ToolTip="将缺失的内置云盘预设补回列表"/>
+                                ToolTip="{l:T 将缺失的内置云盘预设补回列表}"/>
                     </StackPanel>
                 </StackPanel>
 
                 <!-- 团队页面 -->
                 <StackPanel x:Name="pageTeams" Visibility="Collapsed" Margin="0,0,0,20">
-                    <TextBlock Text="团队"
-                               FontSize="{DynamicResource FontSizeSubtitle}"
-                               FontWeight="Bold"
-                               Foreground="{DynamicResource BrushTextMain}"
-                               Margin="0,0,0,8"/>
-                    <TextBlock Text="管理所属团队，查看团队成员"
+                    <DockPanel Margin="0,0,0,8">
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button Content="{l:T '+ 添加团队'}" Click="AddTeam_Click"
+                                    Style="{StaticResource GhostButtonStyle}" Padding="12,6" Margin="0,0,8,0"/>
+                            <Button Content="{l:T 加入团队}" Click="JoinTeam_Click"
+                                    Style="{StaticResource GhostButtonStyle}" Padding="12,6"
+                                    ToolTip="{l:T 输入团队码申请加入团队}"/>
+                        </StackPanel>
+                        <TextBlock Text="{l:T 团队}"
+                                   FontSize="{DynamicResource FontSizeSubtitle}"
+                                   FontWeight="Bold"
+                                   Foreground="{DynamicResource BrushTextMain}"/>
+                    </DockPanel>
+                    <TextBlock Text="{l:T 管理所属团队，查看团队成员}"
                                Foreground="{DynamicResource BrushTextMuted}"
                                FontSize="{DynamicResource FontSizeSmall}"
                                Margin="0,0,0,16"/>
@@ -421,34 +469,59 @@
                             Padding="12" Margin="0,0,0,8">
                         <StackPanel x:Name="teamListPanel"/>
                     </Border>
-                    <StackPanel Orientation="Horizontal">
-                        <Button Content="+ 添加团队" Click="AddTeam_Click"
-                                Style="{StaticResource GhostButtonStyle}" Padding="12,6" Margin="0,0,8,0"/>
-                    </StackPanel>
+
+                    <!-- 待处理加入申请区（管理员可见） -->
+                    <Border x:Name="teamApplySection" Background="{DynamicResource BrushInputBG}"
+                            BorderBrush="{DynamicResource BrushBorder}"
+                            BorderThickness="1" CornerRadius="6"
+                            Padding="12" Margin="0,0,0,8" Visibility="Collapsed">
+                        <StackPanel>
+                            <TextBlock Text="{l:T 待处理的加入申请}" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource BrushTextMain}" Margin="0,0,0,8"/>
+                            <StackPanel x:Name="teamApplyPanel"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 我收到的团队邀请区 -->
+                    <Border x:Name="teamInviteSection" Background="{DynamicResource BrushInputBG}"
+                            BorderBrush="{DynamicResource BrushBorder}"
+                            BorderThickness="1" CornerRadius="6"
+                            Padding="12" Margin="0,0,0,8" Visibility="Collapsed">
+                        <StackPanel>
+                            <TextBlock Text="{l:T 收到的团队邀请}" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource BrushTextMain}" Margin="0,0,0,8"/>
+                            <StackPanel x:Name="teamInvitePanel"/>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
 
                 <!-- 好友页面 -->
                 <StackPanel x:Name="pageFriends" Visibility="Collapsed" Margin="0,0,0,20">
-                    <TextBlock Text="好友"
-                               FontSize="{DynamicResource FontSizeSubtitle}"
-                               FontWeight="Bold"
-                               Foreground="{DynamicResource BrushTextMain}"
-                               Margin="0,0,0,8"/>
-                    <TextBlock x:Name="friendPageSubtitle" Text="通过用户名、邮箱、手机号或好友码搜索添加好友"
+                    <DockPanel Margin="0,0,0,8">
+                        <!-- 右上角：添加好友入口，点击展开搜索区 -->
+                        <Button x:Name="addFriendBtn" Click="ToggleFriendSearch_Click" DockPanel.Dock="Right"
+                                Style="{StaticResource GhostButtonStyle}" Padding="12,6" VerticalAlignment="Center">
+                            <emoji:TextBlock Text="{l:T '➕ 添加好友'}"/>
+                        </Button>
+                        <TextBlock Text="{l:T 好友}"
+                                   FontSize="{DynamicResource FontSizeSubtitle}"
+                                   FontWeight="Bold"
+                                   Foreground="{DynamicResource BrushTextMain}"
+                                   VerticalAlignment="Center"/>
+                    </DockPanel>
+                    <TextBlock x:Name="friendPageSubtitle" Text="{l:T 通过用户名、邮箱、手机号或好友码搜索添加好友}"
                                Foreground="{DynamicResource BrushTextMuted}"
                                FontSize="{DynamicResource FontSizeSmall}"
                                Margin="0,0,0,16"/>
 
-                    <!-- 搜索添加区 -->
-                    <Border Background="{DynamicResource BrushInputBG}"
+                    <!-- 搜索添加区（默认隐藏，点右上角「添加好友」展开） -->
+                    <Border x:Name="friendSearchSection" Background="{DynamicResource BrushInputBG}"
                             BorderBrush="{DynamicResource BrushBorder}"
                             BorderThickness="1" CornerRadius="6"
-                            Padding="12" Margin="0,0,0,12">
+                            Padding="12" Margin="0,0,0,12" Visibility="Collapsed">
                         <StackPanel>
-                            <TextBlock Text="添加好友" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource BrushTextMain}" Margin="0,0,0,8"/>
                             <DockPanel>
-                                <Button x:Name="friendSearchBtn" Content="搜索" DockPanel.Dock="Right"
+                                <Button x:Name="friendSearchBtn" Content="{l:T 搜索}" DockPanel.Dock="Right"
                                         Style="{StaticResource GhostButtonStyle}" Padding="14,6" Margin="8,0,0,0"
                                         Click="FriendSearch_Click"/>
                                 <TextBox x:Name="friendSearchBox"
@@ -465,7 +538,7 @@
                             BorderThickness="1" CornerRadius="6"
                             Padding="12" Margin="0,0,0,12" Visibility="Collapsed">
                         <StackPanel>
-                            <TextBlock Text="好友请求" FontWeight="SemiBold"
+                            <TextBlock Text="{l:T 好友请求}" FontWeight="SemiBold"
                                        Foreground="{DynamicResource BrushTextMain}" Margin="0,0,0,8"/>
                             <StackPanel x:Name="friendRequestPanel"/>
                         </StackPanel>
@@ -477,7 +550,7 @@
                             BorderThickness="1" CornerRadius="6"
                             Padding="12" Margin="0,0,0,12">
                         <StackPanel>
-                            <TextBlock Text="我的好友" FontWeight="SemiBold"
+                            <TextBlock Text="{l:T 我的好友}" FontWeight="SemiBold"
                                        Foreground="{DynamicResource BrushTextMain}" Margin="0,0,0,8"/>
                             <StackPanel x:Name="friendListPanel"/>
                         </StackPanel>
@@ -494,9 +567,9 @@
                                       Checked="AllowFriendSearch_Changed"
                                       Unchecked="AllowFriendSearch_Changed"/>
                             <StackPanel>
-                                <TextBlock Text="允许被搜索添加好友" FontWeight="SemiBold"
+                                <TextBlock Text="{l:T 允许被搜索添加好友}" FontWeight="SemiBold"
                                            Foreground="{DynamicResource BrushTextMain}"/>
-                                <TextBlock Text="关闭后别人无法搜索到你，同时清空好友码"
+                                <TextBlock Text="{l:T 关闭后别人无法搜索到你，同时清空好友码}"
                                            FontSize="12" Foreground="{DynamicResource BrushTextMuted}" Margin="0,4,0,0"/>
                             </StackPanel>
                         </DockPanel>
@@ -509,17 +582,17 @@
                             Padding="12" Margin="0,12,0,0">
                         <DockPanel>
                             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                                <Button x:Name="refreshFriendCodeBtn" Content="换一换"
+                                <Button x:Name="refreshFriendCodeBtn" Content="{l:T 换一换}"
                                         Style="{StaticResource GhostButtonStyle}" Padding="14,6" Margin="8,0,0,0"
                                         Click="RefreshFriendCode_Click"/>
-                                <Button x:Name="copyFriendCodeBtn" Content="复制"
+                                <Button x:Name="copyFriendCodeBtn" Content="{l:T 复制}"
                                         Style="{StaticResource GhostButtonStyle}" Padding="14,6" Margin="8,0,0,0"
                                         Click="CopyFriendCode_Click"/>
                             </StackPanel>
                             <StackPanel>
-                                <TextBlock Text="我的好友码" FontWeight="SemiBold"
+                                <TextBlock Text="{l:T 我的好友码}" FontWeight="SemiBold"
                                            Foreground="{DynamicResource BrushTextMain}"/>
-                                <TextBlock x:Name="myFriendCodeText" Text="加载中..."
+                                <TextBlock x:Name="myFriendCodeText" Text="{l:T 加载中...}"
                                            FontSize="16" FontWeight="Bold" FontFamily="Consolas"
                                            Foreground="{DynamicResource BrushAccent}" Margin="0,4,0,0"/>
                             </StackPanel>
@@ -529,7 +602,7 @@
 
                 <!-- 外观页面 -->
                 <StackPanel x:Name="pageAppearance" Visibility="Collapsed">
-                    <TextBlock Text="外观" 
+                    <TextBlock Text="{l:T 外观}" 
                                FontSize="{DynamicResource FontSizeSubtitle}" 
                                FontWeight="Bold"
                                Foreground="{DynamicResource BrushTextMain}"
@@ -542,9 +615,9 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0">
-                            <TextBlock Text="主题模式" Foreground="{DynamicResource BrushTextMain}" 
+                            <TextBlock Text="{l:T 主题模式}" Foreground="{DynamicResource BrushTextMain}" 
                                        FontSize="{DynamicResource FontSizeNormal}"/>
-                            <TextBlock Text="选择界面的颜色主题" Foreground="{DynamicResource BrushTextMuted}" 
+                            <TextBlock Text="{l:T 选择界面的颜色主题}" Foreground="{DynamicResource BrushTextMuted}" 
                                        FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0"/>
                         </StackPanel>
                         <ComboBox x:Name="themeModeCombo" Grid.Column="1" Width="120"
@@ -559,9 +632,9 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0">
-                            <TextBlock Text="配色主题" Foreground="{DynamicResource BrushTextMain}"
+                            <TextBlock Text="{l:T 配色主题}" Foreground="{DynamicResource BrushTextMain}"
                                        FontSize="{DynamicResource FontSizeNormal}"/>
-                            <TextBlock Text="从 resources/themes 加载的自定义配色方案" Foreground="{DynamicResource BrushTextMuted}" 
+                            <TextBlock Text="{l:T '从 resources/themes 加载的自定义配色方案'}" Foreground="{DynamicResource BrushTextMuted}" 
                                        FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0"/>
                         </StackPanel>
                         <ComboBox x:Name="customThemeCombo" Grid.Column="1" Width="160"
@@ -576,9 +649,9 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0">
-                            <TextBlock Text="背景透明度" Foreground="{DynamicResource BrushTextMain}" 
+                            <TextBlock Text="{l:T 背景透明度}" Foreground="{DynamicResource BrushTextMain}" 
                                        FontSize="{DynamicResource FontSizeNormal}"/>
-                            <TextBlock Text="侧边面板背景的透明度（0-100%）" Foreground="{DynamicResource BrushTextMuted}" 
+                            <TextBlock Text="{l:T 侧边面板背景的透明度（0-100%）}" Foreground="{DynamicResource BrushTextMuted}" 
                                        FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
@@ -599,9 +672,9 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0">
-                            <TextBlock Text="隐藏模块外框时同时隐藏模块标题" Foreground="{DynamicResource BrushTextMain}"
+                            <TextBlock Text="{l:T 隐藏模块外框时同时隐藏模块标题}" Foreground="{DynamicResource BrushTextMain}"
                                        FontSize="{DynamicResource FontSizeNormal}"/>
-                            <TextBlock Text="开启后，模块隐藏外框时一并隐藏其标题栏" Foreground="{DynamicResource BrushTextMuted}"
+                            <TextBlock Text="{l:T 开启后，模块隐藏外框时一并隐藏其标题栏}" Foreground="{DynamicResource BrushTextMuted}"
                                        FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0"/>
                         </StackPanel>
                         <CheckBox x:Name="hideModuleTitleSwitch" Grid.Column="1" VerticalAlignment="Center"
@@ -617,9 +690,9 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0">
-                            <TextBlock Text="显示通知条" Foreground="{DynamicResource BrushTextMain}"
+                            <TextBlock Text="{l:T 显示通知条}" Foreground="{DynamicResource BrushTextMain}"
                                        FontSize="{DynamicResource FontSizeNormal}"/>
-                            <TextBlock Text="在窗口最右侧显示约 5px 宽的通知条，展示各种颜色的通知提醒" Foreground="{DynamicResource BrushTextMuted}"
+                            <TextBlock Text="{l:T '在窗口最右侧显示约 5px 宽的通知条，展示各种颜色的通知提醒'}" Foreground="{DynamicResource BrushTextMuted}"
                                        FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0"/>
                         </StackPanel>
                         <CheckBox x:Name="showNotificationStripSwitch" Grid.Column="1" VerticalAlignment="Center"
@@ -635,9 +708,9 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0">
-                            <TextBlock Text="分享组件边框颜色" Foreground="{DynamicResource BrushTextMain}"
+                            <TextBlock Text="{l:T 分享组件边框颜色}" Foreground="{DynamicResource BrushTextMain}"
                                        FontSize="{DynamicResource FontSizeNormal}"/>
-                            <TextBlock Text="通过分享导入的组件，外框使用此颜色标识" Foreground="{DynamicResource BrushTextMuted}"
+                            <TextBlock Text="{l:T 通过分享导入的组件，外框使用此颜色标识}" Foreground="{DynamicResource BrushTextMuted}"
                                        FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
@@ -657,9 +730,9 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0">
-                            <TextBlock Text="团队组件边框颜色" Foreground="{DynamicResource BrushTextMain}"
+                            <TextBlock Text="{l:T 团队组件边框颜色}" Foreground="{DynamicResource BrushTextMain}"
                                        FontSize="{DynamicResource FontSizeNormal}"/>
-                            <TextBlock Text="归属团队的组件，外框使用此颜色标识" Foreground="{DynamicResource BrushTextMuted}"
+                            <TextBlock Text="{l:T 归属团队的组件，外框使用此颜色标识}" Foreground="{DynamicResource BrushTextMuted}"
                                        FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
@@ -675,19 +748,19 @@
                 
                 <!-- 程序管理页面 -->
                 <StackPanel x:Name="pageProgramManager" Visibility="Collapsed" Margin="0,0,0,20">
-                    <TextBlock Text="程序管理" 
+                    <TextBlock Text="{l:T 程序管理}" 
                                FontSize="{DynamicResource FontSizeSubtitle}" 
                                FontWeight="Bold"
                                Foreground="{DynamicResource BrushTextMain}"
                                Margin="0,0,0,24"/>
                     
                     <!-- 已注册程序 -->
-                    <TextBlock Text="已注册程序" 
+                    <TextBlock Text="{l:T 已注册程序}" 
                                FontSize="{DynamicResource FontSizeNormal}" 
                                FontWeight="SemiBold"
                                Foreground="{DynamicResource BrushTextMain}"
                                Margin="0,0,0,8"/>
-                    <TextBlock Text="维护可用程序列表，添加快捷项时可从中选取" 
+                    <TextBlock Text="{l:T 维护可用程序列表，添加快捷项时可从中选取}" 
                                Foreground="{DynamicResource BrushTextMuted}" 
                                FontSize="{DynamicResource FontSizeSmall}" 
                                Margin="0,0,0,12"/>
@@ -699,17 +772,17 @@
                         <StackPanel x:Name="programListPanel"/>
                     </Border>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,24">
-                        <Button Content="+ 添加程序" Click="AddProgram_Click"
+                        <Button Content="{l:T '+ 添加程序'}" Click="AddProgram_Click"
                                 Style="{StaticResource GhostButtonStyle}" Padding="12,6"/>
                     </StackPanel>
                     
                     <!-- 浏览器配置 -->
-                    <TextBlock Text="浏览器配置" 
+                    <TextBlock Text="{l:T 浏览器配置}" 
                                FontSize="{DynamicResource FontSizeNormal}" 
                                FontWeight="SemiBold"
                                Foreground="{DynamicResource BrushTextMain}"
                                Margin="0,0,0,8"/>
-                    <TextBlock Text="配置多个浏览器及其 UserData 目录，添加网址快捷项时可选择使用" 
+                    <TextBlock Text="{l:T '配置多个浏览器及其 UserData 目录，添加网址快捷项时可选择使用'}" 
                                Foreground="{DynamicResource BrushTextMuted}" 
                                FontSize="{DynamicResource FontSizeSmall}" 
                                Margin="0,0,0,12"/>
@@ -721,47 +794,59 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock Text="默认 Profile 目录" Foreground="{DynamicResource BrushTextMain}" 
+                            <TextBlock Text="{l:T '默认 Profile 目录'}" Foreground="{DynamicResource BrushTextMain}" 
                                        FontSize="{DynamicResource FontSizeNormal}"/>
                             <TextBlock Text=" ℹ" FontSize="13" Foreground="{DynamicResource BrushAccent}" 
                                        VerticalAlignment="Center" Cursor="Help"
-                                       ToolTip="当需要自动新建 Profile 时，将在此目录下新建子目录作为浏览器 UserData"/>
+                                       ToolTip="{l:T '当需要自动新建 Profile 时，将在此目录下新建子目录作为浏览器 UserData'}"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                             <TextBlock x:Name="profileBaseDirText" 
-                                       Text="未设置" 
+                                       Text="{l:T 未设置}" 
                                        Foreground="{DynamicResource BrushTextMuted}" 
                                        FontSize="{DynamicResource FontSizeSmall}"
                                        VerticalAlignment="Center"
                                        MaxWidth="200" TextTrimming="CharacterEllipsis"
                                        Margin="0,0,8,0"/>
-                            <Button Content="选择" Click="SelectProfileBaseDir_Click"
+                            <Button Content="{l:T 选择}" Click="SelectProfileBaseDir_Click"
                                     Style="{StaticResource GhostButtonStyle}" Padding="8,4"/>
                         </StackPanel>
                     </Grid>
                     
                     <StackPanel x:Name="browserListPanel"/>
                     <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                        <Button Content="+ 添加浏览器" Click="AddBrowser_Click"
+                        <Button Content="{l:T '+ 添加浏览器'}" Click="AddBrowser_Click"
                                 Style="{StaticResource GhostButtonStyle}" Padding="12,6"/>
                     </StackPanel>
                 </StackPanel>
                 
                 <!-- 插件管理页面 -->
                 <StackPanel x:Name="pagePlugins" Visibility="Collapsed" Margin="0,0,0,20">
-                    <TextBlock Text="插件" 
-                               FontSize="{DynamicResource FontSizeSubtitle}" 
-                               FontWeight="Bold"
-                               Foreground="{DynamicResource BrushTextMain}"
-                               Margin="0,0,0,8"/>
-                    <TextBlock Text="管理插件目录下的插件，关闭后不再加载" 
+                    <DockPanel Margin="0,0,0,8">
+                        <!-- 右上角：插件市场入口 -->
+                        <Button Click="OpenPluginMarket_Click" DockPanel.Dock="Right"
+                                Style="{StaticResource GhostButtonStyle}" Padding="12,6" VerticalAlignment="Center">
+                            <emoji:TextBlock Text="{l:T '🧩 插件市场'}"/>
+                        </Button>
+                        <TextBlock Text="{l:T 插件}" 
+                                   FontSize="{DynamicResource FontSizeSubtitle}" 
+                                   FontWeight="Bold"
+                                   Foreground="{DynamicResource BrushTextMain}"
+                                   VerticalAlignment="Center"/>
+                    </DockPanel>
+                    <TextBlock Text="{l:T 管理插件目录下的插件，关闭后不再加载}" 
                                Foreground="{DynamicResource BrushTextMuted}" 
                                FontSize="{DynamicResource FontSizeSmall}" 
                                Margin="0,0,0,16"/>
                     
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                        <Button Content="↻ 刷新列表" Click="RefreshPluginList_Click"
+                        <Button Content="{l:T '↻ 刷新列表'}" Click="RefreshPluginList_Click"
                                 Style="{StaticResource GhostButtonStyle}" Padding="12,6"/>
+                        <Button Click="ImportPlugin_Click" Margin="8,0,0,0"
+                                Style="{StaticResource GhostButtonStyle}" Padding="12,6"
+                                ToolTip="{l:T 选择本地 zip 插件包导入安装}">
+                            <emoji:TextBlock Text="{l:T '📦 导入插件'}"/>
+                        </Button>
                     </StackPanel>
 
                     <StackPanel x:Name="pluginListPanel"/>
@@ -769,12 +854,12 @@
                 
                 <!-- 工具页面 -->
                 <StackPanel x:Name="pageTools" Visibility="Collapsed" Margin="0,0,0,20">
-                    <TextBlock Text="工具" 
+                    <TextBlock Text="{l:T 工具}" 
                                FontSize="{DynamicResource FontSizeSubtitle}" 
                                FontWeight="Bold"
                                Foreground="{DynamicResource BrushTextMain}"
                                Margin="0,0,0,8"/>
-                    <TextBlock Text="内置实用工具" 
+                    <TextBlock Text="{l:T 内置实用工具}" 
                                Foreground="{DynamicResource BrushTextMuted}" 
                                FontSize="{DynamicResource FontSizeSmall}" 
                                Margin="0,0,0,20"/>
@@ -786,7 +871,7 @@
                             Padding="16" Margin="0,0,0,12">
                         <DockPanel>
                             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                                <Button Content="立即设置" Click="TaskbarOverlayButton_Click"
+                                <Button Content="{l:T 立即设置}" Click="TaskbarOverlayButton_Click"
                                         Style="{StaticResource GhostButtonStyle}" 
                                         Padding="10,6" Margin="0,0,12,0"/>
                                 <CheckBox x:Name="titleLockSwitch" 
@@ -795,11 +880,11 @@
                                           Unchecked="TitleLockSwitch_Changed"/>
                             </StackPanel>
                             <StackPanel VerticalAlignment="Center">
-                                <TextBlock Text="任务栏标题锁定" 
+                                <TextBlock Text="{l:T 任务栏标题锁定}" 
                                            Foreground="{DynamicResource BrushTextMain}"
                                            FontSize="{DynamicResource FontSizeNormal}"
                                            FontWeight="SemiBold"/>
-                                <TextBlock Text="锁定指定窗口在任务栏显示的标题文字，开启后启动时自动恢复" 
+                                <TextBlock Text="{l:T 锁定指定窗口在任务栏显示的标题文字，开启后启动时自动恢复}" 
                                            Foreground="{DynamicResource BrushTextMuted}"
                                            FontSize="{DynamicResource FontSizeTiny}"/>
                             </StackPanel>
@@ -817,11 +902,11 @@
                                       Checked="McpServerSwitch_Changed" 
                                       Unchecked="McpServerSwitch_Changed"/>
                             <StackPanel VerticalAlignment="Center">
-                                <TextBlock Text="MCP 服务器"
+                                <TextBlock Text="{l:T 'MCP 服务器'}"
                                            Foreground="{DynamicResource BrushTextMain}"
                                            FontSize="{DynamicResource FontSizeNormal}"
                                            FontWeight="SemiBold"/>
-                                <TextBlock Text="开启后在 127.0.0.1:19192 提供 MCP 协议接口，供 AI 助手调用"
+                                <TextBlock Text="{l:T '开启后在 127.0.0.1:19192 提供 MCP 协议接口，供 AI 助手调用'}"
                                            Foreground="{DynamicResource BrushTextMuted}"
                                            FontSize="{DynamicResource FontSizeTiny}"
                                            Margin="0,2,0,0"/>
@@ -840,16 +925,16 @@
                                       Checked="HttpServerSwitch_Changed" 
                                       Unchecked="HttpServerSwitch_Changed"/>
                             <StackPanel VerticalAlignment="Center">
-                                <TextBlock Text="HTTP 服务器" 
+                                <TextBlock Text="{l:T 'HTTP 服务器'}" 
                                            Foreground="{DynamicResource BrushTextMain}"
                                            FontSize="{DynamicResource FontSizeNormal}"
                                            FontWeight="SemiBold"/>
-                                <TextBlock Text="默认开启。在 127.0.0.1 提供本地 HTTP 接口，外部工具/脚本可查询状态、推送通知" 
+                                <TextBlock Text="{l:T '默认开启。在 127.0.0.1 提供本地 HTTP 接口，外部工具/脚本可查询状态、推送通知'}" 
                                            Foreground="{DynamicResource BrushTextMuted}"
                                            FontSize="{DynamicResource FontSizeTiny}"
                                            Margin="0,2,0,0"/>
                                 <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                    <TextBlock Text="端口：" Foreground="{DynamicResource BrushTextSec}" 
+                                    <TextBlock Text="{l:T 端口：}" Foreground="{DynamicResource BrushTextSec}" 
                                                FontSize="12" VerticalAlignment="Center"/>
                                     <TextBox x:Name="httpPortBox" Width="70" FontSize="12" Padding="4,3"
                                              Text="19195" LostFocus="HttpPort_LostFocus" KeyDown="HttpPort_KeyDown"/>
@@ -872,11 +957,34 @@
                                       Checked="UsageStatsSwitch_Changed"
                                       Unchecked="UsageStatsSwitch_Changed"/>
                             <StackPanel VerticalAlignment="Center">
-                                <TextBlock Text="窗口使用时长统计"
+                                <TextBlock Text="{l:T 窗口使用时长统计}"
                                            Foreground="{DynamicResource BrushTextMain}"
                                            FontSize="{DynamicResource FontSizeNormal}"
                                            FontWeight="SemiBold"/>
-                                <TextBlock Text="开启后在后台记录各应用的使用时长，可在小屏「使用时长分析」中查看"
+                                <TextBlock Text="{l:T 开启后在后台记录各应用的使用时长，可在小屏「使用时长分析」中查看}"
+                                           Foreground="{DynamicResource BrushTextMuted}"
+                                           FontSize="{DynamicResource FontSizeTiny}"
+                                           Margin="0,2,0,0"/>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+
+                    <!-- 开机自启动 -->
+                    <Border Background="{DynamicResource BrushInputBG}"
+                            BorderBrush="{DynamicResource BrushBorder}"
+                            BorderThickness="1" CornerRadius="8"
+                            Padding="16" Margin="0,0,0,12">
+                        <DockPanel>
+                            <CheckBox x:Name="autoStartSwitch" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                      Style="{StaticResource RaycastSwitchStyle}"
+                                      Checked="AutoStartSwitch_Changed"
+                                      Unchecked="AutoStartSwitch_Changed"/>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="{l:T 开机自启动}"
+                                           Foreground="{DynamicResource BrushTextMain}"
+                                           FontSize="{DynamicResource FontSizeNormal}"
+                                           FontWeight="SemiBold"/>
+                                <TextBlock Text="{l:T 登录 Windows 后自动运行 SideDesk}"
                                            Foreground="{DynamicResource BrushTextMuted}"
                                            FontSize="{DynamicResource FontSizeTiny}"
                                            Margin="0,2,0,0"/>
@@ -887,12 +995,12 @@
                 
                 <!-- 模块页面 -->
                 <StackPanel x:Name="pageModules" Visibility="Collapsed" Margin="0,0,0,20">
-                    <TextBlock Text="模块" 
+                    <TextBlock Text="{l:T 模块}" 
                                FontSize="{DynamicResource FontSizeSubtitle}" 
                                FontWeight="Bold"
                                Foreground="{DynamicResource BrushTextMain}"
                                Margin="0,0,0,8"/>
-                    <TextBlock Text="管理数据看板等模块的配置" 
+                    <TextBlock Text="{l:T 管理数据看板等模块的配置}" 
                                Foreground="{DynamicResource BrushTextMuted}" 
                                FontSize="{DynamicResource FontSizeSmall}" 
                                Margin="0,0,0,20"/>
@@ -904,94 +1012,84 @@
                             Padding="16" Margin="0,0,0,12">
                         <StackPanel>
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                <TextBlock Text="Web 数据获取方式" 
+                                <TextBlock Text="{l:T 'Web 数据获取方式'}" 
                                            Foreground="{DynamicResource BrushTextMain}"
                                            FontSize="{DynamicResource FontSizeNormal}"/>
                                 <TextBlock Text=" ❓" FontSize="12" Cursor="Help" VerticalAlignment="Center"
-                                           ToolTip="浏览器插件模式：通过浏览器插件 + WebSocket(19191) 获取数据&#x0a;CDP 连接模式：直连已运行的浏览器（需开启 --remote-debugging-port）"
+                                           ToolTip="{l:T '浏览器插件模式：通过浏览器插件 + WebSocket(19191) 获取数据&#x0a;CDP 连接模式：直连已运行的浏览器（需开启 --remote-debugging-port）'}"
                                            Foreground="{DynamicResource BrushTextMuted}"/>
                             </StackPanel>
-                            <RadioButton x:Name="rbModeExtension" Content="浏览器插件模式" GroupName="DataFetchMode"
+                            <RadioButton x:Name="rbModeExtension" Content="{l:T 浏览器插件模式}" GroupName="DataFetchMode"
                                          Foreground="{DynamicResource BrushTextMain}" FontSize="13"
                                          Margin="0,0,0,6" Checked="DataFetchMode_Changed"/>
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                <RadioButton x:Name="rbModeCdp" Content="CDP 连接模式" GroupName="DataFetchMode"
+                                <RadioButton x:Name="rbModeCdp" Content="{l:T 'CDP 连接模式'}" GroupName="DataFetchMode"
                                              Foreground="{DynamicResource BrushTextMain}" FontSize="13"
                                              VerticalAlignment="Center" Checked="DataFetchMode_Changed"/>
-                                <Button Content="测试连接" Click="TestCdpConnection_Click"
+                                <Button Content="{l:T 测试连接}" Click="TestCdpConnection_Click"
                                         Style="{StaticResource GhostButtonStyle}" Padding="8,3"
                                         FontSize="11" Margin="12,0,0,0" VerticalAlignment="Center"/>
                             </StackPanel>
                             <!-- CDP 端口配置（仅 CDP 模式显示） -->
                             <StackPanel x:Name="cdpPortSection" Orientation="Horizontal" Visibility="Collapsed" Margin="20,0,0,0">
-                                <TextBlock Text="调试端口：" Foreground="{DynamicResource BrushTextSec}" 
+                                <TextBlock Text="{l:T 调试端口：}" Foreground="{DynamicResource BrushTextSec}" 
                                            FontSize="12" VerticalAlignment="Center"/>
                                 <TextBox x:Name="cdpPortBox" Width="70" FontSize="12" Padding="4,3"
                                          Text="9222" LostFocus="CdpPort_LostFocus"/>
-                                <TextBlock Text="（浏览器启动参数 --remote-debugging-port）" 
+                                <TextBlock Text="{l:T '（浏览器启动参数 --remote-debugging-port）'}" 
                                            Foreground="{DynamicResource BrushTextMuted}" 
                                            FontSize="11" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                            </StackPanel>
+                            <!-- 隐藏浏览器启动模式（仅 CDP 模式显示） -->
+                            <StackPanel x:Name="hiddenBrowserSection" Orientation="Horizontal" Visibility="Collapsed" Margin="20,8,0,0">
+                                <TextBlock Text="{l:T 隐藏浏览器:}" Foreground="{DynamicResource BrushTextSec}" 
+                                           FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <ComboBox x:Name="hiddenBrowserModeCombo" Width="90" FontSize="11"
+                                          SelectionChanged="HiddenBrowserMode_Changed">
+                                    <ComboBoxItem Content="{l:T 无头模式}" Tag="headless"/>
+                                    <ComboBoxItem Content="{l:T 隐藏窗口}" Tag="hidden"/>
+                                </ComboBox>
                             </StackPanel>
                         </StackPanel>
                     </Border>
                     
-                    <!-- 我的数据看板 -->
-                    <Grid Margin="0,0,0,8">
+                    <!-- 我的数据看板（独立窗口查看） -->
+                    <Grid Margin="0,0,0,16">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0">
-                            <TextBlock Text="我的数据看板" 
+                            <TextBlock Text="{l:T 我的数据看板}" 
                                        FontSize="{DynamicResource FontSizeNormal}" 
                                        FontWeight="SemiBold"
                                        Foreground="{DynamicResource BrushTextMain}"/>
-                            <TextBlock Text="统一轮询数据源（面板组件仅展示，可添加不在面板显示的后台数据项）" 
+                            <TextBlock Text="{l:T 统一轮询数据源（面板组件仅展示，可添加不在面板显示的后台数据项）}" 
                                        Foreground="{DynamicResource BrushTextMuted}" 
                                        FontSize="{DynamicResource FontSizeSmall}" 
                                        Margin="0,4,0,0"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock Text="隐藏浏览器:" Foreground="{DynamicResource BrushTextSec}" 
-                                       FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                            <ComboBox x:Name="hiddenBrowserModeCombo" Width="90" FontSize="11"
-                                      SelectionChanged="HiddenBrowserMode_Changed">
-                                <ComboBoxItem Content="无头模式" Tag="headless"/>
-                                <ComboBoxItem Content="隐藏窗口" Tag="hidden"/>
-                            </ComboBox>
+                            <Button Click="OpenDashboardList_Click" Margin="12,0,0,0"
+                                    Style="{StaticResource GhostButtonStyle}" Padding="10,6"
+                                    VerticalAlignment="Center"
+                                    ToolTip="{l:T 在独立窗口中查看和管理数据看板列表}">
+                                <emoji:TextBlock Text="{l:T '📊 查看数据看板'}"/>
+                            </Button>
                         </StackPanel>
                     </Grid>
-                    <Border Background="{DynamicResource BrushInputBG}" 
-                            BorderBrush="{DynamicResource BrushBorder}" 
-                            BorderThickness="1" CornerRadius="6" 
-                            Padding="12" Margin="0,0,0,8">
-                        <StackPanel x:Name="dashboardItemListPanel"/>
-                    </Border>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
-                        <Button Content="+ 添加后台数据项" Click="AddBackgroundDashItem_Click"
-                                Style="{StaticResource GhostButtonStyle}" Padding="12,6"/>
-                    </StackPanel>
 
                     <!-- 数据模版 -->
-                    <Grid Margin="0,0,0,8">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0">
-                            <TextBlock Text="数据模版" 
-                                       FontSize="{DynamicResource FontSizeNormal}" 
-                                       FontWeight="SemiBold"
-                                       Foreground="{DynamicResource BrushTextMain}"/>
-                            <TextBlock Text="管理数据看板使用的模版列表，支持内置模版和自定义模版" 
-                                       Foreground="{DynamicResource BrushTextMuted}" 
-                                       FontSize="{DynamicResource FontSizeSmall}" 
-                                       Margin="0,4,0,0"/>
-                        </StackPanel>
-                        <Button Grid.Column="1" Content="查看连接" Click="ViewWsClients_Click"
-                                Style="{StaticResource GhostButtonStyle}" Padding="10,6"
-                                VerticalAlignment="Center" Margin="12,0,0,0"/>
-                    </Grid>
+                    <StackPanel Margin="0,0,0,8">
+                        <TextBlock Text="{l:T 数据模版}" 
+                                   FontSize="{DynamicResource FontSizeNormal}" 
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource BrushTextMain}"/>
+                        <TextBlock Text="{l:T 管理数据看板使用的模版列表，支持内置模版和自定义模版}" 
+                                   Foreground="{DynamicResource BrushTextMuted}" 
+                                   FontSize="{DynamicResource FontSizeSmall}" 
+                                   Margin="0,4,0,0"/>
+                    </StackPanel>
                     
                     <Border Background="{DynamicResource BrushInputBG}" 
                             BorderBrush="{DynamicResource BrushBorder}" 
@@ -1000,21 +1098,21 @@
                         <StackPanel x:Name="templateListPanel"/>
                     </Border>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,0">
-                        <Button Content="+ 新建模版" Click="AddTemplate_Click"
+                        <Button Content="{l:T '+ 新建模版'}" Click="AddTemplate_Click"
                                 Style="{StaticResource GhostButtonStyle}" Padding="12,6"/>
-                        <Button Content="⬇ 从数据看板导入" Click="ImportFromDashboard_Click"
+                        <Button Content="{l:T '⬇ 从数据看板导入'}" Click="ImportFromDashboard_Click"
                                 Style="{StaticResource GhostButtonStyle}" Padding="12,6" Margin="10,0,0,0"/>
                     </StackPanel>
                 </StackPanel>
                 
                 <!-- 我的数据页面 -->
                 <StackPanel x:Name="pageMyData" Visibility="Collapsed" Margin="0,0,0,20">
-                    <TextBlock Text="我的数据" 
+                    <TextBlock Text="{l:T 我的数据}" 
                                FontSize="{DynamicResource FontSizeSubtitle}" 
                                FontWeight="Bold"
                                Foreground="{DynamicResource BrushTextMain}"
                                Margin="0,0,0,8"/>
-                    <TextBlock Text="SideDesk 采集的各类个人数据概述，点击卡片查看详情" 
+                    <TextBlock Text="{l:T 'SideDesk 采集的各类个人数据概述，点击卡片查看详情'}" 
                                Foreground="{DynamicResource BrushTextMuted}" 
                                FontSize="{DynamicResource FontSizeSmall}" 
                                Margin="0,0,0,20"/>
@@ -1023,12 +1121,12 @@
 
                 <!-- 快捷键页面 -->
                 <StackPanel x:Name="pageShortcuts" Visibility="Collapsed" Margin="0,0,0,20">
-                    <TextBlock Text="快捷键" 
+                    <TextBlock Text="{l:T 快捷键}" 
                                FontSize="{DynamicResource FontSizeSubtitle}" 
                                FontWeight="Bold"
                                Foreground="{DynamicResource BrushTextMain}"
                                Margin="0,0,0,8"/>
-                    <TextBlock Text="全局快捷键配置" 
+                    <TextBlock Text="{l:T 全局快捷键配置}" 
                                Foreground="{DynamicResource BrushTextMuted}" 
                                FontSize="{DynamicResource FontSizeSmall}" 
                                Margin="0,0,0,20"/>
@@ -1044,15 +1142,15 @@
                                       Checked="WindowSwitchHotkeySwitch_Changed" 
                                       Unchecked="WindowSwitchHotkeySwitch_Changed"/>
                             <StackPanel VerticalAlignment="Center">
-                                <TextBlock Text="Ctrl + 数字 切换窗口" 
+                                <TextBlock Text="{l:T 'Ctrl + 数字 切换窗口'}" 
                                            Foreground="{DynamicResource BrushTextMain}"
                                            FontSize="{DynamicResource FontSizeNormal}"
                                            FontWeight="SemiBold"/>
-                                <TextBlock Text="全局按 Ctrl+1~9（含小键盘）快速切换到对应序号的窗口标签" 
+                                <TextBlock Text="{l:T '全局按 Ctrl+1~9（含小键盘）快速切换到对应序号的窗口标签'}" 
                                            Foreground="{DynamicResource BrushTextMuted}"
                                            FontSize="{DynamicResource FontSizeTiny}"
                                            Margin="0,2,0,0"/>
-                                <TextBlock Text="注：开启后会拦截该快捷键，可能与浏览器/编辑器的 Ctrl+数字切标签冲突" 
+                                <TextBlock Text="{l:T '注：开启后会拦截该快捷键，可能与浏览器/编辑器的 Ctrl+数字切标签冲突'}" 
                                            Foreground="{DynamicResource BrushTextMuted}"
                                            FontSize="{DynamicResource FontSizeTiny}"
                                            TextWrapping="Wrap"
@@ -1064,7 +1162,7 @@
 
                 <!-- 小屏窗口管理页面 -->
                 <StackPanel x:Name="pageWindows" Visibility="Collapsed">
-                    <TextBlock Text="小屏窗口" 
+                    <TextBlock Text="{l:T 小屏窗口}" 
                                FontSize="{DynamicResource FontSizeSubtitle}" 
                                FontWeight="Bold"
                                Foreground="{DynamicResource BrushTextMain}"
@@ -1072,9 +1170,9 @@
 
                     <!-- 操作按钮栏 -->
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
-                        <Button Content="📥 导入窗口" Style="{StaticResource GhostButtonStyle}" 
+                        <Button Content="{l:T '📥 导入窗口'}" Style="{StaticResource GhostButtonStyle}" 
                                 Padding="12,6" Click="ImportWindow_Click" Margin="0,0,8,0"/>
-                        <Button Content="🔗 我的分享" Style="{StaticResource GhostButtonStyle}" 
+                        <Button Content="{l:T '🔗 我的分享'}" Style="{StaticResource GhostButtonStyle}" 
                                 Padding="12,6" Click="MyShares_Click"/>
                     </StackPanel>
 
@@ -1084,21 +1182,21 @@
 
                 <!-- 关于页面 -->
                 <StackPanel x:Name="pageAbout" Visibility="Collapsed">
-                    <TextBlock Text="关于" 
+                    <TextBlock Text="{l:T 关于}" 
                                FontSize="{DynamicResource FontSizeSubtitle}" 
                                FontWeight="Bold"
                                Foreground="{DynamicResource BrushTextMain}"
                                Margin="0,0,0,24"/>
                     
-                    <TextBlock Text="元桌小屏" 
+                    <TextBlock Text="{l:T 元桌小屏}" 
                                FontSize="20" FontWeight="Bold"
                                Foreground="{DynamicResource BrushTextMain}"
                                Margin="0,0,0,8"/>
-                    <TextBlock x:Name="versionText" Text="版本 v1.0.0" 
+                    <TextBlock x:Name="versionText" Text="{l:T '版本 v1.0.0'}" 
                                Foreground="{DynamicResource BrushTextSec}"
                                FontSize="{DynamicResource FontSizeNormal}"
                                Margin="0,0,0,16"/>
-                    <TextBlock Text="一款轻量级的桌面侧边栏工具，帮助你高效管理窗口和快捷方式。" 
+                    <TextBlock Text="{l:T 一款轻量级的桌面侧边栏工具，帮助你高效管理窗口和快捷方式。}" 
                                Foreground="{DynamicResource BrushTextMuted}"
                                FontSize="{DynamicResource FontSizeNormal}"
                                TextWrapping="Wrap"
@@ -1111,7 +1209,7 @@
                         <StackPanel>
                             <!-- 自动更新开关 -->
                             <Grid Margin="0,0,0,12">
-                                <TextBlock Text="启动时自动检测和下载更新" 
+                                <TextBlock Text="{l:T 启动时自动检测和下载更新}" 
                                            Foreground="{DynamicResource BrushTextMain}" 
                                            FontSize="{DynamicResource FontSizeNormal}" 
                                            VerticalAlignment="Center"/>
@@ -1127,11 +1225,11 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock x:Name="updateStatusText" Text="点击检查是否有新版本" 
+                                <TextBlock x:Name="updateStatusText" Text="{l:T 点击检查是否有新版本}" 
                                            Foreground="{DynamicResource BrushTextSec}" 
                                            FontSize="{DynamicResource FontSizeNormal}" 
                                            VerticalAlignment="Center"/>
-                                <Button x:Name="checkUpdateBtn" Grid.Column="1" Content="检查更新" 
+                                <Button x:Name="checkUpdateBtn" Grid.Column="1" Content="{l:T 检查更新}" 
                                         Click="CheckForUpdates_Click"
                                         Style="{DynamicResource PrimaryButtonStyle}"
                                         Padding="14,6" Height="30"/>
@@ -1140,7 +1238,7 @@
                             <!-- 下载进度条（初始隐藏） -->
                             <StackPanel x:Name="downloadProgressPanel" Visibility="Collapsed" Margin="0,8,0,0">
                                 <Grid Margin="0,0,0,6">
-                                    <TextBlock Text="正在下载更新..." 
+                                    <TextBlock Text="{l:T 正在下载更新...}" 
                                                Foreground="{DynamicResource BrushTextMain}" 
                                                FontSize="{DynamicResource FontSizeNormal}"/>
                                     <TextBlock x:Name="progressPercentText" Text="0%" 
@@ -1162,11 +1260,11 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="新版就绪，重启即可生效！" 
+                                <TextBlock Text="{l:T 新版就绪，重启即可生效！}" 
                                            Foreground="#FF22C55E" 
                                            FontSize="{DynamicResource FontSizeNormal}" 
                                            FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                <Button Grid.Column="1" Content="立即重启并应用" 
+                                <Button Grid.Column="1" Content="{l:T 立即重启并应用}" 
                                         Click="ApplyUpdateAndRestart_Click"
                                         Style="{DynamicResource PrimaryButtonStyle}"
                                         Padding="14,6" Height="30"/>
@@ -1177,12 +1275,12 @@
 
                 <!-- 开发者页面 -->
                 <StackPanel x:Name="pageDeveloper" Visibility="Collapsed" Margin="0,0,0,20">
-                    <TextBlock Text="开发者"
+                    <TextBlock Text="{l:T 开发者}"
                                FontSize="{DynamicResource FontSizeSubtitle}"
                                FontWeight="Bold"
                                Foreground="{DynamicResource BrushTextMain}"
                                Margin="0,0,0,8"/>
-                    <TextBlock Text="调试与测试工具"
+                    <TextBlock Text="{l:T 调试与测试工具}"
                                Foreground="{DynamicResource BrushTextMuted}"
                                FontSize="{DynamicResource FontSizeSmall}"
                                Margin="0,0,0,20"/>

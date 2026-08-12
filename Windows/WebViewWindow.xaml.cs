@@ -15,11 +15,11 @@ public partial class WebViewWindow : Window
     /// </summary>
     /// <param name="url">要加载的网址</param>
     /// <param name="title">窗口标题（默认"网页"）</param>
-    public WebViewWindow(string url, string title = "网页")
+    public WebViewWindow(string url, string title = null)
     {
         InitializeComponent();
         _url = url;
-        Title = title;
+        Title = title ?? Framework.Lang.T("网页");
         SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(this);
         Loaded += WebViewWindow_Loaded;
     }
@@ -37,7 +37,7 @@ public partial class WebViewWindow : Window
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[WebViewWindow] WebView2 初始化失败: {ex.Message}");
-            MessageBox.Show($"WebView2 初始化失败: {ex.Message}", Title, MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(Framework.Lang.TF("WebView2 初始化失败: {0}", ex.Message), Title, MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 }

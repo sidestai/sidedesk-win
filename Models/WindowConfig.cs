@@ -231,6 +231,16 @@ public class TodoItem
 }
 
 /// <summary>
+/// 信号灯状态条件：变量按 Op 比较满足；MISSING 时变量缺失/未取到值即满足
+/// </summary>
+public class SignalLightCondition
+{
+    public string VarKey { get; set; } = "";   // 数据变量名
+    public string Op { get; set; } = "EQ";     // 比较操作符：EQ 等于 / GT 大于 / LT 小于 / MISSING 不存在
+    public string Value { get; set; } = "";    // 期望值（用于 EQ/GT/LT）
+}
+
+/// <summary>
 /// 信号灯项
 /// </summary>
 public class SignalLightItem
@@ -239,8 +249,15 @@ public class SignalLightItem
     public string Color { get; set; } = "#FF4444";   // 灯颜色（hex）
     public double Size { get; set; } = 36;            // 灯直径
     public string? Icon { get; set; }                  // 灯上方图标（emoji/文字，空则无）
-    public bool IsOn { get; set; } = true;             // 亮/灭状态
+    public bool IsOn { get; set; } = true;             // 亮/灭状态（无条件匹配时的手动状态）
     public string LightStyle { get; set; } = "Circle"; // 灯样式：Circle/Square/Pixel
+    public List<SignalLightCondition> OnConditions { get; set; } = new();    // 满足 → 开启
+    public List<SignalLightCondition> OffConditions { get; set; } = new();   // 满足 → 关闭
+    public List<SignalLightCondition> BlinkConditions { get; set; } = new(); // 满足 → 闪烁（优先级最高）
+    public string OnConditionMode { get; set; } = "OR";    // 开条件组合：OR 任一满足 / AND 全部满足
+    public string OffConditionMode { get; set; } = "OR";   // 关条件组合
+    public string BlinkConditionMode { get; set; } = "OR"; // 闪烁条件组合
+    public double BlinkIntervalSeconds { get; set; } = 1; // 闪烁频率（秒/次）
 }
 
 /// <summary>
@@ -360,6 +377,8 @@ public class WindowConfigManager
     public DockWindowState RightDock { get; set; } = new();
     /// <summary>全局后台数据看板项（不绑定任何面板，仅后台轮询）</summary>
     public List<DataDashboardItem> BackgroundDashboardItems { get; set; } = new();
+    /// <summary>变量集定义（多变量聚合：求和/求平均/最大/最小/计数，生成本地新变量）</summary>
+    public List<VariableSet> VariableSets { get; set; } = new();
 
     public static WindowConfigManager Load()
     {
@@ -485,6 +504,17 @@ public class WindowConfigManager
     public void Add(WindowConfig config)
     {
         Windows.Add(config);
+        Save();
+    }
+
+    /// <summary>
+    /// 新增小屏并同步加入左右两侧 dock 的顶部标签（多屏/双侧布局下所有窗口都能看到新小屏）。
+    /// </summary>
+    public void AddToAllDocks(WindowConfig config)
+    {
+        Windows.Add(config);
+        if (!LeftDock.WindowIds.Contains(config.Id)) LeftDock.WindowIds.Add(config.Id);
+        if (!RightDock.WindowIds.Contains(config.Id)) RightDock.WindowIds.Add(config.Id);
         Save();
     }
 

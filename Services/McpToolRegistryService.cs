@@ -209,12 +209,12 @@ namespace SideDesk.Services
                 using var resp = await _http.GetAsync($"{BaseUrl}/preset");
                 var root = JObject.Parse(await resp.Content.ReadAsStringAsync());
                 if (root["code"]?.ToObject<int>() != 200)
-                    return (false, root["msg"]?.ToString() ?? "获取配置失败");
+                    return (false, root["msg"]?.ToString() ?? Framework.Lang.T("获取配置失败"));
 
                 var data = root["data"];
                 var tools = data?["tools"] as JArray;
                 if (tools == null || tools.Count == 0)
-                    return (false, "服务端配置文件无工具定义");
+                    return (false, Framework.Lang.T("服务端配置文件无工具定义"));
 
                 var dir = Path.GetDirectoryName(PresetFilePath)!;
                 if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);

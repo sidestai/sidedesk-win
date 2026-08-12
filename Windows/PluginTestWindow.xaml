@@ -1,7 +1,8 @@
 <Window x:Class="SideDesk.Windows.PluginTestWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="🧪 插件测试" Height="600" Width="400"
+        xmlns:l="clr-namespace:SideDesk.Framework"
+        Title="{l:T '🧪 插件测试'}" Height="600" Width="400"
         WindowStartupLocation="CenterScreen"
         Background="#1E1E2E">
     <Grid>
@@ -12,14 +13,14 @@
 
         <!-- 标题栏 -->
         <Border Grid.Row="0" Background="#181825" Padding="12,8">
-            <TextBlock x:Name="txtTitle" Text="插件测试运行" FontSize="14"
+            <TextBlock x:Name="txtTitle" Text="{l:T 插件测试运行}" FontSize="14"
                        Foreground="#CDD6F4" FontWeight="Bold"/>
         </Border>
 
         <!-- 插件 UI 容器 -->
         <Border Grid.Row="1" x:Name="pluginContainer" Margin="8"
                 Background="#1E1E2E" CornerRadius="8">
-            <TextBlock x:Name="txtPlaceholder" Text="正在加载插件..."
+            <TextBlock x:Name="txtPlaceholder" Text="{l:T 正在加载插件...}"
                        Foreground="#6C7086" FontSize="13"
                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
         </Border>

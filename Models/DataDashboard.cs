@@ -18,9 +18,14 @@ public class DataDashboardItem
     // 自定义配置（模板为空时使用，或覆盖模板默认值）
     public string? BrowserId { get; set; }           // 选择的浏览器ID（null=默认第一个）
     public string? ProfileId { get; set; }           // 选择的Profile ID
-    public string TargetUrl { get; set; } = "";      // 目标网址
+    public string TargetUrl { get; set; } = "";      // 目标网址（API 模式时为请求 URL）
     public string Selector { get; set; } = "";       // XPath 或 CSS Selector
     public int RefreshIntervalSeconds { get; set; } = 60; // 刷新间隔（秒）
+
+    // API 请求模式（无模板自定义）：ApiMethod 非空时直接 HTTP 取数，不经浏览器
+    public string? ApiMethod { get; set; }           // GET / POST（null/空 = 浏览器+选择器模式）
+    public string? ApiBody { get; set; }             // POST 请求内容
+    public string? ResponseExtract { get; set; }     // response 提取：JSON 路径（如 data.count）；留空=整个响应
 
     // 团队归属与变量
     public string? TeamId { get; set; }              // 所属团队ID（null/空=个人）
@@ -38,6 +43,21 @@ public class DataDashboardItem
     public double ValueFontSize { get; set; } = 0;       // 数据字号（0=默认16）
     public bool ValueBold { get; set; } = false;          // 数据是否粗体
     public string HorizontalAlignment { get; set; } = ""; // 水平对齐：Left/Center/Right（空=默认Left）
+    public string? ValueFormat { get; set; }          // 值格式（可选）：{0} 或「变量」代表值，如 "你好：{0}"；留空=直接显示值
+}
+
+/// <summary>
+/// 变量集：将多个运行中的变量（显式勾选 + 通配符匹配）按求和/求平均/最大/最小/计数聚合成一个新变量。
+/// 变量集名即变量名（如 qoder.count_all），可像普通变量一样被条件判断/显示引用。
+/// </summary>
+public class VariableSet
+{
+    public string VarKey { get; set; } = "";               // 变量集名（作用域内唯一，如 qoder.count_all）
+    public string Op { get; set; } = "SUM";                // 聚合逻辑：SUM 求和 / AVG 求平均 / MAX 最大 / MIN 最小 / COUNT 计数
+    public List<string> SourceKeys { get; set; } = new();  // 显式选择的变量名列表
+    public string Pattern { get; set; } = "";              // 通配符（如 qoder.count*，* 匹配任意字符）；空=不启用通配
+    public string? TeamId { get; set; }                    // 团队ID加密串（空=个人作用域）
+    public string? TeamName { get; set; }                  // 团队显示名（仅本地展示用，不参与同步）
 }
 
 /// <summary>

@@ -1,42 +1,43 @@
 <Window x:Class="SideDesk.TodoDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="添加待办" Width="340" SizeToContent="Height"
+        xmlns:l="clr-namespace:SideDesk.Framework"
+        Title="{l:T 添加待办}" Width="340" SizeToContent="Height"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
         Background="{DynamicResource BrushDialogBG}" Foreground="{DynamicResource BrushTextMain}">
     <StackPanel Margin="18">
-        <TextBlock Text="标题" Margin="0,0,0,4"/>
+        <TextBlock Text="{l:T 标题}" Margin="0,0,0,4"/>
         <TextBox x:Name="titleBox" Style="{StaticResource GlobalTextBoxStyle}"/>
 
-        <TextBlock Text="详细内容" Margin="0,12,0,4"/>
+        <TextBlock Text="{l:T 详细内容}" Margin="0,12,0,4"/>
         <TextBox x:Name="descBox" AcceptsReturn="True" TextWrapping="Wrap"
                  Height="80" VerticalScrollBarVisibility="Auto"
                  Style="{StaticResource GlobalTextBoxStyle}"/>
 
-        <CheckBox x:Name="enableTimeCheck" Content="设置任务时间" Margin="0,16,0,0"
+        <CheckBox x:Name="enableTimeCheck" Content="{l:T 设置任务时间}" Margin="0,16,0,0"
                   Style="{StaticResource DarkCheckBoxStyle}"
                   Checked="EnableTime_Changed" Unchecked="EnableTime_Changed"/>
 
         <StackPanel x:Name="timePanel" Visibility="Collapsed" Margin="0,10,0,0">
             <StackPanel Orientation="Horizontal">
-                <TextBlock Text="日期" Width="45" VerticalAlignment="Center"/>
+                <TextBlock Text="{l:T 日期}" Width="45" VerticalAlignment="Center"/>
                 <DatePicker x:Name="datePicker" Width="150" Height="36"
                             Style="{StaticResource GlobalDatePickerStyle}"/>
                 <TextBox x:Name="timeBox" Width="78" Height="36" Margin="10,0,0,0"
-                         ToolTip="24小时制，格式 HH:mm"
+                         ToolTip="{l:T '24小时制，格式 HH:mm'}"
                          Style="{StaticResource GlobalTextBoxStyle}"/>
             </StackPanel>
             <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                <TextBlock Text="提醒" Width="45" VerticalAlignment="Center"/>
+                <TextBlock Text="{l:T 提醒}" Width="45" VerticalAlignment="Center"/>
                 <ComboBox x:Name="remindCombo" Width="238" Height="36"
                           Style="{StaticResource GlobalComboBoxStyle}"/>
             </StackPanel>
         </StackPanel>
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0">
-            <Button Content="确定" Width="70" Margin="0,0,10,0" Click="Ok_Click" IsDefault="True"
+            <Button Content="{l:T 确定}" Width="70" Margin="0,0,10,0" Click="Ok_Click" IsDefault="True"
                     Style="{StaticResource PrimaryButtonStyle}"/>
-            <Button Content="取消" Width="70" Click="Cancel_Click" IsCancel="True"
+            <Button Content="{l:T 取消}" Width="70" Click="Cancel_Click" IsCancel="True"
                     Style="{StaticResource StandardButtonStyle}"/>
         </StackPanel>
     </StackPanel>

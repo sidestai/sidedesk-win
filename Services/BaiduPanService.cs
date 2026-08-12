@@ -39,7 +39,7 @@ namespace SideDesk.Services
         public string SizeText => IsFolder ? "\u2014" : FormatSize(Size);
 
         /// <summary>右侧元信息</summary>
-        public string MetaText => IsFolder ? "文件夹" : "文件";
+        public string MetaText => IsFolder ? Framework.Lang.T("文件夹") : Framework.Lang.T("文件");
 
         /// <summary>文件类型图标</summary>
         public string TypeIcon => IsFolder ? "\U0001F4C1" : GetFileIcon(Name);
@@ -80,7 +80,7 @@ namespace SideDesk.Services
         [JsonProperty("used")] public long Used { get; set; }
         [JsonProperty("free")] public long Free { get; set; }
 
-        public string Summary => $"已用 {BaiduPanFile.FormatSize(Used)} / 共 {BaiduPanFile.FormatSize(Total)}";
+        public string Summary => Framework.Lang.TF("已用 {0} / 共 {1}", BaiduPanFile.FormatSize(Used), BaiduPanFile.FormatSize(Total));
     }
 
     /// <summary>OAuth Token 响应</summary>

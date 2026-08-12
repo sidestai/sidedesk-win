@@ -205,7 +205,7 @@ namespace SideDesk.Controls
             if (IsEditMode)
             {
                 _titleBlock.Cursor = Cursors.Hand;
-                _titleBlock.ToolTip = "双击编辑名称";
+                _titleBlock.ToolTip = Framework.Lang.T("双击编辑名称");
                 _titleBlock.MouseLeftButtonDown += (s, e) =>
                 {
                     if (e.ClickCount == 2)
@@ -372,7 +372,7 @@ namespace SideDesk.Controls
                 Cursor = Cursors.SizeNS,
                 Margin = new Thickness(0, 1, 0, 0),
                 HorizontalAlignment = HorizontalAlignment.Stretch,
-                ToolTip = "拖拽调整模块高度（双击恢复自动高度）"
+                ToolTip = Framework.Lang.T("拖拽调整模块高度（双击恢复自动高度）")
             };
             var line = new Border
             {
@@ -454,8 +454,8 @@ namespace SideDesk.Controls
             _moduleMenu = new ContextMenu();
 
             // 模块设置（引用分享只读时禁止修改标题/背景色/归属）
-            var settingsMi = new MenuItem { Header = "模块设置" };
-            if (EditBlocked) { settingsMi.IsEnabled = false; settingsMi.ToolTip = "引用分享的模块，分享者不允许修改设置"; }
+            var settingsMi = new MenuItem { Header = Framework.Lang.T("模块设置") };
+            if (EditBlocked) { settingsMi.IsEnabled = false; settingsMi.ToolTip = Framework.Lang.T("引用分享的模块，分享者不允许修改设置"); }
             settingsMi.Click += (s, e) => OnShowSettings?.Invoke(Item, DefaultTitle);
             _moduleMenu.Items.Add(settingsMi);
 
@@ -465,7 +465,7 @@ namespace SideDesk.Controls
                 if (EditBlocked && custom is MenuItem cmi && !Equals(cmi.Tag, "keepWhenReadOnly"))
                 {
                     cmi.IsEnabled = false;
-                    cmi.ToolTip = "引用分享的模块，分享者不允许修改内容";
+                    cmi.ToolTip = Framework.Lang.T("引用分享的模块，分享者不允许修改内容");
                 }
                 _moduleMenu.Items.Add(custom);
             }
@@ -479,7 +479,7 @@ namespace SideDesk.Controls
             // 隐藏模块外框
             var hideFrameMi = new MenuItem
             {
-                Header = "隐藏模块外框",
+                Header = Framework.Lang.T("隐藏模块外框"),
                 IsCheckable = true,
                 IsChecked = Item.HideFrame
             };
@@ -494,7 +494,7 @@ namespace SideDesk.Controls
             // 置顶显示
             var pinMi = new MenuItem
             {
-                Header = "置顶显示",
+                Header = Framework.Lang.T("置顶显示"),
                 IsCheckable = true,
                 IsChecked = Item.IsPinned
             };
@@ -507,8 +507,8 @@ namespace SideDesk.Controls
             _moduleMenu.Items.Add(pinMi);
 
             // 删除模块（引用分享不允许删除时禁用）
-            var deleteMi = new MenuItem { Header = "删除模块" };
-            if (DeleteBlocked) { deleteMi.IsEnabled = false; deleteMi.ToolTip = "引用分享的模块，分享者不允许删除"; }
+            var deleteMi = new MenuItem { Header = Framework.Lang.T("删除模块") };
+            if (DeleteBlocked) { deleteMi.IsEnabled = false; deleteMi.ToolTip = Framework.Lang.T("引用分享的模块，分享者不允许删除"); }
             deleteMi.Click += (s, e) => OnRemovePanel?.Invoke(Item);
             _moduleMenu.Items.Add(deleteMi);
 
@@ -529,7 +529,7 @@ namespace SideDesk.Controls
             var wrapper = new Grid
             {
                 Background = Brushes.Transparent,
-                ToolTip = "引用分享的模块，分享者不允许修改内容"
+                ToolTip = Framework.Lang.T("引用分享的模块，分享者不允许修改内容")
             };
             wrapper.Children.Add(content);
             MouseButtonEventHandler block = (s, e) =>
@@ -551,7 +551,7 @@ namespace SideDesk.Controls
             _lastReadOnlyHintAt = DateTime.Now;
             var tip = new ToolTip
             {
-                Content = "引用分享的模块，分享者不允许编辑/删除内容",
+                Content = Framework.Lang.T("引用分享的模块，分享者不允许编辑/删除内容"),
                 PlacementTarget = host,
                 Placement = PlacementMode.MousePoint,
                 IsOpen = true

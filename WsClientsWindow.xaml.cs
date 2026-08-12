@@ -45,13 +45,13 @@ namespace SideDesk
             clientListPanel.Children.Clear();
 
             var clients = WebSocketServerService.Instance.GetConnectedClients();
-            countText.Text = $"共 {clients.Count} 个连接";
+            countText.Text = Framework.Lang.TF("共 {0} 个连接", clients.Count);
 
             if (clients.Count == 0)
             {
                 clientListPanel.Children.Add(new TextBlock
                 {
-                    Text = "暂无连接的客户端",
+                    Text = Framework.Lang.T("暂无连接的客户端"),
                     Foreground = (Brush)FindResource("BrushTextMuted"),
                     FontSize = 13,
                     Margin = new Thickness(0, 20, 0, 0),
@@ -86,7 +86,7 @@ namespace SideDesk
                 var titleRow = new StackPanel { Orientation = Orientation.Horizontal };
                 var titleText = new Emoji.Wpf.TextBlock
                 {
-                    Text = string.IsNullOrEmpty(client.Title) ? "(未注册标题)" : client.Title,
+                    Text = string.IsNullOrEmpty(client.Title) ? Framework.Lang.T("(未注册标题)") : client.Title,
                     FontSize = 14,
                     FontWeight = FontWeights.SemiBold,
                     Foreground = (Brush)FindResource("BrushTextMain"),
@@ -124,7 +124,7 @@ namespace SideDesk
                         Margin = new Thickness(8, 0, 0, 0),
                         Child = new TextBlock
                         {
-                            Text = "未关联",
+                            Text = Framework.Lang.T("未关联"),
                             FontSize = 11,
                             Foreground = (Brush)FindResource("BrushAccentText")
                         }
@@ -166,7 +166,7 @@ namespace SideDesk
                 {
                     var closeBtn = new Button
                     {
-                        Content = "关闭标签",
+                        Content = Framework.Lang.T("关闭标签"),
                         Style = (Style)FindResource("GhostButtonStyle"),
                         Padding = new Thickness(10, 5, 10, 5),
                         FontSize = 12,
@@ -179,7 +179,7 @@ namespace SideDesk
                 {
                     actionPanel.Children.Add(new TextBlock
                     {
-                        Text = "已关联",
+                        Text = Framework.Lang.T("已关联"),
                         FontSize = 11,
                         Foreground = new SolidColorBrush(Color.FromRgb(34, 197, 94)),
                         HorizontalAlignment = HorizontalAlignment.Right

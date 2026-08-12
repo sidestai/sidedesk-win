@@ -116,7 +116,7 @@ namespace SideDesk.Services
                 if (path.Length == 0) path = "/";
                 var method = req.HttpMethod.ToUpperInvariant();
 
-                // CORS：网页版 AI Chat（localhost:3007）跨域访问本机服务
+                // CORS：网页版 AI Chat（前端站点，基址见 Constants.URLs.ServerBaseUrl）跨域访问本机服务
                 AddCorsHeaders(resp);
                 if (method == "OPTIONS")
                 {
@@ -280,7 +280,7 @@ namespace SideDesk.Services
                 }
                 catch (Exception ex)
                 {
-                    WriteJson(resp, 200, new JObject { ["ok"] = false, ["result"] = $"工具执行失败: {ex.Message}" }.ToString());
+                    WriteJson(resp, 200, new JObject { ["ok"] = false, ["result"] = Framework.Lang.TF("工具执行失败: {0}", ex.Message) }.ToString());
                 }
                 return;
             }
@@ -306,12 +306,12 @@ namespace SideDesk.Services
 
             if (string.IsNullOrEmpty(modelInfo.ApiBaseUrl))
             {
-                WriteJson(resp, 400, new JObject { ["error"] = new JObject { ["message"] = "当前服务商未配置 API 地址，请改用其他服务商" } }.ToString());
+                WriteJson(resp, 400, new JObject { ["error"] = new JObject { ["message"] = Framework.Lang.T("当前服务商未配置 API 地址，请改用其他服务商") } }.ToString());
                 return;
             }
             if (string.IsNullOrEmpty(cfg.ApiKey))
             {
-                WriteJson(resp, 400, new JObject { ["error"] = new JObject { ["message"] = "尚未配置 API Key，请在客户端 AI 设置或本页设置中填写" } }.ToString());
+                WriteJson(resp, 400, new JObject { ["error"] = new JObject { ["message"] = Framework.Lang.T("尚未配置 API Key，请在客户端 AI 设置或本页设置中填写") } }.ToString());
                 return;
             }
 
@@ -340,7 +340,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                WriteJson(resp, 502, new JObject { ["error"] = new JObject { ["message"] = $"转发失败: {ex.Message}" } }.ToString());
+                WriteJson(resp, 502, new JObject { ["error"] = new JObject { ["message"] = Framework.Lang.TF("转发失败: {0}", ex.Message) } }.ToString());
                 return;
             }
 

@@ -40,7 +40,7 @@ namespace SideDesk
                 {
                     Content = new Emoji.Wpf.TextBlock
                     {
-                        Text = "（未找到可用的任务栏窗口）",
+                        Text = Framework.Lang.T("（未找到可用的任务栏窗口）"),
                         Foreground = (Brush)FindResource("BrushTextMuted"),
                         FontStyle = FontStyles.Italic
                     },
@@ -99,7 +99,7 @@ namespace SideDesk
                 });
                 string detail = !string.IsNullOrEmpty(r.MatchPattern)
                     ? $"匹配（{(r.MatchMode == TitleMatchMode.Equals ? "等于" : "包含")}）：{r.MatchPattern}"
-                    : $"原标题：{r.OriginalTitle}";
+                    : Framework.Lang.TF("原标题：{0}", r.OriginalTitle);
                 sp.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = detail,
@@ -116,7 +116,7 @@ namespace SideDesk
                 {
                     Content = new Emoji.Wpf.TextBlock
                     {
-                        Text = "（暂无锁定规则）",
+                        Text = Framework.Lang.T("（暂无锁定规则）"),
                         Foreground = (Brush)FindResource("BrushTextMuted"),
                         FontStyle = FontStyles.Italic
                     },
@@ -129,8 +129,8 @@ namespace SideDesk
         {
             if (lockedListBox.SelectedItem is ListBoxItem li && li.Tag is TitleLockRule rule)
             {
-                if (MessageBox.Show($"确定删除规则：[{rule.LockText}] {rule.ProcessName}？",
-                    "确认删除", MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK)
+                if (MessageBox.Show(Framework.Lang.TF("确定删除规则：[{0}] {1}？", rule.LockText, rule.ProcessName),
+                    Framework.Lang.T("确认删除"), MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK)
                 {
                     TitleLockRuleManager.RemoveExact(rule);
                     ReloadLocked();
@@ -138,7 +138,7 @@ namespace SideDesk
             }
             else
             {
-                MessageBox.Show("请选中要删除的规则", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(Framework.Lang.T("请选中要删除的规则"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }
 
@@ -157,7 +157,7 @@ namespace SideDesk
         {
             if (lockedListBox.SelectedItem is not ListBoxItem li || li.Tag is not TitleLockRule rule)
             {
-                MessageBox.Show("请选中要编辑的规则", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(Framework.Lang.T("请选中要编辑的规则"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -187,7 +187,7 @@ namespace SideDesk
         {
             if (windowListBox.SelectedItem is not ListBoxItem li || li.Tag is not TaskbarOverlayManager.WindowInfo window)
             {
-                MessageBox.Show("请选择一个窗口", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Framework.Lang.T("请选择一个窗口"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 

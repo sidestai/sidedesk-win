@@ -29,7 +29,7 @@ namespace SideDesk.Models
             get
             {
                 if (string.IsNullOrWhiteSpace(Content))
-                    return "(空)";
+                    return Framework.Lang.T("(空)");
                 string firstLine = Content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
                     .FirstOrDefault() ?? "";
                 return firstLine.Length > 30 ? firstLine.Substring(0, 30) + "…" : firstLine;

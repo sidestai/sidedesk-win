@@ -1,0 +1,13 @@
+{
+  "id": "hello-world",
+  "name": "问候组件",
+  "version": "0.1.0",
+  "description": "开源示例插件：拉取源码到插件编辑器，改成你自己的插件",
+  "author": "SideDesk 社区",
+  "entry": "HelloWorld.dll",
+  "pluginClass": "HelloWorld.HelloWorldPlugin",
+  "xaml": "ui.xaml",
+  "icon": "👋",
+  "minHostVersion": "1.0.0",
+  "enabled": true
+}

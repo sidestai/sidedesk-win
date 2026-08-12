@@ -44,11 +44,11 @@ namespace SideDesk
         /// </summary>
         private void InitFromRule()
         {
-            Title = $"编辑规则: [{_editRule.LockText}] {_editRule.ProcessName}";
-            windowInfoText.Text = $"进程：{_editRule.ProcessName}";
+            Title = Framework.Lang.TF("编辑规则: [{0}] {1}", _editRule.LockText, _editRule.ProcessName);
+            windowInfoText.Text = Framework.Lang.TF("进程：{0}", _editRule.ProcessName);
             processInfoText.Text = !string.IsNullOrEmpty(_editRule.OriginalTitle)
-                ? $"原标题：{_editRule.OriginalTitle}"
-                : $"目录：{_editRule.ExecutableDir}";
+                ? Framework.Lang.TF("原标题：{0}", _editRule.OriginalTitle)
+                : Framework.Lang.TF("目录：{0}", _editRule.ExecutableDir);
 
             lockTextBox.Text = _editRule.LockText ?? string.Empty;
             matchPatternBox.Text = _editRule.MatchPattern ?? string.Empty;
@@ -81,9 +81,9 @@ namespace SideDesk
         /// </summary>
         private void InitFromWindow()
         {
-            Title = $"锁定标题: {_window.Title}";
-            windowInfoText.Text = $"窗口：{_window.Title}";
-            processInfoText.Text = $"进程：{_window.ProcessName}";
+            Title = Framework.Lang.TF("锁定标题: {0}", _window.Title);
+            windowInfoText.Text = Framework.Lang.TF("窗口：{0}", _window.Title);
+            processInfoText.Text = Framework.Lang.TF("进程：{0}", _window.ProcessName);
 
             // 初始锁定文字：已锁定文字 > 标题前 2 字符
             string initialText = string.Empty;
@@ -122,7 +122,7 @@ namespace SideDesk
             }
             catch
             {
-                detailsBox.Text = "(无法获取窗口详细信息)";
+                detailsBox.Text = Framework.Lang.T("(无法获取窗口详细信息)");
             }
 
             matchPatternBox.Text = preMatchPattern;
@@ -137,7 +137,7 @@ namespace SideDesk
 
         private static string BuildDetailsText(TaskbarOverlayManager.WindowDetails d)
         {
-            if (d == null) return "(无信息)";
+            if (d == null) return Framework.Lang.T("(无信息)");
             var sb = new StringBuilder();
             sb.AppendLine($"窗口句柄 (HWND) : 0x{d.Handle.ToInt64():X}");
             sb.AppendLine($"窗口标题       : {d.Title}");
@@ -155,7 +155,7 @@ namespace SideDesk
             sb.AppendLine($"父进程名       : {d.ParentProcessName}");
             sb.AppendLine();
             sb.AppendLine("命令行参数：");
-            sb.AppendLine(string.IsNullOrEmpty(d.CommandLine) ? "  (无法获取，可能需要管理员权限)" : "  " + d.CommandLine);
+            sb.AppendLine(string.IsNullOrEmpty(d.CommandLine) ? Framework.Lang.T("  (无法获取，可能需要管理员权限)") : "  " + d.CommandLine);
             return sb.ToString();
         }
 
@@ -164,7 +164,7 @@ namespace SideDesk
             try
             {
                 Clipboard.SetText(detailsBox.Text ?? string.Empty);
-                MessageBox.Show("信息已复制到剪贴板", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(Framework.Lang.T("信息已复制到剪贴板"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch { }
         }
@@ -187,7 +187,7 @@ namespace SideDesk
             string lockText = lockTextBox.Text?.Trim() ?? string.Empty;
             if (string.IsNullOrEmpty(lockText))
             {
-                MessageBox.Show("请输入锁定文字", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Framework.Lang.T("请输入锁定文字"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 lockTextBox.Focus();
                 return;
             }
@@ -229,7 +229,7 @@ namespace SideDesk
 
             if (!ok)
             {
-                MessageBox.Show("锁定标题失败，可能权限不足。请以管理员身份运行。", "锁定失败",
+                MessageBox.Show(Framework.Lang.T("锁定标题失败，可能权限不足。请以管理员身份运行。"), Framework.Lang.T("锁定失败"),
                     MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }

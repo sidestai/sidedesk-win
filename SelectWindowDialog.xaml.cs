@@ -94,7 +94,7 @@ public partial class SelectWindowDialog : Window
 
         if (selected.Count == 0)
         {
-            MessageBox.Show("请选择至少一个窗口", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(Framework.Lang.T("请选择至少一个窗口"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 

@@ -32,7 +32,7 @@ public partial class PluginTestWindow : Window
 
         if (plugin == null)
         {
-            txtPlaceholder.Text = $"插件未加载: {_pluginId}\n请先编译构建插件";
+            txtPlaceholder.Text = Framework.Lang.TF("插件未加载: {0}\n请先编译构建插件", _pluginId);
             return;
         }
 
@@ -41,7 +41,7 @@ public partial class PluginTestWindow : Window
         var ui = loader.CreatePluginUI(_pluginId);
         if (ui == null)
         {
-            txtPlaceholder.Text = "插件 UI 创建失败";
+            txtPlaceholder.Text = Framework.Lang.T("插件 UI 创建失败");
             return;
         }
 

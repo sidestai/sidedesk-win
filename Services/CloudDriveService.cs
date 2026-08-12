@@ -47,7 +47,7 @@ namespace SideDesk.Services
         public string VersionText => Version > 1 ? $"v{Version}" : "";
 
         /// <summary>右侧元信息：文件夹显示类型，文件显示版本号</summary>
-        public string MetaText => IsFolder ? "文件夹" : (Version > 1 ? $"v{Version}" : "文件");
+        public string MetaText => IsFolder ? Framework.Lang.T("文件夹") : (Version > 1 ? $"v{Version}" : Framework.Lang.T("文件"));
 
         /// <summary>文件类型图标</summary>
         public string TypeIcon => IsFolder ? "\U0001F4C1" : GetFileIcon(Name);

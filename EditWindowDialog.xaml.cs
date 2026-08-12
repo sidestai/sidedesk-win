@@ -17,7 +17,7 @@ public partial class EditWindowDialog : Window
 
     private void Ok_Click(object sender, RoutedEventArgs e)
     {
-        NewName = string.IsNullOrWhiteSpace(nameBox.Text) ? "窗口" : nameBox.Text.Trim();
+        NewName = string.IsNullOrWhiteSpace(nameBox.Text) ? Framework.Lang.T("窗口") : nameBox.Text.Trim();
         DialogResult = true;
         Close();
     }

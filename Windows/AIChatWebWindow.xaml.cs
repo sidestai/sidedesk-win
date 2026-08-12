@@ -11,7 +11,7 @@ namespace SideDesk.Windows;
 public partial class AIChatWebWindow : Window
 {
     /// <summary>前端聊天页基础地址（基址统一在 Constants.URLs.ServerBaseUrl）</summary>
-    private static readonly string ChatBaseUrl = Constants.URLs.ServerBaseUrl + "/#/ai-chat";
+    private static readonly string ChatBaseUrl = Constants.URLs.FrontendBaseUrl + "/#/ai-chat";
 
     public AIChatWebWindow()
     {
@@ -49,7 +49,7 @@ public partial class AIChatWebWindow : Window
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[AIChatWeb] WebView2 初始化失败: {ex.Message}");
-            MessageBox.Show($"WebView2 初始化失败: {ex.Message}", "AI Chat", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(Framework.Lang.TF("WebView2 初始化失败: {0}", ex.Message), "AI Chat", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 }

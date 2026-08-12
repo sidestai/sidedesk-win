@@ -171,7 +171,7 @@ namespace SideDesk.Windows
                 {
                     var cond = new OrCondition(
                         new PropertyCondition(AutomationElement.NameProperty, "Address and search bar"),
-                        new PropertyCondition(AutomationElement.NameProperty, "地址和搜索栏"),
+                        new PropertyCondition(AutomationElement.NameProperty, Framework.Lang.T("地址和搜索栏")),
                         new PropertyCondition(AutomationElement.AutomationIdProperty, "addressEditBox")
                     );
 

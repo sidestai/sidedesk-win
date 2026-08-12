@@ -25,6 +25,30 @@ namespace SideDesk.Services
         [JsonProperty("id")] public string Id { get; set; } = "";
         [JsonProperty("name")] public string Name { get; set; } = "";
         [JsonProperty("members")] public List<TeamMember> Members { get; set; } = new();
+        /// <summary>团队码（加入团队凭证，供成员分享）</summary>
+        [JsonProperty("inviteCode")] public string? InviteCode { get; set; }
+        /// <summary>当前用户是否为该团队管理员（创建者）：可审批申请/邀请成员</summary>
+        [JsonProperty("isAdmin")] public bool IsAdmin { get; set; }
+    }
+
+    /// <summary>团队加入申请（管理员视角）</summary>
+    public class TeamApplication
+    {
+        [JsonProperty("id")] public string Id { get; set; } = "";
+        [JsonProperty("teamId")] public string TeamId { get; set; } = "";
+        [JsonProperty("teamName")] public string TeamName { get; set; } = "";
+        [JsonProperty("applicantUserId")] public string ApplicantUserId { get; set; } = "";
+        [JsonProperty("applicantName")] public string ApplicantName { get; set; } = "";
+        [JsonProperty("applicantAvatar")] public string? ApplicantAvatar { get; set; }
+    }
+
+    /// <summary>团队邀请（被邀请人视角）</summary>
+    public class TeamInvitation
+    {
+        [JsonProperty("id")] public string Id { get; set; } = "";
+        [JsonProperty("teamId")] public string TeamId { get; set; } = "";
+        [JsonProperty("teamName")] public string TeamName { get; set; } = "";
+        [JsonProperty("inviterName")] public string InviterName { get; set; } = "";
     }
 
     /// <summary>团队组件库条目</summary>
@@ -52,7 +76,7 @@ namespace SideDesk.Services
     #endregion
 
     /// <summary>
-    /// 团队服务：对接后端团队接口（localhost:3007，与云盘服务同一鉴权与响应格式）。
+    /// 团队服务：对接后端团队接口（基址见 Constants.URLs.ServerBaseUrl，与云盘服务同一鉴权与响应格式）。
     /// 后端接口尚未实现，前端按约定契约开发，失败时返回 null 由 UI 优雅降级。
     /// </summary>
     public sealed class TeamService
@@ -110,6 +134,32 @@ namespace SideDesk.Services
             return root["data"];
         }
 
+        /// <summary>解析通用响应并携带业务消息：(ok, msg, data)，供需要展示后端提示语的接口使用</summary>
+        private static async Task<(bool Ok, string Msg, JToken? Data)> ParseResponseWithMsgAsync(HttpResponseMessage resp)
+        {
+            string json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+            System.Diagnostics.Debug.WriteLine($"[Team] {(int)resp.StatusCode}: {json}");
+            if (!resp.IsSuccessStatusCode)
+            {
+                if ((int)resp.StatusCode == 401 || (int)resp.StatusCode == 403)
+                    Instance.LastAuthFailed = true;
+                return (false, "", null);
+            }
+
+            var root = JObject.Parse(json);
+            int bizCode = root["code"]?.Value<int>() ?? 0;
+            string msg = root["msg"]?.Value<string>() ?? "";
+
+            if (bizCode == 401 || bizCode == 403)
+            {
+                Instance.LastAuthFailed = true;
+                return (false, msg, null);
+            }
+            Instance.LastAuthFailed = false;
+
+            return (bizCode == 200, msg, root["data"]);
+        }
+
         #region 1. 团队列表
 
         /// <summary>GET /api/team/list — 返回团队数组（含成员列表）</summary>
@@ -160,7 +210,123 @@ namespace SideDesk.Services
 
         #endregion
 
-        #region 3. 团队组件库
+        #region 3. 加入团队 / 邀请成员
+
+        /// <summary>POST /api/team/join — Body: { code }，凭团队码申请加入（后端 WS 通知管理员）</summary>
+        public async Task<(bool Ok, string Msg)> JoinTeamAsync(string code)
+        {
+            try
+            {
+                var body = new JObject { ["code"] = code };
+                using var req = CreateRequest(HttpMethod.Post, $"{BaseUrl}/api/team/join");
+                req.Content = new StringContent(body.ToString(Formatting.None), Encoding.UTF8, "application/json");
+                using var resp = await _http.SendAsync(req).ConfigureAwait(false);
+                var (ok, msg, _) = await ParseResponseWithMsgAsync(resp).ConfigureAwait(false);
+                return (ok, msg);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Team] 申请加入团队失败: {ex.Message}");
+                return (false, Framework.Lang.T("网络错误"));
+            }
+        }
+
+        /// <summary>GET /api/team/applications — 管理员查看团队待处理加入申请</summary>
+        public async Task<List<TeamApplication>?> GetApplicationsAsync()
+        {
+            try
+            {
+                using var req = CreateRequest(HttpMethod.Get, $"{BaseUrl}/api/team/applications");
+                using var resp = await _http.SendAsync(req).ConfigureAwait(false);
+                var data = await ParseResponseTokenAsync(resp).ConfigureAwait(false);
+                if (data is not JArray arr) return null;
+                return arr.ToObject<List<TeamApplication>>() ?? new List<TeamApplication>();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Team] 获取加入申请失败: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>POST /api/team/application/handle — Body: { applicationId, action }，管理员审批加入申请</summary>
+        public async Task<(bool Ok, string Msg)> HandleApplicationAsync(string applicationId, string action)
+        {
+            try
+            {
+                var body = new JObject { ["applicationId"] = applicationId, ["action"] = action };
+                using var req = CreateRequest(HttpMethod.Post, $"{BaseUrl}/api/team/application/handle");
+                req.Content = new StringContent(body.ToString(Formatting.None), Encoding.UTF8, "application/json");
+                using var resp = await _http.SendAsync(req).ConfigureAwait(false);
+                var (ok, msg, _) = await ParseResponseWithMsgAsync(resp).ConfigureAwait(false);
+                return (ok, msg);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Team] 处理加入申请失败: {ex.Message}");
+                return (false, Framework.Lang.T("网络错误"));
+            }
+        }
+
+        /// <summary>POST /api/team/invite — Body: { corpId, userName }，管理员按用户名邀请成员（后端 WS 通知对方）</summary>
+        public async Task<(bool Ok, string Msg)> InviteMemberAsync(string corpId, string userName)
+        {
+            try
+            {
+                var body = new JObject { ["corpId"] = corpId, ["userName"] = userName };
+                using var req = CreateRequest(HttpMethod.Post, $"{BaseUrl}/api/team/invite");
+                req.Content = new StringContent(body.ToString(Formatting.None), Encoding.UTF8, "application/json");
+                using var resp = await _http.SendAsync(req).ConfigureAwait(false);
+                var (ok, msg, _) = await ParseResponseWithMsgAsync(resp).ConfigureAwait(false);
+                return (ok, msg);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Team] 邀请成员失败: {ex.Message}");
+                return (false, Framework.Lang.T("网络错误"));
+            }
+        }
+
+        /// <summary>GET /api/team/invitations — 查看我收到的待处理团队邀请</summary>
+        public async Task<List<TeamInvitation>?> GetInvitationsAsync()
+        {
+            try
+            {
+                using var req = CreateRequest(HttpMethod.Get, $"{BaseUrl}/api/team/invitations");
+                using var resp = await _http.SendAsync(req).ConfigureAwait(false);
+                var data = await ParseResponseTokenAsync(resp).ConfigureAwait(false);
+                if (data is not JArray arr) return null;
+                return arr.ToObject<List<TeamInvitation>>() ?? new List<TeamInvitation>();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Team] 获取团队邀请失败: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>POST /api/team/invitation/handle — Body: { applicationId, action }，处理收到的团队邀请</summary>
+        public async Task<(bool Ok, string Msg)> HandleInvitationAsync(string applicationId, string action)
+        {
+            try
+            {
+                var body = new JObject { ["applicationId"] = applicationId, ["action"] = action };
+                using var req = CreateRequest(HttpMethod.Post, $"{BaseUrl}/api/team/invitation/handle");
+                req.Content = new StringContent(body.ToString(Formatting.None), Encoding.UTF8, "application/json");
+                using var resp = await _http.SendAsync(req).ConfigureAwait(false);
+                var (ok, msg, _) = await ParseResponseWithMsgAsync(resp).ConfigureAwait(false);
+                return (ok, msg);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Team] 处理团队邀请失败: {ex.Message}");
+                return (false, Framework.Lang.T("网络错误"));
+            }
+        }
+
+        #endregion
+
+        #region 4. 团队组件库
 
         /// <summary>GET /api/sidebar/item/team-library?corpId=X — 返回指定团队的共享模块列表</summary>
         public async Task<List<TeamLibraryItem>?> GetTeamLibraryAsync(string corpId)

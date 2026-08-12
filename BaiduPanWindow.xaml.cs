@@ -72,7 +72,7 @@ namespace SideDesk
             else
                 ShowPanel(fileListView);
 
-            statusText.Text = $"共 {files.Count} 项";
+            statusText.Text = Framework.Lang.TF("共 {0} 项", files.Count);
 
             if (updateQuota) _ = UpdateQuotaAsync();
         }
@@ -110,7 +110,7 @@ namespace SideDesk
             breadcrumbPanel.Children.Clear();
 
             // 根目录按钮
-            breadcrumbPanel.Children.Add(CreateCrumbButton("☁️ 全部文件", -1));
+            breadcrumbPanel.Children.Add(CreateCrumbButton(Framework.Lang.T("☁️ 全部文件"), -1));
 
             for (int i = 0; i < _pathStack.Count; i++)
             {
@@ -155,13 +155,13 @@ namespace SideDesk
         private async void Authorize_Click(object sender, RoutedEventArgs e)
         {
             ShowPanel(loadingText);
-            statusText.Text = "正在等待浏览器授权...";
+            statusText.Text = Framework.Lang.T("正在等待浏览器授权...");
 
             bool ok = await Task.Run(() => BaiduPanService.Instance.AuthorizeAsync());
 
             if (ok)
             {
-                statusText.Text = "授权成功";
+                statusText.Text = Framework.Lang.T("授权成功");
 
                 // 授权成功后自动添加云空间条目（若尚未存在）
                 if (!CloudSpaceManager.GetAll().Exists(s => s.Name == "百度网盘"))
@@ -179,7 +179,7 @@ namespace SideDesk
             }
             else
             {
-                statusText.Text = "授权失败或已取消";
+                statusText.Text = Framework.Lang.T("授权失败或已取消");
                 ShowPanel(notAuthPanel);
             }
         }
@@ -205,13 +205,13 @@ namespace SideDesk
             if (_uploading) return;
             if (!IsAuthorized)
             {
-                MessageBox.Show("请先授权百度网盘", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(Framework.Lang.T("请先授权百度网盘"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
             var dlg = new OpenFileDialog
             {
-                Title = "选择要上传的文件",
+                Title = Framework.Lang.T("选择要上传的文件"),
                 Multiselect = true
             };
             if (dlg.ShowDialog(this) != true || dlg.FileNames.Length == 0) return;
@@ -228,7 +228,7 @@ namespace SideDesk
             {
                 string path = dlg.FileNames[i];
                 string fileName = System.IO.Path.GetFileName(path);
-                uploadProgressText.Text = $"正在上传 ({i + 1}/{totalCount}): {fileName}";
+                uploadProgressText.Text = Framework.Lang.TF("正在上传 ({0}/{1}): {2}", i + 1, totalCount, fileName);
                 uploadProgress.Value = 0;
 
                 bool ok = await Task.Run(() =>
@@ -245,13 +245,13 @@ namespace SideDesk
 
             if (successCount < totalCount)
             {
-                uploadProgressText.Text = $"完成：{successCount}/{totalCount} 成功";
-                MessageBox.Show($"上传完成：{successCount} 成功，{totalCount - successCount} 失败",
-                    "上传结果", MessageBoxButton.OK, MessageBoxImage.Warning);
+                uploadProgressText.Text = Framework.Lang.TF("完成：{0}/{1} 成功", successCount, totalCount);
+                MessageBox.Show(Framework.Lang.TF("上传完成：{0} 成功，{1} 失败", successCount, totalCount - successCount),
+                    Framework.Lang.T("上传结果"), MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             else
             {
-                uploadProgressText.Text = $"全部上传成功（{successCount} 个文件）";
+                uploadProgressText.Text = Framework.Lang.TF("全部上传成功（{0} 个文件）", successCount);
             }
 
             await Task.Delay(3000);
@@ -268,7 +268,7 @@ namespace SideDesk
             // 简单输入对话框
             var inputDialog = new Window
             {
-                Title = "新建文件夹", Width = 320, Height = 160,
+                Title = Framework.Lang.T("新建文件夹"), Width = 320, Height = 160,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Owner = this, ResizeMode = ResizeMode.NoResize,
                 Background = (Brush)FindResource("BrushBG")
@@ -277,14 +277,14 @@ namespace SideDesk
             var panel = new StackPanel { Margin = new Thickness(16) };
             panel.Children.Add(new TextBlock
             {
-                Text = "文件夹名称", Foreground = (Brush)FindResource("BrushTextMain"),
+                Text = Framework.Lang.T("文件夹名称"), Foreground = (Brush)FindResource("BrushTextMain"),
                 FontSize = 12, Margin = new Thickness(0, 0, 0, 6)
             });
             var nameBox = new TextBox { Style = (Style)FindResource("GlobalTextBoxStyle") };
             panel.Children.Add(nameBox);
             var btnRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 14, 0, 0) };
-            var okBtn = new Button { Content = "确定", Width = 64, IsDefault = true, Style = (Style)FindResource("PrimaryButtonStyle"), Margin = new Thickness(0, 0, 8, 0) };
-            var cancelBtn = new Button { Content = "取消", Width = 64, IsCancel = true, Style = (Style)FindResource("StandardButtonStyle") };
+            var okBtn = new Button { Content = Framework.Lang.T("确定"), Width = 64, IsDefault = true, Style = (Style)FindResource("PrimaryButtonStyle"), Margin = new Thickness(0, 0, 8, 0) };
+            var cancelBtn = new Button { Content = Framework.Lang.T("取消"), Width = 64, IsCancel = true, Style = (Style)FindResource("StandardButtonStyle") };
             btnRow.Children.Add(okBtn);
             btnRow.Children.Add(cancelBtn);
             panel.Children.Add(btnRow);
@@ -304,7 +304,7 @@ namespace SideDesk
             if (result != null)
                 await LoadFilesAsync(updateQuota: true);
             else
-                MessageBox.Show("新建失败，可能已存在同名目录", "操作失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Framework.Lang.T("新建失败，可能已存在同名目录"), Framework.Lang.T("操作失败"), MessageBoxButton.OK, MessageBoxImage.Warning);
         }
 
         /// <summary>右键菜单 - 下载</summary>
@@ -319,11 +319,11 @@ namespace SideDesk
             }
 
             // 获取下载链接
-            statusText.Text = "正在获取下载地址...";
+            statusText.Text = Framework.Lang.T("正在获取下载地址...");
             string? dlink = await BaiduPanService.Instance.GetDownloadLinkAsync(file.FsId);
             if (string.IsNullOrEmpty(dlink))
             {
-                MessageBox.Show("无法获取下载地址", "下载失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Framework.Lang.T("无法获取下载地址"), Framework.Lang.T("下载失败"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 statusText.Text = "";
                 return;
             }
@@ -331,13 +331,13 @@ namespace SideDesk
             // 选择保存位置
             var saveDlg = new SaveFileDialog
             {
-                Title = "保存文件",
+                Title = Framework.Lang.T("保存文件"),
                 FileName = file.Name,
-                Filter = "所有文件|*.*"
+                Filter = Framework.Lang.T("所有文件|*.*")
             };
             if (saveDlg.ShowDialog(this) != true) return;
 
-            statusText.Text = $"正在下载: {file.Name}";
+            statusText.Text = Framework.Lang.TF("正在下载: {0}", file.Name);
             progressPanel.Visibility = Visibility.Visible;
             uploadProgress.Value = 0;
 
@@ -346,19 +346,19 @@ namespace SideDesk
                     percent => Dispatcher.BeginInvoke(() =>
                     {
                         uploadProgress.Value = percent;
-                        uploadProgressText.Text = $"下载中 {percent}%";
+                        uploadProgressText.Text = Framework.Lang.TF("下载中 {0}%", percent);
                     })));
 
             if (ok)
             {
-                uploadProgressText.Text = "下载完成";
-                statusText.Text = $"已保存: {saveDlg.FileName}";
+                uploadProgressText.Text = Framework.Lang.T("下载完成");
+                statusText.Text = Framework.Lang.TF("已保存: {0}", saveDlg.FileName);
             }
             else
             {
-                uploadProgressText.Text = "下载失败";
+                uploadProgressText.Text = Framework.Lang.T("下载失败");
                 statusText.Text = "";
-                MessageBox.Show("下载失败，请稍后重试", "下载失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Framework.Lang.T("下载失败，请稍后重试"), Framework.Lang.T("下载失败"), MessageBoxButton.OK, MessageBoxImage.Warning);
             }
 
             await Task.Delay(3000);
@@ -371,16 +371,16 @@ namespace SideDesk
         {
             if (fileListView.SelectedItem is not BaiduPanFile file) return;
 
-            string typeText = file.IsFolder ? "文件夹（含其下所有内容）" : "文件";
-            if (MessageBox.Show($"确定删除{typeText}\u201C{file.Name}\u201D？此操作将移入回收站。",
-                "删除确认", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
+            string typeText = file.IsFolder ? Framework.Lang.T("文件夹（含其下所有内容）") : Framework.Lang.T("文件");
+            if (MessageBox.Show(Framework.Lang.TF("确定删除{0}\u201C{1}\u201D？此操作将移入回收站。", typeText, file.Name),
+                Framework.Lang.T("删除确认"), MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
                 return;
 
             bool ok = await BaiduPanService.Instance.DeleteAsync(file.Path);
             if (ok)
                 await LoadFilesAsync(updateQuota: true);
             else
-                MessageBox.Show("删除失败，请稍后重试", "操作失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Framework.Lang.T("删除失败，请稍后重试"), Framework.Lang.T("操作失败"), MessageBoxButton.OK, MessageBoxImage.Warning);
         }
 
         #endregion

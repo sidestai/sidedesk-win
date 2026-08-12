@@ -30,10 +30,10 @@ public class DigitalEmployee
     [JsonIgnore]
     public string StatusText => Status switch
     {
-        "online" => "在线",
-        "busy" => "忙碌",
-        "offline" => "离线",
-        _ => "在线"
+        "online" => Framework.Lang.T("在线"),
+        "busy" => Framework.Lang.T("忙碌"),
+        "offline" => Framework.Lang.T("离线"),
+        _ => Framework.Lang.T("在线")
     };
 }
 
@@ -76,8 +76,9 @@ public class DigitalEmployeeManager
 
     public DigitalEmployee? GetById(string id) => Employees.FirstOrDefault(e => e.Id == id);
 
-    public DigitalEmployee Add(string name = "新员工")
+    public DigitalEmployee Add(string name = null)
     {
+        name ??= Framework.Lang.T("新员工");
         var emp = new DigitalEmployee { Name = name };
         Employees.Add(emp);
         Save();

@@ -1,6 +1,7 @@
 <Window x:Class="SideDesk.Windows.AIChatWebWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="clr-namespace:SideDesk.Framework"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         xmlns:emoji="clr-namespace:Emoji.Wpf;assembly=Emoji.Wpf"
         Title="🤖 AI Chat" Height="700" Width="460"
@@ -27,7 +28,7 @@
                                  Margin="12,8,0,8"/>
                 <Button x:Name="closeBtn" Width="26" Height="26" Padding="0"
                         HorizontalAlignment="Right" VerticalAlignment="Center"
-                        Margin="0,0,8,0" Cursor="Hand" ToolTip="关闭"
+                        Margin="0,0,8,0" Cursor="Hand" ToolTip="{l:T 关闭}"
                         Style="{DynamicResource GhostButtonStyle}"
                         Click="CloseBtn_Click">
                     <!-- 矢量 Path 画 ✕，不依赖字体字形渲染 -->

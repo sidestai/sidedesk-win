@@ -9,7 +9,7 @@ namespace SideDesk
     public partial class LoginWindow : Window
     {
         // 客户端专用登录页（无滑动验证，前端 hash 路由）
-        private const string LoginUrl = Constants.URLs.ServerBaseUrl + "/#/client-login";
+        private static readonly string LoginUrl = Constants.URLs.FrontendBaseUrl + "/#/client-login";
         // 需要拦截的登录接口路径（匹配请求 URL 中包含该片段的响应）
         // 登录接口：POST /api/auth/login，响应 { code:200, msg, data:{ token } }
         private const string TargetApiPath = "/api/auth/login";
@@ -50,7 +50,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"加载登录页面失败：{ex.Message}", "错误",
+                MessageBox.Show(Framework.Lang.TF("加载登录页面失败：{0}", ex.Message), Framework.Lang.T("错误"),
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -120,8 +120,8 @@ namespace SideDesk
                 }
                 else
                 {
-                    MessageBox.Show($"已拦截到登录接口响应，但未自动识别到 token 字段。\n原始响应如下：\n\n{body}",
-                        "接口响应", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show(Framework.Lang.TF("已拦截到登录接口响应，但未自动识别到 token 字段。\n原始响应如下：\n\n{0}", body),
+                        Framework.Lang.T("接口响应"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
             }
             catch (Exception ex)

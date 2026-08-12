@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
@@ -21,7 +21,6 @@ namespace SideDesk
 {
     public partial class MainWindow : AppBarWindow
     {
-        private ScreenType _currentScreen;
         private WindowConfigManager? _configManager;
         private DockWindowState? _dockState;
         private DispatcherTimer? _hoverTimer;
@@ -30,16 +29,13 @@ namespace SideDesk
         /// <summary>启动引导通知是否已入队（多窗口实例共享，避免重复入队；富通知会广播到所有窗口）</summary>
         private static bool _welcomeNoticeEnqueued;
 
-        public ScreenType CurrentScreen => _currentScreen;
         internal WindowConfigManager? ConfigManager => _configManager;
         internal DockWindowState? DockState => _dockState;
 
 
-        public MainWindow(DockEdge side, ScreenType screen, int monitorIndex)
+        public MainWindow(DockEdge side, int monitorIndex)
         {
             InitializeComponent();
-
-            _currentScreen = screen;
 
             // 应用背景透明度
             ApplyBackgroundOpacity();
@@ -69,8 +65,8 @@ namespace SideDesk
                 _welcomeNoticeEnqueued = true;
                 Services.NotificationService.Instance.Enqueue(new NotificationPayload
                 {
-                    Title = "🌐 点击打开网页窗口",
-                    Body = "在独立窗口中浏览网页",
+                    Title = Framework.Lang.T("🌐 点击打开网页窗口"),
+                    Body = Framework.Lang.T("在独立窗口中浏览网页"),
                     NoticeKey = welcomeNoticeKey,
                     ClickMain = new NotificationAction
                     {
@@ -117,7 +113,6 @@ namespace SideDesk
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
             RegisterAppBar();
-            UpdateTitle();
 
             // 按当前停靠侧读取各自的悬停浮动配置并启动/停止计时器
             ReloadHoverConfig();
@@ -133,13 +128,6 @@ namespace SideDesk
             {
                 SwitchToWindowByIndex(_dockState.ActiveIndex);
             }
-        }
-
-        private void NavigateToCurrentScreen()
-        {
-            var app = (App)Application.Current;
-            string url = app.GetUrlForScreen(_currentScreen);
-            sidebarPanel.NavigateToUrl(url);
         }
 
         /// <summary>重新渲染原生模式面板（设置变更后调用）。</summary>
@@ -213,11 +201,6 @@ namespace SideDesk
             if (_hoverTimer != null) _hoverTimer.Tick -= HoverTimer_Tick;
             _hoverTimer = null;
             base.OnClosing(e);
-        }
-
-        private void UpdateTitle()
-        {
-            titleText.Text = $"元桌小屏 [{_currentScreen}]";
         }
 
         private void MoreButton_Click(object sender, RoutedEventArgs e)
@@ -320,8 +303,10 @@ namespace SideDesk
         }
 
         /// <summary>通用主题化确认对话框（返回是否点击了确定）。</summary>
-        internal bool ShowConfirmDialog(string title, string message, string okText = "确定", string cancelText = "取消")
+        internal bool ShowConfirmDialog(string title, string message, string okText = null, string cancelText = null)
         {
+            okText ??= Framework.Lang.T("确定");
+            cancelText ??= Framework.Lang.T("取消");
             var dialog = new Window
             {
                 Title = title,
@@ -385,7 +370,8 @@ namespace SideDesk
             {
                 windowConfig.Name = dialog.NewName;
                 _configManager.Save();
-                RefreshWindowTabs();
+                // 改名影响所有窗口标签的 ToolTip，广播刷新
+                ((App)Application.Current).RefreshAllWindowTabs();
             }
         }
 
@@ -417,33 +403,6 @@ namespace SideDesk
             ((App)Application.Current).CloseAll();
         }
 
-
-        #region 屏幕切换
-
-        /// <summary>
-        /// 切换当前窗口显示的屏幕内容
-        /// </summary>
-        public void SwitchScreen(ScreenType screen)
-        {
-            _currentScreen = screen;
-            UpdateTitle();
-            NavigateToCurrentScreen();
-            var app = (App)Application.Current;
-            app.RememberScreen(ScreenIndex, DockSide, screen);
-            app.SaveState();
-        }
-
-        private void SwitchToScreenA(object sender, RoutedEventArgs e)
-        {
-            SwitchScreen(ScreenType.A);
-        }
-
-        private void SwitchToScreenB(object sender, RoutedEventArgs e)
-        {
-            SwitchScreen(ScreenType.B);
-        }
-
-        #endregion
 
         #region 布局切换菜单
 
@@ -529,18 +488,18 @@ namespace SideDesk
                 var ctx = new ContextMenu();
                 
                 // 登录选项
-                var loginItem = new MenuItem { Header = "登录" };
+                var loginItem = new MenuItem { Header = Framework.Lang.T("登录") };
                 loginItem.Click += (s, e) => Login_Click(s, e);
                 ctx.Items.Add(loginItem);
                 
                 ctx.Items.Add(new Separator());
 
-                var editItem = new MenuItem { Header = "编辑窗口" };
+                var editItem = new MenuItem { Header = Framework.Lang.T("编辑窗口") };
                 int editIdx = index;
                 editItem.Click += (s, e) => EditWindowAtIndex(editIdx);
                 ctx.Items.Add(editItem);
 
-                var deleteItem = new MenuItem { Header = "删除此窗口" };
+                var deleteItem = new MenuItem { Header = Framework.Lang.T("删除此窗口") };
                 deleteItem.Click += (s, e) => RemoveWindow(index);
                 if (_dockState.WindowIds.Count <= 1)
                     deleteItem.Visibility = Visibility.Collapsed;
@@ -550,15 +509,15 @@ namespace SideDesk
                 ctx.Items.Add(new Separator());
                 
                 // 布局切换选项
-                var layoutLeftItem = new MenuItem { Header = "居左" };
+                var layoutLeftItem = new MenuItem { Header = Framework.Lang.T("居左") };
                 layoutLeftItem.Click += (s, e) => Layout_Left(s, e);
                 ctx.Items.Add(layoutLeftItem);
                 
-                var layoutRightItem = new MenuItem { Header = "居右" };
+                var layoutRightItem = new MenuItem { Header = Framework.Lang.T("居右") };
                 layoutRightItem.Click += (s, e) => Layout_Right(s, e);
                 ctx.Items.Add(layoutRightItem);
                 
-                var layoutBothItem = new MenuItem { Header = "双侧" };
+                var layoutBothItem = new MenuItem { Header = Framework.Lang.T("双侧") };
                 layoutBothItem.Click += (s, e) => Layout_Both(s, e);
                 ctx.Items.Add(layoutBothItem);
                 
@@ -566,7 +525,7 @@ namespace SideDesk
                 ctx.Items.Add(new Separator());
                 
                 // 退出选项
-                var exitItem = new MenuItem { Header = "退出" };
+                var exitItem = new MenuItem { Header = Framework.Lang.T("退出") };
                 exitItem.Click += (s, e) => Exit_Click(s, e);
                 ctx.Items.Add(exitItem);
 
@@ -653,13 +612,13 @@ namespace SideDesk
             var app = (App)Application.Current;
             if (string.IsNullOrEmpty(app.AppSettings?.AccountToken))
             {
-                ThemedMessageBox.Show(this, "请先登录再导入分享。", "提示");
+                ThemedMessageBox.Show(this, Framework.Lang.T(Framework.Lang.T("请先登录再导入分享。")), Framework.Lang.T("提示"));
                 return;
             }
 
             var dialog = new Window
             {
-                Title = "导入分享",
+                Title = Framework.Lang.T("导入分享"),
                 Width = 400,
                 SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -690,7 +649,7 @@ namespace SideDesk
             };
             var titleText = new TextBlock
             {
-                Text = "导入分享",
+                Text = Framework.Lang.T("导入分享"),
                 FontSize = 13,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = (System.Windows.Media.Brush)TryFindResource("BrushTextMain"),
@@ -716,7 +675,7 @@ namespace SideDesk
             var inputArea = new StackPanel { Margin = new Thickness(16, 0, 16, 0) };
             inputArea.Children.Add(new TextBlock
             {
-                Text = "输入分享短码或链接：",
+                Text = Framework.Lang.T("输入分享短码或链接："),
                 FontSize = 12,
                 Foreground = (System.Windows.Media.Brush)TryFindResource("BrushTextSub"),
                 Margin = new Thickness(0, 0, 0, 6)
@@ -738,7 +697,7 @@ namespace SideDesk
             Grid.SetColumn(inputBox, 0);
             var lookupBtn = new Button
             {
-                Content = "查询",
+                Content = Framework.Lang.T("查询"),
                 Width = 64,
                 Margin = new Thickness(8, 0, 0, 0),
                 Style = (Style)TryFindResource("StandardButtonStyle"),
@@ -790,7 +749,7 @@ namespace SideDesk
             };
             var cancelBtn = new Button
             {
-                Content = "取消",
+                Content = Framework.Lang.T("取消"),
                 Width = 72,
                 Margin = new Thickness(0, 0, 10, 0),
                 Style = (Style)TryFindResource("StandardButtonStyle"),
@@ -800,7 +759,7 @@ namespace SideDesk
             cancelBtn.Click += (s, e) => dialog.Close();
             var importBtn = new Button
             {
-                Content = "确认导入",
+                Content = Framework.Lang.T("确认导入"),
                 Width = 88,
                 Style = (Style)TryFindResource("PrimaryButtonStyle"),
                 Cursor = System.Windows.Input.Cursors.Hand,
@@ -832,7 +791,7 @@ namespace SideDesk
                 Debug.WriteLine($"[ImportShare] 用户输入: '{input}' → 短码: '{code}'");
 
                 lookupBtn.IsEnabled = false;
-                lookupBtn.Content = "查询中…";
+                lookupBtn.Content = Framework.Lang.T("查询中…");
                 previewArea.Visibility = Visibility.Collapsed;
                 importBtn.IsEnabled = false;
                 try
@@ -850,16 +809,16 @@ namespace SideDesk
 
                     if (root2["code"]?.ToObject<int>() != 200)
                     {
-                        string errMsg = root2["msg"]?.ToString() ?? "分享不存在或已失效";
+                        string errMsg = root2["msg"]?.ToString() ?? Framework.Lang.T("分享不存在或已失效");
                         Debug.WriteLine($"[ImportShare] 预览失败: {errMsg}");
-                        ThemedMessageBox.Show(dialog, errMsg, "查询失败");
+                        ThemedMessageBox.Show(dialog, errMsg, Framework.Lang.T(Framework.Lang.T("查询失败")));
                         return;
                     }
 
                     var d = root2["data"]!;
                     string shareLevel = d["shareLevel"]?.ToString() ?? "bar";
                     string shareMode  = d["shareMode"]?.ToString() ?? "copy";
-                    string barTitle   = d["barTitle"]?.ToString() ?? "未命名窗口";
+                    string barTitle   = d["barTitle"]?.ToString() ?? Framework.Lang.T("未命名窗口");
                     string itemType   = d["itemType"]?.ToString() ?? "";
                     string itemTitle  = d["itemTitle"]?.ToString() ?? "";
                     int    itemCount  = d["itemCount"]?.ToObject<int>() ?? 0;
@@ -873,9 +832,9 @@ namespace SideDesk
                     // 填充预览区
                     previewTitle.Text = shareLevel == "item" ? displayName : barTitle;
                     previewType.Text  = shareLevel == "item"
-                        ? $"类型：模块（{itemType}）  所属窗口：{barTitle}"
-                        : $"类型：窗口  共 {itemCount} 个模块";
-                    previewMode.Text  = $"分享模式：{(shareMode == "copy" ? "复制（对方获得独立副本）" : "引用（实时查看你的数据）")}";
+                        ? Framework.Lang.TF("类型：模块（{0}）  所属窗口：{1}", itemType, barTitle)
+                        : Framework.Lang.TF("类型：窗口  共 {0} 个模块", itemCount);
+                    previewMode.Text  = Framework.Lang.TF("分享模式：{0}", shareMode == "copy" ? Framework.Lang.T("复制（对方获得独立副本）") : Framework.Lang.T("引用（实时查看你的数据）"));
                     previewCount.Text = shareLevel == "bar" ? "" : "";
                     previewCount.Visibility = Visibility.Collapsed;
                     previewArea.Visibility = Visibility.Visible;
@@ -888,12 +847,12 @@ namespace SideDesk
                 catch (Exception ex)
                 {
                     Debug.WriteLine($"[ImportShare] 预览异常: {ex.Message}");
-                    ThemedMessageBox.Show(dialog, $"查询失败: {ex.Message}", "错误");
+                    ThemedMessageBox.Show(dialog, Framework.Lang.TF("查询失败: {0}", ex.Message), "错误");
                 }
                 finally
                 {
                     lookupBtn.IsEnabled = true;
-                    lookupBtn.Content = "查询";
+                    lookupBtn.Content = Framework.Lang.T("查询");
                 }
             };
 
@@ -902,7 +861,7 @@ namespace SideDesk
             {
                 if (string.IsNullOrEmpty(cachedCode)) return;
                 importBtn.IsEnabled = false;
-                importBtn.Content = "导入中…";
+                importBtn.Content = Framework.Lang.T("导入中…");
                 try
                 {
                     await DoImportShareAsync(cachedCode, cachedShareLevel, dialog);
@@ -910,7 +869,7 @@ namespace SideDesk
                 finally
                 {
                     importBtn.IsEnabled = true;
-                    importBtn.Content = "确认导入";
+                    importBtn.Content = Framework.Lang.T("确认导入");
                 }
             };
 
@@ -958,9 +917,9 @@ namespace SideDesk
         
             if (importResult["code"]?.ToObject<int>() != 200)
             {
-                string errMsg = importResult["msg"]?.ToString() ?? "导入失败";
+                string errMsg = importResult["msg"]?.ToString() ?? Framework.Lang.T("导入失败");
                 Debug.WriteLine($"[ImportShare] 导入失败: {errMsg}");
-                ThemedMessageBox.Show(this, errMsg, "导入失败");
+                ThemedMessageBox.Show(this, errMsg, Framework.Lang.T(Framework.Lang.T("导入失败")));
                 return;
             }
         
@@ -1067,7 +1026,7 @@ namespace SideDesk
                 // === Bar 级导入：新建小屏并切换 ===
                 dialog.Close();
                 Debug.WriteLine($"[ImportShare] bar 级导入完成，新建小屏");
-                string barTitleResult = data["barTitle"]?.ToString() ?? "导入窗口";
+                string barTitleResult = data["barTitle"]?.ToString() ?? Framework.Lang.T("导入窗口");
                 var newWin = new WindowConfig
                 {
                     Id = importLocalId,
@@ -1082,10 +1041,8 @@ namespace SideDesk
                     AllowReShare = resultAllowReShare,
                     OwnerType = "personal"
                 };
-                _configManager?.Add(newWin);
-                _dockState?.WindowIds.Add(newWin.Id);
-                _configManager?.Save();
-                RefreshWindowTabs();
+                _configManager?.AddToAllDocks(newWin);
+                ((App)Application.Current).RefreshAllWindowTabs();
                 WindowTab_Click(_dockState!.WindowIds.Count - 1);
 
                 ThemedMessageBox.Show(this,
@@ -1099,11 +1056,10 @@ namespace SideDesk
             var dialog = new AddWindowDialog { Owner = this };
             if (dialog.ShowDialog() == true && dialog.Result != null)
             {
-                _configManager!.Add(dialog.Result);
-                _dockState!.WindowIds.Add(dialog.Result.Id);
-                _configManager.Save();
-                RefreshWindowTabs();
-                WindowTab_Click(_dockState.WindowIds.Count - 1);
+                // 新小屏同时加入左右两侧 dock，并广播刷新所有窗口的顶部标签
+                _configManager!.AddToAllDocks(dialog.Result);
+                ((App)Application.Current).RefreshAllWindowTabs();
+                WindowTab_Click(_dockState!.WindowIds.Count - 1);
 
                 // 已登录且开启云同步时，调用专用接口只提交新建的窗口（避免全量同步副作用；未登录/未开启时方法内部会跳过）
                 _ = Services.CloudSyncService.Instance.CreateBarOnServerAsync(dialog.Result);
@@ -1300,7 +1256,7 @@ namespace SideDesk
                 HorizontalAlignment = HorizontalAlignment.Right,
                 VerticalAlignment = VerticalAlignment.Top,
                 Cursor = Cursors.Hand,
-                ToolTip = "关闭通知",
+                ToolTip = Framework.Lang.T("关闭通知"),
                 Opacity = 0,
                 IsHitTestVisible = false,
                 Template = new ControlTemplate
@@ -1371,7 +1327,7 @@ namespace SideDesk
         /// <summary>默认通知详情弹窗（主题化）</summary>
         private void ShowNotificationDetail(string text)
         {
-            var (dialog, content) = CreateThemedDialog("通知详情", 400, 220);
+            var (dialog, content) = CreateThemedDialog(Framework.Lang.T("通知详情"), 400, 220);
 
             content.Children.Add(new Emoji.Wpf.TextBlock
             {
@@ -1384,7 +1340,7 @@ namespace SideDesk
 
             var closeBtn = new Button
             {
-                Content = "关闭",
+                Content = Framework.Lang.T("关闭"),
                 Width = 80,
                 HorizontalAlignment = HorizontalAlignment.Right,
                 Style = (Style)FindResource("PrimaryButtonStyle") // 高度自适应（文字+样式内边距），避免固定高度裁掉文字下部
@@ -1399,7 +1355,7 @@ namespace SideDesk
         public void ShowFriendRequestNotification(string fromName, string requestId)
         {
             // 顶部通知栏
-            ShowNotification($"👤 您收到来自「{fromName}」的添加好友通知，点击这里同意或拒绝", () =>
+            ShowNotification(Framework.Lang.TF("👤 您收到来自「{0}」的添加好友通知，点击这里同意或拒绝", fromName), () =>
             {
                 ShowFriendRequestDialog(fromName, requestId);
             });
@@ -1413,11 +1369,11 @@ namespace SideDesk
         /// <summary>好友请求处理弹窗（同意/拒绝，主题化）</summary>
         private void ShowFriendRequestDialog(string fromName, string requestId)
         {
-            var (dialog, content) = CreateThemedDialog("好友请求", 320, 170);
+            var (dialog, content) = CreateThemedDialog(Framework.Lang.T("好友请求"), 320, 170);
 
             content.Children.Add(new TextBlock
             {
-                Text = $"「{fromName}」请求添加你为好友",
+                Text = Framework.Lang.TF("「{0}」请求添加你为好友", fromName),
                 FontSize = 14,
                 FontWeight = FontWeights.Medium,
                 Foreground = (Brush)FindResource("BrushTextMain"),
@@ -1429,7 +1385,7 @@ namespace SideDesk
 
             var acceptBtn = new Button
             {
-                Content = "同意",
+                Content = Framework.Lang.T("同意"),
                 Width = 80,
                 Margin = new Thickness(0, 0, 10, 0),
                 Style = (Style)FindResource("PrimaryButtonStyle"), // 高度自适应，避免固定高度裁掉文字下部
@@ -1438,14 +1394,14 @@ namespace SideDesk
             acceptBtn.Click += async (s, ev) =>
             {
                 var (ok, msg) = await Services.FriendService.Instance.HandleRequestAsync(requestId, "accept");
-                ThemedMessageBox.Show(dialog, ok ? "已添加好友" : (string.IsNullOrEmpty(msg) ? "操作失败" : msg), "提示");
+                ThemedMessageBox.Show(dialog, ok ? Framework.Lang.T(Framework.Lang.T("已添加好友")) : (string.IsNullOrEmpty(msg) ? Framework.Lang.T("操作失败") : msg), "提示");
                 dialog.Close();
             };
             btnPanel.Children.Add(acceptBtn);
 
             var rejectBtn = new Button
             {
-                Content = "拒绝",
+                Content = Framework.Lang.T("拒绝"),
                 Width = 80,
                 Style = (Style)FindResource("StandardButtonStyle"), // 高度自适应，避免固定高度裁掉文字下部
                 Cursor = Cursors.Hand
@@ -1907,7 +1863,7 @@ namespace SideDesk
                     Foreground = fg,
                     BorderThickness = new Thickness(0),
                     Cursor = Cursors.Hand,
-                    ToolTip = "关闭通知",
+                    ToolTip = Framework.Lang.T("关闭通知"),
                     Visibility = Visibility.Collapsed
                 };
                 closeBtn.Click += (s, e) => DismissRichNotification(holder);
@@ -2095,7 +2051,7 @@ namespace SideDesk
             {
                 var okBtn = new Button
                 {
-                    Content = "确定",
+                    Content = Framework.Lang.T("确定"),
                     MinWidth = 70,
                     Style = (Style)FindResource("PrimaryButtonStyle")
                 };

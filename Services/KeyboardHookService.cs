@@ -145,7 +145,7 @@ namespace SideDesk.Services
                     {
                         if ((NativeMethods.GetKeyState(0x12) & 0x8000) != 0) // Alt+F4
                         {
-                            string altF4Log = $"[{timestamp}] *** ALT+F4 DETECTED (可能关闭窗口) ***";
+                            string altF4Log = Framework.Lang.TF("[{0}] *** ALT+F4 DETECTED (可能关闭窗口) ***", timestamp);
                             WriteLog(altF4Log);
                             Debug.WriteLine(altF4Log);
                         }

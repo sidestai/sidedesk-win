@@ -61,7 +61,7 @@ namespace SideDesk.Controls
 
             _dialog = new Window
             {
-                Title = "便签",
+                Title = Framework.Lang.T("便签"),
                 Width = 420,
                 Height = height,
                 Left = left,  // left 已经是 sidebar 右侧边缘的 X 坐标，直接使用
@@ -146,7 +146,7 @@ namespace SideDesk.Controls
             // 标题文本（中间，自动填充）
             var titleLabel = new Emoji.Wpf.TextBlock
             {
-                Text = "便签",
+                Text = Framework.Lang.T("便签"),
                 Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                 FontSize = 14,
                 FontWeight = FontWeights.Bold,
@@ -230,6 +230,8 @@ namespace SideDesk.Controls
                 CaretBrush = (Brush)Application.Current.FindResource("BrushTextMain"),
                 VerticalAlignment = VerticalAlignment.Stretch
             };
+            // 三连击选中整行（对齐浏览器 textarea 的选段习惯）
+            Framework.TripleClickSelect.Enable(_contentBox);
             // 新便签：首次输入内容时正式提交入库（不输入则不产生空便签）
             _contentBox.TextChanged += (s, e) =>
             {
@@ -252,10 +254,11 @@ namespace SideDesk.Controls
 
             var saveBtn = new Button
             {
-                Content = "保存",
+                Content = Framework.Lang.T("保存"),
                 Width = 70,
                 Height = 28,
-                Margin = new Thickness(0, 0, 8, 0)
+                Margin = new Thickness(0, 0, 8, 0),
+                Style = (Style)Application.Current.FindResource("PrimaryButtonStyle")
             };
             saveBtn.Click += (s, e) =>
             {
@@ -266,9 +269,10 @@ namespace SideDesk.Controls
 
             var copyBtn = new Button
             {
-                Content = "复制全文",
+                Content = Framework.Lang.T("复制全文"),
                 Width = 70,
-                Height = 28
+                Height = 28,
+                Style = (Style)Application.Current.FindResource("StandardButtonStyle")
             };
             copyBtn.Click += (s, e) =>
             {

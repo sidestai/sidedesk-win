@@ -31,7 +31,7 @@ public partial class AddShortcutDialog : Window
 
         // 加载浏览器列表
         var app = (App)Application.Current;
-        browserCombo.Items.Add("默认浏览器");
+        browserCombo.Items.Add(Framework.Lang.T("默认浏览器"));
         foreach (var browser in app.ProgramRegistry.Browsers)
         {
             browserCombo.Items.Add(browser.Name);
@@ -120,7 +120,7 @@ public partial class AddShortcutDialog : Window
         {
             var browser = app.ProgramRegistry.Browsers[browserIndex];
             profileCombo.Items.Clear();
-            profileCombo.Items.Add("无");
+            profileCombo.Items.Add(Framework.Lang.T("无"));
             foreach (var profile in browser.Profiles)
             {
                 profileCombo.Items.Add(profile.Name);
@@ -140,7 +140,7 @@ public partial class AddShortcutDialog : Window
         _isBatchMode = !_isBatchMode;
         singlePanel.Visibility = _isBatchMode ? Visibility.Collapsed : Visibility.Visible;
         batchPanel.Visibility = _isBatchMode ? Visibility.Visible : Visibility.Collapsed;
-        toggleBatchBtn.Content = _isBatchMode ? "单个模式" : "批量模式";
+        toggleBatchBtn.Content = _isBatchMode ? Framework.Lang.T("单个模式") : Framework.Lang.T("批量模式");
         this.Height = _isBatchMode ? 350 : 290;
         this.Width = _isBatchMode ? 500 : 400;
 

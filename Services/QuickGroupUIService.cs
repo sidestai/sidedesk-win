@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -165,7 +165,7 @@ namespace SideDesk.Services
         {
             var dialog = new Window
             {
-                Title = "添加分组",
+                Title = Framework.Lang.T("添加分组"),
                 Width = 350, Height = 200,
                 WindowStartupLocation = WindowStartupLocation.CenterScreen,
                 ResizeMode = ResizeMode.NoResize,
@@ -180,29 +180,29 @@ namespace SideDesk.Services
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
             var namePanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(10, 15, 10, 5) };
-            namePanel.Children.Add(new Emoji.Wpf.TextBlock { Text = "名称:", Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), VerticalAlignment = VerticalAlignment.Center, Width = 50 });
-            var nameBox = new TextBox { Width = 220, Text = "新分组" };
+            namePanel.Children.Add(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("名称:"), Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), VerticalAlignment = VerticalAlignment.Center, Width = 50 });
+            var nameBox = new TextBox { Width = 220, Text = Framework.Lang.T("新分组") };
             namePanel.Children.Add(nameBox);
             Grid.SetRow(namePanel, 0);
             grid.Children.Add(namePanel);
 
             var colPanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(10, 5, 10, 5) };
-            colPanel.Children.Add(new Emoji.Wpf.TextBlock { Text = "列数:", Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), VerticalAlignment = VerticalAlignment.Center, Width = 50 });
+            colPanel.Children.Add(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("列数:"), Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), VerticalAlignment = VerticalAlignment.Center, Width = 50 });
             var colCombo = new ComboBox { Width = 100 };
-            colCombo.Items.Add("1 列"); colCombo.Items.Add("2 列");
-            colCombo.Items.Add("3 列"); colCombo.Items.Add("4 列");
+            colCombo.Items.Add(Framework.Lang.T("1 列")); colCombo.Items.Add(Framework.Lang.T("2 列"));
+            colCombo.Items.Add(Framework.Lang.T("3 列")); colCombo.Items.Add(Framework.Lang.T("4 列"));
             colCombo.SelectedIndex = 0;
             colPanel.Children.Add(colCombo);
             Grid.SetRow(colPanel, 1);
             grid.Children.Add(colPanel);
 
             var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(10, 15, 10, 10) };
-            var okBtn = new Button { Content = "确定", Width = 70, Margin = new Thickness(0, 0, 10, 0) };
-            var cancelBtn = new Button { Content = "取消", Width = 70 };
+            var okBtn = new Button { Content = Framework.Lang.T("确定"), Width = 70, Margin = new Thickness(0, 0, 10, 0) };
+            var cancelBtn = new Button { Content = Framework.Lang.T("取消"), Width = 70 };
             okBtn.Click += (s, ev) =>
             {
                 string name = nameBox.Text.Trim();
-                if (string.IsNullOrEmpty(name)) { MessageBox.Show("请输入名称"); return; }
+                if (string.IsNullOrEmpty(name)) { MessageBox.Show(Framework.Lang.T("请输入名称")); return; }
                 var group = new QuickGroup { Name = name, Columns = colCombo.SelectedIndex + 1 };
                 QuickGroupManager.AddGroup(group, OwnerWindowConfig);
                 QuickGroupManager.Save();
@@ -223,7 +223,7 @@ namespace SideDesk.Services
         {
             var dialog = new Window
             {
-                Title = "编辑快捷组",
+                Title = Framework.Lang.T("编辑快捷组"),
                 Width = 360,
                 SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -240,7 +240,7 @@ namespace SideDesk.Services
             // 分组名
             root.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = "分组名",
+                Text = Framework.Lang.T("分组名"),
                 Foreground = (Brush)Application.Current.FindResource("BrushTextSec"),
                 FontSize = (double)Application.Current.FindResource("FontSizeSmall"),
                 Margin = new Thickness(0, 0, 0, 6)
@@ -251,7 +251,7 @@ namespace SideDesk.Services
             // 列数
             root.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = "列数",
+                Text = Framework.Lang.T("列数"),
                 Foreground = (Brush)Application.Current.FindResource("BrushTextSec"),
                 FontSize = (double)Application.Current.FindResource("FontSizeSmall"),
                 Margin = new Thickness(0, 14, 0, 6)
@@ -263,7 +263,7 @@ namespace SideDesk.Services
                 int col = c;
                 var r = new RadioButton
                 {
-                    Content = $"{col} 列",
+                    Content = Framework.Lang.TF("{0} 列", col),
                     Style = radioStyle,
                     IsChecked = col == selectedCol,
                     Margin = new Thickness(0, 0, 16, 0)
@@ -276,7 +276,7 @@ namespace SideDesk.Services
             // 显示模式
             root.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = "显示模式",
+                Text = Framework.Lang.T("显示模式"),
                 Foreground = (Brush)Application.Current.FindResource("BrushTextSec"),
                 FontSize = (double)Application.Current.FindResource("FontSizeSmall"),
                 Margin = new Thickness(0, 14, 0, 6)
@@ -301,7 +301,7 @@ namespace SideDesk.Services
             // 所属团队（个人 + 团队列表，异步加载）
             root.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = "所属团队",
+                Text = Framework.Lang.T("所属团队"),
                 Foreground = (Brush)Application.Current.FindResource("BrushTextSec"),
                 FontSize = (double)Application.Current.FindResource("FontSizeSmall"),
                 Margin = new Thickness(0, 14, 0, 6)
@@ -311,7 +311,7 @@ namespace SideDesk.Services
                 Style = (Style)Application.Current.FindResource("GlobalComboBoxStyle"),
                 IsEditable = false
             };
-            teamCombo.Items.Add(new ComboBoxItem { Content = "个人", Tag = (string?)null });
+            teamCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("个人"), Tag = (string?)null });
             teamCombo.SelectedIndex = 0;
             root.Children.Add(teamCombo);
 
@@ -352,20 +352,20 @@ namespace SideDesk.Services
             };
             var cancelBtn = new Button
             {
-                Content = "取消",
+                Content = Framework.Lang.T("取消"),
                 Style = (Style)Application.Current.FindResource("StandardButtonStyle"),
                 Margin = new Thickness(0, 0, 10, 0)
             };
             cancelBtn.Click += (s, ev) => dialog.Close();
             var okBtn = new Button
             {
-                Content = "保存",
+                Content = Framework.Lang.T("保存"),
                 Style = (Style)Application.Current.FindResource("PrimaryButtonStyle")
             };
             okBtn.Click += (s, ev) =>
             {
                 string name = nameBox.Text.Trim();
-                if (string.IsNullOrEmpty(name)) { MessageBox.Show("请输入分组名"); return; }
+                if (string.IsNullOrEmpty(name)) { MessageBox.Show(Framework.Lang.T("请输入分组名")); return; }
                 group.Name = name;
                 group.Columns = selectedCol;
                 group.DisplayMode = selectedMode;
@@ -392,20 +392,20 @@ namespace SideDesk.Services
         {
             var menu = new ContextMenu();
 
-            var addGroupItem = new MenuItem { Header = "添加分组" };
+            var addGroupItem = new MenuItem { Header = Framework.Lang.T("添加分组") };
             addGroupItem.Click += (s, ev) => ShowAddGroupDialog();
             menu.Items.Add(addGroupItem);
             menu.Items.Add(new Separator());
 
-            var addProgItem = new MenuItem { Header = "添加程序" };
+            var addProgItem = new MenuItem { Header = Framework.Lang.T("添加程序") };
             addProgItem.Click += (s, ev) => AddItemToDefaultGroup("program");
             menu.Items.Add(addProgItem);
 
-            var addUrlItem = new MenuItem { Header = "添加网址" };
+            var addUrlItem = new MenuItem { Header = Framework.Lang.T("添加网址") };
             addUrlItem.Click += (s, ev) => AddItemToDefaultGroup("url");
             menu.Items.Add(addUrlItem);
 
-            var addWinItem = new MenuItem { Header = "添加窗口" };
+            var addWinItem = new MenuItem { Header = Framework.Lang.T("添加窗口") };
             addWinItem.Click += (s, ev) => ShowPickWindowDialog(null);
             menu.Items.Add(addWinItem);
 
@@ -419,15 +419,15 @@ namespace SideDesk.Services
         {
             var menu = new ContextMenu();
 
-            var addUrlItem = new MenuItem { Header = "网页" };
+            var addUrlItem = new MenuItem { Header = Framework.Lang.T("网页") };
             addUrlItem.Click += (s, ev) => AddItemToDefaultGroup("url");
             menu.Items.Add(addUrlItem);
 
-            var addProgItem = new MenuItem { Header = "程序" };
+            var addProgItem = new MenuItem { Header = Framework.Lang.T("程序") };
             addProgItem.Click += (s, ev) => AddItemToDefaultGroup("program");
             menu.Items.Add(addProgItem);
 
-            var addWinItem = new MenuItem { Header = "窗口" };
+            var addWinItem = new MenuItem { Header = Framework.Lang.T("窗口") };
             addWinItem.Click += (s, ev) => ShowPickWindowDialog(null);
             menu.Items.Add(addWinItem);
 
@@ -441,15 +441,15 @@ namespace SideDesk.Services
         {
             var menu = new ContextMenu();
 
-            var addUrlItem = new MenuItem { Header = "网页" };
+            var addUrlItem = new MenuItem { Header = Framework.Lang.T("网页") };
             addUrlItem.Click += (s, ev) => ShowAddItemDialog(groupId, null, "url");
             menu.Items.Add(addUrlItem);
 
-            var addProgItem = new MenuItem { Header = "程序" };
+            var addProgItem = new MenuItem { Header = Framework.Lang.T("程序") };
             addProgItem.Click += (s, ev) => ShowAddItemDialog(groupId, null, "program");
             menu.Items.Add(addProgItem);
 
-            var addWinItem = new MenuItem { Header = "窗口" };
+            var addWinItem = new MenuItem { Header = Framework.Lang.T("窗口") };
             addWinItem.Click += (s, ev) => ShowPickWindowDialog(groupId);
             menu.Items.Add(addWinItem);
 
@@ -465,7 +465,7 @@ namespace SideDesk.Services
 
             var dialog = new Window
             {
-                Title = "新建快捷方式",
+                Title = Framework.Lang.T("新建快捷方式"),
                 Width = 340, Height = 170,
                 WindowStartupLocation = WindowStartupLocation.CenterScreen,
                 ResizeMode = ResizeMode.NoResize,
@@ -479,19 +479,19 @@ namespace SideDesk.Services
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
             var namePanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(10, 15, 10, 5) };
-            namePanel.Children.Add(new Emoji.Wpf.TextBlock { Text = "分组名:", Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), VerticalAlignment = VerticalAlignment.Center, Width = 60 });
+            namePanel.Children.Add(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("分组名:"), Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), VerticalAlignment = VerticalAlignment.Center, Width = 60 });
             var nameBox = new TextBox { Width = 220 };
             namePanel.Children.Add(nameBox);
             Grid.SetRow(namePanel, 0);
             grid.Children.Add(namePanel);
 
             var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(10, 15, 10, 10) };
-            var okBtn = new Button { Content = "确定", Width = 70, Margin = new Thickness(0, 0, 10, 0) };
-            var cancelBtn = new Button { Content = "取消", Width = 70 };
+            var okBtn = new Button { Content = Framework.Lang.T("确定"), Width = 70, Margin = new Thickness(0, 0, 10, 0) };
+            var cancelBtn = new Button { Content = Framework.Lang.T("取消"), Width = 70 };
             okBtn.Click += (s, ev) =>
             {
                 string name = nameBox.Text.Trim();
-                if (string.IsNullOrEmpty(name)) { MessageBox.Show("请输入分组名称"); return; }
+                if (string.IsNullOrEmpty(name)) { MessageBox.Show(Framework.Lang.T("请输入分组名称")); return; }
                 var group = new QuickGroup { Name = name, Columns = 2 };
                 QuickGroupManager.AddGroup(group, OwnerWindowConfig);
                 QuickGroupManager.Save();
@@ -682,17 +682,17 @@ namespace SideDesk.Services
             titleBar.MouseRightButtonUp += (s, ev) =>
             {
                 var rmenu = new ContextMenu();
-                var editGrpItem = new MenuItem { Header = "编辑快捷组" };
+                var editGrpItem = new MenuItem { Header = Framework.Lang.T("编辑快捷组") };
                 editGrpItem.Click += (s2, ev2) => ShowEditGroupDialog(group);
                 rmenu.Items.Add(editGrpItem);
-                var delItem = new MenuItem { Header = "删除快捷组" };
+                var delItem = new MenuItem { Header = Framework.Lang.T("删除快捷组") };
                 delItem.Click += (s2, ev2) =>
                 {
                     bool hasModules = group.ChildPanels != null && group.ChildPanels.Count > 0;
                     string message = hasModules
-                        ? $"分组 \"{group.Name}\" 包含 {group.ChildPanels!.Count} 个模块，删除后模块也将丢失。确定继续？"
-                        : $"确定删除分组 \"{group.Name}\"？";
-                    if (MessageBox.Show(message, "确认", MessageBoxButton.YesNo) == MessageBoxResult.Yes)
+                        ? Framework.Lang.TF("分组 \"{0}\" 包含 {1} 个模块，删除后模块也将丢失。确定继续？", group.Name, group.ChildPanels!.Count)
+                        : Framework.Lang.TF("确定删除分组 \"{0}\"？", group.Name);
+                    if (MessageBox.Show(message, Framework.Lang.T("确认"), MessageBoxButton.YesNo) == MessageBoxResult.Yes)
                     {
                         QuickGroupManager.RemoveGroup(group.Id);
                         QuickGroupManager.Save();
@@ -701,7 +701,7 @@ namespace SideDesk.Services
                     }
                 };
                 rmenu.Items.Add(delItem);
-                var hideItem = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = group.HideFrame };
+                var hideItem = new MenuItem { Header = Framework.Lang.T("隐藏模块外框"), IsCheckable = true, IsChecked = group.HideFrame };
                 hideItem.Click += (s2, ev2) => ToggleHideFrame();
                 rmenu.Items.Add(hideItem);
                 rmenu.PlacementTarget = titleBar;
@@ -832,7 +832,7 @@ namespace SideDesk.Services
             if (group.HideFrame)
             {
                 var bareMenu = new ContextMenu();
-                var bareHide = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = true };
+                var bareHide = new MenuItem { Header = Framework.Lang.T("隐藏模块外框"), IsCheckable = true, IsChecked = true };
                 bareHide.Click += (s, ev) => ToggleHideFrame();
                 bareMenu.Items.Add(bareHide);
                 border.ContextMenu = bareMenu;
@@ -844,20 +844,20 @@ namespace SideDesk.Services
                 var popup = new ContextMenu();
 
                 // 添加子菜单
-                var addSubMenu = new MenuItem { Header = "添加" };
-                var miProg = new MenuItem { Header = "添加程序" };
+                var addSubMenu = new MenuItem { Header = Framework.Lang.T("添加") };
+                var miProg = new MenuItem { Header = Framework.Lang.T("添加程序") };
                 miProg.Click += (s2, ev2) => ShowAddItemDialog(group.Id, contentPanel, "program");
                 addSubMenu.Items.Add(miProg);
-                var miUrl = new MenuItem { Header = "添加网址" };
+                var miUrl = new MenuItem { Header = Framework.Lang.T("添加网址") };
                 miUrl.Click += (s2, ev2) => ShowAddItemDialog(group.Id, contentPanel, "url");
                 addSubMenu.Items.Add(miUrl);
-                var miWin = new MenuItem { Header = "添加窗口" };
+                var miWin = new MenuItem { Header = Framework.Lang.T("添加窗口") };
                 miWin.Click += (s2, ev2) => ShowPickWindowDialog(group.Id);
                 addSubMenu.Items.Add(miWin);
                 popup.Items.Add(addSubMenu);
                 popup.Items.Add(new Separator());
 
-                var expandItem = new MenuItem { Header = group.IsExpanded ? "收起" : "展开" };
+                var expandItem = new MenuItem { Header = group.IsExpanded ? Framework.Lang.T("收起") : Framework.Lang.T("展开") };
                 expandItem.Click += (s2, ev2) =>
                 {
                     group.IsExpanded = !group.IsExpanded;
@@ -868,45 +868,45 @@ namespace SideDesk.Services
                 popup.Items.Add(new Separator());
 
                 // 编辑快捷组（分组名/列数/显示模式/所属团队，与右键标题栏入口同对话框；重命名已合并到此入口）
-                var editGrpMenuItem = new MenuItem { Header = "编辑快捷组" };
+                var editGrpMenuItem = new MenuItem { Header = Framework.Lang.T("编辑快捷组") };
                 editGrpMenuItem.Click += (s2, ev2) => ShowEditGroupDialog(group);
                 popup.Items.Add(editGrpMenuItem);
 
-                var colItem = new MenuItem { Header = "修改列数" };
+                var colItem = new MenuItem { Header = Framework.Lang.T("修改列数") };
                 for (int c = 1; c <= 4; c++)
                 {
                     int col = c;
-                    var mi = new MenuItem { Header = $"{col} 列", IsChecked = (group.Columns == col) };
+                    var mi = new MenuItem { Header = Framework.Lang.TF("{0} 列", col), IsChecked = (group.Columns == col) };
                     mi.Click += (s2, ev2) => { group.Columns = col; if (group.DisplayMode != "list") contentPanel.Columns = col; QuickGroupManager.UpdateGroup(group); QuickGroupManager.Save(); };
                     colItem.Items.Add(mi);
                 }
                 popup.Items.Add(colItem);
 
                 // 显示模式子菜单：大图标 / 列表 / 弹出菜单
-                var displayItem = new MenuItem { Header = "显示" };
-                var modeGrid = new MenuItem { Header = "大图标", IsCheckable = true, IsChecked = group.DisplayMode == "grid" };
+                var displayItem = new MenuItem { Header = Framework.Lang.T("显示") };
+                var modeGrid = new MenuItem { Header = Framework.Lang.T("大图标"), IsCheckable = true, IsChecked = group.DisplayMode == "grid" };
                 modeGrid.Click += (s2, ev2) => SetDisplayMode(group, "grid");
                 displayItem.Items.Add(modeGrid);
-                var modeList = new MenuItem { Header = "列表", IsCheckable = true, IsChecked = group.DisplayMode == "list" };
+                var modeList = new MenuItem { Header = Framework.Lang.T("列表"), IsCheckable = true, IsChecked = group.DisplayMode == "list" };
                 modeList.Click += (s2, ev2) => SetDisplayMode(group, "list");
                 displayItem.Items.Add(modeList);
-                var modePopup = new MenuItem { Header = "弹出菜单", IsCheckable = true, IsChecked = group.DisplayMode == "popup" };
+                var modePopup = new MenuItem { Header = Framework.Lang.T("弹出菜单"), IsCheckable = true, IsChecked = group.DisplayMode == "popup" };
                 modePopup.Click += (s2, ev2) => SetDisplayMode(group, "popup");
                 displayItem.Items.Add(modePopup);
                 popup.Items.Add(displayItem);
                 popup.Items.Add(new Separator());
 
-                var tileItem = new MenuItem { Header = "平铺窗口" };
+                var tileItem = new MenuItem { Header = Framework.Lang.T("平铺窗口") };
                 tileItem.Click += (s2, ev2) => TileGroupWindows(group);
                 popup.Items.Add(tileItem);
                 popup.Items.Add(new Separator());
 
-                var hideFrameItem = new MenuItem { Header = "隐藏模块外框", IsCheckable = true, IsChecked = group.HideFrame };
+                var hideFrameItem = new MenuItem { Header = Framework.Lang.T("隐藏模块外框"), IsCheckable = true, IsChecked = group.HideFrame };
                 hideFrameItem.Click += (s2, ev2) => ToggleHideFrame();
                 popup.Items.Add(hideFrameItem);
                 popup.Items.Add(new Separator());
 
-                var deleteItem = new MenuItem { Header = "删除快捷组" };
+                var deleteItem = new MenuItem { Header = Framework.Lang.T("删除快捷组") };
                 deleteItem.Click += (s2, ev2) =>
                 {
                     bool hasModules = group.ChildPanels != null && group.ChildPanels.Count > 0;
@@ -914,14 +914,14 @@ namespace SideDesk.Services
                     if (hasModules)
                     {
                         int count = group.ChildPanels!.Count;
-                        message = $"分组 \"{group.Name}\" 包含 {count} 个模块，删除后模块也将丢失。确定继续？";
+                        message = Framework.Lang.TF("分组 \"{0}\" 包含 {1} 个模块，删除后模块也将丢失。确定继续？", group.Name, count);
                     }
                     else
                     {
-                        message = $"确定删除分组 \"{group.Name}\"？";
+                        message = Framework.Lang.TF("确定删除分组 \"{0}\"？", group.Name);
                     }
 
-                    if (MessageBox.Show(message, "确认", MessageBoxButton.YesNo) == MessageBoxResult.Yes)
+                    if (MessageBox.Show(message, Framework.Lang.T("确认"), MessageBoxButton.YesNo) == MessageBoxResult.Yes)
                     {
                         QuickGroupManager.RemoveGroup(group.Id);
                         QuickGroupManager.Save();
@@ -1081,7 +1081,7 @@ namespace SideDesk.Services
             // 添加便签按钮
             var addBtn = new Button
             {
-                Content = "+ 添加便签",
+                Content = Framework.Lang.T("+ 添加便签"),
                 Height = 28,
                 Margin = new Thickness(0, 0, 0, 8),
                 Cursor = Cursors.Hand
@@ -1126,7 +1126,7 @@ namespace SideDesk.Services
             // 文本预览
             var textBlock = new Emoji.Wpf.TextBlock
             {
-                Text = string.IsNullOrEmpty(note.Content) ? "空便签" : note.Content,
+                Text = string.IsNullOrEmpty(note.Content) ? Framework.Lang.T("空便签") : note.Content,
                 Foreground = (Brush)new BrushConverter().ConvertFrom("#CCCCCC"),
                 FontSize = 11,
                 VerticalAlignment = VerticalAlignment.Center,
@@ -1160,7 +1160,7 @@ namespace SideDesk.Services
                 // 添加计时器按钮
                 var addBtn = new Button
                 {
-                    Content = "+ 添加计时器",
+                    Content = Framework.Lang.T("+ 添加计时器"),
                     Height = 28,
                     Margin = new Thickness(0, 0, 0, 8),
                     Cursor = Cursors.Hand
@@ -1193,7 +1193,7 @@ namespace SideDesk.Services
             {
                 container.Children.Add(new Emoji.Wpf.TextBlock
                 {
-                    Text = "暂无倒计时（在主面板中使用完整功能）",
+                    Text = Framework.Lang.T("暂无倒计时（在主面板中使用完整功能）"),
                     Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
                     FontSize = 11,
                     Opacity = 0.7,
@@ -1204,7 +1204,7 @@ namespace SideDesk.Services
             foreach (var cd in panel.CountdownItems)
             {
                 var remaining = cd.GetRemaining();
-                var status = cd.IsFinished ? "✔ 已到期" : cd.IsRunning ? "▶ 进行中" : "⏸ 待开始";
+                var status = cd.IsFinished ? Framework.Lang.T("✔ 已到期") : cd.IsRunning ? Framework.Lang.T("▶ 进行中") : Framework.Lang.T("⏸ 待开始");
                 container.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = $"{cd.Name}  {(int)remaining.TotalHours:D2}:{remaining.Minutes:D2}:{remaining.Seconds:D2}  {status}",
@@ -1252,7 +1252,7 @@ namespace SideDesk.Services
             var titleRow = new DockPanel();
             var titleLabel = new Emoji.Wpf.TextBlock
             {
-                Text = string.IsNullOrEmpty(timer.Name) ? "新计时" : timer.Name,
+                Text = string.IsNullOrEmpty(timer.Name) ? Framework.Lang.T("新计时") : timer.Name,
                 Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                 FontSize = 13,
                 FontWeight = FontWeights.Bold,
@@ -1333,7 +1333,7 @@ namespace SideDesk.Services
             {
                 var todayText = new Emoji.Wpf.TextBlock
                 {
-                    Text = $"今日: {FormatTimeSpan(TimeSpan.FromSeconds(todaySeconds))}",
+                    Text = Framework.Lang.TF("今日: {0}", FormatTimeSpan(TimeSpan.FromSeconds(todaySeconds))),
                     Foreground = (Brush)new BrushConverter().ConvertFrom("#9CA3AF"),
                     FontSize = 11,
                     HorizontalAlignment = HorizontalAlignment.Center,
@@ -1368,7 +1368,7 @@ namespace SideDesk.Services
         {
             var dialog = new Window
             {
-                Title = "编辑计时器",
+                Title = Framework.Lang.T("编辑计时器"),
                 Width = 380,
                 Height = 240,
                 WindowStartupLocation = WindowStartupLocation.CenterScreen,
@@ -1383,7 +1383,7 @@ namespace SideDesk.Services
             // 标题
             var titleText = new Emoji.Wpf.TextBlock
             {
-                Text = "编辑计时器",
+                Text = Framework.Lang.T("编辑计时器"),
                 FontSize = (double)Application.Current.FindResource("FontSizeSubtitle"),
                 FontWeight = FontWeights.Bold,
                 Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
@@ -1394,7 +1394,7 @@ namespace SideDesk.Services
             // 名称标签
             var nameLabel = new Emoji.Wpf.TextBlock
             {
-                Text = "名称",
+                Text = Framework.Lang.T("名称"),
                 FontSize = (double)Application.Current.FindResource("FontSizeSmallPlus"),
                 Foreground = (Brush)Application.Current.FindResource("BrushTextSec"),
                 Margin = new Thickness(0, 0, 0, 6)
@@ -1413,7 +1413,7 @@ namespace SideDesk.Services
             // 超时标签
             var timeoutLabel = new Emoji.Wpf.TextBlock
             {
-                Text = "超时（秒）",
+                Text = Framework.Lang.T("超时（秒）"),
                 FontSize = (double)Application.Current.FindResource("FontSizeSmallPlus"),
                 Foreground = (Brush)Application.Current.FindResource("BrushTextSec"),
                 Margin = new Thickness(0, 0, 0, 6)
@@ -1438,7 +1438,7 @@ namespace SideDesk.Services
 
             var cancelBtn = new Button
             {
-                Content = "取消",
+                Content = Framework.Lang.T("取消"),
                 Style = (Style)Application.Current.FindResource("StandardButtonStyle"),
                 Width = 75,
                 Margin = new Thickness(0, 0, 10, 0)
@@ -1447,13 +1447,13 @@ namespace SideDesk.Services
 
             var saveBtn = new Button
             {
-                Content = "保存",
+                Content = Framework.Lang.T("保存"),
                 Style = (Style)Application.Current.FindResource("PrimaryButtonStyle"),
                 Width = 75
             };
             saveBtn.Click += (s, e) =>
             {
-                timer.Name = string.IsNullOrWhiteSpace(nameBox.Text) ? "计时器" : nameBox.Text.Trim();
+                timer.Name = string.IsNullOrWhiteSpace(nameBox.Text) ? Framework.Lang.T("计时器") : nameBox.Text.Trim();
                 if (int.TryParse(timeoutBox.Text, out int timeout) && timeout > 0)
                 {
                     timer.TimeoutSeconds = timeout;
@@ -1488,23 +1488,23 @@ namespace SideDesk.Services
         }
 
         // 其他模块的占位实现
-        private FrameworkElement BuildClipboardModule(PanelItem panel, string groupId) => WrapWithThemeBackground(new Emoji.Wpf.TextBlock { Text = "📋 剪贴板收藏", Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), Margin = new Thickness(8) });
-        private FrameworkElement BuildUsageStatsModule(PanelItem panel, string groupId) => WrapWithThemeBackground(new Emoji.Wpf.TextBlock { Text = "📊 使用统计", Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), Margin = new Thickness(8) });
-        private FrameworkElement BuildAIChatModule(PanelItem panel, string groupId) => WrapWithThemeBackground(new Emoji.Wpf.TextBlock { Text = "🤖 AI 对话", Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), Margin = new Thickness(8) });
-        private FrameworkElement BuildSystemMonitorModule(PanelItem panel, string groupId) => WrapWithThemeBackground(new Emoji.Wpf.TextBlock { Text = "💻 系统信息", Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), Margin = new Thickness(8) });
-        private FrameworkElement BuildFileAreaModule(PanelItem panel, string groupId) => WrapWithThemeBackground(new Emoji.Wpf.TextBlock { Text = "📁 文件区", Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), Margin = new Thickness(8) });
-        private FrameworkElement BuildDataDashboardModule(PanelItem panel, string groupId) => WrapWithThemeBackground(new Emoji.Wpf.TextBlock { Text = "📈 数据看板", Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), Margin = new Thickness(8) });
+        private FrameworkElement BuildClipboardModule(PanelItem panel, string groupId) => WrapWithThemeBackground(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("📋 剪贴板收藏"), Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), Margin = new Thickness(8) });
+        private FrameworkElement BuildUsageStatsModule(PanelItem panel, string groupId) => WrapWithThemeBackground(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("📊 使用统计"), Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), Margin = new Thickness(8) });
+        private FrameworkElement BuildAIChatModule(PanelItem panel, string groupId) => WrapWithThemeBackground(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("🤖 AI 对话"), Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), Margin = new Thickness(8) });
+        private FrameworkElement BuildSystemMonitorModule(PanelItem panel, string groupId) => WrapWithThemeBackground(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("💻 系统信息"), Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), Margin = new Thickness(8) });
+        private FrameworkElement BuildFileAreaModule(PanelItem panel, string groupId) => WrapWithThemeBackground(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("📁 文件区"), Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), Margin = new Thickness(8) });
+        private FrameworkElement BuildDataDashboardModule(PanelItem panel, string groupId) => WrapWithThemeBackground(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("📈 数据看板"), Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), Margin = new Thickness(8) });
 
         private FrameworkElement BuildPluginModule(PanelItem panel, string groupId)
         {
             var pluginId = panel.PluginId;
             if (string.IsNullOrEmpty(pluginId))
-                return WrapWithThemeBackground(new TextBlock { Text = "未指定插件", Opacity = 0.6, Margin = new Thickness(8) });
+                return WrapWithThemeBackground(new TextBlock { Text = Framework.Lang.T("未指定插件"), Opacity = 0.6, Margin = new Thickness(8) });
 
             var loader = Plugins.PluginLoaderService.Instance;
             var ui = loader.CreatePluginUI(pluginId);
             if (ui == null)
-                return WrapWithThemeBackground(new TextBlock { Text = $"插件未加载: {pluginId}", Opacity = 0.6, Margin = new Thickness(8) });
+                return WrapWithThemeBackground(new TextBlock { Text = Framework.Lang.TF("插件未加载: {0}", pluginId), Opacity = 0.6, Margin = new Thickness(8) });
 
             // UIElement 包装为 FrameworkElement
             var host = ui as FrameworkElement ?? new ContentControl { Content = ui };
@@ -1674,24 +1674,24 @@ namespace SideDesk.Services
 
             // 右键菜单
             var menu = new ContextMenu();
-            var editItem = new MenuItem { Header = "编辑" };
+            var editItem = new MenuItem { Header = Framework.Lang.T("编辑") };
             editItem.Click += (s, ev) => ShowEditItemDialog(item, groupId, btn);
             menu.Items.Add(editItem);
 
-            var topmostItem = new MenuItem { Header = "窗口置顶", IsCheckable = true, IsChecked = item.AlwaysOnTop };
+            var topmostItem = new MenuItem { Header = Framework.Lang.T("窗口置顶"), IsCheckable = true, IsChecked = item.AlwaysOnTop };
             topmostItem.Click += (s, ev) => { item.AlwaysOnTop = topmostItem.IsChecked; pinDot.Visibility = item.AlwaysOnTop ? Visibility.Visible : Visibility.Collapsed; ApplyTopmostIfPossible(item); QuickGroupManager.Save(); };
             menu.Items.Add(topmostItem);
 
-            var taskbarItem = new MenuItem { Header = "在任务栏显示", IsCheckable = true, IsChecked = item.ShowInTaskbar };
+            var taskbarItem = new MenuItem { Header = Framework.Lang.T("在任务栏显示"), IsCheckable = true, IsChecked = item.ShowInTaskbar };
             taskbarItem.Click += (s, ev) => { item.ShowInTaskbar = taskbarItem.IsChecked; ApplyTaskbarVisibility(item); QuickGroupManager.Save(); };
             menu.Items.Add(taskbarItem);
 
-            var closeItem = new MenuItem { Header = "关闭窗口" };
+            var closeItem = new MenuItem { Header = Framework.Lang.T("关闭窗口") };
             closeItem.Click += (s, ev) => CloseItemWindow(item);
             menu.Items.Add(closeItem);
             menu.Items.Add(new Separator());
 
-            var delItem = new MenuItem { Header = "删除" };
+            var delItem = new MenuItem { Header = Framework.Lang.T("删除") };
             delItem.Click += (s, ev) =>
             {
                 QuickGroupManager.RemoveItem(groupId, item.Id);
@@ -1914,7 +1914,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"打开失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(Framework.Lang.TF("打开失败：{0}", ex.Message), Framework.Lang.T("错误"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -2287,7 +2287,7 @@ namespace SideDesk.Services
                 }
                 if (windowHandles.Count == 0)
                 {
-                    MessageBox.Show("该分组中没有可平铺的窗口", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                    MessageBox.Show(Framework.Lang.T("该分组中没有可平铺的窗口"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
 
@@ -2326,7 +2326,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"平铺窗口失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(Framework.Lang.TF("平铺窗口失败：{0}", ex.Message), Framework.Lang.T("错误"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -2356,7 +2356,7 @@ namespace SideDesk.Services
                             var newItem = new QuickItem
                             {
                                 Name = string.IsNullOrEmpty(result.Name)
-                                    ? (string.IsNullOrEmpty(result.Url) ? "新快捷项" : result.Url)
+                                    ? (string.IsNullOrEmpty(result.Url) ? Framework.Lang.T("新快捷项") : result.Url)
                                     : result.Name,
                                 Icon = result.Icon,
                                 Type = "url",
@@ -2376,7 +2376,7 @@ namespace SideDesk.Services
                         var newItem = new QuickItem
                         {
                             Name = string.IsNullOrEmpty(result.Name)
-                                ? (string.IsNullOrEmpty(result.Url) ? "新快捷项" : result.Url)
+                                ? (string.IsNullOrEmpty(result.Url) ? Framework.Lang.T("新快捷项") : result.Url)
                                 : result.Name,
                             Icon = result.Icon,
                             Type = "url",
@@ -2397,7 +2397,7 @@ namespace SideDesk.Services
             // 程序类型：Tab式对话框
             var dialog = new Window
             {
-                Title = "添加程序",
+                Title = Framework.Lang.T("添加程序"),
                 Width = 460,
                 SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterScreen,
@@ -2414,7 +2414,7 @@ namespace SideDesk.Services
             // 标题
             rootPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = "添加程序",
+                Text = Framework.Lang.T("添加程序"),
                 FontWeight = FontWeights.Bold,
                 FontSize = (double)Application.Current.FindResource("FontSizeSubtitle"),
                 Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
@@ -2427,7 +2427,7 @@ namespace SideDesk.Services
             // 应用市场入口（右侧）
             var marketBtn = new Button
             {
-                Content = "🛒 应用市场",
+                Content = Framework.Lang.T("🛒 应用市场"),
                 Padding = new Thickness(12, 6, 12, 6),
                 Style = (Style)Application.Current.FindResource("GhostButtonStyle")
             };
@@ -2435,10 +2435,22 @@ namespace SideDesk.Services
             DockPanel.SetDock(marketBtn, Dock.Right);
             tabBar.Children.Add(marketBtn);
 
+            // 插件市场入口（右侧，紧挨应用市场）
+            var pluginMarketBtn = new Button
+            {
+                Content = Framework.Lang.T("🧩 插件市场"),
+                Padding = new Thickness(12, 6, 12, 6),
+                Margin = new Thickness(0, 0, 6, 0),
+                Style = (Style)Application.Current.FindResource("GhostButtonStyle")
+            };
+            pluginMarketBtn.Click += (s, ev2) => MarketWindow.Open("/plugin-market", "🧩 插件市场");
+            DockPanel.SetDock(pluginMarketBtn, Dock.Right);
+            tabBar.Children.Add(pluginMarketBtn);
+
             var tabStack = new StackPanel { Orientation = Orientation.Horizontal };
-            var tabManual = new Button { Content = "自行输入", Padding = new Thickness(12, 6, 12, 6), Margin = new Thickness(0, 0, 6, 0) };
-            var tabList = new Button { Content = "从列表", Padding = new Thickness(12, 6, 12, 6), Margin = new Thickness(0, 0, 6, 0) };
-            var tabBrowser = new Button { Content = "浏览器", Padding = new Thickness(12, 6, 12, 6) };
+            var tabManual = new Button { Content = Framework.Lang.T("自行输入"), Padding = new Thickness(12, 6, 12, 6), Margin = new Thickness(0, 0, 6, 0) };
+            var tabList = new Button { Content = Framework.Lang.T("从列表"), Padding = new Thickness(12, 6, 12, 6), Margin = new Thickness(0, 0, 6, 0) };
+            var tabBrowser = new Button { Content = Framework.Lang.T("浏览器"), Padding = new Thickness(12, 6, 12, 6) };
             tabStack.Children.Add(tabManual);
             tabStack.Children.Add(tabList);
             tabStack.Children.Add(tabBrowser);
@@ -2462,14 +2474,14 @@ namespace SideDesk.Services
             var manualPanel = new StackPanel();
             var browseBtn = new Button
             {
-                Content = "浏览选择 exe...",
+                Content = Framework.Lang.T("浏览选择 exe..."),
                 Style = (Style)Application.Current.FindResource("GhostButtonStyle"),
                 HorizontalAlignment = HorizontalAlignment.Left,
                 Padding = new Thickness(12, 6, 12, 6)
             };
             manualPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = "点击下方按钮选择可执行文件，或在下方直接输入路径",
+                Text = Framework.Lang.T("点击下方按钮选择可执行文件，或在下方直接输入路径"),
                 Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
                 FontSize = (double)Application.Current.FindResource("FontSizeSmall"),
                 Margin = new Thickness(0, 0, 0, 8),
@@ -2483,7 +2495,7 @@ namespace SideDesk.Services
             {
                 listPanel.Children.Add(new Emoji.Wpf.TextBlock
                 {
-                    Text = "暂无已注册程序，请先在设置→程序管理中添加",
+                    Text = Framework.Lang.T("暂无已注册程序，请先在设置→程序管理中添加"),
                     Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
                     FontSize = (double)Application.Current.FindResource("FontSizeSmall"),
                     TextWrapping = TextWrapping.Wrap
@@ -2528,7 +2540,7 @@ namespace SideDesk.Services
             {
                 browserPanel.Children.Add(new Emoji.Wpf.TextBlock
                 {
-                    Text = "暂无已配置浏览器，请先在设置→程序管理中添加",
+                    Text = Framework.Lang.T("暂无已配置浏览器，请先在设置→程序管理中添加"),
                     Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
                     FontSize = (double)Application.Current.FindResource("FontSizeSmall"),
                     TextWrapping = TextWrapping.Wrap
@@ -2581,7 +2593,7 @@ namespace SideDesk.Services
             // === 通用区域 ===
             // 名称
             var nameDock = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
-            var nameLabel = new Emoji.Wpf.TextBlock { Text = "名称：", Width = 60, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)Application.Current.FindResource("BrushTextMain") };
+            var nameLabel = new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("名称："), Width = 60, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)Application.Current.FindResource("BrushTextMain") };
             DockPanel.SetDock(nameLabel, Dock.Left);
             nameDock.Children.Add(nameLabel);
             var nameBox = new TextBox { Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
@@ -2590,7 +2602,7 @@ namespace SideDesk.Services
 
             // 图标
             var iconDock = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
-            var iconLabel = new Emoji.Wpf.TextBlock { Text = "图标：", Width = 60, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)Application.Current.FindResource("BrushTextMain") };
+            var iconLabel = new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("图标："), Width = 60, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)Application.Current.FindResource("BrushTextMain") };
             DockPanel.SetDock(iconLabel, Dock.Left);
             iconDock.Children.Add(iconLabel);
             var iconBox = new TextBox { Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle"), Width = 80, MaxLength = 4 };
@@ -2602,7 +2614,7 @@ namespace SideDesk.Services
 
             // 路径
             var targetDock = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
-            var targetLabel = new Emoji.Wpf.TextBlock { Text = "路径：", Width = 60, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)Application.Current.FindResource("BrushTextMain") };
+            var targetLabel = new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("路径："), Width = 60, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)Application.Current.FindResource("BrushTextMain") };
             DockPanel.SetDock(targetLabel, Dock.Left);
             targetDock.Children.Add(targetLabel);
             var targetBox = new TextBox { Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
@@ -2611,7 +2623,7 @@ namespace SideDesk.Services
 
             // 启动命令行
             var argsDock = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
-            var argsLabel = new Emoji.Wpf.TextBlock { Text = "命令行：", Width = 60, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)Application.Current.FindResource("BrushTextMain") };
+            var argsLabel = new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("命令行："), Width = 60, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)Application.Current.FindResource("BrushTextMain") };
             DockPanel.SetDock(argsLabel, Dock.Left);
             argsDock.Children.Add(argsLabel);
             var argsBox = new TextBox { Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
@@ -2621,7 +2633,7 @@ namespace SideDesk.Services
             // === 背景颜色选择 ===
             var colorLabel = new Emoji.Wpf.TextBlock
             {
-                Text = "按钮颜色：",
+                Text = Framework.Lang.T("按钮颜色："),
                 Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                 FontSize = (double)Application.Current.FindResource("FontSizeNormal"),
                 Margin = new Thickness(0, 4, 0, 8)
@@ -2695,8 +2707,8 @@ namespace SideDesk.Services
             {
                 var dlg = new Microsoft.Win32.OpenFileDialog
                 {
-                    Filter = "可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*",
-                    Title = "选择程序"
+                    Filter = Framework.Lang.T("可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*"),
+                    Title = Framework.Lang.T("选择程序")
                 };
                 if (dlg.ShowDialog() == true)
                 {
@@ -2745,7 +2757,7 @@ namespace SideDesk.Services
                             profileCombo.Items.Clear();
                             if (browser.Profiles.Count > 0)
                             {
-                                profileCombo.Items.Add("无");
+                                profileCombo.Items.Add(Framework.Lang.T("无"));
                                 foreach (var p in browser.Profiles)
                                     profileCombo.Items.Add(p.Name);
                                 profileCombo.SelectedIndex = 0;
@@ -2777,13 +2789,13 @@ namespace SideDesk.Services
 
             // === 按钮 ===
             var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
-            var okBtn = new Button { Content = "确定", Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)Application.Current.FindResource("PrimaryButtonStyle") };
-            var cancelBtn = new Button { Content = "取消", Width = 70, Style = (Style)Application.Current.FindResource("StandardButtonStyle") };
+            var okBtn = new Button { Content = Framework.Lang.T("确定"), Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)Application.Current.FindResource("PrimaryButtonStyle") };
+            var cancelBtn = new Button { Content = Framework.Lang.T("取消"), Width = 70, Style = (Style)Application.Current.FindResource("StandardButtonStyle") };
             okBtn.Click += (s, ev2) =>
             {
                 string name = nameBox.Text.Trim();
                 string target = targetBox.Text.Trim();
-                if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(target)) { MessageBox.Show("请填写名称和路径"); return; }
+                if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(target)) { MessageBox.Show(Framework.Lang.T("请填写名称和路径")); return; }
                 var newItem = new QuickItem
                 {
                     Name = name,
@@ -2814,7 +2826,7 @@ namespace SideDesk.Services
         {
             var dialog = new Window
             {
-                Title = "编辑项目", Width = 440,
+                Title = Framework.Lang.T("编辑项目"), Width = 440,
                 SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterScreen,
                 ResizeMode = ResizeMode.NoResize,
@@ -2829,7 +2841,7 @@ namespace SideDesk.Services
             // 名称
             rootPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = "名称",
+                Text = Framework.Lang.T("名称"),
                 Foreground = (Brush)Application.Current.FindResource("BrushTextSec"),
                 FontSize = (double)Application.Current.FindResource("FontSizeSmall"),
                 Margin = new Thickness(0, 0, 0, 6)
@@ -2840,7 +2852,7 @@ namespace SideDesk.Services
             // 图标（支持 emoji 字符 或 文件路径；程序类项默认预填当前图标来源路径，可编辑）
             string iconInitial = !string.IsNullOrEmpty(item.Icon) ? item.Icon : (item.Type == "program" ? item.Target : "");
             var iconDock = new DockPanel { Margin = new Thickness(0, 12, 0, 0) };
-            var iconLabel = new Emoji.Wpf.TextBlock { Text = "图标：", Width = 50, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)Application.Current.FindResource("BrushTextMain") };
+            var iconLabel = new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("图标："), Width = 50, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)Application.Current.FindResource("BrushTextMain") };
             DockPanel.SetDock(iconLabel, Dock.Left);
             iconDock.Children.Add(iconLabel);
             var iconPreviewHost = new ContentControl { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0), Content = BuildIconPreview(iconInitial) };
@@ -2854,7 +2866,7 @@ namespace SideDesk.Services
             // 目标
             rootPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = "目标",
+                Text = Framework.Lang.T("目标"),
                 Foreground = (Brush)Application.Current.FindResource("BrushTextSec"),
                 FontSize = (double)Application.Current.FindResource("FontSizeSmall"),
                 Margin = new Thickness(0, 12, 0, 6)
@@ -2880,7 +2892,7 @@ namespace SideDesk.Services
             };
             var appModeLabel = new Emoji.Wpf.TextBlock
             {
-                Text = "App 模式",
+                Text = Framework.Lang.T("App 模式"),
                 Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(8, 0, 0, 0)
@@ -2892,7 +2904,7 @@ namespace SideDesk.Services
             // 按钮颜色
             rootPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = "按钮颜色",
+                Text = Framework.Lang.T("按钮颜色"),
                 Foreground = (Brush)Application.Current.FindResource("BrushTextSec"),
                 FontSize = (double)Application.Current.FindResource("FontSizeSmall"),
                 Margin = new Thickness(0, 14, 0, 6)
@@ -2939,14 +2951,14 @@ namespace SideDesk.Services
             };
             var cancelBtn = new Button
             {
-                Content = "取消",
+                Content = Framework.Lang.T("取消"),
                 Style = (Style)Application.Current.FindResource("StandardButtonStyle"),
                 Padding = new Thickness(16, 8, 16, 8),
                 Margin = new Thickness(0, 0, 10, 0)
             };
             var okBtn = new Button
             {
-                Content = "保存",
+                Content = Framework.Lang.T("保存"),
                 Style = (Style)Application.Current.FindResource("PrimaryButtonStyle"),
                 Padding = new Thickness(16, 8, 16, 8)
             };
@@ -3016,7 +3028,7 @@ namespace SideDesk.Services
                 return true;
             }, IntPtr.Zero);
 
-            if (candidates.Count == 0) { MessageBox.Show("未检测到可选的窗口"); return; }
+            if (candidates.Count == 0) { MessageBox.Show(Framework.Lang.T("未检测到可选的窗口")); return; }
 
             var dialog = new SelectWindowDialog
             {
@@ -3073,11 +3085,35 @@ namespace SideDesk.Services
 
             var panel = new StackPanel { Orientation = Orientation.Vertical, HorizontalAlignment = HorizontalAlignment.Stretch };
 
+            // 图标尺寸随列宽动态计算：大图标占满单元格宽度（预留左右内边距，上限 40x40），高度=宽度保持 1:1，
+            // 避免固定尺寸与列数不匹配导致图标变形/裁边
             FrameworkElement iconEl;
             if (emojiIcon != null)
                 iconEl = new Emoji.Wpf.TextBlock { Text = emojiIcon, FontSize = 34 };
             else if (imgIcon != null)
-                iconEl = new Image { Source = imgIcon, Width = 40, Height = 40 };
+            {
+                // 单个 Rectangle 自定尺寸（无子元素测量干扰，不会被图片原始像素撑大），
+                // DrawingBrush 在 1:1 区域内等比居中绘制图标
+                if (imgIcon.CanFreeze) imgIcon.Freeze();
+                var rect = new System.Windows.Shapes.Rectangle
+                {
+                    Fill = new System.Windows.Media.DrawingBrush
+                    {
+                        Drawing = new System.Windows.Media.ImageDrawing(imgIcon, new Rect(0, 0, 1, 1)),
+                        Stretch = System.Windows.Media.Stretch.Uniform
+                    },
+                    HorizontalAlignment = HorizontalAlignment.Center
+                };
+                // 布局就绪后：宽 = min(单元格宽 - 边距, 40)，高 = 宽（1:1）
+                rect.Loaded += (s, e) =>
+                {
+                    rect.SetBinding(FrameworkElement.WidthProperty,
+                        new System.Windows.Data.Binding("ActualWidth") { Source = panel, Converter = new SubtractConverter(6) });
+                    rect.SetBinding(FrameworkElement.HeightProperty,
+                        new System.Windows.Data.Binding("ActualWidth") { Source = rect });
+                };
+                iconEl = rect;
+            }
             else
                 iconEl = new Emoji.Wpf.TextBlock { Text = "🔗", FontSize = 34 };
             iconEl.HorizontalAlignment = HorizontalAlignment.Center;
@@ -3124,11 +3160,22 @@ namespace SideDesk.Services
             if (imgIcon != null)
             {
                 var panel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = align };
-                panel.Children.Add(new Image { Source = imgIcon, Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) });
+                panel.Children.Add(new Image { Source = imgIcon, Width = 14, Height = 14, Stretch = System.Windows.Media.Stretch.Uniform, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) });
                 panel.Children.Add(nameTb);
                 return panel;
             }
             return nameTb;
+        }
+
+        /// <summary>减法转换器：值 - offset，上限 40（大图标宽度 = min(单元格宽 - 边距, 40)）</summary>
+        private sealed class SubtractConverter : System.Windows.Data.IValueConverter
+        {
+            private readonly double _offset;
+            public SubtractConverter(double offset) { _offset = offset; }
+            public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+                => value is double d ? Math.Min(40.0, Math.Max(0, d - _offset)) : 0.0;
+            public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+                => throw new NotSupportedException();
         }
 
         /// <summary>构建图标预览元素：路径显示提取的图标，其余显示 emoji 文本。</summary>
@@ -3138,7 +3185,7 @@ namespace SideDesk.Services
             {
                 var src = FaviconService.LoadFileIcon(text);
                 if (src != null)
-                    return new Image { Source = src, Width = 20, Height = 20, VerticalAlignment = VerticalAlignment.Center };
+                    return new Image { Source = src, Width = 20, Height = 20, Stretch = System.Windows.Media.Stretch.Uniform, VerticalAlignment = VerticalAlignment.Center };
                 return new TextBlock { Text = "?", FontSize = 14, Foreground = Brushes.Gray, VerticalAlignment = VerticalAlignment.Center };
             }
             return new Emoji.Wpf.TextBlock { Text = text, FontSize = 16, VerticalAlignment = VerticalAlignment.Center };

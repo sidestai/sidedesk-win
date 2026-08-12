@@ -86,7 +86,7 @@ namespace SideDesk.Services
 
         private static string Truncate(string? s)
         {
-            if (string.IsNullOrEmpty(s)) return "(无内容)";
+            if (string.IsNullOrEmpty(s)) return Framework.Lang.T("(无内容)");
             if (s!.Length <= MaxBodyLen) return s;
             return s.Substring(0, MaxBodyLen) + $"\n...[已截断，总长 {s.Length}]";
         }

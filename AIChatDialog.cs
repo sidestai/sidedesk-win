@@ -108,7 +108,7 @@ namespace SideDesk
                 Margin = new Thickness(0, 0, 8, 0),
                 Style = (Style)Application.Current.FindResource("GhostButtonStyle"),
                 Cursor = Cursors.Hand,
-                ToolTip = "关闭",
+                ToolTip = Framework.Lang.T("关闭"),
                 // 用矢量 Path 画 ✕，不依赖字体字形渲染
                 Content = new System.Windows.Shapes.Path
                 {
@@ -169,7 +169,7 @@ namespace SideDesk
 
             var settingsBtn = new Button
             {
-                Content = "设置",
+                Content = Framework.Lang.T("设置"),
                 Width = 50,
                 MinHeight = 26,
                 Margin = new Thickness(0, 0, 0, 0),
@@ -181,7 +181,7 @@ namespace SideDesk
 
             _statusText = new Emoji.Wpf.TextBlock
             {
-                Text = "就绪",
+                Text = Framework.Lang.T("就绪"),
                 VerticalAlignment = VerticalAlignment.Center,
                 Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("BrushTextSec"),
                 Margin = new Thickness(8, 0, 0, 0)
@@ -207,7 +207,7 @@ namespace SideDesk
             var inputPanel = new DockPanel { Margin = new Thickness(5) };
             var sendBtn = new Button
             {
-                Content = "发送",
+                Content = Framework.Lang.T("发送"),
                 Width = 60,
                 MinHeight = 34,
                 Margin = new Thickness(5, 0, 0, 0),
@@ -250,7 +250,7 @@ namespace SideDesk
                 _inputBox.IsEnabled = false;
                 sendBtn.IsEnabled = false;
                 _isProcessing = true;
-                _statusText.Text = "思考中...";
+                _statusText.Text = Framework.Lang.T("思考中...");
 
                 var assistantMsg = AddMessage("assistant", "");
                 _messages.Add(new Dictionary<string, string> { { "role", "user" }, { "content", text } });
@@ -260,12 +260,12 @@ namespace SideDesk
                     string response = await CallApiWithToolsAsync(cfg, assistantMsg);
                     _messages.Add(new Dictionary<string, string> { { "role", "assistant" }, { "content", response } });
                     UpdateMessage(assistantMsg, response);
-                    _statusText.Text = "就绪";
+                    _statusText.Text = Framework.Lang.T("就绪");
                 }
                 catch (Exception ex)
                 {
-                    UpdateMessage(assistantMsg, "请求失败: " + ex.Message);
-                    _statusText.Text = "错误";
+                    UpdateMessage(assistantMsg, Framework.Lang.T("请求失败: ") + ex.Message);
+                    _statusText.Text = Framework.Lang.T("错误");
                 }
                 finally
                 {
@@ -488,7 +488,7 @@ namespace SideDesk
                 var message = choice?["message"];
 
                 if (message == null)
-                    return "无响应内容";
+                    return Framework.Lang.T("无响应内容");
 
                 var toolCalls = message["tool_calls"] as JArray;
 
@@ -515,7 +515,7 @@ namespace SideDesk
 
                     // UI 反馈
                     if (_statusText != null)
-                        _statusText.Text = $"调用工具: {funcName}";
+                        _statusText.Text = Framework.Lang.TF("调用工具: {0}", funcName);
                     System.Diagnostics.Debug.WriteLine($"[AIChat] 工具调用: {funcName}({funcArgs})");
 
                     // 执行工具
@@ -531,10 +531,10 @@ namespace SideDesk
                 }
 
                 if (_statusText != null)
-                    _statusText.Text = "思考中...";
+                    _statusText.Text = Framework.Lang.T("思考中...");
             }
 
-            return "工具调用轮次超过上限，已停止。";
+            return Framework.Lang.T("工具调用轮次超过上限，已停止。");
         }
 
         private async Task<string> CallApiAsync(AIConfig config, List<Dictionary<string, string>> messages)
@@ -578,14 +578,14 @@ namespace SideDesk
                 return responseObj.choices[0].message.content.ToString();
             }
 
-            return "无响应内容";
+            return Framework.Lang.T("无响应内容");
         }
 
         private void ShowSettingsDialog()
         {
             var dialog = new Window
             {
-                Title = "AI 设置",
+                Title = Framework.Lang.T("AI 设置"),
                 Width = 460,
                 Height = 420,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -604,7 +604,7 @@ namespace SideDesk
 
             mainPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = "AI 对话配置",
+                Text = Framework.Lang.T("AI 对话配置"),
                 FontSize = 18,
                 FontWeight = FontWeights.Bold,
                 Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("BrushTextMain"),
@@ -614,14 +614,14 @@ namespace SideDesk
             // Model Selection
             mainPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = "1. 选择模型服务商",
+                Text = Framework.Lang.T("1. 选择模型服务商"),
                 FontWeight = FontWeights.Bold,
                 Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("BrushTextMain"),
                 Margin = new Thickness(0, 10, 0, 5)
             });
             mainPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = "选择你要使用的 AI 服务商，DeepSeek 和 OpenAI 使用官方接口。",
+                Text = Framework.Lang.T("选择你要使用的 AI 服务商，DeepSeek 和 OpenAI 使用官方接口。"),
                 Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("BrushTextSec"),
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
@@ -646,14 +646,14 @@ namespace SideDesk
             // API Key
             mainPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = "2. 填写 API Key",
+                Text = Framework.Lang.T("2. 填写 API Key"),
                 FontWeight = FontWeights.Bold,
                 Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("BrushTextMain"),
                 Margin = new Thickness(0, 10, 0, 5)
             });
             mainPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = "从对应服务商官网获取 API Key 并粘贴到下方：\n  DeepSeek: https://platform.deepseek.com/api_keys\n  OpenAI: https://platform.openai.com/api-keys\n  通义千问: https://dashscope.console.aliyun.com/apiKey",
+                Text = Framework.Lang.T("从对应服务商官网获取 API Key 并粘贴到下方：\n  DeepSeek: https://platform.deepseek.com/api_keys\n  OpenAI: https://platform.openai.com/api-keys\n  通义千问: https://dashscope.console.aliyun.com/apiKey"),
                 Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("BrushTextSec"),
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
@@ -673,14 +673,14 @@ namespace SideDesk
             // Custom Model ID
             mainPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = "3. 自定义模型 ID（可选）",
+                Text = Framework.Lang.T("3. 自定义模型 ID（可选）"),
                 FontWeight = FontWeights.Bold,
                 Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("BrushTextMain"),
                 Margin = new Thickness(0, 10, 0, 5)
             });
             mainPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = "只有选择【自定义】模型时才需要填写。例如：gpt-4、deepseek-chat、claude-3-opus 等。",
+                Text = Framework.Lang.T("只有选择【自定义】模型时才需要填写。例如：gpt-4、deepseek-chat、claude-3-opus 等。"),
                 Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("BrushTextSec"),
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
@@ -704,8 +704,8 @@ namespace SideDesk
                 HorizontalAlignment = HorizontalAlignment.Right,
                 Margin = new Thickness(0, 10, 0, 0)
             };
-            var saveBtn = new Button { Content = "保存", Width = 80, MinHeight = 32, Margin = new Thickness(0, 0, 10, 0), Style = (Style)Application.Current.FindResource("PrimaryButtonStyle") };
-            var cancelBtn = new Button { Content = "取消", Width = 80, MinHeight = 32, Style = (Style)Application.Current.FindResource("StandardButtonStyle") };
+            var saveBtn = new Button { Content = Framework.Lang.T("保存"), Width = 80, MinHeight = 32, Margin = new Thickness(0, 0, 10, 0), Style = (Style)Application.Current.FindResource("PrimaryButtonStyle") };
+            var cancelBtn = new Button { Content = Framework.Lang.T("取消"), Width = 80, MinHeight = 32, Style = (Style)Application.Current.FindResource("StandardButtonStyle") };
             btnPanel.Children.Add(saveBtn);
             btnPanel.Children.Add(cancelBtn);
             mainPanel.Children.Add(btnPanel);
@@ -750,7 +750,7 @@ namespace SideDesk
         /// <summary>截断过长的错误信息用于UI显示</summary>
         private static string TruncateForDisplay(string text, int maxLen = 200)
         {
-            if (string.IsNullOrEmpty(text)) return "(无响应内容)";
+            if (string.IsNullOrEmpty(text)) return Framework.Lang.T("(无响应内容)");
             return text.Length <= maxLen ? text : text.Substring(0, maxLen) + "...";
         }
     }

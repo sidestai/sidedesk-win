@@ -60,6 +60,8 @@ public class PluginLoaderService
 
         foreach (var dir in Directory.GetDirectories(PluginsDirectory))
         {
+            // 跳过隐藏/暂存目录（如插件市场安装中的 .staging_xxx）
+            if (Path.GetFileName(dir).StartsWith(".")) continue;
             try
             {
                 var plugin = LoadPluginFromDirectory(dir);
@@ -95,6 +97,8 @@ public class PluginLoaderService
 
         foreach (var dir in Directory.GetDirectories(PluginsDirectory))
         {
+            // 跳过隐藏/暂存目录（如插件市场安装中的 .staging_xxx）
+            if (Path.GetFileName(dir).StartsWith(".")) continue;
             try
             {
                 var configPath = Path.Combine(dir, "plugin.json");

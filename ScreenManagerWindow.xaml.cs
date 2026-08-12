@@ -36,7 +36,7 @@ namespace SideDesk
             {
                 listPanel.Children.Add(new Emoji.Wpf.TextBlock
                 {
-                    Text = "（暂无小屏）",
+                    Text = Framework.Lang.T("（暂无小屏）"),
                     FontSize = 13,
                     Foreground = (Brush)FindResource("BrushTextMuted"),
                     Margin = new Thickness(0, 8, 0, 8)
@@ -113,7 +113,7 @@ namespace SideDesk
                 // 类型列（原生/网页）
                 var typeText = new TextBlock
                 {
-                    Text = config.Type == WindowType.WebView ? "网页" : "原生",
+                    Text = config.Type == WindowType.WebView ? Framework.Lang.T("网页") : Framework.Lang.T("原生"),
                     FontSize = 12,
                     Foreground = (Brush)FindResource("BrushTextMuted"),
                     VerticalAlignment = VerticalAlignment.Center
@@ -137,7 +137,7 @@ namespace SideDesk
                 // 操作列（删除按钮）
                 var delBtn = new Button
                 {
-                    Content = "删除",
+                    Content = Framework.Lang.T("删除"),
                     MinWidth = 52,
                     MinHeight = 24,
                     FontSize = 12,
@@ -179,7 +179,8 @@ namespace SideDesk
                 dockState.ActiveIndex = Math.Max(0, dockState.WindowIds.Count - 1);
 
             configManager.Save();
-            _owner.RefreshWindowTabs();
+            // 双侧 dock 都已同步，广播刷新所有窗口的顶部标签
+            ((App)Application.Current).RefreshAllWindowTabs();
 
             // 隐藏的是当前小屏时自动切到第一个可见小屏；全部不可见则显示空白
             if (dockState.WindowIds.Count > 0)
@@ -213,9 +214,9 @@ namespace SideDesk
 
             int moduleCount = config.Panels?.Count ?? 0;
             string msg = moduleCount > 0
-                ? $"确定删除小屏「{config.Name}」吗？\n其下方的 {moduleCount} 个模块也将一并删除，此操作不可撤销。"
-                : $"确定删除小屏「{config.Name}」吗？此操作不可撤销。";
-            if (!_owner.ShowConfirmDialog("删除小屏", msg, "删除")) return;
+                ? Framework.Lang.TF("确定删除小屏「{0}」吗？\n其下方的 {1} 个模块也将一并删除，此操作不可撤销。", config.Name, moduleCount)
+                : Framework.Lang.TF("确定删除小屏「{0}」吗？此操作不可撤销。", config.Name);
+            if (!_owner.ShowConfirmDialog(Framework.Lang.T("删除小屏"), msg, "删除")) return;
 
             // 在本地删除前先捕获 serverId，用于后续通知服务器删除
             string? serverId = config.ServerId;
@@ -223,10 +224,10 @@ namespace SideDesk
             // 从所有窗口及两侧 dock 中移除（内部已处理 Windows + LeftDock + RightDock + Save）
             configManager.Remove(config.Id);
 
-            // 修正当前 dock 的活动索引并刷新界面
+            // 修正当前 dock 的活动索引并刷新界面（删除已同步所有 dock，广播刷新全部窗口）
             if (dockState.ActiveIndex >= dockState.WindowIds.Count)
                 dockState.ActiveIndex = Math.Max(0, dockState.WindowIds.Count - 1);
-            _owner.RefreshWindowTabs();
+            ((App)Application.Current).RefreshAllWindowTabs();
             if (dockState.WindowIds.Count > 0)
                 _owner.SwitchToWindowByIndex(dockState.ActiveIndex);
 

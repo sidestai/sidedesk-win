@@ -18,17 +18,17 @@ public partial class TodoDialog : Window
         SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(this);
 
         // 提醒下拉项
-        remindCombo.Items.Add("准时提醒");
-        remindCombo.Items.Add("提前 5 分钟");
-        remindCombo.Items.Add("提前 10 分钟");
-        remindCombo.Items.Add("提前 15 分钟");
-        remindCombo.Items.Add("提前 30 分钟");
-        remindCombo.Items.Add("提前 60 分钟");
+        remindCombo.Items.Add(Framework.Lang.T("准时提醒"));
+        remindCombo.Items.Add(Framework.Lang.T("提前 5 分钟"));
+        remindCombo.Items.Add(Framework.Lang.T("提前 10 分钟"));
+        remindCombo.Items.Add(Framework.Lang.T("提前 15 分钟"));
+        remindCombo.Items.Add(Framework.Lang.T("提前 30 分钟"));
+        remindCombo.Items.Add(Framework.Lang.T("提前 60 分钟"));
         remindCombo.SelectedIndex = 2; // 默认提前 10 分钟
 
         if (existing != null)
         {
-            Title = "编辑待办";
+            Title = Framework.Lang.T("编辑待办");
             Result = existing;
             titleBox.Text = existing.Text;
             descBox.Text = existing.Description;
@@ -66,7 +66,7 @@ public partial class TodoDialog : Window
         var title = titleBox.Text.Trim();
         if (string.IsNullOrEmpty(title))
         {
-            MessageBox.Show("请输入待办标题", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(Framework.Lang.T("请输入待办标题"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         Result.Text = title;

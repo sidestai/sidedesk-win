@@ -30,6 +30,7 @@ namespace SideDesk
 
         // 窗口样式常量
         public const int GWL_EXSTYLE = -20;
+        public const int GWL_HWNDPARENT = -8; // 窗口创建时间（GetWindowLong 历史语义）
         public const long WS_EX_TOOLWINDOW = 0x00000080;
 
         // Register window message
@@ -98,6 +99,9 @@ namespace SideDesk
         [DllImport("user32.dll")]
         internal static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
 
+        [DllImport("user32.dll")]
+        internal static extern bool EnumChildWindows(IntPtr hWndParent, EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
         [DllImport("user32.dll", SetLastError = true)]
         internal static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
@@ -163,10 +167,14 @@ namespace SideDesk
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
         internal static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
+        internal const int SW_HIDE = 0;
         internal const int SW_RESTORE = 9;
         internal const int SW_SHOW = 5;
         internal const int SW_SHOWNORMAL = 1;
         internal const uint WM_CLOSE = 0x0010;
+        internal const uint WM_LBUTTONDOWN = 0x0201;
+        internal const uint WM_LBUTTONUP = 0x0202;
+        internal const int MK_LBUTTON = 0x0001;
 
         // ITaskbarList COM interface
         [ComImport, Guid("56FDF342-FD6D-11d0-958A-006097C9A090"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]

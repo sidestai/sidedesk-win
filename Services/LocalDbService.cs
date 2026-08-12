@@ -287,6 +287,7 @@ DELETE FROM local_clipboard_item;";
             UpsertState(conn, "left_dock", JsonConvert.SerializeObject(mgr.LeftDock));
             UpsertState(conn, "right_dock", JsonConvert.SerializeObject(mgr.RightDock));
             UpsertState(conn, "background_dashboard_items", JsonConvert.SerializeObject(mgr.BackgroundDashboardItems));
+            UpsertState(conn, "variable_sets", JsonConvert.SerializeObject(mgr.VariableSets));
 
             tx.Commit();
         }
@@ -744,7 +745,7 @@ FROM local_bar WHERE deleted_at IS NULL ORDER BY id";
                 {
                     Id = rd.GetString(0),
                     ServerId = rd.IsDBNull(1) ? null : rd.GetString(1),
-                    Name = rd.IsDBNull(2) ? "新窗口" : rd.GetString(2),
+                    Name = rd.IsDBNull(2) ? Framework.Lang.T("新窗口") : rd.GetString(2),
                     BGColor = rd.IsDBNull(3) ? null : rd.GetString(3),
                     Type = (WindowType)rd.GetInt32(4),
                     Url = rd.IsDBNull(5) ? null : rd.GetString(5),
@@ -827,12 +828,15 @@ FROM local_item WHERE deleted_at IS NULL ORDER BY sort_order, id";
         string? left = GetState(conn, "left_dock");
         string? right = GetState(conn, "right_dock");
         string? bgDash = GetState(conn, "background_dashboard_items");
+        string? varSets = GetState(conn, "variable_sets");
         if (!string.IsNullOrEmpty(left))
             mgr.LeftDock = JsonConvert.DeserializeObject<DockWindowState>(left) ?? new DockWindowState();
         if (!string.IsNullOrEmpty(right))
             mgr.RightDock = JsonConvert.DeserializeObject<DockWindowState>(right) ?? new DockWindowState();
         if (!string.IsNullOrEmpty(bgDash))
             mgr.BackgroundDashboardItems = SafeDeserializeList<DataDashboardItem>(bgDash) ?? new();
+        if (!string.IsNullOrEmpty(varSets))
+            mgr.VariableSets = SafeDeserializeList<VariableSet>(varSets) ?? new();
 
         return mgr;
     }

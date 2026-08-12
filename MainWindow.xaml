@@ -1,6 +1,7 @@
-﻿<local:AppBarWindow x:Class="SideDesk.MainWindow"
+<local:AppBarWindow x:Class="SideDesk.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="clr-namespace:SideDesk.Framework"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:SideDesk"
@@ -8,7 +9,7 @@
         xmlns:emoji="clr-namespace:Emoji.Wpf;assembly=Emoji.Wpf"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         mc:Ignorable="d"
-        Title="元桌小屏"
+        Title="{l:T 元桌小屏}"
         WindowStyle="None"
         AllowsTransparency="True"
         ResizeMode="NoResize"
@@ -32,16 +33,13 @@
         <Border Grid.Row="0" Grid.Column="0" Background="{DynamicResource BrushInputBG}">
             <Border.ContextMenu>
                 <ContextMenu>
-                    <MenuItem Header="登录" Click="Login_Click"/>
+                    <MenuItem Header="{l:T 登录}" Click="Login_Click"/>
                     <Separator/>
-                    <MenuItem Header="切换到 A 屏" Click="SwitchToScreenA"/>
-                    <MenuItem Header="切换到 B 屏" Click="SwitchToScreenB"/>
+                    <MenuItem Header="{l:T 居左}" Click="Layout_Left"/>
+                    <MenuItem Header="{l:T 居右}" Click="Layout_Right"/>
+                    <MenuItem Header="{l:T 双侧}" Click="Layout_Both"/>
                     <Separator/>
-                    <MenuItem Header="居左" Click="Layout_Left"/>
-                    <MenuItem Header="居右" Click="Layout_Right"/>
-                    <MenuItem Header="双侧" Click="Layout_Both"/>
-                    <Separator/>
-                    <MenuItem Header="退出" Click="Exit_Click"/>
+                    <MenuItem Header="{l:T 退出}" Click="Exit_Click"/>
                 </ContextMenu>
             </Border.ContextMenu>
             <Grid>
@@ -49,8 +47,7 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock x:Name="titleText" Text="元桌小屏 [A]" Visibility="Collapsed"/>
-                <TextBlock x:Name="singleWindowTitle" Text="元桌小屏" Visibility="Collapsed"
+                <TextBlock x:Name="singleWindowTitle" Text="{l:T 元桌小屏}" Visibility="Collapsed"
                            VerticalAlignment="Center" Margin="6,0,0,0"
                            Foreground="{DynamicResource BrushTextMain}" FontSize="12"/>
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" ClipToBounds="True">
@@ -62,7 +59,7 @@
                             Foreground="{DynamicResource BrushTextMain}"
                             BorderThickness="0"
                             Cursor="Hand"
-                            ToolTip="添加窗口"
+                            ToolTip="{l:T 添加窗口}"
                             Margin="2,0"/>
                 </StackPanel>
                 <Button x:Name="moreButton" Grid.Column="1" Content="⋯" Click="MoreButton_Click"
@@ -71,26 +68,26 @@
                         FontSize="16" FontWeight="Bold" Padding="5,2"
                         Background="Transparent" Foreground="{DynamicResource BrushTextMain}"
                         BorderThickness="0" Cursor="Hand"
-                        ToolTip="更多">
+                        ToolTip="{l:T 更多}">
                     <Button.ContextMenu>
                         <ContextMenu x:Name="moreMenu" Opened="MoreMenu_Opened">
-                            <MenuItem Header="登录" Click="Login_Click"/>
+                            <MenuItem Header="{l:T 登录}" Click="Login_Click"/>
                             <Separator/>
                             <Separator x:Name="menuSeparator1"/>
-                            <MenuItem Header="创建小屏" Click="NewSideScreen_Click"/>
-                            <MenuItem Header="导入分享" Click="ImportShare_Click"/>
-                            <MenuItem Header="添加模块" SubmenuOpened="AddModuleMenu_SubmenuOpened">
-                                <MenuItem Header="(加载中...)"/>
+                            <MenuItem Header="{l:T 创建小屏}" Click="NewSideScreen_Click"/>
+                            <MenuItem Header="{l:T 导入分享}" Click="ImportShare_Click"/>
+                            <MenuItem Header="{l:T 添加模块}" SubmenuOpened="AddModuleMenu_SubmenuOpened">
+                                <MenuItem Header="{l:T (加载中...)}"/>
                             </MenuItem>
-                            <MenuItem Header="小屏管理" Click="ScreenManager_Click"/>
-                            <MenuItem x:Name="notificationCenterMenu" Header="通知中心" Click="NotificationCenter_Click"/>
-                            <MenuItem Header="设置" Click="Settings_Click"/>
-                            <MenuItem x:Name="toolsMenu" Header="工具" SubmenuOpened="ToolsMenu_SubmenuOpened">
-                                <MenuItem Header="(加载中...)"/>
+                            <MenuItem Header="{l:T 小屏管理}" Click="ScreenManager_Click"/>
+                            <MenuItem x:Name="notificationCenterMenu" Header="{l:T 通知中心}" Click="NotificationCenter_Click"/>
+                            <MenuItem Header="{l:T 设置}" Click="Settings_Click"/>
+                            <MenuItem x:Name="toolsMenu" Header="{l:T 工具}" SubmenuOpened="ToolsMenu_SubmenuOpened">
+                                <MenuItem Header="{l:T (加载中...)}"/>
                             </MenuItem>
                             <Separator x:Name="closeWindowSeparator"/>
-                            <MenuItem x:Name="closeWindowMenu" Header="关闭面板" Click="CloseWindow_Click"/>
-                            <MenuItem Header="退出" Click="Exit_Click"/>
+                            <MenuItem x:Name="closeWindowMenu" Header="{l:T 关闭面板}" Click="CloseWindow_Click"/>
+                            <MenuItem Header="{l:T 退出}" Click="Exit_Click"/>
                         </ContextMenu>
                     </Button.ContextMenu>
                 </Button>
