@@ -30,7 +30,7 @@ namespace SideDesk
 
         // 窗口样式常量
         public const int GWL_EXSTYLE = -20;
-        public const int GWL_HWNDPARENT = -8; // 窗口创建时间（GetWindowLong 历史语义）
+        public const int GWL_HWNDPARENT = -8; // 属主窗口句柄（注意：不是窗口创建时间，Win32 无直接取创建时间的 API）
         public const long WS_EX_TOOLWINDOW = 0x00000080;
 
         // Register window message

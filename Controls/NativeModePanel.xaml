@@ -71,7 +71,7 @@
         <!-- 底部状态栏 -->
         <Border DockPanel.Dock="Bottom" Margin="5,2" Padding="5,3" CornerRadius="3"
                 Background="{Binding GroupBGColor, Source={x:Static framework:AppSettings.Instance}, Converter={StaticResource StringToSolidColorBrushConverter}}">
-            <StackPanel x:Name="statusBar" Orientation="Horizontal">
+            <StackPanel x:Name="statusBar" Orientation="Horizontal" SizeChanged="StatusBar_SizeChanged">
                 <TextBlock x:Name="keyCountText" Text="⌨ 0" Margin="0,0,10,0" FontSize="11" Style="{StaticResource DataText}"/>
                 <TextBlock x:Name="mouseDistText" Text="🖱 0m" FontSize="11" Style="{StaticResource DataText}"/>
             </StackPanel>

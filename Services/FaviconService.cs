@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
@@ -180,7 +181,7 @@ namespace SideDesk.Services
 
         /// <summary>
         /// 从本地文件加载图标（带缓存）：exe 等提取关联图标，
-        /// png/jpg/ico 等图片直接解码。失败返回 null。
+        /// png/jpg/ico 等图片直接解码；.lnk 解析到目标/自定义图标提取，避免快捷方式箭头角标。失败返回 null。
         /// </summary>
         public static BitmapSource? LoadFileIcon(string? path)
         {
@@ -193,33 +194,129 @@ namespace SideDesk.Services
             try
             {
                 string ext = Path.GetExtension(path).ToLowerInvariant();
-                if (ext is ".png" or ".jpg" or ".jpeg" or ".gif" or ".bmp" or ".ico")
+                if (ext == ".lnk")
                 {
-                    var bi = new BitmapImage();
-                    bi.BeginInit();
-                    bi.UriSource = new Uri(path, UriKind.Absolute);
-                    bi.CacheOption = BitmapCacheOption.OnLoad;
-                    bi.EndInit();
-                    if (bi.CanFreeze) bi.Freeze();
-                    result = bi;
+                    // .lnk 的关联图标会被 shell 烘入快捷方式箭头角标，解析到自定义图标位置或目标文件提取纯图标
+                    var resolved = ResolveShortcutIcon(path);
+                    if (resolved != null)
+                        result = LoadResolvedIcon(resolved.Value.File, resolved.Value.Index);
                 }
-                else
+                if (result == null)
                 {
-                    using (var icon = System.Drawing.Icon.ExtractAssociatedIcon(path))
-                    {
-                        if (icon != null)
-                        {
-                            var src = Imaging.CreateBitmapSourceFromHIcon(
-                                icon.Handle, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
-                            if (src.CanFreeze) src.Freeze();
-                            result = src;
-                        }
-                    }
+                    if (ext is ".png" or ".jpg" or ".jpeg" or ".gif" or ".bmp" or ".ico")
+                        result = DecodeImageFile(path);
+                    else
+                        result = ExtractAssociatedIconSource(path);
                 }
             }
             catch { }
             lock (_iconCache) { _iconCache[path] = result; }
             return result;
         }
+
+        /// <summary>解码 png/jpg/ico 等图片文件，失败抛异常由调用方兜底。</summary>
+        private static BitmapSource DecodeImageFile(string path)
+        {
+            var bi = new BitmapImage();
+            bi.BeginInit();
+            bi.UriSource = new Uri(path, UriKind.Absolute);
+            bi.CacheOption = BitmapCacheOption.OnLoad;
+            bi.EndInit();
+            if (bi.CanFreeze) bi.Freeze();
+            return bi;
+        }
+
+        /// <summary>提取文件关联图标并转 BitmapSource，失败返回 null。</summary>
+        private static BitmapSource? ExtractAssociatedIconSource(string path)
+        {
+            using (var icon = System.Drawing.Icon.ExtractAssociatedIcon(path))
+            {
+                if (icon == null) return null;
+                var src = Imaging.CreateBitmapSourceFromHIcon(
+                    icon.Handle, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+                if (src.CanFreeze) src.Freeze();
+                return src;
+            }
+        }
+
+        /// <summary>
+        /// 解析 .lnk 快捷方式的图标来源：优先自定义图标位置（IconLocation，含索引），否则目标文件（TargetPath）。
+        /// 解析失败返回 null（调用方回退默认提取）。
+        /// </summary>
+        private static (string File, int Index)? ResolveShortcutIcon(string lnkPath)
+        {
+            try
+            {
+                var shellType = Type.GetTypeFromProgID("WScript.Shell");
+                if (shellType == null) return null;
+                object shell = Activator.CreateInstance(shellType)!;
+                try
+                {
+                    object lnk = shellType.InvokeMember("CreateShortcut",
+                        System.Reflection.BindingFlags.InvokeMethod, null, shell, new object[] { lnkPath })!;
+                    string iconLocation = lnk.GetType().InvokeMember("IconLocation",
+                        System.Reflection.BindingFlags.GetProperty, null, lnk, null) as string ?? "";
+                    string targetPath = lnk.GetType().InvokeMember("TargetPath",
+                        System.Reflection.BindingFlags.GetProperty, null, lnk, null) as string ?? "";
+                    Marshal.ReleaseComObject(lnk);
+
+                    // IconLocation 形如 "C:\app.ico, 2"，为空表示未设自定义图标
+                    string file = iconLocation;
+                    int index = 0;
+                    int comma = iconLocation.LastIndexOf(',');
+                    if (comma >= 0)
+                    {
+                        file = iconLocation.Substring(0, comma).Trim();
+                        int.TryParse(iconLocation.Substring(comma + 1).Trim(), out index);
+                    }
+                    file = file.Trim().Trim('"');
+                    if (string.IsNullOrEmpty(file) || !File.Exists(file))
+                    {
+                        file = targetPath;
+                        index = 0;
+                    }
+                    if (string.IsNullOrEmpty(file) || !File.Exists(file)) return null;
+                    return (file, index);
+                }
+                finally
+                {
+                    Marshal.ReleaseComObject(shell);
+                }
+            }
+            catch { return null; }
+        }
+
+        /// <summary>从解析后的快捷方式图标来源加载：图片文件直接解码，exe/dll 按索引提取。</summary>
+        private static BitmapSource? LoadResolvedIcon(string file, int index)
+        {
+            string ext = Path.GetExtension(file).ToLowerInvariant();
+            if (ext is ".png" or ".jpg" or ".jpeg" or ".gif" or ".bmp" or ".ico")
+                return DecodeImageFile(file);
+            if (index <= 0)
+                return ExtractAssociatedIconSource(file) ?? ExtractIconByIndex(file, 0);
+            return ExtractIconByIndex(file, index) ?? ExtractAssociatedIconSource(file);
+        }
+
+        /// <summary>按图标索引从 exe/dll 提取图标（PrivateExtractIcons），失败返回 null。</summary>
+        private static BitmapSource? ExtractIconByIndex(string file, int index)
+        {
+            var icons = new IntPtr[1];
+            var ids = new int[1];
+            int n = PrivateExtractIcons(file, index, 48, 48, icons, ids, 1, 0);
+            if (n <= 0 || icons[0] == IntPtr.Zero) return null;
+            var src = Imaging.CreateBitmapSourceFromHIcon(
+                icons[0], Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+            if (src.CanFreeze) src.Freeze();
+            DestroyIcon(icons[0]);
+            return src;
+        }
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int PrivateExtractIcons(
+            string szFileName, int nIconIndex, int cxIcon, int cyIcon,
+            [Out] IntPtr[] phicon, [Out] int[] piconid, int nIcons, int flags);
+
+        [DllImport("user32.dll")]
+        private static extern bool DestroyIcon(IntPtr hIcon);
     }
 }

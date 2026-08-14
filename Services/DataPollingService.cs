@@ -101,10 +101,9 @@ public class DataPollingService : IDisposable
     private static readonly List<(Process proc, string url)> _appModeWindows = new();
     private static readonly object _appModeWindowsLock = new();
     // app 模式隐藏新窗口（Win32）：--app 常委托给已运行浏览器、启动进程立即退出，拿不到进程窗口句柄；
-    // 改为启动前白名单已有浏览器窗口，启动后短轮询把新出现的同浏览器窗口 ShowWindow(SW_HIDE)。
+    // 改为每次启动各自快照白名单（互不干扰），启动后短轮询把新出现的同浏览器窗口 ShowWindow(SW_HIDE)。
     // 记录被隐藏窗口（句柄 -> 网址）：点击对应数据项时按网址恢复显示
     private static readonly Dictionary<IntPtr, string> _appModeHiddenHwnds = new();
-    private static readonly List<IntPtr> _appModeWinWhitelist = new();
     // 经 CDP 窗口控制隐藏（最小化）的 app 窗口 target：委托给已运行浏览器的窗口无法用进程句柄隐藏，
     // 改用 CDP Browser.SetWindowBounds 最小化；点击数据项显示时先恢复窗口状态
     private static readonly ConcurrentDictionary<Target.TargetIDType, byte> _cdpHiddenTargets = new();
@@ -470,7 +469,8 @@ public class DataPollingService : IDisposable
                 return;
             }
 
-            // 4. Attach + Evaluate
+            // 4. Attach + Evaluate（后台 app 窗口可能被浏览器重新显示，取数前先再隐藏一次）
+            ReassertHiddenAppWindows(item.TargetUrl);
             var value = await EvaluateOnTargetAsync(conn.Client, targetId, item.Selector);
             UpdateItemValue(item, value);
             Debug.WriteLine($"[DataPolling] ✓ \"{item.Label}\" = \"{value}\"");
@@ -1017,8 +1017,8 @@ public class DataPollingService : IDisposable
                     // 记录本次打开的页面，关闭软件时经 CDP 关闭该窗口；点击数据项时也用它直接显示已打开的窗口
                     lock (_openedAppTargetsLock) { _openedAppTargets.Add((client, found.TargetId, url)); }
                     Debug.WriteLine($"[DataPolling] ✓ app 模式页面已就绪: {url} -> {found.TargetId}（实际 URL: {found.Url}）");
-                    // 稍候委托完成（启动进程退出）再判断隐藏方式，避免过早判定“进程还活着”而漏隐藏：
-                    // 进程自持 → HideAppWindowWhenReadyAsync 已用 SW_HIDE 处理；已委托 → 经 CDP 最小化
+                    // 稍候委托完成（启动进程退出）再判断是否需要 CDP 兜底：
+                    // 进程自持 → HideAppWindowWhenReadyAsync 已用 SW_HIDE 处理；已委托 → 监视器已 SW_HIDE，最小化仅作兜底
                     for (int w = 0; w < 8; w++)
                     {
                         bool exitedNow;
@@ -1067,17 +1067,13 @@ public class DataPollingService : IDisposable
                 UseShellExecute = false,
                 CreateNoWindow = true
             };
-            // 隐藏模式：启动前白名单该浏览器的已有窗口（用户的都在这），
+            // 隐藏模式：启动前快照该浏览器的已有窗口（每次启动各自持有，避免并发启动互相污染白名单）；
             // 启动后新出现的同浏览器窗口即为我们打开的 app 窗口，经 ShowWindow(SW_HIDE) 隐藏
+            List<IntPtr>? whitelist = null;
+            var browserName = Path.GetFileNameWithoutExtension(exePath);
             if (hideWindow)
-            {
-                var browserName = Path.GetFileNameWithoutExtension(exePath);
-                lock (_appModeWindowsLock)
-                {
-                    _appModeWinWhitelist.Clear();
-                    _appModeWinWhitelist.AddRange(EnumerateBrowserWindows(browserName));
-                }
-            }
+                whitelist = EnumerateBrowserWindows(browserName);
+
             var proc = Process.Start(psi);
             if (proc != null)
             {
@@ -1085,8 +1081,9 @@ public class DataPollingService : IDisposable
                 lock (_appModeWindowsLock) { _appModeWindows.Add((proc, url)); }
                 if (hideWindow)
                 {
-                    var browserName = Path.GetFileNameWithoutExtension(exePath);
-                    _ = Task.Run(() => HideNewBrowserWindowsWatcherAsync(browserName, url));
+                    // 双保险：进程自持 → 拿到窗口句柄直接隐藏；委托给已运行浏览器（进程退出）→ 枚举监视器兜底
+                    _ = Task.Run(() => HideAppWindowWhenReadyAsync(proc));
+                    _ = Task.Run(() => HideNewBrowserWindowsWatcherAsync(browserName, url, whitelist!));
                 }
             }
             Debug.WriteLine($"[DataPolling] 以 app 模式启动: {exePath} {args}");
@@ -1157,12 +1154,9 @@ public class DataPollingService : IDisposable
 
     /// <summary>app 模式启动后的新窗口监视器：短时间内反复枚举，把白名单之外新出现的浏览器窗口
     /// 用 ShowWindow(SW_HIDE) 隐藏。不依赖启动进程句柄——窗口委托给已运行浏览器（进程已退出）也能藏住。
-    /// 按窗口创建时间过滤：只藏启动之后创建的窗口，白名单漏记的老窗口不受影响。</summary>
-    private static async Task HideNewBrowserWindowsWatcherAsync(string browserName, string url)
+    /// 白名单为本次启动的启动前快照，不受其他并发启动影响。</summary>
+    private static async Task HideNewBrowserWindowsWatcherAsync(string browserName, string url, List<IntPtr> whitelist)
     {
-        var startTicks = DateTime.Now.Ticks;
-        List<IntPtr> whitelist;
-        lock (_appModeWindowsLock) { whitelist = new List<IntPtr>(_appModeWinWhitelist); }
         try
         {
             for (int i = 0; i < 100; i++) // 最长约 20 秒，覆盖页面加载/委托延迟
@@ -1172,10 +1166,8 @@ public class DataPollingService : IDisposable
                     try
                     {
                         lock (_appModeHiddenHwnds) { if (_appModeHiddenHwnds.ContainsKey(hwnd)) return true; }
-                        lock (_appModeWindowsLock) { if (whitelist.Contains(hwnd)) return true; }
+                        if (whitelist.Contains(hwnd)) return true;
                         if (!IsBrowserTopWindow(hwnd, browserName)) return true;
-                        var created = NativeMethods.GetWindowLong(hwnd, NativeMethods.GWL_HWNDPARENT);
-                        if (created != 0 && created < startTicks) return true; // 启动前创建的窗口不动
                         NativeMethods.ShowWindow(hwnd, NativeMethods.SW_HIDE);
                         lock (_appModeHiddenHwnds) { _appModeHiddenHwnds[hwnd] = url; }
                         Debug.WriteLine($"[DataPolling] 🙈 已隐藏新开的 app 模式窗口 (hwnd=0x{hwnd.ToInt64():X})（点击数据项可再显示）");
@@ -1189,6 +1181,31 @@ public class DataPollingService : IDisposable
         catch (Exception ex)
         {
             Debug.WriteLine($"[DataPolling] app 窗口监视器异常: {ex.Message}");
+        }
+    }
+
+    /// <summary>重新隐藏被 SW_HIDE 藏过、又被浏览器重新显示出来的窗口（页面 JS focus/激活等）。
+    /// 用户点击数据项主动显示的窗口已从记录中移除，不受影响</summary>
+    private static void ReassertHiddenAppWindows(string url)
+    {
+        List<IntPtr> targets;
+        lock (_appModeHiddenHwnds)
+        {
+            targets = _appModeHiddenHwnds.Where(kv => UrlMatches(kv.Value, url)).Select(kv => kv.Key).ToList();
+        }
+        foreach (var hwnd in targets)
+        {
+            try
+            {
+                if (!NativeMethods.IsWindow(hwnd))
+                {
+                    lock (_appModeHiddenHwnds) { _appModeHiddenHwnds.Remove(hwnd); }
+                    continue;
+                }
+                if (NativeMethods.IsWindowVisible(hwnd))
+                    NativeMethods.ShowWindow(hwnd, NativeMethods.SW_HIDE);
+            }
+            catch { }
         }
     }
 
@@ -1345,9 +1362,11 @@ public class DataPollingService : IDisposable
                 var hwnd = proc.MainWindowHandle;
                 if (hwnd != IntPtr.Zero)
                 {
-                    // 恢复最小化或被隐藏的窗口（数据模块后台窗口默认以 SW_HIDE 隐藏）
+                    // 恢复最小化或被隐藏的窗口（数据模块后台窗口默认以 SW_HIDE 隐藏）；
+                    // 从隐藏记录中移除，避免后续轮询的 ReassertHiddenAppWindows 把用户正在看的窗口又藏回去
                     NativeMethods.ShowWindow(hwnd, NativeMethods.IsIconic(hwnd) ? NativeMethods.SW_RESTORE : NativeMethods.SW_SHOW);
                     NativeMethods.SetForegroundWindow(hwnd);
+                    lock (_appModeHiddenHwnds) { _appModeHiddenHwnds.Remove(hwnd); }
                     Debug.WriteLine($"[DataPolling] ✓ 已把打开过的 app 窗口激活显示: {url}");
                     return true;
                 }

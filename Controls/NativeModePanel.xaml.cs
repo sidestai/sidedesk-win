@@ -7157,13 +7157,21 @@ namespace SideDesk.Controls
 
         #region 键盘/鼠标计数器 UI
 
+        /// <summary>底部状态栏宽度变化：单项（图标+数字）约需 60px，当单项可用宽度低于 60px 时切换为上下两行，避免文字被裁切</summary>
+        private void StatusBar_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            statusBar.Orientation = statusBar.ActualWidth < 120
+                ? Orientation.Vertical
+                : Orientation.Horizontal;
+        }
+
         private void OnKeyCountChanged(int count)
         {
             Dispatcher.BeginInvoke(() =>
             {
                 if (_keyCountValueButton != null)
-                    _keyCountValueButton.Content = count.ToString("N0");
-                keyCountText.Text = $"⌨ {count:N0}";
+                    _keyCountValueButton.Content = KeyboardHookService.FormatCount(count);
+                keyCountText.Text = $"⌨ {KeyboardHookService.FormatCount(count)}";
             });
         }
 
@@ -7189,7 +7197,7 @@ namespace SideDesk.Controls
 
             _keyCountValueButton = new Button
             {
-                Content = (_keyboardHookService?.TodayKeyCount ?? 0).ToString("N0"),
+                Content = KeyboardHookService.FormatCount(_keyboardHookService?.TodayKeyCount ?? 0),
                 Width = 70, Height = 28,
                 Margin = new Thickness(2, 0, 4, 0), Padding = new Thickness(2),
                 Background = (Brush)FindResource("BrushAccent"),

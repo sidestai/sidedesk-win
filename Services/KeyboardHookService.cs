@@ -73,6 +73,17 @@ namespace SideDesk.Services
         /// <summary>今日按键总数</summary>
         public int TodayKeyCount => _todayKeyCount;
 
+        /// <summary>格式化计数显示（千及以上用 k/M 紧凑表示，节省宽度）</summary>
+        public static string FormatCount(long count)
+        {
+            if (count < 1000)
+                return count.ToString();
+            else if (count < 1000000)
+                return $"{count / 1000.0:F1}k";
+            else
+                return $"{count / 1000000.0:F2}M";
+        }
+
         /// <summary>按键计数变化事件</summary>
         public event Action<int>? KeyCountChanged;
 
