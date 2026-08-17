@@ -45,8 +45,8 @@ namespace SideDesk
                 core.GetDevToolsProtocolEventReceiver("Network.loadingFinished")
                     .DevToolsProtocolEventReceived += OnLoadingFinished;
 
-                // 导航到登录页面
-                core.Navigate(LoginUrl);
+                // 导航到登录页面（theme 传递宿主当前主题，使登录页按一致的主题风格渲染）
+                core.Navigate($"{LoginUrl}?theme={App.FrontendThemeParam}");
             }
             catch (Exception ex)
             {

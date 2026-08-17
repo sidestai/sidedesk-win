@@ -368,6 +368,7 @@ public class DockWindowState
 
 public class WindowConfigManager
 {
+    // 遗留存储路径：首次升级时作为迁移来源导入 SQLite；快照写盘已废弃，遗留文件由 Save 归档为 .bak-migrated
     private static readonly string _filePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "SideDesk", "windows.json");
@@ -385,12 +386,18 @@ public class WindowConfigManager
         var mgr = LoadCore();
         // 快捷分组门面：将全局配置管理器注入 QuickGroupManager（快捷数据已改存面板）
         QuickGroupManager.Init(mgr);
+        // 遗留 JSON → SQLite 迁移预热：各管理器为惰性迁移（首次访问才触发），
+        // 此处启动时主动触发一次，确保数据尽早落库而非滞留旧 JSON
+        try { AIConfigManager.GetConfig(); } catch { }
+        try { CloudSpaceManager.GetAll(); } catch { }
+        try { DigitalEmployeeManager.Load(); } catch { }
+        try { SideDesk.Windows.TitleLockRuleManager.GetAll(); } catch { }
         return mgr;
     }
 
     private static WindowConfigManager LoadCore()
     {
-        // 主存储：SQLite（sidedesk.db）；windows.json 仅作迁移来源/备份快照兜底
+        // 主存储：SQLite（sidedesk.db）；windows.json 仅作首次升级的迁移来源
         try
         {
             if (Services.LocalDbService.DbExists)
@@ -399,20 +406,22 @@ public class WindowConfigManager
                 {
                     var mgr = Services.LocalDbService.LoadManager();
                     MigrateLegacyStickyNotesOnce(mgr);
+                    PurgeEmptyStickyNotesOnce(mgr);
+                    ConsolidateDuplicateWindowsOnce(mgr);
+                    mgr.ArchiveLegacyWindowsJsonOnce();
                     return mgr;
                 }
                 catch (Exception dbEx)
                 {
-                    // db 损坏/读取失败：降级从 JSON 快照加载，并删除坏 db（下次 Save 会重建）
-                    System.Diagnostics.Debug.WriteLine($"[LocalDb] 数据库读取失败，降级 JSON 快照: {dbEx.Message}");
-                    try { if (File.Exists(Services.LocalDbService.DbPath)) File.Delete(Services.LocalDbService.DbPath); } catch { }
-                    if (File.Exists(_filePath))
+                    // db 损坏/读取失败：改名留存坏库便于人工修复（SQLite WAL 下极罕见）；
+                    // windows.json 快照已停止写盘不再作为回滚源，窗口数据由云同步从服务端重新拉取
+                    System.Diagnostics.Debug.WriteLine($"[LocalDb] 数据库读取失败: {dbEx.Message}");
+                    try
                     {
-                        var jsonSnap = File.ReadAllText(_filePath);
-                        var mgrSnap = JsonConvert.DeserializeObject<WindowConfigManager>(jsonSnap) ?? new WindowConfigManager();
-                        MigrateLegacyStickyNotesOnce(mgrSnap);
-                        return mgrSnap;
+                        string corrupt = Services.LocalDbService.DbPath + ".corrupt-" + DateTime.Now.ToString("yyyyMMdd-HHmmss");
+                        if (File.Exists(Services.LocalDbService.DbPath)) File.Move(Services.LocalDbService.DbPath, corrupt);
                     }
+                    catch { }
                     return new WindowConfigManager();
                 }
             }
@@ -423,12 +432,16 @@ public class WindowConfigManager
                 {
                     var mgrDb = Services.LocalDbService.LoadManager();
                     MigrateLegacyStickyNotesOnce(mgrDb);
+                    PurgeEmptyStickyNotesOnce(mgrDb);
+                    ConsolidateDuplicateWindowsOnce(mgrDb);
                     return mgrDb;
                 }
                 // 导入失败兜底：仍按旧 JSON 方式加载（下次 Save 会再次尝试写入 SQLite）
                 var json = File.ReadAllText(_filePath);
                 var mgr = JsonConvert.DeserializeObject<WindowConfigManager>(json) ?? new WindowConfigManager();
                 MigrateLegacyStickyNotesOnce(mgr);
+                PurgeEmptyStickyNotesOnce(mgr);
+                ConsolidateDuplicateWindowsOnce(mgr);
                 return mgr;
             }
         }
@@ -481,22 +494,158 @@ public class WindowConfigManager
         }
     }
 
+    /// <summary>
+    /// 一次性清理被同步污染的空便签：旧版同步 bug 会把其他类型的行错合并为空白便签并持久化
+    /// （便签编辑器有“空内容不落库”气闸，本地存在的空白便签均为污染数据）。
+    /// 升级后首次启动时移除全部面板中的空白便签，并写入完成标记。
+    /// </summary>
+    private static void PurgeEmptyStickyNotesOnce(WindowConfigManager mgr)
+    {
+        try
+        {
+            string flagPath = Path.Combine(Path.GetDirectoryName(_filePath)!, "sticky-empty-purged.flag");
+            if (File.Exists(flagPath)) return;
+
+            bool changed = false;
+            foreach (var win in mgr.Windows)
+            {
+                foreach (var p in EnumerateAllPanels(win.Panels))
+                {
+                    if (p.Type != PanelType.StickyNotes || p.StickyNotes == null || p.StickyNotes.Count == 0) continue;
+                    int before = p.StickyNotes.Count;
+                    p.StickyNotes.RemoveAll(n => string.IsNullOrWhiteSpace(n.Content));
+                    if (p.StickyNotes.Count < before) changed = true;
+                }
+            }
+            File.WriteAllText(flagPath, DateTime.Now.ToString("o"));
+            if (changed) mgr.Save();
+        }
+        catch { }
+    }
+
+    /// <summary>
+    /// 一次性合并重名重复窗口：旧版同步 bug（结构同步 500 + xid- 遗留密文反复新建）
+    /// 使服务端产生重复窗口，结构拉取又把它们补齐成同名本地窗口。
+    /// 升级后首次启动时，同名个人窗口仅保留模块最多的一个，其余移除
+    /// （其内容为同批 bug 的重复镜像，服务端会在下次同步对账时级联软删）。
+    /// </summary>
+    private static void ConsolidateDuplicateWindowsOnce(WindowConfigManager mgr)
+    {
+        try
+        {
+            string flagPath = Path.Combine(Path.GetDirectoryName(_filePath)!, "dup-windows-consolidated.flag");
+            if (File.Exists(flagPath)) return;
+
+            bool changed = false;
+            var groups = mgr.Windows
+                .Where(w => w.OwnerType != "team" && string.IsNullOrEmpty(w.ShareMode))
+                .GroupBy(w => w.Name ?? "")
+                .Where(g => g.Count() > 1)
+                .ToList();
+            foreach (var g in groups)
+            {
+                var keep = g.OrderByDescending(w => CountPanelsRecursive(w.Panels)).First();
+                foreach (var w in g.Where(w => w.Id != keep.Id).ToList())
+                {
+                    mgr.Windows.Remove(w);
+                    mgr.LeftDock.WindowIds.Remove(w.Id);
+                    mgr.RightDock.WindowIds.Remove(w.Id);
+                    changed = true;
+                    System.Diagnostics.Debug.WriteLine($"[WindowConfig] 合并重复窗口: 移除 {w.Name} ({w.Id})，保留 {keep.Id}");
+                }
+            }
+            File.WriteAllText(flagPath, DateTime.Now.ToString("o"));
+            if (changed) mgr.Save();
+        }
+        catch { }
+    }
+
+    private static int CountPanelsRecursive(List<PanelItem> panels)
+    {
+        int n = 0;
+        foreach (var p in panels)
+        {
+            n++;
+            if (p.ChildPanels != null) n += CountPanelsRecursive(p.ChildPanels);
+        }
+        return n;
+    }
+
+    /// <summary>
+    /// 一次性移除同一窗口内绑定相同 ServerId 的重复面板（保留遍历顺序中最先出现的一个，跨窗口镜像不受影响）。
+    /// 遗留 xid- 密文经服务端认领收敛后，多个重复面板会被映射到同一服务端模块，此处去重。
+    /// 在同步映射回写成功后调用；真正移除过重复面板才写完成标记，否则下次同步继续检查。
+    /// </summary>
+    public void DedupPanelsSharingServerIdOnce()
+    {
+        try
+        {
+            string flagPath = Path.Combine(Path.GetDirectoryName(_filePath)!, "dup-panels-deduped.flag");
+            if (File.Exists(flagPath)) return;
+
+            bool changed = false;
+            foreach (var win in Windows)
+            {
+                var seen = new HashSet<string>();
+                if (DedupPanelListByServerId(win.Panels, seen)) changed = true;
+            }
+            if (changed)
+            {
+                File.WriteAllText(flagPath, DateTime.Now.ToString("o"));
+                Save();
+            }
+        }
+        catch { }
+    }
+
+    private static bool DedupPanelListByServerId(List<PanelItem> panels, HashSet<string> seen)
+    {
+        bool changed = false;
+        int i = 0;
+        while (i < panels.Count)
+        {
+            var p = panels[i];
+            if (!string.IsNullOrEmpty(p.ServerId) && !seen.Add(p.ServerId!))
+            {
+                panels.RemoveAt(i);
+                changed = true;
+                continue;
+            }
+            if (p.ChildPanels != null && DedupPanelListByServerId(p.ChildPanels, seen)) changed = true;
+            i++;
+        }
+        return changed;
+    }
+
     public void Save()
     {
         // 主存储：SQLite 单事务写入（原子、防写坏）
         try
         {
             Services.LocalDbService.SaveManager(this);
-            // 同步导出 JSON 快照：供本地备份打包使用，并在 db 损坏时作为恢复兜底
-            Services.LocalDbService.ExportJsonSnapshot(this, _filePath);
+            ArchiveLegacyWindowsJsonOnce();
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[LocalDb] 保存失败: {ex.Message}");
         }
-
+    
         // 行级同步：任何配置保存后通知 CloudSyncService（防抖 2s + 快照对比确保不重复推送）
         try { Services.CloudSyncService.Instance.NotifyRowsChanged(); } catch { }
+    }
+    
+    /// <summary>
+    /// 一次性归档遗留 windows.json：快照写盘已废弃（SQLite 为唯一存储，备份打包时从内存实时生成），
+    /// 旧文件改名 .bak-migrated 保留。
+    /// </summary>
+    private void ArchiveLegacyWindowsJsonOnce()
+    {
+        try
+        {
+            if (!File.Exists(_filePath)) return;
+            File.Move(_filePath, _filePath + ".bak-migrated", overwrite: true);
+        }
+        catch { }
     }
 
     public WindowConfig? GetById(string id) => Windows.FirstOrDefault(w => w.Id == id);

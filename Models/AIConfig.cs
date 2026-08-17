@@ -22,6 +22,7 @@ namespace SideDesk.Models
 
     public static class AIConfigManager
     {
+        private const string DbKey = "ai_config";
         private static readonly string _filePath;
         private static AIConfig _config;
         private static readonly object _lock = new object();
@@ -79,7 +80,21 @@ namespace SideDesk.Models
 
                 try
                 {
-                    if (File.Exists(_filePath))
+                    // 主存储：SQLite（local_app_state KV）；无值时从旧 aiconfig.json 一次性迁入
+                    if (Services.LocalDbService.DbExists)
+                    {
+                        string? dbJson = Services.LocalDbService.LoadBusinessData(DbKey);
+                        if (!string.IsNullOrEmpty(dbJson))
+                            _config = JsonConvert.DeserializeObject<AIConfig>(dbJson);
+                        else if (File.Exists(_filePath))
+                        {
+                            string fileJson = File.ReadAllText(_filePath);
+                            _config = JsonConvert.DeserializeObject<AIConfig>(fileJson);
+                            if (_config != null)
+                                Services.LocalDbService.SaveBusinessData(DbKey, JsonConvert.SerializeObject(_config));
+                        }
+                    }
+                    else if (File.Exists(_filePath))
                     {
                         string json = File.ReadAllText(_filePath);
                         _config = JsonConvert.DeserializeObject<AIConfig>(json);
@@ -110,6 +125,12 @@ namespace SideDesk.Models
                 {
                     _config = config;
                     string json = JsonConvert.SerializeObject(config, Formatting.Indented);
+                    if (Services.LocalDbService.DbExists)
+                    {
+                        try { Services.LocalDbService.SaveBusinessData(DbKey, json); return; }
+                        catch { }
+                    }
+                    // db 不可用/未建立：退回旧 JSON 存储
                     File.WriteAllText(_filePath, json);
                 }
                 catch

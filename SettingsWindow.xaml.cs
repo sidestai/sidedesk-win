@@ -102,6 +102,9 @@ namespace SideDesk
                 RefreshDesktopSelector();
             }
 
+            // 软件渲染模式开关（禁用 GPU 加速，重启后生效）
+            softwareRenderSwitch.IsChecked = _app.AppSettings.ForceSoftwareRendering;
+
             // 停靠配置：为每个显示器动态生成一张卡片
             BuildDockConfigCards();
 
@@ -2432,6 +2435,17 @@ namespace SideDesk
 
         // ===== 虚拟桌面配置 =====
 
+        private void SoftwareRenderSwitch_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_isLoading) return;
+            bool on = softwareRenderSwitch.IsChecked == true;
+            _app.AppSettings.ForceSoftwareRendering = on;
+            _app.AppSettings.Save();
+            MessageBox.Show(
+                Framework.Lang.T(on ? "已开启软件渲染模式，重启应用后生效。" : "已关闭软件渲染模式，重启应用后恢复 GPU 硬件加速。"),
+                Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
         private void PerVirtualDesktopSwitch_Changed(object sender, RoutedEventArgs e)
         {
             if (_isLoading) return;
@@ -3656,9 +3670,19 @@ namespace SideDesk
             var urlBox = new TextBox { Style = textBoxStyle, Margin = new Thickness(0, 0, 0, 12) };
             customPanel.Children.Add(urlBox);
 
-            var selectorLabel = new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("选择器 (CSS Selector 或 XPath)"), Foreground = labelBrush, FontSize = smallFont, Margin = new Thickness(0, 0, 0, 4) };
+            var selTypeLabel = new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("选择器类型"), Foreground = labelBrush, FontSize = smallFont, Margin = new Thickness(0, 0, 0, 4) };
+            customPanel.Children.Add(selTypeLabel);
+            var selTypeCombo = new ComboBox { Style = comboStyle, Margin = new Thickness(0, 0, 0, 12), IsEditable = false };
+            selTypeCombo.Items.Add(new ComboBoxItem { Content = "XPath", Tag = "xpath" });
+            selTypeCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("CSS 选择器"), Tag = "css" });
+            selTypeCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("正则表达式"), Tag = "regex" });
+            selTypeCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("JS 脚本"), Tag = "js" });
+            selTypeCombo.SelectedIndex = 0;
+            customPanel.Children.Add(selTypeCombo);
+
+            var selectorLabel = new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("选择器内容"), Foreground = labelBrush, FontSize = smallFont, Margin = new Thickness(0, 0, 0, 4) };
             customPanel.Children.Add(selectorLabel);
-            var selectorBox = new TextBox { Style = textBoxStyle, Margin = new Thickness(0, 0, 0, 12) };
+            var selectorBox = new TextBox { Style = textBoxStyle, Margin = new Thickness(0, 0, 0, 12), AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 60, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
             customPanel.Children.Add(selectorBox);
 
             var methodLabel = new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("请求方式"), Foreground = labelBrush, FontSize = smallFont, Margin = new Thickness(0, 0, 0, 4) };
@@ -3804,7 +3828,7 @@ namespace SideDesk
                 bool isApi = isCustom && (modeCombo.SelectedItem as ComboBoxItem)?.Tag as string == "API";
                 bool isPost = (methodCombo.SelectedItem as ComboBoxItem)?.Tag as string == "POST";
                 customPanel.Visibility = isCustom ? Visibility.Visible : Visibility.Collapsed;
-                selectorLabel.Visibility = selectorBox.Visibility = isApi ? Visibility.Collapsed : Visibility.Visible;
+                selectorLabel.Visibility = selectorBox.Visibility = selTypeLabel.Visibility = selTypeCombo.Visibility = isApi ? Visibility.Collapsed : Visibility.Visible;
                 methodLabel.Visibility = methodCombo.Visibility = isApi ? Visibility.Visible : Visibility.Collapsed;
                 postBodyLabel.Visibility = postBodyBox.Visibility = isApi && isPost ? Visibility.Visible : Visibility.Collapsed;
                 extractLabel.Visibility = extractBox.Visibility = isApi ? Visibility.Visible : Visibility.Collapsed;
@@ -3898,6 +3922,7 @@ namespace SideDesk
                     item.TemplateId = tpl.Id;
                     item.TargetUrl = tpl.TargetUrl;
                     item.Selector = tpl.Selector;
+                    item.SelectorType = tpl.SelectorType;
                     item.RefreshIntervalSeconds = tpl.RefreshIntervalSeconds > 0 ? tpl.RefreshIntervalSeconds : 60;
                     item.BrowserId = (browserCombo.SelectedItem as ComboBoxItem)?.Tag as string;
                     item.ProfileId = (profileCombo.SelectedItem as ComboBoxItem)?.Tag as string;
@@ -3920,6 +3945,7 @@ namespace SideDesk
                     else
                     {
                         item.Selector = selectorBox.Text.Trim();
+                        item.SelectorType = (selTypeCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
                         item.BrowserId = (browserCombo.SelectedItem as ComboBoxItem)?.Tag as string;
                         item.ProfileId = (profileCombo.SelectedItem as ComboBoxItem)?.Tag as string;
                     }
@@ -4222,12 +4248,51 @@ namespace SideDesk
             dialog.ShowDialog();
         }
 
-        private void RefreshTemplateList()
-        {
-            templateListPanel.Children.Clear();
-            var manager = DataTemplateManager.Load();
+        // 「我的数据模板」当前展示列表（删除时取 TeamId 用，远程团队模板仅存在于后端）
+        private List<Models.DataTemplate> _displayedTemplates = new();
 
-            if (manager.Templates.Count == 0)
+        /// <summary>刷新「我的数据模板」：本地创建的（个人+团队）+ 后端拉取的团队其他成员模板</summary>
+        private async void RefreshTemplateList()
+        {
+            var list = DataTemplateManager.LoadUserTemplates();
+
+            // 团队模板：按团队从后端拉取，补充本地未保存的（其他成员创建）
+            try
+            {
+                var teams = await Services.TeamService.Instance.ListTeamsAsync();
+                if (teams != null)
+                {
+                    foreach (var team in teams)
+                    {
+                        var remote = await Services.TeamService.Instance.GetTeamTemplatesAsync(team.Id);
+                        if (remote == null) continue;
+                        foreach (var r in remote)
+                        {
+                            if (list.Any(t => t.Id == r.LocalId && t.TeamId == team.Id)) continue;
+                            list.Add(new Models.DataTemplate
+                            {
+                                Id = r.LocalId,
+                                Name = r.Name,
+                                Description = r.Description,
+                                Category = r.Category,
+                                TargetUrl = r.TargetUrl,
+                                Selector = r.Selector,
+                                SelectorType = r.SelectorType,
+                                RefreshIntervalSeconds = r.RefreshInterval,
+                                TeamId = team.Id,
+                                TeamName = team.Name
+                            });
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            _displayedTemplates = list;
+
+            templateListPanel.Children.Clear();
+
+            if (list.Count == 0)
             {
                 templateListPanel.Children.Add(new Emoji.Wpf.TextBlock
                 {
@@ -4238,7 +4303,7 @@ namespace SideDesk
                 return;
             }
 
-            foreach (var tpl in manager.Templates)
+            foreach (var tpl in list)
             {
                 var row = new Grid { Margin = new Thickness(0, 0, 0, 8) };
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -4305,6 +4370,12 @@ namespace SideDesk
             }
         }
 
+        /// <summary>打开数据模板市场（web 市场窗口，与数据块菜单入口一致）</summary>
+        private void OpenDataTemplateMarket_Click(object sender, RoutedEventArgs e)
+        {
+            Windows.MarketWindow.Open("/data-template-market", Framework.Lang.T("📊 数据模板市场"));
+        }
+
         private async void AddTemplate_Click(object sender, RoutedEventArgs e)
         {
             // 预加载团队列表
@@ -4367,140 +4438,20 @@ namespace SideDesk
             var urlBox = new TextBox { Style = (Style)FindResource("GlobalTextBoxStyle"), Margin = new Thickness(0, 0, 0, 12) };
             panel.Children.Add(urlBox);
 
-            // 浏览器选择
-            panel.Children.Add(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("浏览器"), Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
-            var browserCombo = new ComboBox { Style = (Style)FindResource("GlobalComboBoxStyle"), Margin = new Thickness(0, 0, 0, 12) };
-            browserCombo.Items.Add(Framework.Lang.T("默认浏览器"));
-            foreach (var b in _registry.Browsers)
-                browserCombo.Items.Add(b.Name);
-            browserCombo.SelectedIndex = 0;
-            panel.Children.Add(browserCombo);
+            // 选择器类型
+            panel.Children.Add(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("选择器类型"), Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
+            var selectorTypeCombo = new ComboBox { Style = (Style)FindResource("GlobalComboBoxStyle"), Margin = new Thickness(0, 0, 0, 12), IsEditable = false };
+            selectorTypeCombo.Items.Add(new ComboBoxItem { Content = "XPath", Tag = "xpath" });
+            selectorTypeCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("CSS 选择器"), Tag = "css" });
+            selectorTypeCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("正则表达式"), Tag = "regex" });
+            selectorTypeCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("JS 脚本"), Tag = "js" });
+            selectorTypeCombo.SelectedIndex = 0;
+            panel.Children.Add(selectorTypeCombo);
 
-            // 容器(Profile)选择
-            panel.Children.Add(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("容器 (Profile)"), Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
-            var profileCombo = new ComboBox { Style = (Style)FindResource("GlobalComboBoxStyle"), Margin = new Thickness(0, 0, 0, 12) };
-            profileCombo.Items.Add(Framework.Lang.T("默认"));
-            profileCombo.SelectedIndex = 0;
-            panel.Children.Add(profileCombo);
-
-            // 浏览器切换时更新Profile列表
-            browserCombo.SelectionChanged += (s, ev) =>
-            {
-                profileCombo.Items.Clear();
-                profileCombo.Items.Add(Framework.Lang.T("默认"));
-                if (browserCombo.SelectedIndex > 0)
-                {
-                    var selectedBrowser = _registry.Browsers[browserCombo.SelectedIndex - 1];
-                    foreach (var p in selectedBrowser.Profiles)
-                        profileCombo.Items.Add(p.Name);
-                }
-                profileCombo.SelectedIndex = 0;
-            };
-
-            // 选择器
-            panel.Children.Add(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("选择器 (CSS Selector 或 XPath)"), Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
-            var selectorGrid = new Grid { Margin = new Thickness(0, 0, 0, 12) };
-            selectorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            selectorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var selectorBox = new TextBox { Style = (Style)FindResource("GlobalTextBoxStyle") };
-            Grid.SetColumn(selectorBox, 0);
-            selectorGrid.Children.Add(selectorBox);
-            var pickSelectorBtn = new Button
-            {
-                Content = Framework.Lang.T("选择"),
-                Style = (Style)FindResource("GhostButtonStyle"),
-                Padding = new Thickness(10, 4, 10, 4),
-                Margin = new Thickness(8, 0, 0, 0),
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            Grid.SetColumn(pickSelectorBtn, 1);
-            selectorGrid.Children.Add(pickSelectorBtn);
-            panel.Children.Add(selectorGrid);
-
-            // 选择按钮点击逻辑
-            pickSelectorBtn.Click += async (s, ev) =>
-            {
-                // 校验URL
-                if (string.IsNullOrWhiteSpace(urlBox.Text))
-                {
-                    MessageBox.Show(Framework.Lang.T("请先输入目标网址"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return;
-                }
-
-                // 确定浏览器路径
-                string browserPath = "";
-                string profileDir = "";
-                if (browserCombo.SelectedIndex > 0)
-                {
-                    var selectedBrowser = _registry.Browsers[browserCombo.SelectedIndex - 1];
-                    browserPath = selectedBrowser.ExePath;
-                    if (profileCombo.SelectedIndex > 0)
-                        profileDir = selectedBrowser.Profiles[profileCombo.SelectedIndex - 1].Directory;
-                }
-                else
-                {
-                    // 默认浏览器：尝试找 chrome/edge
-                    var defaultPaths = new[]
-                    {
-                        @"C:\Program Files\Google\Chrome\Application\chrome.exe",
-                        @"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-                        @"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-                        @"C:\Program Files\Microsoft\Edge\Application\msedge.exe"
-                    };
-                    browserPath = defaultPaths.FirstOrDefault(System.IO.File.Exists) ?? "";
-                    if (string.IsNullOrEmpty(browserPath))
-                    {
-                        MessageBox.Show(Framework.Lang.T("未找到可用浏览器，请在浏览器下拉框中选择一个已注册的浏览器"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
-                        return;
-                    }
-                }
-
-                // 禁用按钮
-                pickSelectorBtn.IsEnabled = false;
-                pickSelectorBtn.Content = Framework.Lang.T("选择中...");
-
-                try
-                {
-                    var (port, process) = await Services.CdpBrowserService.Instance.LaunchVisibleBrowserAsync(browserPath, profileDir, urlBox.Text.Trim());
-                    if (process == null)
-                    {
-                        MessageBox.Show(Framework.Lang.T("启动浏览器失败\n\n可能原因：该浏览器已在运行中，请先关闭浏览器后重试"), Framework.Lang.T("错误"), MessageBoxButton.OK, MessageBoxImage.Error);
-                        return;
-                    }
-
-                    try
-                    {
-                        var selector = await Services.CdpBrowserService.Instance.PickElementSelectorAsync(port, urlBox.Text.Trim());
-                        if (!string.IsNullOrEmpty(selector))
-                        {
-                            selectorBox.Text = selector;
-                        }
-                        else
-                        {
-                            MessageBox.Show(Framework.Lang.T("未选择到元素（超时或取消）"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Information);
-                        }
-                    }
-                    finally
-                    {
-                        // 关闭浏览器
-                        try
-                        {
-                            if (!process.HasExited)
-                                process.Kill();
-                        }
-                        catch { }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show(Framework.Lang.TF("选择器获取失败: {0}", ex.Message), Framework.Lang.T("错误"), MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-                finally
-                {
-                    pickSelectorBtn.IsEnabled = true;
-                    pickSelectorBtn.Content = Framework.Lang.T("选择");
-                }
-            };
+            // 选择器内容
+            panel.Children.Add(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("选择器内容"), Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
+            var selectorBox = new TextBox { Style = (Style)FindResource("GlobalTextBoxStyle"), AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 60, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(0, 0, 0, 12) };
+            panel.Children.Add(selectorBox);
 
             // 刷新间隔
             panel.Children.Add(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("刷新间隔（秒）"), Foreground = (Brush)FindResource("BrushTextSec"), FontSize = (double)FindResource("FontSizeSmall"), Margin = new Thickness(0, 0, 0, 4) });
@@ -4512,7 +4463,7 @@ namespace SideDesk
             var cancelBtn = new Button { Content = Framework.Lang.T("取消"), Style = (Style)FindResource("StandardButtonStyle"), Padding = new Thickness(16, 8, 16, 8), Margin = new Thickness(0, 0, 10, 0) };
             cancelBtn.Click += (s, ev) => dialog.Close();
             var okBtn = new Button { Content = Framework.Lang.T("保存"), Style = (Style)FindResource("PrimaryButtonStyle"), Padding = new Thickness(16, 8, 16, 8) };
-            okBtn.Click += (s, ev) =>
+            okBtn.Click += async (s, ev) =>
             {
                 if (string.IsNullOrWhiteSpace(nameBox.Text) || string.IsNullOrWhiteSpace(urlBox.Text) || string.IsNullOrWhiteSpace(selectorBox.Text))
                 {
@@ -4531,17 +4482,26 @@ namespace SideDesk
                     Category = categoryBox.Text.Trim(),
                     TargetUrl = urlBox.Text.Trim(),
                     Selector = selectorBox.Text.Trim(),
+                    SelectorType = (selectorTypeCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "xpath",
                     RefreshIntervalSeconds = interval,
-                    DefaultBrowserId = browserCombo.SelectedIndex > 0 ? _registry.Browsers[browserCombo.SelectedIndex - 1].Id : null,
-                    DefaultProfileId = (browserCombo.SelectedIndex > 0 && profileCombo.SelectedIndex > 0)
-                        ? _registry.Browsers[browserCombo.SelectedIndex - 1].Profiles[profileCombo.SelectedIndex - 1].Id
-                        : null,
                     TeamId = (teamCombo.SelectedItem as ComboBoxItem)?.Tag as string,
                     TeamName = teamCombo.SelectedIndex > 0 ? (teamCombo.SelectedItem as ComboBoxItem)?.Content?.ToString() : null
                 };
 
                 var manager = DataTemplateManager.Load();
                 manager.SaveUserTemplate(template);
+
+                // 团队模板：同步发布到后端，其他成员可在数据模板市场「团队模板」分类看到；
+                // 本地已保存成功，发布失败仅提示不阻断
+                if (!string.IsNullOrEmpty(template.TeamId))
+                {
+                    okBtn.IsEnabled = false;
+                    var (ok, msg) = await Services.TeamService.Instance.SaveTeamTemplateAsync(template);
+                    okBtn.IsEnabled = true;
+                    if (!ok)
+                        MessageBox.Show(Framework.Lang.TF("模板已保存到本地，但发布到团队失败：{0}", string.IsNullOrEmpty(msg) ? Framework.Lang.T("网络错误") : msg), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+
                 dialog.Close();
                 RefreshTemplateList();
             };
@@ -4553,12 +4513,13 @@ namespace SideDesk
             dialog.ShowDialog();
         }
 
-        private void RemoveTemplate(string templateId)
+        private async void RemoveTemplate(string templateId)
         {
             if (MessageBox.Show(Framework.Lang.T("确定删除该模版？"), Framework.Lang.T("确认"), MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
                 return;
 
-            // 从 user-templates.json 中删除
+            // 团队模板需同步删后端；TeamId 取自展示列表（其他成员创建的远程模板不在本地文件中）
+            string? teamId = _displayedTemplates.FirstOrDefault(t => t.Id == templateId)?.TeamId;
             var userFile = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data-templates", "user-templates.json");
             if (System.IO.File.Exists(userFile))
             {
@@ -4571,14 +4532,28 @@ namespace SideDesk
                 }
                 catch { }
             }
+
+            // 内置模板不在 user-templates.json 中，通过黑名单持久化删除；用户模板入黑名单也无害
+            DataTemplateManager.MarkDeleted(templateId);
+
+            // 团队模板：同步删除后端记录（本地已删除，后端失败仅提示不阻断）
+            if (!string.IsNullOrEmpty(teamId))
+            {
+                var (ok, msg) = await Services.TeamService.Instance.DeleteTeamTemplateAsync(teamId, templateId);
+                if (!ok)
+                    MessageBox.Show(Framework.Lang.TF("模板已从本地删除，但团队侧删除失败：{0}", string.IsNullOrEmpty(msg) ? Framework.Lang.T("网络错误") : msg), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+
             RefreshTemplateList();
         }
 
         /// <summary>从已有数据看板项导入为模板（去重：同 URL+Selector 不重复导入）</summary>
-        private void ImportFromDashboard_Click(object sender, RoutedEventArgs e)
+        private async void ImportFromDashboard_Click(object sender, RoutedEventArgs e)
         {
             var manager = DataTemplateManager.Load();
             int imported = 0;
+            var teamPublished = 0;
+            var teamPublishFailed = false;
 
             foreach (var win in _app.WindowConfigs.Windows)
             {
@@ -4601,6 +4576,7 @@ namespace SideDesk
                             Category = Framework.Lang.T("自定义"),
                             TargetUrl = item.TargetUrl,
                             Selector = item.Selector,
+                            SelectorType = item.SelectorType,
                             RefreshIntervalSeconds = item.RefreshIntervalSeconds,
                             DefaultBrowserId = item.BrowserId,
                             DefaultProfileId = item.ProfileId,
@@ -4610,6 +4586,13 @@ namespace SideDesk
                         manager.SaveUserTemplate(template);
                         manager.Templates.Add(template);
                         imported++;
+
+                        // 带团队的看板项：一并发布到团队模板（失败不阻断导入，末尾统一提示）
+                        if (!string.IsNullOrEmpty(template.TeamId))
+                        {
+                            var (ok, _) = await Services.TeamService.Instance.SaveTeamTemplateAsync(template);
+                            if (ok) teamPublished++; else teamPublishFailed = true;
+                        }
                     }
                 }
             }
@@ -4617,7 +4600,10 @@ namespace SideDesk
             if (imported > 0)
             {
                 RefreshTemplateList();
-                MessageBox.Show(Framework.Lang.TF("已导入 {0} 个数据看板项为模板", imported), Framework.Lang.T("导入成功"), MessageBoxButton.OK, MessageBoxImage.Information);
+                var tip = Framework.Lang.TF("已导入 {0} 个数据看板项为模板", imported);
+                if (teamPublished > 0) tip += Framework.Lang.TF("\n其中 {0} 个已发布到团队模板", teamPublished);
+                if (teamPublishFailed) tip += Framework.Lang.T("\n部分团队模板发布失败，可在模板管理中重新保存");
+                MessageBox.Show(tip, Framework.Lang.T("导入成功"), MessageBoxButton.OK, MessageBoxImage.Information);
             }
             else
             {

@@ -67,7 +67,10 @@ public partial class MarketWindow : Window
             {
                 if (args.Request.Uri.StartsWith("desktxp://", StringComparison.OrdinalIgnoreCase))
                 {
-                    var (status, json) = Services.Plugins.PluginMarketBridge.HandleScheme(args.Request.Uri);
+                    // 数据模板市场走独立桥；其余（插件查询/安装/拉源码）走 PluginMarketBridge
+                    var (status, json) = args.Request.Uri.Contains("/data-templates/", StringComparison.OrdinalIgnoreCase)
+                        ? Services.DataTemplateMarketBridge.HandleScheme(args.Request.Uri)
+                        : Services.Plugins.PluginMarketBridge.HandleScheme(args.Request.Uri);
                     var body = new System.IO.MemoryStream(System.Text.Encoding.UTF8.GetBytes(json));
                     args.Response = core.Environment.CreateWebResourceResponse(
                         body, status, "OK", "application/json");
@@ -79,8 +82,9 @@ public partial class MarketWindow : Window
                     args.Request.Headers.SetHeader("Authorization", "Bearer " + token);
             };
 
-            // 拼接 token 参数，供前端页面直接读取（与插件编辑器同一模式）
-            var url = $"{FrontendBaseUrl}{_marketPath}?token={Uri.EscapeDataString(token)}";
+            // 拼接 token 参数，供前端页面直接读取（与插件编辑器同一模式）；
+            // theme 参数传递宿主当前主题（dark/light），使市场页面按一致的主题风格渲染
+            var url = $"{FrontendBaseUrl}{_marketPath}?token={Uri.EscapeDataString(token)}&theme={App.FrontendThemeParam}";
             core.Navigate(url);
         }
         catch (Exception ex)

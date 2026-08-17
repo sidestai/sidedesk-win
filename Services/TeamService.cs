@@ -51,6 +51,20 @@ namespace SideDesk.Services
         [JsonProperty("inviterName")] public string InviterName { get; set; } = "";
     }
 
+    /// <summary>团队数据模板（后端 team/list 返回项）</summary>
+    public class TeamTemplateInfo
+    {
+        [JsonProperty("localId")] public string LocalId { get; set; } = "";
+        [JsonProperty("name")] public string Name { get; set; } = "";
+        [JsonProperty("description")] public string Description { get; set; } = "";
+        [JsonProperty("category")] public string Category { get; set; } = "";
+        [JsonProperty("targetUrl")] public string TargetUrl { get; set; } = "";
+        [JsonProperty("selector")] public string Selector { get; set; } = "";
+        [JsonProperty("refreshInterval")] public int RefreshInterval { get; set; } = 60;
+        [JsonProperty("selectorType")] public string SelectorType { get; set; } = "";
+        [JsonProperty("creatorName")] public string CreatorName { get; set; } = "";
+    }
+
     /// <summary>团队组件库条目</summary>
     public class TeamLibraryItem
     {
@@ -368,6 +382,107 @@ namespace SideDesk.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[Team] 查询模块创建者失败: {ex.Message}");
+                return null;
+            }
+        }
+
+        #endregion
+
+        #region 5. 团队数据模板（数据模板市场「团队模板」分类）
+
+        /// <summary>POST /api/sidebar/data-template/team/save — 发布/更新团队模板（按 corpId + localId upsert）</summary>
+        public async Task<(bool Ok, string Msg)> SaveTeamTemplateAsync(Models.DataTemplate tpl)
+        {
+            try
+            {
+                var body = new JObject
+                {
+                    ["corpId"] = tpl.TeamId,
+                    ["localId"] = tpl.Id,
+                    ["name"] = tpl.Name,
+                    ["description"] = tpl.Description ?? "",
+                    ["category"] = tpl.Category ?? "",
+                    ["targetUrl"] = tpl.TargetUrl,
+                    ["selector"] = tpl.Selector,
+                    ["selectorType"] = tpl.SelectorType ?? "",
+                    ["refreshInterval"] = tpl.RefreshIntervalSeconds
+                };
+                using var req = CreateRequest(HttpMethod.Post, $"{BaseUrl}/api/sidebar/data-template/team/save");
+                req.Content = new StringContent(body.ToString(Formatting.None), Encoding.UTF8, "application/json");
+                using var resp = await _http.SendAsync(req).ConfigureAwait(false);
+                var (ok, msg, _) = await ParseResponseWithMsgAsync(resp).ConfigureAwait(false);
+                return (ok, msg);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Team] 发布团队模板失败: {ex.Message}");
+                return (false, Framework.Lang.T("网络错误"));
+            }
+        }
+
+        /// <summary>POST /api/sidebar/data-template/team/delete — 删除团队模板（按 corpId + localId 定位，软删除）</summary>
+        public async Task<(bool Ok, string Msg)> DeleteTeamTemplateAsync(string corpId, string localId)
+        {
+            try
+            {
+                var body = new JObject { ["corpId"] = corpId, ["localId"] = localId };
+                using var req = CreateRequest(HttpMethod.Post, $"{BaseUrl}/api/sidebar/data-template/team/delete");
+                req.Content = new StringContent(body.ToString(Formatting.None), Encoding.UTF8, "application/json");
+                using var resp = await _http.SendAsync(req).ConfigureAwait(false);
+                var (ok, msg, _) = await ParseResponseWithMsgAsync(resp).ConfigureAwait(false);
+                return (ok, msg);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Team] 删除团队模板失败: {ex.Message}");
+                return (false, Framework.Lang.T("网络错误"));
+            }
+        }
+
+        /// <summary>GET /api/sidebar/data-template/market/detail?tid=X — 按加密行 ID 取市场模板详情（官方/团队通用）</summary>
+        public async Task<Models.DataTemplate?> GetMarketTemplateAsync(string tid)
+        {
+            try
+            {
+                using var req = CreateRequest(HttpMethod.Get, $"{BaseUrl}/api/sidebar/data-template/market/detail?tid={Uri.EscapeDataString(tid)}");
+                using var resp = await _http.SendAsync(req).ConfigureAwait(false);
+                var data = await ParseResponseTokenAsync(resp).ConfigureAwait(false);
+                if (data is not JObject obj) return null;
+                return new Models.DataTemplate
+                {
+                    // Id 用后端 encrypt2 行 ID 密文（tid），不暴露内部主键/明文 localId；旧后端无 tid 时回退 localId
+                    Id = obj.Value<string>("tid") ?? obj.Value<string>("localId") ?? "",
+                    Name = obj.Value<string>("name") ?? "",
+                    Description = obj.Value<string>("description") ?? "",
+                    Category = obj.Value<string>("category") ?? "",
+                    TargetUrl = obj.Value<string>("targetUrl") ?? "",
+                    Selector = obj.Value<string>("selector") ?? "",
+                    SelectorType = obj.Value<string>("selectorType") ?? "",
+                    RefreshIntervalSeconds = obj.Value<int?>("refreshInterval") ?? 60,
+                    TeamId = obj.Value<string>("teamId") ?? ""
+                };
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Team] 获取市场模板详情失败: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>GET /api/sidebar/data-template/team/list?corpId= — 团队内全部上架模板</summary>
+        public async Task<List<TeamTemplateInfo>?> GetTeamTemplatesAsync(string corpId)
+        {
+            try
+            {
+                using var req = CreateRequest(HttpMethod.Get, $"{BaseUrl}/api/sidebar/data-template/team/list?corpId={Uri.EscapeDataString(corpId)}");
+                using var resp = await _http.SendAsync(req).ConfigureAwait(false);
+                var data = await ParseResponseTokenAsync(resp).ConfigureAwait(false);
+                if (data is not JArray arr) return null;
+                return arr.ToObject<List<TeamTemplateInfo>>() ?? new List<TeamTemplateInfo>();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Team] 拉取团队模板列表失败: {ex.Message}");
                 return null;
             }
         }

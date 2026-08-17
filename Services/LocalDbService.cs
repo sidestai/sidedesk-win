@@ -47,7 +47,6 @@ public static class LocalDbService
             pragma.ExecuteNonQuery();
         }
         EnsureSchema(conn);
-        CleanupLegacyXidOnce(conn);
         return conn;
     }
 
@@ -134,6 +133,13 @@ CREATE TABLE IF NOT EXISTS local_sticky_note (
   updated_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS local_global_note (
+  uid        TEXT PRIMARY KEY,
+  content    TEXT,
+  created_at TEXT,
+  updated_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS local_todo_item (
   uid                   TEXT PRIMARY KEY,
   text                  TEXT,
@@ -163,6 +169,16 @@ CREATE TABLE IF NOT EXISTS local_screen_time_hourly (
   process TEXT NOT NULL,
   seconds INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (date, hour, process)
+);
+
+CREATE TABLE IF NOT EXISTS local_key_count_daily (
+  date      TEXT PRIMARY KEY,
+  key_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS local_mouse_distance_daily (
+  date           TEXT PRIMARY KEY,
+  distance_pixel INTEGER NOT NULL DEFAULT 0
 );";
         cmd.ExecuteNonQuery();
     }
@@ -204,31 +220,6 @@ CREATE TABLE IF NOT EXISTS local_screen_time_hourly (
         using var alter = conn.CreateCommand();
         alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {colType}";
         alter.ExecuteNonQuery();
-    }
-
-    /// <summary>
-    /// 一次性清理：后端已废弃 encrypt3（xid- 前缀密文）统一改用 encrypt2，服务端数据表已清空。
-    /// 本地缓存的 xid- ServerId/CorpId/行ID 无法再与服务端匹配，置空后下次同步以新格式重建映射。
-    /// </summary>
-    private static void CleanupLegacyXidOnce(SqliteConnection conn)
-    {
-        if (GetState(conn, "xid3_cleanup_done") == "1") return;
-        using (var cmd = conn.CreateCommand())
-        {
-            cmd.CommandText = @"
-UPDATE local_bar      SET server_id=NULL      WHERE server_id LIKE 'xid-%';
-UPDATE local_bar      SET corp_id=NULL        WHERE corp_id LIKE 'xid-%';
-UPDATE local_bar      SET source_bar_id=NULL  WHERE source_bar_id LIKE 'xid-%';
-UPDATE local_item     SET server_id=NULL      WHERE server_id LIKE 'xid-%';
-UPDATE local_item     SET corp_id=NULL        WHERE corp_id LIKE 'xid-%';
-UPDATE local_item     SET team_id=NULL        WHERE team_id LIKE 'xid-%';
-UPDATE local_item_row SET row_server_id=NULL  WHERE row_server_id LIKE 'xid-%';
-UPDATE local_item_row SET data_server_id=NULL WHERE data_server_id LIKE 'xid-%';
-DELETE FROM local_row_id_map WHERE row_server_id LIKE 'xid-%' OR data_server_id LIKE 'xid-%';";
-            cmd.ExecuteNonQuery();
-        }
-        UpsertState(conn, "xid3_cleanup_done", "1");
-        System.Diagnostics.Debug.WriteLine("[LocalDb] xid- 旧密文一次性清理完成");
     }
 
     // ==================== 写入 ====================
@@ -617,6 +608,50 @@ ON CONFLICT(uid) DO UPDATE SET content=excluded.content, updated_at=excluded.upd
         cmd.ExecuteNonQuery();
     }
 
+    /// <summary>
+    /// 全局便签库（「我的数据」便签列表 + AI 工具）。
+    /// 独立于面板行数据表，不参与 SaveManager 的全量重写；原存储为 sticky-notes.json。
+    /// </summary>
+    public static List<StickyNote> LoadGlobalNotes()
+    {
+        var list = new List<StickyNote>();
+        using var conn = Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT uid, content, created_at, updated_at FROM local_global_note";
+        using var rd = cmd.ExecuteReader();
+        while (rd.Read())
+        {
+            var n = new StickyNote { Id = rd.GetString(0), Content = rd.IsDBNull(1) ? "" : rd.GetString(1) };
+            if (!rd.IsDBNull(2) && DateTime.TryParse(rd.GetString(2), out var c)) n.CreatedAt = c;
+            if (!rd.IsDBNull(3) && DateTime.TryParse(rd.GetString(3), out var u)) n.UpdatedAt = u;
+            list.Add(n);
+        }
+        return list;
+    }
+
+    public static void SaveGlobalNotes(IReadOnlyList<StickyNote> notes)
+    {
+        using var conn = Open();
+        using var tx = conn.BeginTransaction();
+        using (var del = conn.CreateCommand())
+        {
+            del.CommandText = "DELETE FROM local_global_note";
+            del.ExecuteNonQuery();
+        }
+        foreach (var n in notes)
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"INSERT INTO local_global_note (uid, content, created_at, updated_at)
+VALUES ($uid, $content, $created, $updated);";
+            cmd.Parameters.AddWithValue("$uid", n.Id);
+            cmd.Parameters.AddWithValue("$content", n.Content);
+            cmd.Parameters.AddWithValue("$created", n.CreatedAt.ToString("o"));
+            cmd.Parameters.AddWithValue("$updated", n.UpdatedAt.ToString("o"));
+            cmd.ExecuteNonQuery();
+        }
+        tx.Commit();
+    }
+
     private static void UpsertTodoItem(SqliteConnection conn, TodoItem t)
     {
         using var cmd = conn.CreateCommand();
@@ -942,6 +977,106 @@ FROM local_item WHERE deleted_at IS NULL ORDER BY sort_order, id";
         return v as string;
     }
 
+    // ==================== 通用业务数据 KV（原独立 JSON 文件迁入 SQLite）====================
+
+    /// <summary>读取业务数据 JSON（原独立 JSON 文件的 SQLite 存储），无值返回 null。</summary>
+    public static string? LoadBusinessData(string key)
+    {
+        using var conn = Open();
+        return GetState(conn, key);
+    }
+
+    /// <summary>单行 upsert 写入业务数据 JSON（事务原子，替代整文件写盘）。</summary>
+    public static void SaveBusinessData(string key, string json)
+    {
+        using var conn = Open();
+        using var tx = conn.BeginTransaction();
+        UpsertState(conn, key, json);
+        tx.Commit();
+    }
+
+    // ==================== 键鼠每日统计（原 keycount.json / mousedistance.json）====================
+
+    public static int? LoadKeyCount(string date)
+    {
+        using var conn = Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT key_count FROM local_key_count_daily WHERE date=$d";
+        cmd.Parameters.AddWithValue("$d", date);
+        var v = cmd.ExecuteScalar();
+        return v == null || v is DBNull ? (int?)null : Convert.ToInt32(v);
+    }
+
+    public static void SaveKeyCount(string date, int count)
+    {
+        using var conn = Open();
+        using var tx = conn.BeginTransaction();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"INSERT INTO local_key_count_daily (date, key_count) VALUES ($d, $v)
+ON CONFLICT(date) DO UPDATE SET key_count=excluded.key_count;";
+        cmd.Parameters.AddWithValue("$d", date);
+        cmd.Parameters.AddWithValue("$v", count);
+        cmd.ExecuteNonQuery();
+        tx.Commit();
+    }
+
+    public static long? LoadMouseDistance(string date)
+    {
+        using var conn = Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT distance_pixel FROM local_mouse_distance_daily WHERE date=$d";
+        cmd.Parameters.AddWithValue("$d", date);
+        var v = cmd.ExecuteScalar();
+        return v == null || v is DBNull ? (long?)null : Convert.ToInt64(v);
+    }
+
+    public static void SaveMouseDistance(string date, long pixels)
+    {
+        using var conn = Open();
+        using var tx = conn.BeginTransaction();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"INSERT INTO local_mouse_distance_daily (date, distance_pixel) VALUES ($d, $v)
+ON CONFLICT(date) DO UPDATE SET distance_pixel=excluded.distance_pixel;";
+        cmd.Parameters.AddWithValue("$d", date);
+        cmd.Parameters.AddWithValue("$v", pixels);
+        cmd.ExecuteNonQuery();
+        tx.Commit();
+    }
+
+    /// <summary>一次性导入旧 keycount.json 全量历史（仅导入表中尚无的日期）。</summary>
+    public static void ImportKeyCounts(IReadOnlyDictionary<string, int> daily)
+    {
+        using var conn = Open();
+        using var tx = conn.BeginTransaction();
+        foreach (var kv in daily)
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"INSERT INTO local_key_count_daily (date, key_count) VALUES ($d, $v)
+ON CONFLICT(date) DO NOTHING;";
+            cmd.Parameters.AddWithValue("$d", kv.Key);
+            cmd.Parameters.AddWithValue("$v", kv.Value);
+            cmd.ExecuteNonQuery();
+        }
+        tx.Commit();
+    }
+
+    /// <summary>一次性导入旧 mousedistance.json 全量历史（仅导入表中尚无的日期）。</summary>
+    public static void ImportMouseDistances(IReadOnlyDictionary<string, long> daily)
+    {
+        using var conn = Open();
+        using var tx = conn.BeginTransaction();
+        foreach (var kv in daily)
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"INSERT INTO local_mouse_distance_daily (date, distance_pixel) VALUES ($d, $v)
+ON CONFLICT(date) DO NOTHING;";
+            cmd.Parameters.AddWithValue("$d", kv.Key);
+            cmd.Parameters.AddWithValue("$v", kv.Value);
+            cmd.ExecuteNonQuery();
+        }
+        tx.Commit();
+    }
+
     // ==================== JSON 互导（迁移 / 备份恢复兜底）====================
 
     /// <summary>
@@ -955,7 +1090,6 @@ FROM local_item WHERE deleted_at IS NULL ORDER BY sort_order, id";
             var json = File.ReadAllText(jsonPath);
             var mgr = JsonConvert.DeserializeObject<WindowConfigManager>(json);
             if (mgr == null) return false;
-            SanitizeLegacyXid(mgr);
             SaveManager(mgr);
             try { File.Move(jsonPath, jsonPath + ".bak-migrated", overwrite: true); } catch { }
             return true;
@@ -979,47 +1113,5 @@ FROM local_item WHERE deleted_at IS NULL ORDER BY sort_order, id";
             return ImportFromJsonFile(jsonPath);
         }
         catch { return false; }
-    }
-
-    /// <summary>导入 JSON 时清除 xid-（已废弃 encrypt3）密文，防止无效 ServerId 重新入库。</summary>
-    private static void SanitizeLegacyXid(WindowConfigManager mgr)
-    {
-        foreach (var win in mgr.Windows)
-        {
-            if (win.ServerId != null && win.ServerId.StartsWith("xid-")) win.ServerId = null;
-            if (win.CorpId != null && win.CorpId.StartsWith("xid-")) win.CorpId = null;
-            foreach (var p in EnumerateAllPanelsLocal(win.Panels))
-            {
-                if (p.ServerId != null && p.ServerId.StartsWith("xid-")) p.ServerId = null;
-                if (p.TeamId != null && p.TeamId.StartsWith("xid-")) p.TeamId = null;
-            }
-        }
-    }
-
-    /// <summary>将当前管理器状态导出为 windows.json 快照（供备份打包与灾难恢复兜底）。</summary>
-    public static void ExportJsonSnapshot(WindowConfigManager mgr, string jsonPath)
-    {
-        try
-        {
-            var dir = Path.GetDirectoryName(jsonPath)!;
-            if (!System.IO.Directory.Exists(dir)) System.IO.Directory.CreateDirectory(dir);
-            var json = JsonConvert.SerializeObject(mgr, Formatting.Indented);
-            // 原子写：临时文件 + 替换，避免写坏快照
-            string tmp = jsonPath + ".tmp";
-            File.WriteAllText(tmp, json);
-            if (File.Exists(jsonPath))
-            {
-                try { File.Replace(tmp, jsonPath, jsonPath + ".bak", ignoreMetadataErrors: true); }
-                catch { File.Move(tmp, jsonPath, overwrite: true); }
-            }
-            else
-            {
-                File.Move(tmp, jsonPath);
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"[LocalDb] 导出 JSON 快照失败: {ex.Message}");
-        }
     }
 }

@@ -77,6 +77,9 @@ namespace SideDesk
             // 加载上次保存的设置
             AppSettings = Settings.Load();
 
+            // 渲染管线回退：必须在任何窗口创建前设置（支持 --software-rendering 启动参数、设置项、虚拟/远程主显示自动检测）
+            ApplyRenderingModeFallback(e.Args);
+
             // 开机自启：按设置同步注册表 Run 项（每次启动同步，可自动修正 exe 路径变化）
             Services.AutoStartService.Apply(Framework.AppSettings.Instance.RunAtStartup);
 
@@ -1922,6 +1925,12 @@ namespace SideDesk
             return string.Equals(_currentThemeMode, "Light", StringComparison.OrdinalIgnoreCase);
         }
 
+        /// <summary>
+        /// 传给前端内嵌页（市场 / 编辑器等 WebView2 页面）的主题标识（dark / light），
+        /// 供页面按宿主当前主题渲染，取值已考虑 System 模式与 JSON 自定义主题覆盖。
+        /// </summary>
+        public static string FrontendThemeParam => IsCurrentThemeLight() ? "light" : "dark";
+
         /// <summary>JSON 自定义主题的明暗覆盖（null 表示未启用自定义主题）</summary>
         private static bool? _customThemeLight = null;
 
@@ -2150,6 +2159,164 @@ namespace SideDesk
             }
             catch { }
         }
+
+        /// <summary>
+        /// 渲染管线回退：WPF 默认走 DirectX 硬件加速，若显卡驱动有 Bug 导致“握手失败”，
+        /// 弹窗内容会渲染成空白。此处支持命令行 --software-rendering 或设置项强制切换软件渲染，
+        /// 并输出渲染层级 / DWM / 显卡驱动诊断信息到日志便于排查。
+        /// </summary>
+        private void ApplyRenderingModeFallback(string[] args)
+        {
+            bool cliForce = args != null && args.Any(a => string.Equals(a, "--software-rendering", StringComparison.OrdinalIgnoreCase));
+
+            // 命令行参数优先，并持久化到设置（下次启动无需再带参数）
+            if (cliForce && !AppSettings.ForceSoftwareRendering)
+            {
+                AppSettings.ForceSoftwareRendering = true;
+                AppSettings.Save();
+            }
+
+            // 自动回退：主显示器为虚拟/远程显示驱动时，WPF 硬件加速易握手失败导致窗口空白
+            string? primaryAdapter = GetPrimaryDisplayAdapter();
+            bool autoSoftware = primaryAdapter != null && LooksLikeVirtualDisplayAdapter(primaryAdapter);
+
+            bool useSoftware = AppSettings.ForceSoftwareRendering || autoSoftware;
+            if (useSoftware)
+                System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
+
+            System.Diagnostics.Debug.WriteLine($"[Render] 渲染模式: {(useSoftware ? "软件渲染" : "默认（硬件加速）")}（强制={AppSettings.ForceSoftwareRendering} 自动={autoSoftware} 主显示={primaryAdapter ?? "未知"}）");
+
+            // 异步诊断（WMI 查显卡驱动较慢），完成后写日志并按需弹窗提示
+            Dispatcher.BeginInvoke(new Action(() => DiagnoseRendering(AppSettings.ForceSoftwareRendering, autoSoftware, primaryAdapter)));
+        }
+
+        /// <summary>枚举显示适配器，返回主显示器（PRIMARY_DEVICE）的适配器名称</summary>
+        private static string? GetPrimaryDisplayAdapter()
+        {
+            try
+            {
+                for (uint i = 0; i < 16; i++)
+                {
+                    var d = new NativeMethods.DISPLAY_DEVICE();
+                    d.cb = System.Runtime.InteropServices.Marshal.SizeOf(typeof(NativeMethods.DISPLAY_DEVICE));
+                    if (!NativeMethods.EnumDisplayDevices(null, i, ref d, 0)) break;
+                    if ((d.StateFlags & NativeMethods.DISPLAY_DEVICE_PRIMARY_DEVICE) != 0)
+                        return d.DeviceString;
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        /// <summary>判断适配器名称是否为虚拟/远程显示驱动（此类驱动下 WPF 硬件加速易空白）</summary>
+        private static bool LooksLikeVirtualDisplayAdapter(string name)
+        {
+            foreach (var kw in new[] { "virtual", "todesk", "oray", "gameviewer", "remotefx", "citrix", "vmware", "virtualbox", "hyper-v", "idd", "remote display" })
+                if (name.IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            return false;
+        }
+
+        /// <summary>收集渲染管线诊断信息（Tier / DWM / 显卡驱动），写入 Logs 并输出提示</summary>
+        private void DiagnoseRendering(bool forcedSoftware, bool autoSoftware, string? primaryAdapter)
+        {
+            try
+            {
+                int tier = System.Windows.Media.RenderCapability.Tier >> 16;
+                string tierText = tier switch
+                {
+                    0 => "0（无硬件加速，全部软件渲染）",
+                    1 => "1（部分硬件加速）",
+                    _ => "2（完全硬件加速）"
+                };
+
+                bool dwmEnabled = true;
+                try
+                {
+                    if (NativeMethods.DwmIsCompositionEnabled(out bool enabled) == 0) dwmEnabled = enabled;
+                }
+                catch { }
+
+                var lines = new System.Collections.Generic.List<string>
+                {
+                    $"渲染层级 Tier: {tierText}",
+                    $"ProcessRenderMode: {System.Windows.Media.RenderOptions.ProcessRenderMode}",
+                    $"DWM 桌面合成: {(dwmEnabled ? "已启用" : "已禁用")}",
+                    $"强制软件渲染: {(forcedSoftware ? "是" : "否")}"
+                };
+
+                // 显卡与驱动信息：WMI 查询较慢，放线程池，完成后回 UI 线程写日志 + 提示
+                _ = Task.Run(() =>
+                {
+                    string gpuInfo;
+                    try
+                    {
+                        var items = new System.Collections.Generic.List<string>();
+                        using var searcher = new System.Management.ManagementObjectSearcher(
+                            "SELECT Name, DriverVersion FROM Win32_VideoController");
+                        foreach (var mo in searcher.Get())
+                            items.Add($"{mo["Name"]}（驱动 {mo["DriverVersion"]}）");
+                        gpuInfo = items.Count > 0 ? string.Join("; ", items) : "未检测到";
+                    }
+                    catch (Exception ex) { gpuInfo = $"查询失败: {ex.Message}"; }
+
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        lines.Add($"显卡: {gpuInfo}");
+                        WriteRenderingLog(lines);
+                        foreach (var l in lines)
+                            System.Diagnostics.Debug.WriteLine($"[Render] {l}");
+
+                        if (forcedSoftware)
+                        {
+                            NotifyRenderingFallback(Framework.Lang.T("已启用软件渲染模式：WPF 的 GPU 硬件加速（DirectX）已禁用。若此前弹窗内容空白，现在应恢复正常。可在 设置 → 常规 中关闭。"));
+                        }
+                        else if (autoSoftware)
+                        {
+                            NotifyRenderingFallback(Framework.Lang.TF("检测到主显示器为虚拟/远程显示（{0}），WPF 硬件加速在此类驱动下易出现窗口空白，已自动启用软件渲染。", primaryAdapter ?? ""));
+                        }
+                        else if (tier < 2)
+                        {
+                            NotifyRenderingFallback(Framework.Lang.T("检测到 WPF 硬件加速不可用（可能是显卡驱动问题），界面已自动降级为软件渲染。若弹窗内容仍空白，可尝试 设置 → 常规 中开启“软件渲染模式”后重启应用。"));
+                        }
+                    }));
+                });
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Render] 诊断失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>渲染诊断信息追加写入 %LocalAppData%\SideDesk\Logs\rendering-yyyy-MM-dd.log</summary>
+        private static void WriteRenderingLog(System.Collections.Generic.List<string> lines)
+        {
+            try
+            {
+                string logDir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SideDesk", "Logs");
+                Directory.CreateDirectory(logDir);
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 渲染管线诊断");
+                foreach (var l in lines) sb.AppendLine("  " + l);
+                File.AppendAllText(Path.Combine(logDir, $"rendering-{DateTime.Now:yyyy-MM-dd}.log"), sb.ToString());
+            }
+            catch { }
+        }
+
+        /// <summary>渲染异常提示弹窗（优先以已打开窗口为 owner）</summary>
+        private void NotifyRenderingFallback(string message)
+        {
+            try
+            {
+                Window? owner = null;
+                foreach (Window w in Windows) { owner = w; break; }
+                ThemedMessageBox.Show(owner, message, Framework.Lang.T("渲染模式提示"));
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Render] 提示弹窗失败: {ex.Message}");
+            }
+        }
         
         #endregion
 
@@ -2196,6 +2363,25 @@ namespace SideDesk
 
                 var contextMenu = new System.Windows.Forms.ContextMenuStrip();
                 contextMenu.Items.Add(Framework.Lang.T("设置"), null, (s, e) => OpenSettings());
+
+                // 软件渲染模式开关（禁用 GPU 加速，重启应用后生效）
+                var softwareRenderItem = new System.Windows.Forms.ToolStripMenuItem(Framework.Lang.T("软件渲染模式（禁用 GPU 加速）"))
+                {
+                    CheckOnClick = true,
+                    Checked = AppSettings.ForceSoftwareRendering
+                };
+                softwareRenderItem.Click += (s, e) =>
+                {
+                    AppSettings.ForceSoftwareRendering = softwareRenderItem.Checked;
+                    AppSettings.Save();
+                    MessageBox.Show(
+                        Framework.Lang.T(softwareRenderItem.Checked
+                            ? "已开启软件渲染模式，重启应用后生效。"
+                            : "已关闭软件渲染模式，重启应用后恢复 GPU 硬件加速。"),
+                        Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Information);
+                };
+                contextMenu.Items.Add(softwareRenderItem);
+
                 contextMenu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
                 contextMenu.Items.Add(Framework.Lang.T("退出 元桌小屏"), null, (s, e) => CloseAll());
 

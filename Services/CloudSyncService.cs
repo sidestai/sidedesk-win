@@ -6,6 +6,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using System.Windows;
 using System.Windows.Threading;
 using Newtonsoft.Json.Linq;
 using SideDesk.Models;
@@ -485,6 +486,13 @@ namespace SideDesk.Services
                     var teamName = p.TeamName;
 
                     // 行级同步类型的列表/对象已改由行表读取，剔除服务端旧快照避免覆盖本地行数据
+                    data.Remove("StickyNotes");
+                    data.Remove("TodoItems");
+                    data.Remove("TimerItems");
+                    data.Remove("CountdownItems");
+                    data.Remove("SignalLights");
+                    data.Remove("ClipboardItems");
+                    data.Remove("FileItems");
                     data.Remove("Pomodoro");
                     data.Remove("DashboardItems");
                     data.Remove("DigitalEmployeeIds");
@@ -704,6 +712,8 @@ namespace SideDesk.Services
                     // 元数据字段以本地为准，不允许 itemData 覆盖；
                     // 行级同步类型的列表/对象已改由行表读取，服务端 itemData 中的旧快照不得回灌
                     if (prop.Name is "Id" or "ServerId" or "Type" or "ChildPanels" or "Pomodoro"
+                        or "StickyNotes" or "TodoItems" or "TimerItems" or "CountdownItems"
+                        or "SignalLights" or "ClipboardItems" or "FileItems"
                         or "DashboardItems" or "DigitalEmployeeIds" or "FriendUserIds" or "QuickItems") continue;
                     var targetProp = panel.GetType().GetProperty(prop.Name);
                     if (targetProp != null && targetProp.CanWrite && prop.Value.Type != JTokenType.Null)
@@ -1378,6 +1388,9 @@ namespace SideDesk.Services
         {
             string? currentJson = GetListDataJson(p);
             var localRows = ParseRowsFromJson(currentJson ?? "[]");
+            // 类型守卫：服务端返回模块下全部行类型，仅合并与本面板类型一致的行，
+            // 防止历史错绑/残留的跨类型行被反序列化进本面板（如番茄行灌入便签变空便签）
+            string expectedRowType = RowChangeTracker.GetRowType(p.Type);
 
             if (replaceAll)
             {
@@ -1387,6 +1400,8 @@ namespace SideDesk.Services
                 {
                     string? rowId = rowToken["rowId"]?.ToString();
                     if (string.IsNullOrEmpty(rowId)) continue;
+                    string? rowType = rowToken["rowType"]?.ToString();
+                    if (!string.IsNullOrEmpty(rowType) && rowType != expectedRowType) continue;
                     bool isDeleted = rowToken["deletedAt"]?.Type == JTokenType.Date
                         || (rowToken["deletedAt"]?.Type == JTokenType.String && !string.IsNullOrEmpty(rowToken["deletedAt"]?.ToString()));
                     if (isDeleted) continue;
@@ -1413,6 +1428,8 @@ namespace SideDesk.Services
             {
                 string? rowId = rowToken["rowId"]?.ToString();
                 if (string.IsNullOrEmpty(rowId)) continue;
+                string? rowType = rowToken["rowType"]?.ToString();
+                if (!string.IsNullOrEmpty(rowType) && rowType != expectedRowType) continue;
                 bool isDeleted = rowToken["deletedAt"]?.Type == JTokenType.Date
                     || (rowToken["deletedAt"]?.Type == JTokenType.String && !string.IsNullOrEmpty(rowToken["deletedAt"]?.ToString()));
 
@@ -1630,6 +1647,7 @@ namespace SideDesk.Services
             [NJson.JsonProperty("label")] public string? Label { get; set; }
             [NJson.JsonProperty("targetUrl")] public string? TargetUrl { get; set; }
             [NJson.JsonProperty("selector")] public string? Selector { get; set; }
+            [NJson.JsonProperty("selectorType")] public string? SelectorType { get; set; }  // xpath/css/regex/js（空=旧版自动识别）
             [NJson.JsonProperty("refreshInterval")] public int? RefreshInterval { get; set; }
             [NJson.JsonProperty("browserId")] public string? BrowserId { get; set; }
             [NJson.JsonProperty("profileId")] public string? ProfileId { get; set; }
@@ -1770,6 +1788,7 @@ namespace SideDesk.Services
                 Label = di.Label,
                 TargetUrl = di.TargetUrl,
                 Selector = di.Selector,
+                SelectorType = string.IsNullOrEmpty(di.SelectorType) ? null : di.SelectorType,
                 RefreshInterval = di.RefreshIntervalSeconds,
                 BrowserId = di.BrowserId,
                 ProfileId = di.ProfileId,
@@ -1913,6 +1932,9 @@ namespace SideDesk.Services
                 {
                     settings.Save();
                     mgr.Save();
+                    // 遗留 xid- 密文经服务端认领收敛后，同窗口内多个重复面板会被映射到同一 ServerId，
+                    // 此处一次性去重（仅在真正移除过重复面板时写完成标记）
+                    mgr.DedupPanelsSharingServerIdOnce();
                 }
             }
             catch (Exception ex)
@@ -2232,12 +2254,20 @@ namespace SideDesk.Services
         {
             var files = new Dictionary<string, string>();
 
-            // 1) %LocalAppData%\SideDesk\ 下的全部 *.json（windows.json、quickgroups.json、
-            //    bookmarks.json、aitools.json、programs.json、browser_profiles.json、
-            //    title-lock-rules.json、digital-employees.json、settings.json 等）
+            // 1) %LocalAppData%\SideDesk\ 下的全部 *.json（quickgroups.json、
+            //    bookmarks.json、aitools.json、programs.json、browser_profiles.json、settings.json 等）
             string localFolder = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SideDesk");
             AddJsonFilesFromFolder(files, localFolder);
+
+            // 窗口配置主存储为 SQLite（windows.json 已停止写盘）：备份时从内存实时序列化，
+            // 键名沿用 windows.json，与恢复路径（写回后 ReimportJsonIfExists 导入 db）保持一致
+            try
+            {
+                if (Application.Current is App app && app.WindowConfigs != null)
+                    files["windows.json"] = NJson.JsonConvert.SerializeObject(app.WindowConfigs, NJson.Formatting.Indented);
+            }
+            catch { }
 
             // 2) 程序目录下的 settings.json（应用停靠/主题/账户等设置）
             TryAddFile(files,

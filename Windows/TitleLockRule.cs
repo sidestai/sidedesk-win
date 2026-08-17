@@ -33,10 +33,11 @@ namespace SideDesk.Windows
     }
 
     /// <summary>
-    /// 标题锁定规则的本地 JSON 管理器（位于 %LocalAppData%\SideDesk\title-lock-rules.json）。
+    /// 标题锁定规则管理器：主存储 SQLite（local_app_state KV，原 title-lock-rules.json）。
     /// </summary>
     public static class TitleLockRuleManager
     {
+        private const string DbKey = "title_lock_rules";
         private static readonly string _filePath;
         private static List<TitleLockRule> _rules = new List<TitleLockRule>();
         private static readonly object _lock = new object();
@@ -199,6 +200,27 @@ namespace SideDesk.Windows
         {
             try
             {
+                // 主存储：SQLite；无值时从旧 title-lock-rules.json 一次性迁入
+                if (Services.LocalDbService.DbExists)
+                {
+                    string? dbJson = Services.LocalDbService.LoadBusinessData(DbKey);
+                    if (!string.IsNullOrEmpty(dbJson))
+                    {
+                        _rules = JsonConvert.DeserializeObject<List<TitleLockRule>>(dbJson) ?? new List<TitleLockRule>();
+                        return;
+                    }
+                    if (File.Exists(_filePath))
+                    {
+                        string fileJson = File.ReadAllText(_filePath);
+                        _rules = JsonConvert.DeserializeObject<List<TitleLockRule>>(fileJson) ?? new List<TitleLockRule>();
+                        if (_rules.Count > 0)
+                            Services.LocalDbService.SaveBusinessData(DbKey, JsonConvert.SerializeObject(_rules));
+                        return;
+                    }
+                    _rules = new List<TitleLockRule>();
+                    return;
+                }
+
                 if (!File.Exists(_filePath))
                 {
                     _rules = new List<TitleLockRule>();
@@ -218,6 +240,12 @@ namespace SideDesk.Windows
             try
             {
                 string json = JsonConvert.SerializeObject(_rules, Formatting.Indented);
+                if (Services.LocalDbService.DbExists)
+                {
+                    try { Services.LocalDbService.SaveBusinessData(DbKey, json); return; }
+                    catch { }
+                }
+                // db 不可用/未建立：退回旧 JSON 存储
                 File.WriteAllText(_filePath, json);
             }
             catch (Exception ex)

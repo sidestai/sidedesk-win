@@ -137,6 +137,9 @@ namespace SideDesk
         /// <summary>是否记录网络请求日志（request/response 写入 %LocalAppData%\SideDesk\Logs\http.log，默认开启便于排查）</summary>
         public bool HttpLogEnabled { get; set; } = true;
 
+        /// <summary>强制软件渲染（禁用 WPF GPU 硬件加速）。显卡驱动与 DirectX 握手失败导致弹窗内容空白时可开启，重启应用后生效</summary>
+        public bool ForceSoftwareRendering { get; set; } = false;
+
         /// <summary>DPAPI 加密后的派生密钥（base64，仅本机可解）</summary>
         public string? SyncDerivedKey { get; set; }
 
@@ -312,24 +315,6 @@ namespace SideDesk
                             }
                         };
                     }
-                    // 一次性清理：后端已废弃 encrypt3（xid- 前缀密文）统一改用 encrypt2，
-                    // 旧团队 ID 与云同步映射中的 xid- 密文已失效，清除后避免带无效密文请求
-                    bool xidDirty = false;
-                    if (!string.IsNullOrEmpty(settings.SelectedCorpId) && settings.SelectedCorpId.StartsWith("xid-"))
-                    {
-                        settings.SelectedCorpId = null;
-                        settings.SelectedCorpName = null;
-                        xidDirty = true;
-                    }
-                    if (settings.CloudIdMap != null && settings.CloudIdMap.Count > 0)
-                    {
-                        var badKeys = new List<string>();
-                        foreach (var kv in settings.CloudIdMap)
-                            if (kv.Value != null && kv.Value.StartsWith("xid-")) badKeys.Add(kv.Key);
-                        foreach (var k in badKeys) settings.CloudIdMap.Remove(k);
-                        if (badKeys.Count > 0) xidDirty = true;
-                    }
-                    if (xidDirty) settings.Save();
                     return settings;
                 }
             }

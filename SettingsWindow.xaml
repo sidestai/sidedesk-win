@@ -200,6 +200,29 @@
                             </StackPanel>
                         </DockPanel>
                     </Border>
+
+                    <!-- 软件渲染模式（禁用 GPU 硬件加速） -->
+                    <Border Background="{DynamicResource BrushInputBG}" 
+                            BorderBrush="{DynamicResource BrushBorder}" 
+                            BorderThickness="1" CornerRadius="8" 
+                            Padding="16" Margin="0,0,0,16">
+                        <DockPanel>
+                            <CheckBox x:Name="softwareRenderSwitch" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                      Style="{StaticResource RaycastSwitchStyle}"
+                                      Checked="SoftwareRenderSwitch_Changed"
+                                      Unchecked="SoftwareRenderSwitch_Changed"/>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="{l:T 软件渲染模式（禁用 GPU 加速）}"
+                                           Foreground="{DynamicResource BrushTextMain}"
+                                           FontSize="{DynamicResource FontSizeNormal}"
+                                           FontWeight="SemiBold"/>
+                                <TextBlock Text="{l:T 弹窗内容空白（显卡驱动与 DirectX 握手失败）时可开启，重启应用后生效；开启后界面性能略有下降}"
+                                           Foreground="{DynamicResource BrushTextMuted}"
+                                           FontSize="{DynamicResource FontSizeTiny}"
+                                           TextWrapping="Wrap" Margin="0,2,8,0"/>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
                 </StackPanel>
 
                 <!-- 账户页面 -->
@@ -1052,40 +1075,14 @@
                             </StackPanel>
                         </StackPanel>
                     </Border>
-                    
-                    <!-- 我的数据看板（独立窗口查看） -->
-                    <Grid Margin="0,0,0,16">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0">
-                            <TextBlock Text="{l:T 我的数据看板}" 
-                                       FontSize="{DynamicResource FontSizeNormal}" 
-                                       FontWeight="SemiBold"
-                                       Foreground="{DynamicResource BrushTextMain}"/>
-                            <TextBlock Text="{l:T 统一轮询数据源（面板组件仅展示，可添加不在面板显示的后台数据项）}" 
-                                       Foreground="{DynamicResource BrushTextMuted}" 
-                                       FontSize="{DynamicResource FontSizeSmall}" 
-                                       Margin="0,4,0,0"/>
-                        </StackPanel>
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                            <Button Click="OpenDashboardList_Click" Margin="12,0,0,0"
-                                    Style="{StaticResource GhostButtonStyle}" Padding="10,6"
-                                    VerticalAlignment="Center"
-                                    ToolTip="{l:T 在独立窗口中查看和管理数据看板列表}">
-                                <emoji:TextBlock Text="{l:T '📊 查看数据看板'}"/>
-                            </Button>
-                        </StackPanel>
-                    </Grid>
-
+                                        
                     <!-- 数据模版 -->
                     <StackPanel Margin="0,0,0,8">
-                        <TextBlock Text="{l:T 数据模版}" 
+                        <TextBlock Text="{l:T 我的数据模板}"
                                    FontSize="{DynamicResource FontSizeNormal}" 
                                    FontWeight="SemiBold"
                                    Foreground="{DynamicResource BrushTextMain}"/>
-                        <TextBlock Text="{l:T 管理数据看板使用的模版列表，支持内置模版和自定义模版}" 
+                        <TextBlock Text="{l:T 列出我个人创建的模板与团队共享的模板}" 
                                    Foreground="{DynamicResource BrushTextMuted}" 
                                    FontSize="{DynamicResource FontSizeSmall}" 
                                    Margin="0,4,0,0"/>
@@ -1097,12 +1094,18 @@
                             Padding="12" Margin="0,0,0,8">
                         <StackPanel x:Name="templateListPanel"/>
                     </Border>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,0">
-                        <Button Content="{l:T '+ 新建模版'}" Click="AddTemplate_Click"
-                                Style="{StaticResource GhostButtonStyle}" Padding="12,6"/>
-                        <Button Content="{l:T '⬇ 从数据看板导入'}" Click="ImportFromDashboard_Click"
-                                Style="{StaticResource GhostButtonStyle}" Padding="12,6" Margin="10,0,0,0"/>
-                    </StackPanel>
+                    <Grid Margin="0,0,0,0">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                            <Button Content="{l:T '+ 新建模版'}" Click="AddTemplate_Click"
+                                    Style="{StaticResource GhostButtonStyle}" Padding="12,6"/>
+                            <Button Content="{l:T '⬇ 从数据看板导入'}" Click="ImportFromDashboard_Click"
+                                    Style="{StaticResource GhostButtonStyle}" Padding="12,6" Margin="10,0,0,0"/>
+                        </StackPanel>
+                        <Button Content="{l:T '📊 数据模板市场'}" Click="OpenDataTemplateMarket_Click"
+                                Style="{StaticResource GhostButtonStyle}" Padding="12,6"
+                                HorizontalAlignment="Right"
+                                ToolTip="{l:T 打开数据模板市场，浏览内置/团队模板并添加为数据模块}"/>
+                    </Grid>
                 </StackPanel>
                 
                 <!-- 我的数据页面 -->
@@ -1117,6 +1120,13 @@
                                FontSize="{DynamicResource FontSizeSmall}" 
                                Margin="0,0,0,20"/>
                     <UniformGrid x:Name="myDataCardsGrid" Columns="2"/>
+                    <!-- 数据模块入口（原「模块」页的我的数据看板） -->
+                    <Button Click="OpenDashboardList_Click" Margin="6,12,6,0"
+                            Style="{StaticResource GhostButtonStyle}" Padding="10,6"
+                            HorizontalAlignment="Left"
+                            ToolTip="{l:T 在独立窗口中查看和管理数据看板列表}">
+                        <emoji:TextBlock Text="{l:T '📊 查看数据看板'}"/>
+                    </Button>
                 </StackPanel>
 
                 <!-- 快捷键页面 -->

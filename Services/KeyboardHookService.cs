@@ -273,13 +273,25 @@ namespace SideDesk.Services
         {
             try
             {
+                string today = DateTime.Now.ToString("yyyy-MM-dd");
+                // 主存储：SQLite；首次时从旧 keycount.json 一次性迁入全量历史
+                if (LocalDbService.DbExists)
+                {
+                    ImportLegacyKeyCountJsonOnce();
+                    var v = LocalDbService.LoadKeyCount(today);
+                    if (v.HasValue)
+                    {
+                        _todayKeyCount = v.Value;
+                        _todayKeyCountDate = today;
+                    }
+                    return;
+                }
                 string appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
                 string filePath = Path.Combine(appData, "SideDesk", "keycount.json");
                 if (File.Exists(filePath))
                 {
                     string json = File.ReadAllText(filePath);
                     var data = JsonConvert.DeserializeObject<Dictionary<string, int>>(json);
-                    string today = DateTime.Now.ToString("yyyy-MM-dd");
                     if (data != null && data.ContainsKey(today))
                     {
                         _todayKeyCount = data[today];
@@ -290,10 +302,33 @@ namespace SideDesk.Services
             catch { }
         }
 
+        /// <summary>旧 keycount.json 一次性迁入 SQLite（导入后改名 .bak-migrated 保留）。</summary>
+        private static void ImportLegacyKeyCountJsonOnce()
+        {
+            try
+            {
+                string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SideDesk");
+                string filePath = Path.Combine(folder, "keycount.json");
+                if (!File.Exists(filePath)) return;
+                var data = JsonConvert.DeserializeObject<Dictionary<string, int>>(File.ReadAllText(filePath));
+                if (data != null && data.Count > 0)
+                    LocalDbService.ImportKeyCounts(data);
+                try { File.Move(filePath, filePath + ".bak-migrated", overwrite: true); } catch { }
+            }
+            catch { }
+        }
+
         private void SaveKeyCount()
         {
             try
             {
+                if (LocalDbService.DbExists)
+                {
+                    ImportLegacyKeyCountJsonOnce();
+                    try { LocalDbService.SaveKeyCount(_todayKeyCountDate, _todayKeyCount); return; }
+                    catch { }
+                }
+                // db 不可用/未建立：退回旧 JSON 存储
                 string appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
                 string folder = Path.Combine(appData, "SideDesk");
                 if (!Directory.Exists(folder)) Directory.CreateDirectory(folder);
@@ -423,13 +458,25 @@ namespace SideDesk.Services
         {
             try
             {
+                string today = DateTime.Now.ToString("yyyy-MM-dd");
+                // 主存储：SQLite；首次时从旧 mousedistance.json 一次性迁入全量历史
+                if (LocalDbService.DbExists)
+                {
+                    ImportLegacyMouseDistanceJsonOnce();
+                    var v = LocalDbService.LoadMouseDistance(today);
+                    if (v.HasValue)
+                    {
+                        _todayMouseDistance = v.Value;
+                        _todayMouseDate = today;
+                    }
+                    return;
+                }
                 string appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
                 string filePath = Path.Combine(appData, "SideDesk", "mousedistance.json");
                 if (File.Exists(filePath))
                 {
                     string json = File.ReadAllText(filePath);
                     var data = JsonConvert.DeserializeObject<Dictionary<string, long>>(json);
-                    string today = DateTime.Now.ToString("yyyy-MM-dd");
                     if (data != null && data.ContainsKey(today))
                     {
                         _todayMouseDistance = data[today];
@@ -440,10 +487,33 @@ namespace SideDesk.Services
             catch { }
         }
 
+        /// <summary>旧 mousedistance.json 一次性迁入 SQLite（导入后改名 .bak-migrated 保留）。</summary>
+        private static void ImportLegacyMouseDistanceJsonOnce()
+        {
+            try
+            {
+                string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SideDesk");
+                string filePath = Path.Combine(folder, "mousedistance.json");
+                if (!File.Exists(filePath)) return;
+                var data = JsonConvert.DeserializeObject<Dictionary<string, long>>(File.ReadAllText(filePath));
+                if (data != null && data.Count > 0)
+                    LocalDbService.ImportMouseDistances(data);
+                try { File.Move(filePath, filePath + ".bak-migrated", overwrite: true); } catch { }
+            }
+            catch { }
+        }
+
         private void SaveMouseDistance()
         {
             try
             {
+                if (LocalDbService.DbExists)
+                {
+                    ImportLegacyMouseDistanceJsonOnce();
+                    try { LocalDbService.SaveMouseDistance(_todayMouseDate, _todayMouseDistance); return; }
+                    catch { }
+                }
+                // db 不可用/未建立：退回旧 JSON 存储
                 string appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
                 string folder = Path.Combine(appData, "SideDesk");
                 if (!Directory.Exists(folder)) Directory.CreateDirectory(folder);

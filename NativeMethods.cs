@@ -32,6 +32,7 @@ namespace SideDesk
         public const int GWL_EXSTYLE = -20;
         public const int GWL_HWNDPARENT = -8; // 属主窗口句柄（注意：不是窗口创建时间，Win32 无直接取创建时间的 API）
         public const long WS_EX_TOOLWINDOW = 0x00000080;
+        public const long WS_EX_APPWINDOW = 0x00040000; // 强制在任务栏显示（与 TOOLWINDOW 同时存在时优先，去任务栏需一并清除）
 
         // Register window message
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
@@ -86,6 +87,28 @@ namespace SideDesk
 
         [DllImport("dwmapi.dll", PreserveSig = true)]
         public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+
+        // DWM 桌面合成是否启用（渲染诊断用，Win8+ 恒为 true）
+        [DllImport("dwmapi.dll", PreserveSig = true)]
+        public static extern int DwmIsCompositionEnabled([MarshalAs(UnmanagedType.Bool)] out bool enabled);
+
+        // 显示适配器枚举（渲染诊断：识别主显示器是否为虚拟/远程显示驱动）
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+        internal struct DISPLAY_DEVICE
+        {
+            [MarshalAs(UnmanagedType.U4)] public int cb;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string DeviceName;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string DeviceString;
+            [MarshalAs(UnmanagedType.U4)] public uint StateFlags;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string DeviceID;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string DeviceKey;
+        }
+
+        internal const uint DISPLAY_DEVICE_ATTACHED_TO_DESKTOP = 0x1;
+        internal const uint DISPLAY_DEVICE_PRIMARY_DEVICE = 0x4;
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        internal static extern bool EnumDisplayDevices(string? lpDevice, uint iDevNum, ref DISPLAY_DEVICE lpDisplayDevice, uint dwFlags);
 
         // Window visibility & class
         [DllImport("user32.dll")]

@@ -20,6 +20,7 @@ public class DataDashboardItem
     public string? ProfileId { get; set; }           // 选择的Profile ID
     public string TargetUrl { get; set; } = "";      // 目标网址（API 模式时为请求 URL）
     public string Selector { get; set; } = "";       // XPath 或 CSS Selector
+    public string SelectorType { get; set; } = "";   // 选择器类型：xpath/css/regex/js（空=旧版自动识别）
     public int RefreshIntervalSeconds { get; set; } = 60; // 刷新间隔（秒）
 
     // API 请求模式（无模板自定义）：ApiMethod 非空时直接 HTTP 取数，不经浏览器
@@ -71,6 +72,7 @@ public class DataTemplate
     public string Category { get; set; } = "";       // 分类（如"社交媒体","开发者"）
     public string TargetUrl { get; set; } = "";      // 目标网址（可含占位符如 {owner}）
     public string Selector { get; set; } = "";       // XPath 或 CSS Selector
+    public string SelectorType { get; set; } = "";   // 选择器类型：xpath/css/regex/js（空=旧版自动识别）
     public int RefreshIntervalSeconds { get; set; } = 60;
     public string? DefaultBrowserId { get; set; }    // 可选默认浏览器
     public string? DefaultProfileId { get; set; }     // 可选默认Profile
@@ -85,8 +87,32 @@ public class DataTemplateManager
 {
     private static readonly string TemplateDir = Path.Combine(
         AppDomain.CurrentDomain.BaseDirectory, "data-templates");
-    
+
+    // 内置模板删除黑名单：内置文件随版本部署恢复，删除记录单独持久化
+    private static readonly string DeletedBuiltinsFile = Path.Combine(TemplateDir, "deleted-builtins.json");
+
     public List<DataTemplate> Templates { get; set; } = new();
+
+    private static List<string> LoadDeletedIds()
+    {
+        try
+        {
+            if (File.Exists(DeletedBuiltinsFile))
+                return JsonConvert.DeserializeObject<List<string>>(File.ReadAllText(DeletedBuiltinsFile)) ?? new();
+        }
+        catch { }
+        return new();
+    }
+
+    /// <summary>记录删除（对内置模板生效；用户模板直接改 user-templates.json，同时入黑名单无害）</summary>
+    public static void MarkDeleted(string templateId)
+    {
+        var ids = LoadDeletedIds();
+        if (ids.Contains(templateId)) return;
+        ids.Add(templateId);
+        if (!Directory.Exists(TemplateDir)) Directory.CreateDirectory(TemplateDir);
+        File.WriteAllText(DeletedBuiltinsFile, JsonConvert.SerializeObject(ids, Formatting.Indented));
+    }
 
     /// <summary>
     /// 从 data-templates/ 目录加载所有 .json 模板文件
@@ -116,7 +142,23 @@ public class DataTemplateManager
             }
         }
 
+        // 过滤已删除的内置模板（deleted-builtins.json 不是模板列表，反序列化会失败被跳过，不影响）
+        var deleted = LoadDeletedIds();
+        if (deleted.Count > 0)
+            manager.Templates.RemoveAll(t => deleted.Contains(t.Id));
+
         return manager;
+    }
+
+    /// <summary>
+    /// 仅加载用户自建模板（user-templates.json），不含内置模板
+    /// </summary>
+    public static List<DataTemplate> LoadUserTemplates()
+    {
+        var userFile = Path.Combine(TemplateDir, "user-templates.json");
+        if (!File.Exists(userFile)) return new();
+        try { return JsonConvert.DeserializeObject<List<DataTemplate>>(File.ReadAllText(userFile)) ?? new(); }
+        catch { return new(); }
     }
 
     /// <summary>
@@ -129,6 +171,11 @@ public class DataTemplateManager
 
         var userFile = Path.Combine(TemplateDir, "user-templates.json");
         List<DataTemplate> userTemplates = new();
+
+        // 重新保存视为恢复：从删除黑名单中移除
+        var deleted = LoadDeletedIds();
+        if (deleted.Remove(template.Id))
+            File.WriteAllText(DeletedBuiltinsFile, JsonConvert.SerializeObject(deleted, Formatting.Indented));
 
         if (File.Exists(userFile))
         {

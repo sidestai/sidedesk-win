@@ -132,8 +132,8 @@ namespace SideDesk.Controls
         }
 
         /// <summary>
-        /// 为指向本地前端站点的 URL 追加 token 参数（内嵌页从 query 读取 token 完成认证）；
-        /// 其它 URL 原样返回。URL 本身不存 token，避免持久化泄露。
+        /// 为指向本地前端站点的 URL 追加 token / theme 参数（内嵌页从 query 读取 token 完成认证，
+        /// 读取 theme 按宿主当前主题渲染）；其它 URL 原样返回。URL 本身不存 token，避免持久化泄露。
         /// </summary>
         private static string AppendTokenForFrontend(string url)
         {
@@ -141,12 +141,14 @@ namespace SideDesk.Controls
             if (string.IsNullOrEmpty(url) || !url.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                 return url;
 
+            string sep = url.Contains('?') ? "&" : "?";
+            url = $"{url}{sep}theme={App.FrontendThemeParam}";
+
             var app = (App)Application.Current;
             string token = app.AppSettings.AccountToken ?? "";
             if (string.IsNullOrEmpty(token)) return url;
 
-            string sep = url.Contains('?') ? "&" : "?";
-            return $"{url}{sep}token={Uri.EscapeDataString(token)}";
+            return $"{url}&token={Uri.EscapeDataString(token)}";
         }
 
         /// <summary>重新渲染原生模式面板（设置变更后调用）。</summary>

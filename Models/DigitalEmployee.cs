@@ -42,6 +42,7 @@ public class DigitalEmployee
 /// </summary>
 public class DigitalEmployeeManager
 {
+    private const string DbKey = "digital_employees";
     private static readonly string _filePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "SideDesk", "digital-employees.json");
@@ -52,6 +53,25 @@ public class DigitalEmployeeManager
     {
         try
         {
+            // 主存储：SQLite（local_app_state KV）；无值时从旧 digital-employees.json 一次性迁入
+            if (Services.LocalDbService.DbExists)
+            {
+                string? dbJson = Services.LocalDbService.LoadBusinessData(DbKey);
+                if (!string.IsNullOrEmpty(dbJson))
+                    return JsonConvert.DeserializeObject<DigitalEmployeeManager>(dbJson) ?? new DigitalEmployeeManager();
+                if (File.Exists(_filePath))
+                {
+                    var fileJson = File.ReadAllText(_filePath);
+                    var mgr = JsonConvert.DeserializeObject<DigitalEmployeeManager>(fileJson);
+                    if (mgr != null)
+                    {
+                        if (mgr.Employees.Count > 0)
+                            Services.LocalDbService.SaveBusinessData(DbKey, JsonConvert.SerializeObject(mgr));
+                        return mgr;
+                    }
+                }
+                return new DigitalEmployeeManager();
+            }
             if (File.Exists(_filePath))
             {
                 var json = File.ReadAllText(_filePath);
@@ -69,6 +89,12 @@ public class DigitalEmployeeManager
             var dir = Path.GetDirectoryName(_filePath)!;
             if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
             var json = JsonConvert.SerializeObject(this, Formatting.Indented);
+            if (Services.LocalDbService.DbExists)
+            {
+                try { Services.LocalDbService.SaveBusinessData(DbKey, json); return; }
+                catch { }
+            }
+            // db 不可用/未建立：退回旧 JSON 存储
             File.WriteAllText(_filePath, json);
         }
         catch { }

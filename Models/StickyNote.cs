@@ -41,6 +41,7 @@ namespace SideDesk.Models
     {
         private static readonly string _filePath;
         private static List<StickyNote> _notes;
+        private static bool _loaded;
         private static readonly object _lock = new object();
 
         static StickyNoteManager()
@@ -50,36 +51,66 @@ namespace SideDesk.Models
             if (!Directory.Exists(folder))
                 Directory.CreateDirectory(folder);
             _filePath = Path.Combine(folder, "sticky-notes.json");
-            Load();
+            _notes = new List<StickyNote>();
         }
 
-        private static void Load()
+        /// <summary>
+        /// 惰性加载：主存储为 SQLite（local_global_note 表），首次访问时从旧 sticky-notes.json 一次性迁入；
+        /// db 尚未建立（首启未完成 windows.json 导入）时暂用 JSON，db 就绪后的下次保存自动迁入。
+        /// </summary>
+        private static void EnsureLoaded()
         {
             lock (_lock)
             {
-                if (File.Exists(_filePath))
+                if (_loaded) return;
+                _loaded = true;
+                if (Services.LocalDbService.DbExists)
                 {
                     try
                     {
-                        string json = File.ReadAllText(_filePath, System.Text.Encoding.UTF8);
-                        _notes = JsonConvert.DeserializeObject<List<StickyNote>>(json) ?? new List<StickyNote>();
+                        var dbNotes = Services.LocalDbService.LoadGlobalNotes();
+                        if (dbNotes.Count > 0)
+                        {
+                            _notes = dbNotes;
+                            return;
+                        }
+                        // 表为空：从旧 JSON 一次性迁入（迁入后 JSON 仅作备份，不再读写）
+                        var fileNotes = LoadFromFile();
+                        if (fileNotes.Count > 0)
+                            Services.LocalDbService.SaveGlobalNotes(fileNotes);
+                        _notes = fileNotes;
+                        return;
                     }
-                    catch
-                    {
-                        _notes = new List<StickyNote>();
-                    }
+                    catch { }
                 }
-                else
-                {
-                    _notes = new List<StickyNote>();
-                }
+                _notes = LoadFromFile();
             }
+        }
+
+        private static List<StickyNote> LoadFromFile()
+        {
+            if (File.Exists(_filePath))
+            {
+                try
+                {
+                    string json = File.ReadAllText(_filePath, System.Text.Encoding.UTF8);
+                    return JsonConvert.DeserializeObject<List<StickyNote>>(json) ?? new List<StickyNote>();
+                }
+                catch { }
+            }
+            return new List<StickyNote>();
         }
 
         public static void Save()
         {
             lock (_lock)
             {
+                if (Services.LocalDbService.DbExists)
+                {
+                    try { Services.LocalDbService.SaveGlobalNotes(_notes); return; }
+                    catch { }
+                }
+                // db 不可用/未建立：退回旧 JSON 存储
                 try
                 {
                     string json = JsonConvert.SerializeObject(_notes, Formatting.Indented);
@@ -92,13 +123,19 @@ namespace SideDesk.Models
         public static List<StickyNote> GetAll()
         {
             lock (_lock)
+            {
+                EnsureLoaded();
                 return _notes.OrderByDescending(n => n.UpdatedAt).ToList();
+            }
         }
 
         public static void Add(StickyNote note)
         {
             lock (_lock)
+            {
+                EnsureLoaded();
                 _notes.Add(note);
+            }
             Save();
         }
 
@@ -106,6 +143,7 @@ namespace SideDesk.Models
         {
             lock (_lock)
             {
+                EnsureLoaded();
                 var existing = _notes.FirstOrDefault(n => n.Id == note.Id);
                 if (existing != null)
                 {
@@ -119,14 +157,20 @@ namespace SideDesk.Models
         public static void Delete(string id)
         {
             lock (_lock)
+            {
+                EnsureLoaded();
                 _notes.RemoveAll(n => n.Id == id);
+            }
             Save();
         }
 
         public static StickyNote GetById(string id)
         {
             lock (_lock)
+            {
+                EnsureLoaded();
                 return _notes.FirstOrDefault(n => n.Id == id);
+            }
         }
     }
 }

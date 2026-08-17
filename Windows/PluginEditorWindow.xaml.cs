@@ -26,10 +26,10 @@ public partial class PluginEditorWindow : Window
             webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
             webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
 
-            // 拼接 token 参数，供前端页面用于后端 API 认证
+            // 拼接 token 参数，供前端页面用于后端 API 认证；theme 传递宿主当前主题（dark/light）
             var app = (App)Application.Current;
             var token = app.AppSettings.AccountToken ?? "";
-            var url = $"{EditorBaseUrl}?token={Uri.EscapeDataString(token)}";
+            var url = $"{EditorBaseUrl}?token={Uri.EscapeDataString(token)}&theme={App.FrontendThemeParam}";
             webView.CoreWebView2.Navigate(url);
         }
         catch (Exception ex)

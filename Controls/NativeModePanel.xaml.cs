@@ -100,9 +100,13 @@ namespace SideDesk.Controls
         /// <summary>请求主窗口调整宽度</summary>
         public event Action<double>? RequestWidthChange;
 
+        /// <summary>当前活跃的原生面板实例（供本地桥等外部入口落地新增模块，如数据模板市场）</summary>
+        public static NativeModePanel? Instance { get; private set; }
+
         public NativeModePanel()
         {
             InitializeComponent();
+            Instance = this;
             Loaded += NativeModePanel_Loaded;
             Unloaded += NativeModePanel_Unloaded;
             
@@ -5339,6 +5343,7 @@ namespace SideDesk.Controls
                     customMi.Click += (s, ev) => onCustomClick();
                     menu.Items.Add(customMi);
                 }
+                AppendDataTemplateMarketEntry(menu);
                 return;
             }
             foreach (var tpl in templates)
@@ -5356,6 +5361,16 @@ namespace SideDesk.Controls
                 customMi.Click += (s, ev) => onCustomClick();
                 menu.Items.Add(customMi);
             }
+            AppendDataTemplateMarketEntry(menu);
+        }
+
+        /// <summary>数据块菜单末尾追加「数据模板市场」入口：打开 web 模板市场在线选择模板并动态配置为数据模块</summary>
+        private static void AppendDataTemplateMarketEntry(MenuItem menu)
+        {
+            menu.Items.Add(new Separator());
+            var marketMi = new MenuItem { Header = Framework.Lang.T("📊 数据模板市场") };
+            marketMi.Click += (s, ev) => Windows.MarketWindow.Open("/data-template-market", Framework.Lang.T("📊 数据模板市场"));
+            menu.Items.Add(marketMi);
         }
 
         /// <summary>基于数据模版创建一个数据看板项</summary>
@@ -5365,6 +5380,7 @@ namespace SideDesk.Controls
             TemplateId = tpl.Id,
             TargetUrl = tpl.TargetUrl,
             Selector = tpl.Selector,
+            SelectorType = tpl.SelectorType,
             RefreshIntervalSeconds = tpl.RefreshIntervalSeconds,
             BrowserId = tpl.DefaultBrowserId,
             ProfileId = tpl.DefaultProfileId,
@@ -5382,6 +5398,30 @@ namespace SideDesk.Controls
                 DashboardItems = new List<DataDashboardItem> { BuildDashboardItemFromTemplate(tpl) }
             };
             AddTopLevelPanel(newPanel);
+        }
+
+        /// <summary>从数据模板市场添加配置好的数据模块（由 DataTemplateMarketBridge 本地桥在 UI 线程调用）</summary>
+        public void AddDataTemplateFromMarket(Models.DataTemplate tpl)
+        {
+            if (_currentWindowConfig == null || _configManager == null) return;
+            AddDataBlockPanel(tpl);
+            Services.DataPollingService.Instance.SyncFromConfigs(_configManager);
+        }
+
+        /// <summary>市场模板唤起原生数据项配置对话框（本地桥按 tid 拉取详情后在 UI 线程调用），确认后将数据项落地到侧边栏</summary>
+        public void ShowMarketTemplateDialog(Models.DataTemplate marketTpl)
+        {
+            if (_currentWindowConfig == null || _configManager == null) return;
+            var item = ShowAddDashboardItemDialog(null, marketTpl);
+            if (item == null) return;
+            var newPanel = new PanelItem
+            {
+                Type = PanelType.DataDashboard,
+                Title = Framework.Lang.T("数据看板"),
+                DashboardItems = new List<DataDashboardItem> { item }
+            };
+            AddTopLevelPanel(newPanel);
+            Services.DataPollingService.Instance.SyncFromConfigs(_configManager);
         }
 
         /// <summary>根据模版向分组内添加一个数据看板模块</summary>
@@ -7157,14 +7197,6 @@ namespace SideDesk.Controls
 
         #region 键盘/鼠标计数器 UI
 
-        /// <summary>底部状态栏宽度变化：单项（图标+数字）约需 60px，当单项可用宽度低于 60px 时切换为上下两行，避免文字被裁切</summary>
-        private void StatusBar_SizeChanged(object sender, SizeChangedEventArgs e)
-        {
-            statusBar.Orientation = statusBar.ActualWidth < 120
-                ? Orientation.Vertical
-                : Orientation.Horizontal;
-        }
-
         private void OnKeyCountChanged(int count)
         {
             Dispatcher.BeginInvoke(() =>
@@ -8839,15 +8871,17 @@ namespace SideDesk.Controls
 
         #region 数据项配置对话框
 
-        private DataDashboardItem? ShowAddDashboardItemDialog(DataDashboardItem? editItem = null)
+        private DataDashboardItem? ShowAddDashboardItemDialog(DataDashboardItem? editItem = null, Models.DataTemplate? marketTpl = null)
         {
             var app = (App)Application.Current;
-            var templates = DataTemplateManager.Load().Templates;
+            // 本地模板（内置 + 用户自建）；市场模板独立在「数据模板市场」页签展示，不混入本地列表
+            var templates = new List<Models.DataTemplate>(DataTemplateManager.Load().Templates);
+            var mktTpl = marketTpl; // 市场注入模板（编辑市场项时也会重建注入），Id 为后端 encrypt2 密文
 
             var dialog = new Window
             {
                 Title = editItem != null ? Framework.Lang.T("编辑数据项") : Framework.Lang.T("添加数据项"),
-                Width = 420,
+                Width = 520,
                 SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Owner = Window.GetWindow(this),
@@ -8876,13 +8910,15 @@ namespace SideDesk.Controls
             });
             rootPanel.Children.Add(nameBox);
 
-            // ===== 顶部页签：新建（无模板自定义） / 数据模板 / 我的数据看板 =====
+            // ===== 顶部页签：新建（无模板自定义） / 数据模板 / 数据模板市场 / 我的数据看板 =====
             var tabRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
             var tabNew = new Button { Content = Framework.Lang.T("🆕 新建"), Style = primaryBtnStyle, Padding = new Thickness(14, 6, 14, 6), Margin = new Thickness(0, 0, 8, 0), Cursor = Cursors.Hand };
             var tabTpl = new Button { Content = Framework.Lang.T("📋 数据模板"), Style = standardBtnStyle, Padding = new Thickness(14, 6, 14, 6), Margin = new Thickness(0, 0, 8, 0), Cursor = Cursors.Hand };
+            var tabMkt = new Button { Content = Framework.Lang.T("📊 数据模板市场"), Style = standardBtnStyle, Padding = new Thickness(14, 6, 14, 6), Margin = new Thickness(0, 0, 8, 0), Cursor = Cursors.Hand };
             var tabPick = new Button { Content = Framework.Lang.T("📊 我的数据看板"), Style = standardBtnStyle, Padding = new Thickness(14, 6, 14, 6), Cursor = Cursors.Hand };
             tabRow.Children.Add(tabNew);
             tabRow.Children.Add(tabTpl);
+            tabRow.Children.Add(tabMkt);
             tabRow.Children.Add(tabPick);
             rootPanel.Children.Add(tabRow);
 
@@ -8907,7 +8943,79 @@ namespace SideDesk.Controls
                 templateCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("（暂无数据模板）"), IsEnabled = false });
             }
             tplPanel.Children.Add(templateCombo);
+
+            // URL 占位符（如 {owner}/{repo}）参数输入区：按选中模板的目标网址动态重建
+            var tplPlaceholderPanel = new StackPanel();
+            var tplPlaceholderBoxes = new Dictionary<string, TextBox>(StringComparer.OrdinalIgnoreCase);
+            void RebuildPlaceholderInputs(Models.DataTemplate? t, StackPanel panel, Dictionary<string, TextBox> boxes)
+            {
+                panel.Children.Clear();
+                boxes.Clear();
+                if (t == null) return;
+                foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(t.TargetUrl ?? "", @"\{([^/{}]+)\}"))
+                {
+                    var p = m.Groups[1].Value;
+                    if (boxes.ContainsKey(p)) continue;
+                    panel.Children.Add(new Emoji.Wpf.TextBlock
+                    {
+                        Text = Framework.Lang.TF("参数 {0}", p),
+                        Foreground = labelBrush,
+                        Margin = new Thickness(0, 0, 0, 4)
+                    });
+                    var box = new TextBox { Style = textBoxStyle, Margin = new Thickness(0, 0, 0, 12) };
+                    panel.Children.Add(box);
+                    boxes[p] = box;
+                }
+            }
+            tplPanel.Children.Add(tplPlaceholderPanel);
+
             rootPanel.Children.Add(tplPanel);
+
+            // ===== 页签：数据模板市场（市场注入模板独立展示，不与本地模板混排） =====
+            var mktPanel = new StackPanel();
+
+            mktPanel.Children.Add(new Emoji.Wpf.TextBlock
+            {
+                Text = Framework.Lang.T("市场模板"),
+                Foreground = labelBrush,
+                Margin = new Thickness(0, 0, 0, 4)
+            });
+            var mktCombo = new ComboBox { Style = comboStyle, Margin = new Thickness(0, 0, 0, 12), IsEditable = false };
+            if (mktTpl != null)
+            {
+                mktCombo.Items.Add(new ComboBoxItem { Content = string.IsNullOrEmpty(mktTpl.Category) ? mktTpl.Name : $"{mktTpl.Name}  [{mktTpl.Category}]", Tag = mktTpl.Id, ToolTip = mktTpl.Description });
+                mktCombo.SelectedIndex = 0;
+            }
+            else
+            {
+                mktCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("（暂无市场模板）"), IsEnabled = false });
+            }
+            mktPanel.Children.Add(mktCombo);
+
+            // URL 占位符参数输入区（市场模板）
+            var mktPlaceholderPanel = new StackPanel();
+            var mktPlaceholderBoxes = new Dictionary<string, TextBox>(StringComparer.OrdinalIgnoreCase);
+            mktPanel.Children.Add(mktPlaceholderPanel);
+
+            // 无市场模板时：引导去市场页选择添加
+            Emoji.Wpf.TextBlock? mktHintText = null;
+            Button? openMarketBtn = null;
+            if (mktTpl == null)
+            {
+                mktHintText = new Emoji.Wpf.TextBlock
+                {
+                    Text = Framework.Lang.T("在「数据模板市场」页面选择模板并点击添加，将自动填入此处。"),
+                    Foreground = labelBrush,
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(0, 0, 0, 12)
+                };
+                mktPanel.Children.Add(mktHintText);
+                openMarketBtn = new Button { Content = Framework.Lang.T("📊 数据模板市场"), Style = standardBtnStyle, Padding = new Thickness(14, 6, 14, 6), Cursor = Cursors.Hand, HorizontalAlignment = HorizontalAlignment.Left };
+                openMarketBtn.Click += (s, e) => Windows.MarketWindow.Open("/data-template-market", Framework.Lang.T("📊 数据模板市场"));
+                mktPanel.Children.Add(openMarketBtn);
+            }
+
+            rootPanel.Children.Add(mktPanel);
 
             // ===== 页签：新建（无模板，手动配置选择器或 API 请求） =====
             var newPanel = new StackPanel();
@@ -8934,14 +9042,29 @@ namespace SideDesk.Controls
             var urlBox = new TextBox { Style = textBoxStyle, Margin = new Thickness(0, 0, 0, 12) };
             customPanel.Children.Add(urlBox);
 
+            var selTypeLabel = new Emoji.Wpf.TextBlock
+            {
+                Text = Framework.Lang.T("选择器类型"),
+                Foreground = labelBrush,
+                Margin = new Thickness(0, 0, 0, 4)
+            };
+            customPanel.Children.Add(selTypeLabel);
+            var selTypeCombo = new ComboBox { Style = comboStyle, Margin = new Thickness(0, 0, 0, 12), IsEditable = false };
+            selTypeCombo.Items.Add(new ComboBoxItem { Content = "XPath", Tag = "xpath" });
+            selTypeCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("CSS 选择器"), Tag = "css" });
+            selTypeCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("正则表达式"), Tag = "regex" });
+            selTypeCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("JS 脚本"), Tag = "js" });
+            selTypeCombo.SelectedIndex = 0;
+            customPanel.Children.Add(selTypeCombo);
+
             var selectorLabel = new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.T("选择器 (CSS Selector 或 XPath)"),
+                Text = Framework.Lang.T("选择器内容"),
                 Foreground = labelBrush,
                 Margin = new Thickness(0, 0, 0, 4)
             };
             customPanel.Children.Add(selectorLabel);
-            var selectorBox = new TextBox { Style = textBoxStyle, Margin = new Thickness(0, 0, 0, 12) };
+            var selectorBox = new TextBox { Style = textBoxStyle, Margin = new Thickness(0, 0, 0, 12), AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 60, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
             customPanel.Children.Add(selectorBox);
 
             var methodLabel = new Emoji.Wpf.TextBlock
@@ -9080,11 +9203,8 @@ namespace SideDesk.Controls
             browserCombo.SelectionChanged += (s, e) => refreshProfiles();
 
             // 选中模板时预填名称、模板归属团队与模板默认浏览器/Profile
-            void ApplyTemplate()
+            void ApplyTemplateCore(Models.DataTemplate tpl, StackPanel phPanel, Dictionary<string, TextBox> phBoxes)
             {
-                if (templateCombo.SelectedItem is not ComboBoxItem ci || ci.Tag is not string tplId) return;
-                var tpl = templates.FirstOrDefault(t => t.Id == tplId);
-                if (tpl == null) return;
                 nameBox.Text = tpl.Name;
                 // 预填模板归属团队（列表未加载完时暂存，加载完成后自动恢复）
                 pendingTeamId = tpl.TeamId;
@@ -9110,8 +9230,23 @@ namespace SideDesk.Controls
                         { profileCombo.SelectedIndex = i; break; }
                     }
                 }
+                // 按模板目标网址重建占位符参数输入框
+                RebuildPlaceholderInputs(tpl, phPanel, phBoxes);
+            }
+            void ApplyTemplate()
+            {
+                if (templateCombo.SelectedItem is not ComboBoxItem ci || ci.Tag is not string tplId) return;
+                var tpl = templates.FirstOrDefault(t => t.Id == tplId);
+                if (tpl == null) return;
+                ApplyTemplateCore(tpl, tplPlaceholderPanel, tplPlaceholderBoxes);
+            }
+            void ApplyMarketTemplate()
+            {
+                if (mktTpl == null) return;
+                ApplyTemplateCore(mktTpl, mktPlaceholderPanel, mktPlaceholderBoxes);
             }
             templateCombo.SelectionChanged += (s, e) => ApplyTemplate();
+            mktCombo.SelectionChanged += (s, e) => ApplyMarketTemplate();
             modeCombo.SelectionChanged += (s, e) => SyncCustomVisibility();
             methodCombo.SelectionChanged += (s, e) => SyncCustomVisibility();
 
@@ -9121,7 +9256,7 @@ namespace SideDesk.Controls
                 bool isApi = newPanel.Visibility == Visibility.Visible
                     && (modeCombo.SelectedItem as ComboBoxItem)?.Tag as string == "API";
                 bool isPost = (methodCombo.SelectedItem as ComboBoxItem)?.Tag as string == "POST";
-                selectorLabel.Visibility = selectorBox.Visibility = isApi ? Visibility.Collapsed : Visibility.Visible;
+                selTypeLabel.Visibility = selTypeCombo.Visibility = selectorLabel.Visibility = selectorBox.Visibility = isApi ? Visibility.Collapsed : Visibility.Visible;
                 methodLabel.Visibility = methodCombo.Visibility = isApi ? Visibility.Visible : Visibility.Collapsed;
                 postBodyLabel.Visibility = postBodyBox.Visibility = isApi && isPost ? Visibility.Visible : Visibility.Collapsed;
                 extractLabel.Visibility = extractBox.Visibility = isApi ? Visibility.Visible : Visibility.Collapsed;
@@ -9172,14 +9307,16 @@ namespace SideDesk.Controls
 
             rootPanel.Children.Add(refPanel);
 
-            // 页签切换：new=新建（自定义） / tpl=数据模板 / pick=我的数据看板
+            // 页签切换：new=新建（自定义） / tpl=数据模板 / mkt=数据模板市场 / pick=我的数据看板
             void SwitchTab(string tab)
             {
                 tabNew.Style = tab == "new" ? primaryBtnStyle : standardBtnStyle;
                 tabTpl.Style = tab == "tpl" ? primaryBtnStyle : standardBtnStyle;
+                tabMkt.Style = tab == "mkt" ? primaryBtnStyle : standardBtnStyle;
                 tabPick.Style = tab == "pick" ? primaryBtnStyle : standardBtnStyle;
                 newPanel.Visibility = tab == "new" ? Visibility.Visible : Visibility.Collapsed;
                 tplPanel.Visibility = tab == "tpl" ? Visibility.Visible : Visibility.Collapsed;
+                mktPanel.Visibility = tab == "mkt" ? Visibility.Visible : Visibility.Collapsed;
                 refPanel.Visibility = tab == "pick" ? Visibility.Visible : Visibility.Collapsed;
                 commonPanel.Visibility = tab == "pick" ? Visibility.Collapsed : Visibility.Visible;
                 SyncCustomVisibility();
@@ -9191,12 +9328,27 @@ namespace SideDesk.Controls
                 if (string.IsNullOrWhiteSpace(nameBox.Text)) ApplyTemplate();
                 SwitchTab("tpl");
             };
+            tabMkt.Click += (s, e) =>
+            {
+                // 进入市场页签时若名称仍为空，则按市场模板默认值预填
+                if (string.IsNullOrWhiteSpace(nameBox.Text) && mktTpl != null) ApplyMarketTemplate();
+                SwitchTab("mkt");
+            };
             tabPick.Click += (s, e) => SwitchTab("pick");
 
             // 初始页签与预填：添加时默认「新建」；编辑时按项类型进入对应页签
             if (editItem == null)
             {
-                SwitchTab("new");
+                if (mktTpl != null)
+                {
+                    // 市场模板注入：直接进入「数据模板市场」页签并预选注入模板（预填名称/团队/浏览器/占位符参数）
+                    ApplyMarketTemplate();
+                    SwitchTab("mkt");
+                }
+                else
+                {
+                    SwitchTab("new");
+                }
             }
             else
             {
@@ -9215,12 +9367,37 @@ namespace SideDesk.Controls
                 }
                 else if (!string.IsNullOrEmpty(editItem.TemplateId))
                 {
-                    // 模板项：进入「数据模板」页签并恢复模板选中与变量名
-                    SwitchTab("tpl");
-                    for (int i = 0; i < templateCombo.Items.Count; i++)
+                    if (templates.Any(t => t.Id == editItem.TemplateId))
                     {
-                        if (templateCombo.Items[i] is ComboBoxItem ci && ci.Tag is string tid && tid == editItem.TemplateId)
-                        { templateCombo.SelectedIndex = i; break; }
+                        // 本地模板项：进入「数据模板」页签并恢复模板选中与变量名
+                        SwitchTab("tpl");
+                        for (int i = 0; i < templateCombo.Items.Count; i++)
+                        {
+                            if (templateCombo.Items[i] is ComboBoxItem ci && ci.Tag is string tid && tid == editItem.TemplateId)
+                            { templateCombo.SelectedIndex = i; break; }
+                        }
+                    }
+                    else
+                    {
+                        // 市场项（Id 为 encrypt2 密文）或模板已缺失：进入「数据模板市场」页签，
+                        // 以数据项当前配置重建市场模板，避免保存时配置被覆盖丢失
+                        mktTpl = new Models.DataTemplate
+                        {
+                            Id = editItem.TemplateId,
+                            Name = editItem.Label ?? "",
+                            TargetUrl = editItem.TargetUrl ?? "",
+                            Selector = editItem.Selector ?? "",
+                            SelectorType = editItem.SelectorType ?? "",
+                            RefreshIntervalSeconds = editItem.RefreshIntervalSeconds,
+                            TeamId = editItem.TeamId
+                        };
+                        mktCombo.Items.Clear();
+                        mktCombo.Items.Add(new ComboBoxItem { Content = mktTpl.Name, Tag = mktTpl.Id });
+                        mktCombo.SelectedIndex = 0;
+                        if (mktHintText != null) mktHintText.Visibility = Visibility.Collapsed;
+                        if (openMarketBtn != null) openMarketBtn.Visibility = Visibility.Collapsed;
+                        ApplyMarketTemplate();
+                        SwitchTab("mkt");
                     }
                     varKeyBox.Text = editItem.VarKey ?? "";
                 }
@@ -9232,6 +9409,12 @@ namespace SideDesk.Controls
                     bool isApi = !string.IsNullOrEmpty(editItem.ApiMethod);
                     modeCombo.SelectedIndex = isApi ? 1 : 0;
                     selectorBox.Text = editItem.Selector ?? "";
+                    var editSelType = (editItem.SelectorType ?? "").ToLowerInvariant();
+                    for (int i = 0; i < selTypeCombo.Items.Count; i++)
+                    {
+                        if (selTypeCombo.Items[i] is ComboBoxItem stci && (stci.Tag as string) == editSelType)
+                        { selTypeCombo.SelectedIndex = i; break; }
+                    }
                     methodCombo.SelectedIndex = string.Equals(editItem.ApiMethod, "POST", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
                     postBodyBox.Text = editItem.ApiBody ?? "";
                     extractBox.Text = editItem.ResponseExtract ?? "";
@@ -9308,15 +9491,24 @@ namespace SideDesk.Controls
             {
                 bool isNewMode = newPanel.Visibility == Visibility.Visible;
                 bool isTplMode = tplPanel.Visibility == Visibility.Visible;
-                if (isNewMode || isTplMode)
+                bool isMktMode = mktPanel.Visibility == Visibility.Visible;
+                if (isNewMode || isTplMode || isMktMode)
                 {
-                    // 新建/数据模板：名称 + 变量名（唯一性校验）；模板页签需选中模板，新建页签需网址/选择器
+                    // 新建/数据模板/市场：名称 + 变量名（唯一性校验）；模板页签需选中模板，市场页签需有市场模板，新建页签需网址/选择器
                     if (isTplMode)
                     {
                         var tplId = (templateCombo.SelectedItem as ComboBoxItem)?.Tag as string;
                         if (tplId == null || templates.FirstOrDefault(t => t.Id == tplId) == null)
                         {
                             MessageBox.Show(Framework.Lang.T("请选择数据模板"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                            return;
+                        }
+                    }
+                    else if (isMktMode)
+                    {
+                        if (mktTpl == null)
+                        {
+                            MessageBox.Show(Framework.Lang.T("请先从数据模板市场添加模板"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
                             return;
                         }
                     }
@@ -9342,6 +9534,20 @@ namespace SideDesk.Controls
                         MessageBox.Show(Framework.Lang.T("请输入数据项名称"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
                         nameBox.Focus();
                         return;
+                    }
+                    // 模板/市场页签：URL 占位符参数需全部填写
+                    if (isTplMode || isMktMode)
+                    {
+                        var phBoxes = isMktMode ? mktPlaceholderBoxes : tplPlaceholderBoxes;
+                        foreach (var kv in phBoxes)
+                        {
+                            if (string.IsNullOrWhiteSpace(kv.Value.Text))
+                            {
+                                MessageBox.Show(Framework.Lang.TF("请输入参数 {0}", kv.Key), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                                kv.Value.Focus();
+                                return;
+                            }
+                        }
                     }
                     string varKey = varKeyBox.Text.Trim();
                     if (string.IsNullOrEmpty(varKey))
@@ -9410,6 +9616,7 @@ namespace SideDesk.Controls
                     item.TemplateId = src.TemplateId;
                     item.TargetUrl = src.TargetUrl;
                     item.Selector = src.Selector;
+                    item.SelectorType = src.SelectorType;
                     item.RefreshIntervalSeconds = src.RefreshIntervalSeconds;
                     item.BrowserId = src.BrowserId;
                     item.ProfileId = src.ProfileId;
@@ -9419,14 +9626,21 @@ namespace SideDesk.Controls
                     item.TeamName = null;
                     item.Value = string.IsNullOrEmpty(src.Value) ? "--" : src.Value;
                 }
-                else if (tplPanel.Visibility == Visibility.Visible)
+                else if (tplPanel.Visibility == Visibility.Visible || mktPanel.Visibility == Visibility.Visible)
                 {
-                    // 数据模板：配置取自模板
-                    var tplId = (templateCombo.SelectedItem as ComboBoxItem)?.Tag as string;
-                    var tpl = templates.FirstOrDefault(t => t.Id == tplId);
+                    // 数据模板/市场模板：配置取自模板
+                    bool isMkt = mktPanel.Visibility == Visibility.Visible;
+                    var tpl = isMkt
+                        ? mktTpl
+                        : templates.FirstOrDefault(t => t.Id == ((templateCombo.SelectedItem as ComboBoxItem)?.Tag as string));
                     item.TemplateId = tpl?.Id ?? "";
-                    item.TargetUrl = tpl?.TargetUrl ?? "";
+                    // 占位符参数替换（如 {owner}/{repo} → 实际值）
+                    var tplUrl = tpl?.TargetUrl ?? "";
+                    foreach (var kv in (isMkt ? mktPlaceholderBoxes : tplPlaceholderBoxes))
+                        tplUrl = tplUrl.Replace("{" + kv.Key + "}", kv.Value.Text.Trim());
+                    item.TargetUrl = tplUrl;
                     item.Selector = tpl?.Selector ?? "";
+                    item.SelectorType = tpl?.SelectorType ?? "";
                     item.RefreshIntervalSeconds = tpl != null && tpl.RefreshIntervalSeconds > 0 ? tpl.RefreshIntervalSeconds : 60;
                     item.BrowserId = (browserCombo.SelectedItem as ComboBoxItem)?.Tag as string;
                     item.ProfileId = (profileCombo.SelectedItem as ComboBoxItem)?.Tag as string;
@@ -9449,6 +9663,7 @@ namespace SideDesk.Controls
                     if (isApi)
                     {
                         item.Selector = "";
+                        item.SelectorType = "";
                         item.ApiMethod = (methodCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "GET";
                         item.ApiBody = postBodyBox.Text.Trim();
                         item.ResponseExtract = extractBox.Text.Trim();
@@ -9458,6 +9673,7 @@ namespace SideDesk.Controls
                     else
                     {
                         item.Selector = selectorBox.Text.Trim();
+                        item.SelectorType = (selTypeCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
                         item.ApiMethod = null;
                         item.ApiBody = null;
                         item.ResponseExtract = null;

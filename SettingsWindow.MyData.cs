@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using SideDesk.Controls;
 using SideDesk.Models;
 using SideDesk.Services;
 
@@ -346,9 +347,14 @@ namespace SideDesk
 
         // ----- 便签 -----
 
+        /// <summary>便签编辑浮窗（与侧边栏共用 StickyNotePanel，设置窗口内单例复用）</summary>
+        private StickyNotePanel? _myDataStickyEditor;
+
         private async void ShowStickyDetail()
         {
             var win = CreateMyDataDetailWindow(Framework.Lang.T("便签 · 详情"), out var content);
+            var listPanel = new StackPanel();
+            content.Children.Add(listPanel);
             win.Show();
 
             var notes = new List<(StickyNote Note, PanelItem Panel, string Location)>();
@@ -358,20 +364,99 @@ namespace SideDesk
                 foreach (var n in p.StickyNotes) notes.Add((n, p, PanelLocation(w, p)));
             });
 
-            if (notes.Count == 0)
-            {
-                content.Children.Add(DetailTip(Framework.Lang.T("暂无便签。可在侧边栏添加「便签」模块创建。")));
-                return;
-            }
-
             var ctx = await LoadOwnershipAsync(notes.Select(x => x.Panel.ServerId));
-            foreach (var (note, panel, loc) in notes.OrderByDescending(x => x.Note.UpdatedAt))
+
+            void RenderList()
             {
-                content.Children.Add(DetailRow(
-                    note.Preview,
-                    Framework.Lang.TF("{0} · {1} · 更新于 {2:yyyy-MM-dd HH:mm}", loc, OwnershipText(panel, ctx), note.UpdatedAt),
-                    note.Content.Length > 500 ? note.Content.Substring(0, 500) + "…" : note.Content));
+                listPanel.Children.Clear();
+                if (notes.Count == 0)
+                {
+                    listPanel.Children.Add(DetailTip(Framework.Lang.T("暂无便签。可在侧边栏添加「便签」模块创建。")));
+                    return;
+                }
+
+                foreach (var entry in notes.OrderByDescending(x => x.Note.UpdatedAt).ToList())
+                {
+                    var (note, panel, loc) = entry;
+
+                    var texts = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Cursor = Cursors.Hand };
+                    texts.Children.Add(new Emoji.Wpf.TextBlock
+                    {
+                        Text = note.Preview,
+                        FontSize = 12,
+                        Foreground = (Brush)FindResource("BrushTextMain"),
+                        TextTrimming = TextTrimming.CharacterEllipsis
+                    });
+                    texts.Children.Add(new Emoji.Wpf.TextBlock
+                    {
+                        Text = Framework.Lang.TF("{0} · {1} · 更新于 {2:yyyy-MM-dd HH:mm}", loc, OwnershipText(panel, ctx), note.UpdatedAt),
+                        FontSize = 11,
+                        Foreground = (Brush)FindResource("BrushTextMuted"),
+                        Margin = new Thickness(0, 2, 0, 0),
+                        TextTrimming = TextTrimming.CharacterEllipsis
+                    });
+
+                    var delBtn = new Button
+                    {
+                        Content = Framework.Lang.T("删除"),
+                        Style = (Style)FindResource("StandardButtonStyle"),
+                        Padding = new Thickness(8, 2, 8, 2),
+                        Margin = new Thickness(8, 0, 0, 0),
+                        Cursor = Cursors.Hand,
+                        VerticalAlignment = VerticalAlignment.Center
+                    };
+                    delBtn.Click += (s, e) =>
+                    {
+                        if (MessageBox.Show(Framework.Lang.TF("确定删除便签「{0}」？此操作不可撤销。", note.Preview), Framework.Lang.T("提示"),
+                            MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+                        panel.StickyNotes?.RemoveAll(n => n.Id == note.Id);
+                        notes.Remove(entry);
+                        _app.WindowConfigs.Save();
+                        UpdateMyDataCards();
+                        RenderList();
+                    };
+
+                    var grid = new Grid { Cursor = Cursors.Hand };
+                    grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                    grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                    Grid.SetColumn(texts, 0);
+                    Grid.SetColumn(delBtn, 1);
+                    grid.Children.Add(texts);
+                    grid.Children.Add(delBtn);
+
+                    // 点击行打开便签编辑浮窗（查看/编辑，保存后回写并刷新列表）
+                    grid.MouseLeftButtonUp += (s, e) =>
+                    {
+                        if (e.Handled) return;
+                        OpenMyDataStickyEditor(win, note, () =>
+                        {
+                            note.UpdatedAt = DateTime.Now;
+                            _app.WindowConfigs.Save();
+                            UpdateMyDataCards();
+                            RenderList();
+                        });
+                    };
+
+                    listPanel.Children.Add(new Border
+                    {
+                        Padding = new Thickness(10, 8, 10, 8),
+                        BorderThickness = new Thickness(0, 0, 0, 1),
+                        BorderBrush = (Brush)FindResource("BrushBorder"),
+                        ToolTip = note.Content.Length > 500 ? note.Content.Substring(0, 500) + "…" : note.Content,
+                        Child = grid
+                    });
+                }
             }
+            RenderList();
+        }
+
+        /// <summary>从「我的数据-便签」打开便签编辑浮窗：紧贴详情窗口右侧弹出</summary>
+        private void OpenMyDataStickyEditor(Window ownerWin, StickyNote note, Action onSaved)
+        {
+            _myDataStickyEditor ??= new StickyNotePanel();
+            _myDataStickyEditor.Show(ownerWin,
+                ownerWin.Left + ownerWin.ActualWidth, ownerWin.Top, 420, ownerWin.ActualHeight,
+                note, onSaved);
         }
 
         // ----- 剪贴板 -----

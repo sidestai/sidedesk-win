@@ -252,11 +252,10 @@ namespace SideDesk.Controls
                 LastChildFill = false
             };
 
+            // 不硬编码宽高：全局按钮样式自带 Padding，固定尺寸会裁剪文字
             var saveBtn = new Button
             {
                 Content = Framework.Lang.T("保存"),
-                Width = 70,
-                Height = 28,
                 Margin = new Thickness(0, 0, 8, 0),
                 Style = (Style)Application.Current.FindResource("PrimaryButtonStyle")
             };
@@ -270,8 +269,6 @@ namespace SideDesk.Controls
             var copyBtn = new Button
             {
                 Content = Framework.Lang.T("复制全文"),
-                Width = 70,
-                Height = 28,
                 Style = (Style)Application.Current.FindResource("StandardButtonStyle")
             };
             copyBtn.Click += (s, e) =>

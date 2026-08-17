@@ -40,10 +40,11 @@ public partial class AIChatWebWindow : Window
 
             // proxy 参数告知页面本机 HTTP 代理地址（端口可在设置中修改）
             // token 供页面在登录态下访问后端 API（未登录时为空，页面自动走本地能力）
+            // theme 传递宿主当前主题（dark/light），使页面按一致的主题风格渲染
             var app = (App)Application.Current;
             var proxy = $"http://127.0.0.1:{Services.HttpServerService.Instance.CurrentPort}";
             var token = app.AppSettings.AccountToken ?? "";
-            var url = $"{ChatBaseUrl}?proxy={Uri.EscapeDataString(proxy)}&token={Uri.EscapeDataString(token)}";
+            var url = $"{ChatBaseUrl}?proxy={Uri.EscapeDataString(proxy)}&token={Uri.EscapeDataString(token)}&theme={App.FrontendThemeParam}";
             webView.CoreWebView2.Navigate(url);
         }
         catch (Exception ex)

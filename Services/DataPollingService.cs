@@ -117,7 +117,7 @@ public class DataPollingService : IDisposable
     /// </summary>
     public static string GetItemIdentity(DataDashboardItem item)
     {
-        return $"tpl|{item.TemplateId}|{item.BrowserId ?? ""}|{item.ProfileId ?? ""}|{item.TargetUrl}|{item.Selector}|{item.ApiMethod ?? ""}|{item.ResponseExtract ?? ""}".ToLowerInvariant();
+        return $"tpl|{item.TemplateId}|{item.BrowserId ?? ""}|{item.ProfileId ?? ""}|{item.TargetUrl}|{item.SelectorType ?? ""}|{item.Selector}|{item.ApiMethod ?? ""}|{item.ResponseExtract ?? ""}".ToLowerInvariant();
     }
 
     /// <summary>
@@ -471,7 +471,7 @@ public class DataPollingService : IDisposable
 
             // 4. Attach + Evaluate（后台 app 窗口可能被浏览器重新显示，取数前先再隐藏一次）
             ReassertHiddenAppWindows(item.TargetUrl);
-            var value = await EvaluateOnTargetAsync(conn.Client, targetId, item.Selector);
+            var value = await EvaluateOnTargetAsync(conn.Client, targetId, item.SelectorType, item.Selector);
             UpdateItemValue(item, value);
             Debug.WriteLine($"[DataPolling] ✓ \"{item.Label}\" = \"{value}\"");
         }
@@ -1051,8 +1051,9 @@ public class DataPollingService : IDisposable
         => Uri.TryCreate(url, UriKind.Absolute, out var u) ? u.Host : null;
 
     /// <summary>启动 app 模式浏览器进程（干净独立窗口，无地址栏/标签栏）。启动成功返回进程，失败返回 null。
-    /// hideWindow=true 时（数据模块后台抓取）在窗口出现后用 ShowWindow(SW_HIDE) 隐藏，不占用屏幕。</summary>
-    private static Process? LaunchAppModeProcess(string exePath, string userDataDir, string url, bool hideWindow = false)
+    /// hideWindow=true 时（数据模块后台抓取）在窗口出现后用 ShowWindow(SW_HIDE) 隐藏，不占用屏幕。
+    /// hideFromTaskbar=true 时（点击数据项打开）在窗口出现后设为工具窗口样式，不在任务栏显示。</summary>
+    private static Process? LaunchAppModeProcess(string exePath, string userDataDir, string url, bool hideWindow = false, bool hideFromTaskbar = false)
     {
         try
         {
@@ -1067,11 +1068,11 @@ public class DataPollingService : IDisposable
                 UseShellExecute = false,
                 CreateNoWindow = true
             };
-            // 隐藏模式：启动前快照该浏览器的已有窗口（每次启动各自持有，避免并发启动互相污染白名单）；
-            // 启动后新出现的同浏览器窗口即为我们打开的 app 窗口，经 ShowWindow(SW_HIDE) 隐藏
+            // 启动前快照该浏览器的已有窗口（每次启动各自持有，避免并发启动互相污染白名单）；
+            // 启动后新出现的同浏览器窗口即为我们打开的 app 窗口（隐藏或去任务栏都靠它识别）
             List<IntPtr>? whitelist = null;
             var browserName = Path.GetFileNameWithoutExtension(exePath);
-            if (hideWindow)
+            if (hideWindow || hideFromTaskbar)
                 whitelist = EnumerateBrowserWindows(browserName);
 
             var proc = Process.Start(psi);
@@ -1084,6 +1085,11 @@ public class DataPollingService : IDisposable
                     // 双保险：进程自持 → 拿到窗口句柄直接隐藏；委托给已运行浏览器（进程退出）→ 枚举监视器兜底
                     _ = Task.Run(() => HideAppWindowWhenReadyAsync(proc));
                     _ = Task.Run(() => HideNewBrowserWindowsWatcherAsync(browserName, url, whitelist!));
+                }
+                else if (hideFromTaskbar)
+                {
+                    // 点击打开的窗口保持可见，但移除任务栏按钮（进程自持/委托两种情况都由枚举监视器覆盖）
+                    _ = Task.Run(() => ExcludeNewAppWindowFromTaskbarAsync(browserName, whitelist!));
                 }
             }
             Debug.WriteLine($"[DataPolling] 以 app 模式启动: {exePath} {args}");
@@ -1184,6 +1190,54 @@ public class DataPollingService : IDisposable
         }
     }
 
+    /// <summary>移除窗口的任务栏按钮：加 WS_EX_TOOLWINDOW 并去掉 WS_EX_APPWINDOW。
+    /// 数据模块打开的 app 窗口统一由点击数据项管理显隐，不占用任务栏</summary>
+    private static void HideWindowFromTaskbar(IntPtr hwnd)
+    {
+        var ex = NativeMethods.GetWindowLongPtr(hwnd, NativeMethods.GWL_EXSTYLE);
+        ex = (ex | NativeMethods.WS_EX_TOOLWINDOW) & ~NativeMethods.WS_EX_APPWINDOW;
+        NativeMethods.SetWindowLongPtr(hwnd, NativeMethods.GWL_EXSTYLE, ex);
+    }
+
+    /// <summary>app 模式启动后的新窗口监视器（点击数据项打开场景）：把白名单之外新出现的浏览器窗口
+    /// 设为工具窗口样式（不进任务栏）。不依赖启动进程句柄——窗口委托给已运行浏览器也能覆盖。
+    /// 命中后继续重套样式约 2 秒，对抗浏览器初始化阶段可能重置扩展样式</summary>
+    private static async Task ExcludeNewAppWindowFromTaskbarAsync(string browserName, List<IntPtr> whitelist)
+    {
+        try
+        {
+            int styledPasses = 0;
+            for (int i = 0; i < 50; i++) // 最长约 10 秒，覆盖页面加载/委托延迟
+            {
+                bool styledAny = false;
+                NativeMethods.EnumWindows((hwnd, _) =>
+                {
+                    try
+                    {
+                        if (whitelist.Contains(hwnd)) return true;
+                        if (!IsBrowserTopWindow(hwnd, browserName)) return true;
+                        HideWindowFromTaskbar(hwnd);
+                        styledAny = true;
+                    }
+                    catch { }
+                    return true;
+                }, IntPtr.Zero);
+
+                if (styledAny)
+                {
+                    if (++styledPasses == 1)
+                        Debug.WriteLine("[DataPolling] 🙈 已将点击打开的 app 模式窗口移出任务栏（仍由点击数据项管理显隐）");
+                    if (styledPasses >= 10) break; // 连续重套约 2 秒后停止
+                }
+                await Task.Delay(200);
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[DataPolling] app 窗口去任务栏监视器异常: {ex.Message}");
+        }
+    }
+
     /// <summary>重新隐藏被 SW_HIDE 藏过、又被浏览器重新显示出来的窗口（页面 JS focus/激活等）。
     /// 用户点击数据项主动显示的窗口已从记录中移除，不受影响</summary>
     private static void ReassertHiddenAppWindows(string url)
@@ -1230,6 +1284,7 @@ public class DataPollingService : IDisposable
                 }
                 NativeMethods.ShowWindow(hwnd, NativeMethods.SW_SHOW);
                 NativeMethods.SetForegroundWindow(hwnd);
+                HideWindowFromTaskbar(hwnd); // 数据模块窗口恢复显示后仍不进任务栏
                 lock (_appModeHiddenHwnds) { _appModeHiddenHwnds.Remove(hwnd); }
                 shown = true;
             }
@@ -1289,6 +1344,38 @@ public class DataPollingService : IDisposable
         await MinimizeTargetWindowAsync(client, targetId);
     }
 
+    /// <summary>CDP 跟踪的 app 窗口（委托给已运行浏览器、无进程句柄）去任务栏：
+    /// 按页面标题精确匹配同标题的 Chrome_WidgetWin_1 窗口再套工具窗口样式。
+    /// app 模式窗口标题与页面标题一致；用户主浏览器窗口带“- 浏览器名”后缀，不会误伤</summary>
+    private static async Task HideTargetWindowFromTaskbarAsync(DefaultProtocolClient client, Target.TargetIDType targetId)
+    {
+        try
+        {
+            var result = await client.SendCommandAsync(Target.GetTargets());
+            var title = result.TargetInfos.FirstOrDefault(t => t.TargetId == targetId)?.Title;
+            if (string.IsNullOrEmpty(title)) return;
+            NativeMethods.EnumWindows((hwnd, _) =>
+            {
+                try
+                {
+                    if (!NativeMethods.IsWindowVisible(hwnd)) return true;
+                    var cls = new StringBuilder(64);
+                    NativeMethods.GetClassName(hwnd, cls, cls.Capacity);
+                    if (cls.ToString() != "Chrome_WidgetWin_1") return true;
+                    var sb = new StringBuilder(512);
+                    NativeMethods.GetWindowText(hwnd, sb, sb.Capacity);
+                    if (sb.ToString() == title) HideWindowFromTaskbar(hwnd);
+                }
+                catch { }
+                return true;
+            }, IntPtr.Zero);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[DataPolling] CDP 窗口去任务栏失败: {ex.Message}");
+        }
+    }
+
     /// <summary>恢复经 CDP 最小化隐藏的窗口（点击数据项显示时调用；未隐藏过则直接跳过）</summary>
     private static async Task RestoreCdpHiddenTargetAsync(DefaultProtocolClient client, Target.TargetIDType targetId)
     {
@@ -1326,8 +1413,8 @@ public class DataPollingService : IDisposable
         if (string.IsNullOrEmpty(userDataDir) && !string.IsNullOrEmpty(exePath))
             userDataDir = DetectDefaultUserDataDir(exePath);
 
-        // 优先用数据项配置的浏览器 + Profile 以 app 模式打开（复用登录态）
-        if (!string.IsNullOrEmpty(exePath) && LaunchAppModeProcess(exePath, userDataDir, item.TargetUrl) != null)
+        // 优先用数据项配置的浏览器 + Profile 以 app 模式打开（复用登录态）；窗口不进任务栏
+        if (!string.IsNullOrEmpty(exePath) && LaunchAppModeProcess(exePath, userDataDir, item.TargetUrl, hideFromTaskbar: true) != null)
         {
             await RecordClickedAppTargetAsync(item);
             return;
@@ -1366,6 +1453,7 @@ public class DataPollingService : IDisposable
                     // 从隐藏记录中移除，避免后续轮询的 ReassertHiddenAppWindows 把用户正在看的窗口又藏回去
                     NativeMethods.ShowWindow(hwnd, NativeMethods.IsIconic(hwnd) ? NativeMethods.SW_RESTORE : NativeMethods.SW_SHOW);
                     NativeMethods.SetForegroundWindow(hwnd);
+                    HideWindowFromTaskbar(hwnd); // 数据模块窗口重套去任务栏样式（防浏览器重置）
                     lock (_appModeHiddenHwnds) { _appModeHiddenHwnds.Remove(hwnd); }
                     Debug.WriteLine($"[DataPolling] ✓ 已把打开过的 app 窗口激活显示: {url}");
                     return true;
@@ -1384,7 +1472,11 @@ public class DataPollingService : IDisposable
         {
             if (!UrlMatches(t.url, url)) continue;
             await RestoreCdpHiddenTargetAsync(t.client, t.targetId);
-            if (await BringTargetToFrontAsync(t.client, t.targetId)) return true;
+            if (await BringTargetToFrontAsync(t.client, t.targetId))
+            {
+                await HideTargetWindowFromTaskbarAsync(t.client, t.targetId);
+                return true;
+            }
             // target 已不存在（窗口被手动关闭）→ 移除失效记录
             lock (_openedAppTargetsLock) { _openedAppTargets.Remove(t); }
         }
@@ -1401,6 +1493,7 @@ public class DataPollingService : IDisposable
                     await RestoreCdpHiddenTargetAsync(conn.Client, targetId);
                     if (await BringTargetToFrontAsync(conn.Client, targetId))
                     {
+                        await HideTargetWindowFromTaskbarAsync(conn.Client, targetId);
                         lock (_openedAppTargetsLock) { _openedAppTargets.Add((conn.Client, targetId, url)); }
                         return true;
                     }
@@ -1510,14 +1603,14 @@ public class DataPollingService : IDisposable
     }
 
     /// <summary>Attach 到 Target 并执行 JS 获取元素文本</summary>
-    private static async Task<string> EvaluateOnTargetAsync(DefaultProtocolClient client, Target.TargetIDType targetId, string selector)
+    private static async Task<string> EvaluateOnTargetAsync(DefaultProtocolClient client, Target.TargetIDType targetId, string selectorType, string selector)
     {
         var attachResult = await client.SendCommandAsync(Target.AttachToTarget(targetId, Flatten: true));
         var sessionId = attachResult.SessionId.Value;
 
-        var jsExpression = BuildElementTextJs(selector);
+        var jsExpression = BuildExtractJs(selectorType, selector);
         var evalResult = await client.SendCommandAsync(
-            Runtime.Evaluate(jsExpression, ReturnByValue: true),
+            Runtime.Evaluate(jsExpression, ReturnByValue: true, AwaitPromise: true),
             sessionId: sessionId);
 
         if (evalResult.ExceptionDetails != null)
@@ -1527,16 +1620,28 @@ public class DataPollingService : IDisposable
         return string.IsNullOrWhiteSpace(value) ? "--" : value;
     }
 
-    /// <summary>构建获取元素文本的 JS 表达式（支持 CSS Selector 和 XPath）</summary>
-    private static string BuildElementTextJs(string selector)
+    /// <summary>构建取值 JS 表达式（xpath/css/regex/js 四种；空类型回退旧版自动识别）</summary>
+    private static string BuildExtractJs(string selectorType, string selector)
     {
-        var trimmed = selector.TrimStart();
         var escaped = selector.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r");
-        if (trimmed.StartsWith("/"))
+        switch ((selectorType ?? "").ToLowerInvariant())
         {
-            return $"(function(){{ var r = document.evaluate(\"{escaped}\", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null); return r.singleNodeValue ? r.singleNodeValue.textContent.trim() : '--'; }})()";
+            case "xpath":
+                return $"(function(){{ var r = document.evaluate(\"{escaped}\", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null); return r.singleNodeValue ? r.singleNodeValue.textContent.trim() : '--'; }})()";
+            case "css":
+                return $"(function(){{ var el = document.querySelector(\"{escaped}\"); return el ? el.textContent.trim() : '--'; }})()";
+            case "regex":
+                // 对页面可见文本做正则匹配：优先返回第一个捕获组，否则整体匹配
+                return $"(function(){{ try {{ var m = document.body.innerText.match(new RegExp(\"{escaped}\")); return m ? (m[1] !== undefined ? m[1] : m[0]).trim() : '--'; }} catch(e) {{ return '--'; }} }})()";
+            case "js":
+                // 用户脚本经 CDP Runtime.evaluate 执行取数（可返回值或 Promise）
+                return $"(function(){{ try {{ var v = new Function(\"{escaped}\")(); return (v === undefined || v === null) ? '--' : String(v); }} catch(e) {{ return '--'; }} }})()";
+            default:
+                // 旧版模板无类型：开头斜杠自动识别为 XPath，否则 CSS
+                return selector.TrimStart().StartsWith("/")
+                    ? BuildExtractJs("xpath", selector)
+                    : BuildExtractJs("css", selector);
         }
-        return $"(function(){{ var el = document.querySelector(\"{escaped}\"); return el ? el.textContent.trim() : '--'; }})()";
     }
 
     /// <summary>使指定连接失效</summary>

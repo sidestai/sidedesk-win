@@ -15,7 +15,7 @@ namespace SideDesk.Services
         [Newtonsoft.Json.JsonProperty("varKey")] public string VarKey { get; set; } = "";
         [Newtonsoft.Json.JsonProperty("varValue")] public string? VarValue { get; set; }
         [Newtonsoft.Json.JsonProperty("label")] public string? Label { get; set; }
-        [Newtonsoft.Json.JsonProperty("corpId")] public string? CorpId { get; set; } // 团队加密串（encrypt3，xid- 前缀）；null=个人
+        [Newtonsoft.Json.JsonProperty("corpId")] public string? CorpId { get; set; } // 团队加密串（encrypt2）；null=个人
         [Newtonsoft.Json.JsonProperty("itemLocalId")] public string? ItemLocalId { get; set; }
     }
 

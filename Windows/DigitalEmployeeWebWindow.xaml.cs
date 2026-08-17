@@ -50,8 +50,8 @@ public partial class DigitalEmployeeWebWindow : Window
                 };
             }
 
-            // 拼接参数：token 供前端认证，name 供页面定位到指定员工
-            var url = $"{FrontendBaseUrl}/digital-employee?token={Uri.EscapeDataString(token)}";
+            // 拼接参数：token 供前端认证，name 供页面定位到指定员工，theme 传递宿主当前主题（dark/light）
+            var url = $"{FrontendBaseUrl}/digital-employee?token={Uri.EscapeDataString(token)}&theme={App.FrontendThemeParam}";
             if (_employee != null && !string.IsNullOrWhiteSpace(_employee.Name))
                 url += $"&name={Uri.EscapeDataString(_employee.Name)}";
             core.Navigate(url);

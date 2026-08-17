@@ -17,7 +17,8 @@ namespace SideDesk
             /// 开发环境可改回 Vite 开发服务器 http://localhost:3007（/api 代理到后端 8082）；
             /// 生产环境前后端均部署在 /console 子路径下
             /// </summary>
-            public const string ServerBaseUrl = "https://api.sidedesk.bigjing.com/console";
+            // 当前指向：本地开发环境（Vite 开发服务器，/api 代理到本机后端 8082）；发布前改回生产地址
+            public const string ServerBaseUrl = "http://localhost:3007";
 
             /// <summary>
             /// 前端站点基址（登录/分享/市场/编辑器等前端路由，不含 "#"）。

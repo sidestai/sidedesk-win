@@ -27,7 +27,7 @@ namespace SideDesk.Services
     /// <summary>好友请求</summary>
     public class FriendRequest
     {
-        // 请求记录加密 ID（encrypt3 串），处理时原样回传后端
+        // 请求记录加密 ID（encrypt2 串），处理时原样回传后端
         [JsonProperty("id")] public string Id { get; set; } = "";
         [JsonProperty("createdAt")] public DateTime? CreatedAt { get; set; }
         [JsonProperty("fromUser")] public FriendUser? FromUser { get; set; }

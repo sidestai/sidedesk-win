@@ -22,9 +22,10 @@ namespace SideDesk.Models
         public DateTime CreatedAt { get; set; } = DateTime.Now;
     }
 
-    /// <summary>云空间管理器：持久化到 cloud-spaces.json，首次运行自动填充内置预设</summary>
+    /// <summary>云空间管理器：主存储 SQLite（local_app_state KV，原 cloud-spaces.json），首次运行自动填充内置预设</summary>
     public static class CloudSpaceManager
     {
+        private const string DbKey = "cloud_spaces";
         private static readonly string _filePath;
         private static List<CloudSpace> _spaces;
         private static readonly object _lock = new object();
@@ -49,6 +50,35 @@ namespace SideDesk.Models
         {
             lock (_lock)
             {
+                // 主存储：SQLite；无值时从旧 cloud-spaces.json 一次性迁入
+                if (Services.LocalDbService.DbExists)
+                {
+                    try
+                    {
+                        string? dbJson = Services.LocalDbService.LoadBusinessData(DbKey);
+                        if (!string.IsNullOrEmpty(dbJson))
+                        {
+                            _spaces = JsonConvert.DeserializeObject<List<CloudSpace>>(dbJson) ?? new List<CloudSpace>();
+                            MigrateBuiltins();
+                            return;
+                        }
+                        if (File.Exists(_filePath))
+                        {
+                            string fileJson = File.ReadAllText(_filePath, System.Text.Encoding.UTF8);
+                            _spaces = JsonConvert.DeserializeObject<List<CloudSpace>>(fileJson) ?? new List<CloudSpace>();
+                            if (_spaces.Count > 0)
+                                Services.LocalDbService.SaveBusinessData(DbKey, JsonConvert.SerializeObject(_spaces));
+                            MigrateBuiltins();
+                            return;
+                        }
+                        // 首次运行：填充内置预设
+                        _spaces = GetBuiltinSpaces();
+                        SaveNoLock();
+                        return;
+                    }
+                    catch { }
+                }
+
                 if (File.Exists(_filePath))
                 {
                     try
@@ -105,6 +135,12 @@ namespace SideDesk.Models
             try
             {
                 string json = JsonConvert.SerializeObject(_spaces, Formatting.Indented);
+                if (Services.LocalDbService.DbExists)
+                {
+                    try { Services.LocalDbService.SaveBusinessData(DbKey, json); return; }
+                    catch { }
+                }
+                // db 不可用/未建立：退回旧 JSON 存储
                 File.WriteAllText(_filePath, json, System.Text.Encoding.UTF8);
             }
             catch { }
