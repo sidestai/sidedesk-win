@@ -30,6 +30,23 @@ public static class LocalDbService
 
     public static bool DbExists => File.Exists(DbPath);
 
+    /// <summary>
+    /// 当前数据作用域：登录后 "u:{encrypt2密文}"（来自 /auth/userinfo），未登录 "local"（未归属，登录时晋升给当前登录者）。
+    /// 布局与内容类数据（窗口/组件/便签/待办等）按作用域隔离，防止切换登录账号串数据。
+    /// </summary>
+    public static string CurrentScope()
+    {
+        var settings = ((SideDesk.App)System.Windows.Application.Current)?.AppSettings;
+        if (!string.IsNullOrEmpty(settings?.AccountUserId)) return "u:" + settings.AccountUserId;
+        return "local";
+    }
+
+    /// <summary>按作用域隔离的应用级状态 key（左右停靠/后台看板项/变量集）：key 追加 @作用域 后缀</summary>
+    private static string ScopedKey(string key, string scope) => key + "@" + scope;
+
+    /// <summary>需要按作用域隔离的应用级状态 key 列表（晋升时随行迁移）</summary>
+    private static readonly string[] _scopedStateKeys = { "left_dock", "right_dock", "background_dashboard_items", "variable_sets" };
+
     /// <summary>打开连接并初始化 PRAGMA / 建表。</summary>
     public static SqliteConnection Open()
     {
@@ -59,12 +76,22 @@ public static class LocalDbService
         AddColumnIfMissing(conn, "local_item_row", "row_server_id", "TEXT");
         AddColumnIfMissing(conn, "local_item_row", "data_server_id", "TEXT");
         AddColumnIfMissing(conn, "local_item", "corp_id", "TEXT");
+        // 账号作用域隔离：布局与内容类数据加 user_id（'local'=未归属；登录后晋升 u:{密文}）；存量行由 DEFAULT 归入 'local'
+        AddColumnIfMissing(conn, "local_bar", "user_id", "TEXT NOT NULL DEFAULT 'local'");
+        AddColumnIfMissing(conn, "local_item", "user_id", "TEXT NOT NULL DEFAULT 'local'");
+        AddColumnIfMissing(conn, "local_item_row", "user_id", "TEXT NOT NULL DEFAULT 'local'");
+        AddColumnIfMissing(conn, "local_sticky_note", "user_id", "TEXT NOT NULL DEFAULT 'local'");
+        AddColumnIfMissing(conn, "local_global_note", "user_id", "TEXT NOT NULL DEFAULT 'local'");
+        AddColumnIfMissing(conn, "local_todo_item", "user_id", "TEXT NOT NULL DEFAULT 'local'");
+        AddColumnIfMissing(conn, "local_clipboard_item", "user_id", "TEXT NOT NULL DEFAULT 'local'");
+        AddColumnIfMissing(conn, "local_row_id_map", "user_id", "TEXT NOT NULL DEFAULT 'local'");
 
         using var cmd = conn.CreateCommand();
         cmd.CommandText = @"
 CREATE TABLE IF NOT EXISTS local_bar (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   local_uid     TEXT NOT NULL UNIQUE,
+  user_id       TEXT NOT NULL DEFAULT 'local',
   server_id     TEXT,
   title         TEXT,
   bg_color      TEXT,
@@ -86,6 +113,7 @@ CREATE TABLE IF NOT EXISTS local_bar (
 CREATE TABLE IF NOT EXISTS local_item (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   local_uid   TEXT NOT NULL UNIQUE,
+  user_id     TEXT NOT NULL DEFAULT 'local',
   server_id   TEXT,
   bar_uid     TEXT NOT NULL,
   parent_uid  TEXT,
@@ -107,6 +135,7 @@ CREATE INDEX IF NOT EXISTS idx_item_bar ON local_item(bar_uid, sort_order);
 
 CREATE TABLE IF NOT EXISTS local_item_row (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id       TEXT NOT NULL DEFAULT 'local',
   item_uid      TEXT NOT NULL,
   row_uid       TEXT NOT NULL,
   row_type      TEXT NOT NULL,
@@ -122,12 +151,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_row_item_rowuid ON local_item_row(item_uid
 
 CREATE TABLE IF NOT EXISTS local_row_id_map (
   row_uid        TEXT PRIMARY KEY,
+  user_id        TEXT NOT NULL DEFAULT 'local',
   row_server_id  TEXT,
   data_server_id TEXT
 );
 
 CREATE TABLE IF NOT EXISTS local_sticky_note (
   uid        TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL DEFAULT 'local',
   content    TEXT,
   created_at TEXT,
   updated_at TEXT
@@ -135,6 +166,7 @@ CREATE TABLE IF NOT EXISTS local_sticky_note (
 
 CREATE TABLE IF NOT EXISTS local_global_note (
   uid        TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL DEFAULT 'local',
   content    TEXT,
   created_at TEXT,
   updated_at TEXT
@@ -142,6 +174,7 @@ CREATE TABLE IF NOT EXISTS local_global_note (
 
 CREATE TABLE IF NOT EXISTS local_todo_item (
   uid                   TEXT PRIMARY KEY,
+  user_id               TEXT NOT NULL DEFAULT 'local',
   text                  TEXT,
   description           TEXT,
   is_done               INTEGER NOT NULL DEFAULT 0,
@@ -153,6 +186,7 @@ CREATE TABLE IF NOT EXISTS local_todo_item (
 
 CREATE TABLE IF NOT EXISTS local_clipboard_item (
   uid          TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL DEFAULT 'local',
   content_type TEXT NOT NULL DEFAULT 'Text',
   content      TEXT,
   saved_at     TEXT
@@ -176,11 +210,50 @@ CREATE TABLE IF NOT EXISTS local_key_count_daily (
   key_count INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS local_data_variable (
+  user_id    TEXT NOT NULL DEFAULT 'local',
+  var_key    TEXT NOT NULL,
+  var_value  TEXT,
+  corp_id    TEXT,
+  updated_at TEXT,
+  PRIMARY KEY (user_id, var_key)
+);
+
 CREATE TABLE IF NOT EXISTS local_mouse_distance_daily (
   date           TEXT PRIMARY KEY,
   distance_pixel INTEGER NOT NULL DEFAULT 0
 );";
         cmd.ExecuteNonQuery();
+
+        // local_data_variable 主键升级：旧表（var_key 单列主键，无 user_id）→ (user_id, var_key)，
+        // 防止切换登录账号后手动值串号；存量数据归入机器级 'local' 作用域
+        using (var chk = conn.CreateCommand())
+        {
+            chk.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='local_data_variable'";
+            var tableExists = Convert.ToInt64(chk.ExecuteScalar()) > 0;
+            if (tableExists)
+            {
+                chk.CommandText = "SELECT COUNT(*) FROM pragma_table_info('local_data_variable') WHERE name='user_id'";
+                if (Convert.ToInt64(chk.ExecuteScalar()) == 0)
+                {
+                    using var mig = conn.CreateCommand();
+                    mig.CommandText = @"
+ALTER TABLE local_data_variable RENAME TO local_data_variable_old;
+CREATE TABLE local_data_variable (
+  user_id    TEXT NOT NULL DEFAULT 'local',
+  var_key    TEXT NOT NULL,
+  var_value  TEXT,
+  corp_id    TEXT,
+  updated_at TEXT,
+  PRIMARY KEY (user_id, var_key)
+);
+INSERT INTO local_data_variable (user_id, var_key, var_value, corp_id, updated_at)
+  SELECT 'local', var_key, var_value, corp_id, updated_at FROM local_data_variable_old;
+DROP TABLE local_data_variable_old;";
+                    mig.ExecuteNonQuery();
+                }
+            }
+        }
     }
 
     /// <summary>旧表名存在且新表名不存在时，无损改名（早期构建兼容）。</summary>
@@ -224,7 +297,7 @@ CREATE TABLE IF NOT EXISTS local_mouse_distance_daily (
 
     // ==================== 写入 ====================
 
-    /// <summary>将整个管理器状态写入 SQLite（单事务，全量 upsert + 清理已删除行）。</summary>
+    /// <summary>将整个管理器状态写入 SQLite（单事务，全量 upsert + 清理已删除行；只影响当前作用域的行）。</summary>
     public static void SaveManager(WindowConfigManager mgr)
     {
         using var conn = Open();
@@ -232,6 +305,7 @@ CREATE TABLE IF NOT EXISTS local_mouse_distance_daily (
         try
         {
             var now = DateTime.Now.ToString("o");
+            var scope = CurrentScope();
 
             // 快捷分组一次性迁移：quickgroups.json（及更早的 bookmarks/aitools/programs）
             // 的分组数据写入对应快捷面板，此后快捷项随面板走行级存储
@@ -247,38 +321,39 @@ CREATE TABLE IF NOT EXISTS local_mouse_distance_daily (
             foreach (var win in mgr.Windows)
             {
                 liveBarUids.Add(win.Id);
-                UpsertBar(conn, win, now);
+                UpsertBar(conn, win, now, scope);
 
                 int order = 0;
                 foreach (var p in win.Panels)
-                    SaveItemTree(conn, p, win.Id, null, ref order, now, liveItemUids);
+                    SaveItemTree(conn, p, win.Id, null, ref order, now, liveItemUids, scope);
             }
 
-            // 清理内存中已不存在的行（窗口/模块删除）
-            DeleteMissing(conn, "local_bar", "local_uid", liveBarUids);
-            DeleteMissing(conn, "local_item", "local_uid", liveItemUids);
+            // 清理内存中已不存在的行（窗口/模块删除；仅当前作用域，不碰其他账号的数据）
+            DeleteMissing(conn, "local_bar", "local_uid", liveBarUids, scope);
+            DeleteMissing(conn, "local_item", "local_uid", liveItemUids, scope);
 
-            // 行级数据：全量重写（数据量小，语义最简单：删掉的行/孤儿行自动清理）
+            // 行级数据：全量重写（数据量小，语义最简单：删掉的行/孤儿行自动清理；仅当前作用域）
             // 重写前先留存已缓存的服务端行 ID（映射表优先，行表已有值兜底），重插后回填
-            var serverIdMap = LoadRowServerIdMap(conn);
+            var serverIdMap = LoadRowServerIdMap(conn, scope);
             using (var delRows = conn.CreateCommand())
             {
-                delRows.CommandText = @"DELETE FROM local_item_row;
-DELETE FROM local_sticky_note;
-DELETE FROM local_todo_item;
-DELETE FROM local_clipboard_item;";
+                delRows.CommandText = @"DELETE FROM local_item_row WHERE user_id=$scope;
+DELETE FROM local_sticky_note WHERE user_id=$scope;
+DELETE FROM local_todo_item WHERE user_id=$scope;
+DELETE FROM local_clipboard_item WHERE user_id=$scope;";
+                delRows.Parameters.AddWithValue("$scope", scope);
                 delRows.ExecuteNonQuery();
             }
             foreach (var win in mgr.Windows)
                 foreach (var p in EnumerateAllPanelsLocal(win.Panels))
-                    SaveItemRows(conn, p, now, serverIdMap);
+                    SaveItemRows(conn, p, now, serverIdMap, scope);
             UpsertState(conn, "row_storage_migrated", "1");
 
-            // 应用级状态
-            UpsertState(conn, "left_dock", JsonConvert.SerializeObject(mgr.LeftDock));
-            UpsertState(conn, "right_dock", JsonConvert.SerializeObject(mgr.RightDock));
-            UpsertState(conn, "background_dashboard_items", JsonConvert.SerializeObject(mgr.BackgroundDashboardItems));
-            UpsertState(conn, "variable_sets", JsonConvert.SerializeObject(mgr.VariableSets));
+            // 应用级状态（按作用域隔离）
+            UpsertState(conn, ScopedKey("left_dock", scope), JsonConvert.SerializeObject(mgr.LeftDock));
+            UpsertState(conn, ScopedKey("right_dock", scope), JsonConvert.SerializeObject(mgr.RightDock));
+            UpsertState(conn, ScopedKey("background_dashboard_items", scope), JsonConvert.SerializeObject(mgr.BackgroundDashboardItems));
+            UpsertState(conn, ScopedKey("variable_sets", scope), JsonConvert.SerializeObject(mgr.VariableSets));
 
             tx.Commit();
         }
@@ -290,34 +365,36 @@ DELETE FROM local_clipboard_item;";
     }
 
     private static void SaveItemTree(SqliteConnection conn, PanelItem p, string barUid,
-        string? parentUid, ref int order, string now, HashSet<string> liveUids)
+        string? parentUid, ref int order, string now, HashSet<string> liveUids, string scope)
     {
         liveUids.Add(p.Id);
-        UpsertItem(conn, p, barUid, parentUid, order++, now);
+        UpsertItem(conn, p, barUid, parentUid, order++, now, scope);
         if (p.ChildPanels != null)
         {
             int childOrder = 0;
             foreach (var c in p.ChildPanels)
-                SaveItemTree(conn, c, barUid, p.Id, ref childOrder, now, liveUids);
+                SaveItemTree(conn, c, barUid, p.Id, ref childOrder, now, liveUids, scope);
         }
     }
 
-    private static void UpsertBar(SqliteConnection conn, WindowConfig win, string now)
+    private static void UpsertBar(SqliteConnection conn, WindowConfig win, string now, string scope)
     {
         using var cmd = conn.CreateCommand();
         cmd.CommandText = @"
 INSERT INTO local_bar
-  (local_uid, server_id, title, bg_color, window_type, url, is_edit_mode, is_app_mode,
+  (local_uid, user_id, server_id, title, bg_color, window_type, url, is_edit_mode, is_app_mode,
    show_in_tabs, owner_type, corp_id, share_mode, source_bar_id, enabled_tools, created_at, updated_at)
 VALUES
-  ($uid, $sid, $title, $bg, $wtype, $url, $edit, $app, $tabs, $owner, $corp, $share, $src, $tools, $created, $updated)
+  ($uid, $scope, $sid, $title, $bg, $wtype, $url, $edit, $app, $tabs, $owner, $corp, $share, $src, $tools, $created, $updated)
 ON CONFLICT(local_uid) DO UPDATE SET
+  user_id=excluded.user_id,
   server_id=excluded.server_id, title=excluded.title, bg_color=excluded.bg_color,
   window_type=excluded.window_type, url=excluded.url, is_edit_mode=excluded.is_edit_mode,
   is_app_mode=excluded.is_app_mode, show_in_tabs=excluded.show_in_tabs, owner_type=excluded.owner_type,
   corp_id=excluded.corp_id, share_mode=excluded.share_mode, source_bar_id=excluded.source_bar_id,
   enabled_tools=excluded.enabled_tools, updated_at=excluded.updated_at;";
         cmd.Parameters.AddWithValue("$uid", win.Id);
+        cmd.Parameters.AddWithValue("$scope", scope);
         cmd.Parameters.AddWithValue("$sid", (object?)win.ServerId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$title", win.Name);
         cmd.Parameters.AddWithValue("$bg", (object?)win.BGColor ?? DBNull.Value);
@@ -383,21 +460,23 @@ ON CONFLICT(local_uid) DO UPDATE SET
 
     // ==================== 行级数据写入 ====================
 
-    /// <summary>读取 row_uid → (row_server_id, data_server_id) 留存映射：
+    /// <summary>读取 row_uid → (row_server_id, data_server_id) 留存映射（仅当前作用域）：
     /// local_row_id_map（拉取时回写的权威源）优先，行表已有值兜底。</summary>
-    private static Dictionary<string, (string? RowServerId, string? DataServerId)> LoadRowServerIdMap(SqliteConnection conn)
+    private static Dictionary<string, (string? RowServerId, string? DataServerId)> LoadRowServerIdMap(SqliteConnection conn, string scope)
     {
         var map = new Dictionary<string, (string?, string?)>();
         using (var q = conn.CreateCommand())
         {
-            q.CommandText = "SELECT row_uid, row_server_id, data_server_id FROM local_item_row WHERE row_server_id IS NOT NULL OR data_server_id IS NOT NULL";
+            q.CommandText = "SELECT row_uid, row_server_id, data_server_id FROM local_item_row WHERE (row_server_id IS NOT NULL OR data_server_id IS NOT NULL) AND user_id=$scope";
+            q.Parameters.AddWithValue("$scope", scope);
             using var rd = q.ExecuteReader();
             while (rd.Read())
                 map[rd.GetString(0)] = (rd.IsDBNull(1) ? null : rd.GetString(1), rd.IsDBNull(2) ? null : rd.GetString(2));
         }
         using (var q = conn.CreateCommand())
         {
-            q.CommandText = "SELECT row_uid, row_server_id, data_server_id FROM local_row_id_map";
+            q.CommandText = "SELECT row_uid, row_server_id, data_server_id FROM local_row_id_map WHERE user_id=$scope";
+            q.Parameters.AddWithValue("$scope", scope);
             using var rd = q.ExecuteReader();
             while (rd.Read())
                 map[rd.GetString(0)] = (rd.IsDBNull(1) ? null : rd.GetString(1), rd.IsDBNull(2) ? null : rd.GetString(2));
@@ -411,6 +490,7 @@ ON CONFLICT(local_uid) DO UPDATE SET
     {
         try
         {
+            var scope = CurrentScope();
             using var conn = Open();
             using var tx = conn.BeginTransaction();
             foreach (var (rowUid, rowServerId, dataServerId) in entries)
@@ -418,12 +498,14 @@ ON CONFLICT(local_uid) DO UPDATE SET
                 if (string.IsNullOrEmpty(rowUid)) continue;
                 using (var cmd = conn.CreateCommand())
                 {
-                    cmd.CommandText = @"INSERT INTO local_row_id_map (row_uid, row_server_id, data_server_id)
-VALUES ($uid, $rsid, $dsid)
+                    cmd.CommandText = @"INSERT INTO local_row_id_map (row_uid, user_id, row_server_id, data_server_id)
+VALUES ($uid, $scope, $rsid, $dsid)
 ON CONFLICT(row_uid) DO UPDATE SET
+  user_id = excluded.user_id,
   row_server_id = COALESCE(excluded.row_server_id, local_row_id_map.row_server_id),
   data_server_id = COALESCE(excluded.data_server_id, local_row_id_map.data_server_id);";
                     cmd.Parameters.AddWithValue("$uid", rowUid);
+                    cmd.Parameters.AddWithValue("$scope", scope);
                     cmd.Parameters.AddWithValue("$rsid", (object?)rowServerId ?? DBNull.Value);
                     cmd.Parameters.AddWithValue("$dsid", (object?)dataServerId ?? DBNull.Value);
                     cmd.ExecuteNonQuery();
@@ -457,12 +539,14 @@ WHERE row_uid = $uid;";
         if (uids.Count == 0) return result;
         try
         {
+            var scope = CurrentScope();
             string inList = string.Join(",", uids.Select((_, i) => $"$u{i}"));
             using var conn = Open();
             void Query(string table)
             {
                 using var q = conn.CreateCommand();
-                q.CommandText = $"SELECT row_uid, row_server_id, data_server_id FROM {table} WHERE row_uid IN ({inList})";
+                q.CommandText = $"SELECT row_uid, row_server_id, data_server_id FROM {table} WHERE user_id=$scope AND row_uid IN ({inList})";
+                q.Parameters.AddWithValue("$scope", scope);
                 for (int i = 0; i < uids.Count; i++)
                     q.Parameters.AddWithValue($"$u{i}", uids[i]);
                 using var rd = q.ExecuteReader();
@@ -479,14 +563,14 @@ WHERE row_uid = $uid;";
         return result;
     }
 
-    /// <summary>将面板的行列表数据写入 local_item_row + 独立数据表（镜像服务端结构）。</summary>
+    /// <summary>将面板的行列表数据写入 local_item_row + 独立数据表（镜像服务端结构；打当前作用域）。</summary>
     private static void SaveItemRows(SqliteConnection conn, PanelItem p, string now,
-        Dictionary<string, (string? RowServerId, string? DataServerId)> serverIdMap)
+        Dictionary<string, (string? RowServerId, string? DataServerId)> serverIdMap, string scope)
     {
         void Insert(string rowUid, string rowType, string content, int order)
         {
             serverIdMap.TryGetValue(rowUid, out var sids);
-            InsertRow(conn, p.Id, rowUid, rowType, content, order, now, sids.RowServerId, sids.DataServerId);
+            InsertRow(conn, p.Id, rowUid, rowType, content, order, now, sids.RowServerId, sids.DataServerId, scope);
         }
 
         if (p.StickyNotes != null)
@@ -495,7 +579,7 @@ WHERE row_uid = $uid;";
             foreach (var n in p.StickyNotes)
             {
                 Insert(n.Id, "sticky_note", JsonConvert.SerializeObject(n), o++);
-                UpsertStickyNote(conn, n);
+                UpsertStickyNote(conn, n, scope);
             }
         }
         if (p.TodoItems != null)
@@ -504,7 +588,7 @@ WHERE row_uid = $uid;";
             foreach (var t in p.TodoItems)
             {
                 Insert(t.Id, "todo", JsonConvert.SerializeObject(t), o++);
-                UpsertTodoItem(conn, t);
+                UpsertTodoItem(conn, t, scope);
             }
         }
         if (p.ClipboardItems != null)
@@ -513,7 +597,7 @@ WHERE row_uid = $uid;";
             foreach (var c in p.ClipboardItems)
             {
                 Insert(c.Id, "clipboard", JsonConvert.SerializeObject(c), o++);
-                UpsertClipboardItem(conn, c);
+                UpsertClipboardItem(conn, c, scope);
             }
         }
         if (p.TimerItems != null)
@@ -577,14 +661,15 @@ WHERE row_uid = $uid;";
     }
 
     private static void InsertRow(SqliteConnection conn, string itemUid, string rowUid,
-        string rowType, string content, int order, string now, string? rowServerId, string? dataServerId)
+        string rowType, string content, int order, string now, string? rowServerId, string? dataServerId, string scope)
     {
         using var cmd = conn.CreateCommand();
         cmd.CommandText = @"INSERT INTO local_item_row
-  (item_uid, row_uid, row_type, content, sort_order, row_server_id, data_server_id, created_at, updated_at)
-VALUES ($item, $row, $type, $content, $order, $rsid, $dsid, $created, $updated)";
+  (item_uid, row_uid, user_id, row_type, content, sort_order, row_server_id, data_server_id, created_at, updated_at)
+VALUES ($item, $row, $scope, $type, $content, $order, $rsid, $dsid, $created, $updated)";
         cmd.Parameters.AddWithValue("$item", itemUid);
         cmd.Parameters.AddWithValue("$row", rowUid);
+        cmd.Parameters.AddWithValue("$scope", scope);
         cmd.Parameters.AddWithValue("$type", rowType);
         cmd.Parameters.AddWithValue("$content", content);
         cmd.Parameters.AddWithValue("$order", order);
@@ -595,13 +680,14 @@ VALUES ($item, $row, $type, $content, $order, $rsid, $dsid, $created, $updated)"
         cmd.ExecuteNonQuery();
     }
 
-    private static void UpsertStickyNote(SqliteConnection conn, StickyNote n)
+    private static void UpsertStickyNote(SqliteConnection conn, StickyNote n, string scope)
     {
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = @"INSERT INTO local_sticky_note (uid, content, created_at, updated_at)
-VALUES ($uid, $content, $created, $updated)
-ON CONFLICT(uid) DO UPDATE SET content=excluded.content, updated_at=excluded.updated_at;";
+        cmd.CommandText = @"INSERT INTO local_sticky_note (uid, user_id, content, created_at, updated_at)
+VALUES ($uid, $scope, $content, $created, $updated)
+ON CONFLICT(uid) DO UPDATE SET user_id=excluded.user_id, content=excluded.content, updated_at=excluded.updated_at;";
         cmd.Parameters.AddWithValue("$uid", n.Id);
+        cmd.Parameters.AddWithValue("$scope", scope);
         cmd.Parameters.AddWithValue("$content", n.Content);
         cmd.Parameters.AddWithValue("$created", n.CreatedAt.ToString("o"));
         cmd.Parameters.AddWithValue("$updated", n.UpdatedAt.ToString("o"));
@@ -617,7 +703,8 @@ ON CONFLICT(uid) DO UPDATE SET content=excluded.content, updated_at=excluded.upd
         var list = new List<StickyNote>();
         using var conn = Open();
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT uid, content, created_at, updated_at FROM local_global_note";
+        cmd.CommandText = "SELECT uid, content, created_at, updated_at FROM local_global_note WHERE user_id=$scope";
+        cmd.Parameters.AddWithValue("$scope", CurrentScope());
         using var rd = cmd.ExecuteReader();
         while (rd.Read())
         {
@@ -631,19 +718,22 @@ ON CONFLICT(uid) DO UPDATE SET content=excluded.content, updated_at=excluded.upd
 
     public static void SaveGlobalNotes(IReadOnlyList<StickyNote> notes)
     {
+        var scope = CurrentScope();
         using var conn = Open();
         using var tx = conn.BeginTransaction();
         using (var del = conn.CreateCommand())
         {
-            del.CommandText = "DELETE FROM local_global_note";
+            del.CommandText = "DELETE FROM local_global_note WHERE user_id=$scope";
+            del.Parameters.AddWithValue("$scope", scope);
             del.ExecuteNonQuery();
         }
         foreach (var n in notes)
         {
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = @"INSERT INTO local_global_note (uid, content, created_at, updated_at)
-VALUES ($uid, $content, $created, $updated);";
+            cmd.CommandText = @"INSERT INTO local_global_note (uid, user_id, content, created_at, updated_at)
+VALUES ($uid, $scope, $content, $created, $updated);";
             cmd.Parameters.AddWithValue("$uid", n.Id);
+            cmd.Parameters.AddWithValue("$scope", scope);
             cmd.Parameters.AddWithValue("$content", n.Content);
             cmd.Parameters.AddWithValue("$created", n.CreatedAt.ToString("o"));
             cmd.Parameters.AddWithValue("$updated", n.UpdatedAt.ToString("o"));
@@ -652,17 +742,51 @@ VALUES ($uid, $content, $created, $updated);";
         tx.Commit();
     }
 
-    private static void UpsertTodoItem(SqliteConnection conn, TodoItem t)
+    /// <summary>
+    /// 作用域晋升：把 from 作用域下的布局与内容数据归入 to 作用域（未归属 local 数据“跟人走”）。
+    /// 内容表直接 UPDATE；作用域化 state keys 源值覆盖目标（离线数据时间上更新）后删除源 key。
+    /// </summary>
+    public static void AdoptScope(string from, string to)
+    {
+        if (string.IsNullOrEmpty(from) || string.IsNullOrEmpty(to) || from == to) return;
+        using var conn = Open();
+        using var tx = conn.BeginTransaction();
+
+        foreach (var table in new[] { "local_bar", "local_item", "local_item_row", "local_row_id_map",
+            "local_sticky_note", "local_global_note", "local_todo_item", "local_clipboard_item" })
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"UPDATE {table} SET user_id=$to WHERE user_id=$from";
+            cmd.Parameters.AddWithValue("$to", to);
+            cmd.Parameters.AddWithValue("$from", from);
+            cmd.ExecuteNonQuery();
+        }
+
+        // 作用域化 state keys 迁移：早期构建无后缀的 key 视为 'local' 作用域
+        foreach (var key in _scopedStateKeys)
+        {
+            var src = GetState(conn, ScopedKey(key, from)) ?? (from == "local" ? GetState(conn, key) : null);
+            if (src == null) continue;
+            UpsertState(conn, ScopedKey(key, to), src);
+            DeleteState(conn, ScopedKey(key, from));
+            if (from == "local") DeleteState(conn, key);
+        }
+        tx.Commit();
+    }
+
+    private static void UpsertTodoItem(SqliteConnection conn, TodoItem t, string scope)
     {
         using var cmd = conn.CreateCommand();
         cmd.CommandText = @"INSERT INTO local_todo_item
-  (uid, text, description, is_done, due_time, remind_before_minutes, reminded, created_at)
-VALUES ($uid, $text, $desc, $done, $due, $remind, $reminded, $created)
+  (uid, user_id, text, description, is_done, due_time, remind_before_minutes, reminded, created_at)
+VALUES ($uid, $scope, $text, $desc, $done, $due, $remind, $reminded, $created)
 ON CONFLICT(uid) DO UPDATE SET
+  user_id=excluded.user_id,
   text=excluded.text, description=excluded.description, is_done=excluded.is_done,
   due_time=excluded.due_time, remind_before_minutes=excluded.remind_before_minutes,
   reminded=excluded.reminded;";
         cmd.Parameters.AddWithValue("$uid", t.Id);
+        cmd.Parameters.AddWithValue("$scope", scope);
         cmd.Parameters.AddWithValue("$text", t.Text);
         cmd.Parameters.AddWithValue("$desc", t.Description);
         cmd.Parameters.AddWithValue("$done", t.IsDone ? 1 : 0);
@@ -673,14 +797,15 @@ ON CONFLICT(uid) DO UPDATE SET
         cmd.ExecuteNonQuery();
     }
 
-    private static void UpsertClipboardItem(SqliteConnection conn, ClipboardSavedItem c)
+    private static void UpsertClipboardItem(SqliteConnection conn, ClipboardSavedItem c, string scope)
     {
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = @"INSERT INTO local_clipboard_item (uid, content_type, content, saved_at)
-VALUES ($uid, $type, $content, $saved)
-ON CONFLICT(uid) DO UPDATE SET content_type=excluded.content_type, content=excluded.content,
+        cmd.CommandText = @"INSERT INTO local_clipboard_item (uid, user_id, content_type, content, saved_at)
+VALUES ($uid, $scope, $type, $content, $saved)
+ON CONFLICT(uid) DO UPDATE SET user_id=excluded.user_id, content_type=excluded.content_type, content=excluded.content,
   saved_at=excluded.saved_at;";
         cmd.Parameters.AddWithValue("$uid", c.Id);
+        cmd.Parameters.AddWithValue("$scope", scope);
         cmd.Parameters.AddWithValue("$type", c.ContentType);
         cmd.Parameters.AddWithValue("$content", c.Content);
         cmd.Parameters.AddWithValue("$saved", c.SavedAt.ToString("o"));
@@ -688,21 +813,23 @@ ON CONFLICT(uid) DO UPDATE SET content_type=excluded.content_type, content=exclu
     }
 
     private static void UpsertItem(SqliteConnection conn, PanelItem p, string barUid,
-        string? parentUid, int order, string now)
+        string? parentUid, int order, string now, string scope)
     {
         using var cmd = conn.CreateCommand();
         cmd.CommandText = @"
 INSERT INTO local_item
-  (local_uid, server_id, bar_uid, parent_uid, sort_order, title, item_type, group_id,
+  (local_uid, user_id, server_id, bar_uid, parent_uid, sort_order, title, item_type, group_id,
    item_data, owner_type, team_id, team_name, corp_id, created_at, updated_at)
 VALUES
-  ($uid, $sid, $bar, $parent, $order, $title, $type, $group, $data, $owner, $team, $teamname, $corp, $created, $updated)
+  ($uid, $scope, $sid, $bar, $parent, $order, $title, $type, $group, $data, $owner, $team, $teamname, $corp, $created, $updated)
 ON CONFLICT(local_uid) DO UPDATE SET
+  user_id=excluded.user_id,
   server_id=excluded.server_id, bar_uid=excluded.bar_uid, parent_uid=excluded.parent_uid,
   sort_order=excluded.sort_order, title=excluded.title, item_type=excluded.item_type,
   group_id=excluded.group_id, item_data=excluded.item_data, owner_type=excluded.owner_type,
   team_id=excluded.team_id, team_name=excluded.team_name, corp_id=excluded.corp_id, updated_at=excluded.updated_at;";
         cmd.Parameters.AddWithValue("$uid", p.Id);
+        cmd.Parameters.AddWithValue("$scope", scope);
         cmd.Parameters.AddWithValue("$sid", (object?)p.ServerId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$bar", barUid);
         cmd.Parameters.AddWithValue("$parent", (object?)parentUid ?? DBNull.Value);
@@ -732,14 +859,24 @@ ON CONFLICT(key) DO UPDATE SET value=excluded.value;";
         cmd.ExecuteNonQuery();
     }
 
-    /// <summary>删除表中 uid 不在内存集合里的行（按 IN 分批，避免参数上限）。</summary>
-    private static void DeleteMissing(SqliteConnection conn, string table, string column, HashSet<string> liveUids)
+    /// <summary>删除指定应用级状态 key（在已有连接上执行，供作用域晋升等事务内使用）</summary>
+    private static void DeleteState(SqliteConnection conn, string key)
     {
-        // 先取出库中全部 uid，内存求差集，再按差集删除（数据量小，简单可靠）
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM local_app_state WHERE key=$k";
+        cmd.Parameters.AddWithValue("$k", key);
+        cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>删除表中 uid 不在内存集合里的行（仅当前作用域；按 IN 分批，避免参数上限）。</summary>
+    private static void DeleteMissing(SqliteConnection conn, string table, string column, HashSet<string> liveUids, string scope)
+    {
+        // 先取出库中当前作用域的全部 uid，内存求差集，再按差集删除（数据量小，简单可靠）
         var dbUids = new List<string>();
         using (var q = conn.CreateCommand())
         {
-            q.CommandText = $"SELECT {column} FROM {table}";
+            q.CommandText = $"SELECT {column} FROM {table} WHERE user_id=$scope";
+            q.Parameters.AddWithValue("$scope", scope);
             using var rd = q.ExecuteReader();
             while (rd.Read()) dbUids.Add(rd.GetString(0));
         }
@@ -753,16 +890,18 @@ ON CONFLICT(key) DO UPDATE SET value=excluded.value;";
             names.Add($"$d{i}");
             cmd.Parameters.AddWithValue($"$d{i}", dead[i]);
         }
-        cmd.CommandText = $"DELETE FROM {table} WHERE {column} IN ({string.Join(",", names)})";
+        cmd.CommandText = $"DELETE FROM {table} WHERE user_id=$scope AND {column} IN ({string.Join(",", names)})";
+        cmd.Parameters.AddWithValue("$scope", scope);
         cmd.ExecuteNonQuery();
     }
 
     // ==================== 读取 ====================
 
-    /// <summary>从 SQLite 加载完整管理器状态。</summary>
+    /// <summary>从 SQLite 加载完整管理器状态（仅当前作用域的数据）。</summary>
     public static WindowConfigManager LoadManager()
     {
         var mgr = new WindowConfigManager();
+        var scope = CurrentScope();
         using var conn = Open();
 
         // 1) bars
@@ -772,7 +911,8 @@ ON CONFLICT(key) DO UPDATE SET value=excluded.value;";
             cmd.CommandText = @"SELECT local_uid, server_id, title, bg_color, window_type, url,
   is_edit_mode, is_app_mode, show_in_tabs, owner_type, corp_id, share_mode, source_bar_id,
   enabled_tools, created_at
-FROM local_bar WHERE deleted_at IS NULL ORDER BY id";
+FROM local_bar WHERE deleted_at IS NULL AND user_id=$scope ORDER BY id";
+            cmd.Parameters.AddWithValue("$scope", scope);
             using var rd = cmd.ExecuteReader();
             while (rd.Read())
             {
@@ -809,7 +949,8 @@ FROM local_bar WHERE deleted_at IS NULL ORDER BY id";
         using (var cmd2 = conn.CreateCommand())
         {
             cmd2.CommandText = @"SELECT local_uid, bar_uid, parent_uid, sort_order, item_data
-FROM local_item WHERE deleted_at IS NULL ORDER BY sort_order, id";
+FROM local_item WHERE deleted_at IS NULL AND user_id=$scope ORDER BY sort_order, id";
+            cmd2.Parameters.AddWithValue("$scope", scope);
             using var rd = cmd2.ExecuteReader();
             while (rd.Read())
             {
@@ -857,13 +998,13 @@ FROM local_item WHERE deleted_at IS NULL ORDER BY sort_order, id";
         // 2.5) 行级数据：从 local_item_row 组装回面板列表
         //      （升级前的旧库无行表数据，item_data blob 里已含列表，直接沿用）
         if (GetState(conn, "row_storage_migrated") == "1")
-            AttachRowsToPanels(conn, items.Values);
+            AttachRowsToPanels(conn, items.Values, scope);
 
-        // 3) 应用级状态
-        string? left = GetState(conn, "left_dock");
-        string? right = GetState(conn, "right_dock");
-        string? bgDash = GetState(conn, "background_dashboard_items");
-        string? varSets = GetState(conn, "variable_sets");
+        // 3) 应用级状态（按作用域隔离；无后缀旧 key 作为未作用域化存量回退）
+        string? left = GetState(conn, ScopedKey("left_dock", scope)) ?? GetState(conn, "left_dock");
+        string? right = GetState(conn, ScopedKey("right_dock", scope)) ?? GetState(conn, "right_dock");
+        string? bgDash = GetState(conn, ScopedKey("background_dashboard_items", scope)) ?? GetState(conn, "background_dashboard_items");
+        string? varSets = GetState(conn, ScopedKey("variable_sets", scope)) ?? GetState(conn, "variable_sets");
         if (!string.IsNullOrEmpty(left))
             mgr.LeftDock = JsonConvert.DeserializeObject<DockWindowState>(left) ?? new DockWindowState();
         if (!string.IsNullOrEmpty(right))
@@ -883,13 +1024,14 @@ FROM local_item WHERE deleted_at IS NULL ORDER BY sort_order, id";
         catch { return null; }
     }
 
-    /// <summary>从 local_item_row 按 row_type 还原各面板的行列表。</summary>
-    private static void AttachRowsToPanels(SqliteConnection conn, IEnumerable<PanelItem> panels)
+    /// <summary>从 local_item_row 按 row_type 还原各面板的行列表（仅当前作用域）。</summary>
+    private static void AttachRowsToPanels(SqliteConnection conn, IEnumerable<PanelItem> panels, string scope)
     {
         var rowsByItem = new Dictionary<string, List<(string Type, string? Content)>>();
         using (var cmd = conn.CreateCommand())
         {
-            cmd.CommandText = "SELECT item_uid, row_type, content FROM local_item_row ORDER BY sort_order, id";
+            cmd.CommandText = "SELECT item_uid, row_type, content FROM local_item_row WHERE user_id=$scope ORDER BY sort_order, id";
+            cmd.Parameters.AddWithValue("$scope", scope);
             using var rd = cmd.ExecuteReader();
             while (rd.Read())
             {
@@ -993,6 +1135,67 @@ FROM local_item WHERE deleted_at IS NULL ORDER BY sort_order, id";
         using var tx = conn.BeginTransaction();
         UpsertState(conn, key, json);
         tx.Commit();
+    }
+
+    /// <summary>删除业务数据 KV（旧存储迁移完成后的清理用）</summary>
+    public static void DeleteBusinessData(string key)
+    {
+        using var conn = Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM local_app_state WHERE key=$k";
+        cmd.Parameters.AddWithValue("$k", key);
+        cmd.ExecuteNonQuery();
+    }
+
+    // ==================== 数据变量手动值（独立表 local_data_variable，旧 KV blob 自动迁移）====================
+
+    /// <summary>读取指定作用域（user_id）下的全部本地数据变量（手动值层）</summary>
+    public static List<(string VarKey, string VarValue, string? CorpId)> LoadDataVariables(string scope)
+    {
+        using var conn = Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT var_key, var_value, corp_id FROM local_data_variable WHERE user_id=$s";
+        cmd.Parameters.AddWithValue("$s", scope);
+        var list = new List<(string, string, string?)>();
+        using var rd = cmd.ExecuteReader();
+        while (rd.Read())
+        {
+            var k = rd.GetString(0);
+            var v = rd.IsDBNull(1) ? "" : rd.GetString(1);
+            var c = rd.IsDBNull(2) ? null : rd.GetString(2);
+            list.Add((k, v, c));
+        }
+        return list;
+    }
+
+    /// <summary>单变量 upsert（按 作用域+变量名 定位）；corpId 传 null 时保留行上已有值（WS 推送不带作用域信息）</summary>
+    public static void UpsertDataVariable(string scope, string varKey, string? varValue, string? corpId)
+    {
+        using var conn = Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"INSERT INTO local_data_variable (user_id, var_key, var_value, corp_id, updated_at)
+VALUES ($s, $k, $v, $c, $u)
+ON CONFLICT(user_id, var_key) DO UPDATE SET
+  var_value  = excluded.var_value,
+  corp_id    = COALESCE(excluded.corp_id, local_data_variable.corp_id),
+  updated_at = excluded.updated_at";
+        cmd.Parameters.AddWithValue("$s", scope);
+        cmd.Parameters.AddWithValue("$k", varKey);
+        cmd.Parameters.AddWithValue("$v", (object?)varValue ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$c", (object?)corpId ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$u", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+        cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>删除指定作用域下的数据变量，返回是否存在过记录</summary>
+    public static bool DeleteDataVariable(string scope, string varKey)
+    {
+        using var conn = Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM local_data_variable WHERE user_id=$s AND var_key=$k";
+        cmd.Parameters.AddWithValue("$s", scope);
+        cmd.Parameters.AddWithValue("$k", varKey);
+        return cmd.ExecuteNonQuery() > 0;
     }
 
     // ==================== 键鼠每日统计（原 keycount.json / mousedistance.json）====================

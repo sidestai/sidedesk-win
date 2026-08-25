@@ -108,7 +108,218 @@ public class DataPollingService : IDisposable
     // 改用 CDP Browser.SetWindowBounds 最小化；点击数据项显示时先恢复窗口状态
     private static readonly ConcurrentDictionary<Target.TargetIDType, byte> _cdpHiddenTargets = new();
 
-    private DataPollingService() { }
+    // 手动值层：varKey -> value（外部程序经本地 HTTP 接口 / 后端推送设置）。
+    // 手动值优先于轮询/聚合结果：设置后该变量不再被轮询覆盖，直到 ClearVariableValue 解除；持久化到本地库。
+    private readonly Dictionary<string, string> _manualValues = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _manualLock = new();
+    private bool _manualLoaded;
+    /// <summary>已加载的手动值所属作用域；与当前作用域不一致时（切换登录/退出）重新加载</summary>
+    private string? _manualScopeLoaded;
+    private const string ManualValuesStoreKey = "manual_var_values";
+
+    /// <summary>
+    /// 当前数据作用域：登录后用 /auth/userinfo 返回的 encrypt2 密文 userId（"u:{密文}"）；
+    /// 未登录（含 userinfo 未返回）为未归属作用域 "local"，登录后 local 数据自动晋升归属当前用户。
+    /// 本地手动值按作用域隔离，防止切换登录账号后串号。
+    /// </summary>
+    private static string CurrentDataScope()
+    {
+        var settings = ((App)System.Windows.Application.Current)?.AppSettings;
+        if (!string.IsNullOrEmpty(settings?.AccountUserId)) return "u:" + settings.AccountUserId;
+        return "local";
+    }
+
+    private DataPollingService()
+    {
+        // 后端推送 data_variable_value_changed（外部程序经后端接口改了变量值）→ 本地立即生效
+        BackendWebSocketService.Instance.MessageReceived += OnBackendMessage;
+    }
+
+    /// <summary>处理后端 WebSocket 推送的变量值变更消息</summary>
+    private void OnBackendMessage(string text)
+    {
+        try
+        {
+            var obj = Newtonsoft.Json.Linq.JObject.Parse(text);
+            if ((string?)obj["event"] != "data_variable_value_changed") return;
+            var data = obj["data"];
+            // 兼容新旧字段名：key/value（新）与 varKey/varValue（旧）
+            var varKey = (string?)data?["key"] ?? (string?)data?["varKey"];
+            if (string.IsNullOrWhiteSpace(varKey)) return;
+            var varValue = (string?)data?["value"] ?? (string?)data?["varValue"];
+            if (varValue == null) ClearVariableValue(varKey);
+            else SetVariableValue(varKey, varValue);
+            Debug.WriteLine($"[DataPolling] 已应用后端推送变量值: {varKey} = {varValue ?? "(解除手动值)"}");
+        }
+        catch { /* 非 JSON 或其它消息：忽略 */ }
+    }
+
+    // ==================== 手动变量值（外部设置优先于轮询） ====================
+
+    /// <summary>从本地库加载当前作用域的手动值（懒加载；作用域变化时清空重载，防止切换账号串号）</summary>
+    private void EnsureManualLoaded(string scope)
+    {
+        List<(string VarKey, string VarValue, string? CorpId)>? adopted = null;
+        lock (_manualLock)
+        {
+            if (_manualLoaded && _manualScopeLoaded == scope) return;
+
+            // 未归属数据晋升：登录用户首次加载时，把未登录期间产生的 local 作用域数据归入本人作用域
+            //（离线数据“跟人走”，同名 key 离线值更新故覆盖已有；加载完成后转发服务器）
+            if (scope != "local")
+            {
+                try
+                {
+                    adopted = LocalDbService.LoadDataVariables("local");
+                    foreach (var (k, v, c) in adopted)
+                    {
+                        if (string.IsNullOrWhiteSpace(k)) continue;
+                        LocalDbService.UpsertDataVariable(scope, k, v, c);
+                        LocalDbService.DeleteDataVariable("local", k);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    adopted = null;
+                    Debug.WriteLine($"[DataPolling] 晋升未归属数据失败: {ex.Message}");
+                }
+            }
+
+            _manualLoaded = true;
+            _manualScopeLoaded = scope;
+            _manualValues.Clear();
+            try
+            {
+                foreach (var (k, v, _) in LocalDbService.LoadDataVariables(scope))
+                    if (!string.IsNullOrWhiteSpace(k)) _manualValues[k] = v;
+
+                // 旧存储迁移：local_app_state 里的 JSON blob → 逐条写入新表（归入当前作用域）
+                if (_manualValues.Count == 0)
+                {
+                    var json = LocalDbService.LoadBusinessData(ManualValuesStoreKey);
+                    if (!string.IsNullOrEmpty(json))
+                    {
+                        var jo = Newtonsoft.Json.Linq.JObject.Parse(json);
+                        foreach (var p in jo.Properties())
+                        {
+                            if (string.IsNullOrWhiteSpace(p.Name) || p.Value == null) continue;
+                            var val = p.Value.ToString();
+                            _manualValues[p.Name] = val;
+                            LocalDbService.UpsertDataVariable(scope, p.Name, val, null);
+                        }
+                        LocalDbService.DeleteBusinessData(ManualValuesStoreKey);
+                    }
+                }
+            }
+            catch (Exception ex) { Debug.WriteLine($"[DataPolling] 加载手动变量值失败: {ex.Message}"); }
+        }
+
+        // 晋升的数据补传服务器（重放离线期间的写入；个人/团队作用域按随行 corpId 区分），fire-and-forget
+        if (adopted != null && adopted.Count > 0)
+            _ = ForwardAdoptedVariablesAsync(adopted);
+    }
+
+    /// <summary>
+    /// 把晋升的未归属数据逐条转发后端（复用本地 HTTP 通道的带签转发；失败仅记日志，本地归属已完成不受影响）。
+    /// </summary>
+    private static async Task ForwardAdoptedVariablesAsync(List<(string VarKey, string VarValue, string? CorpId)> rows)
+    {
+        foreach (var (k, v, c) in rows)
+        {
+            if (string.IsNullOrWhiteSpace(k)) continue;
+            try
+            {
+                var (ok, msg) = await HttpServerService.ForwardVariableToBackendAsync(k, v, c).ConfigureAwait(false);
+                if (ok) Debug.WriteLine($"[DataPolling] 已补传晋升变量: {k}");
+                else Debug.WriteLine($"[DataPolling] 晋升变量补传失败 {k}: {msg}");
+            }
+            catch (Exception ex) { Debug.WriteLine($"[DataPolling] 晋升变量补传异常 {k}: {ex.Message}"); }
+        }
+    }
+
+    /// <summary>
+    /// 登录成功/切换账号后调用：把未归属（local）数据晋升到当前用户作用域并补传服务器，同时把值立即应用到同名运行中变量。
+    /// </summary>
+    public void AdoptPendingLocalData()
+    {
+        var scope = CurrentDataScope();
+        if (scope != "local")
+        {
+            // 布局与内容类数据（窗口/组件/便签/待办/剪贴板收藏等）同步晋升：未归属 local 数据归入当前登录者
+            try { LocalDbService.AdoptScope("local", scope); }
+            catch (Exception ex) { Debug.WriteLine($"[DataPolling] 本地库作用域晋升失败: {ex.Message}"); }
+        }
+        EnsureManualLoaded(scope);
+        if (scope == "local") return;
+        // 晋升的值立即生效到同名变量（须在锁外：UpdateItemValue 内部会取 _itemsLock）
+        foreach (var item in GetAllItems())
+        {
+            if (string.IsNullOrEmpty(item.VarKey)) continue;
+            var manual = GetManualValue(item.VarKey!);
+            if (manual != null) UpdateItemValue(item, manual);
+        }
+    }
+
+    /// <summary>
+    /// 手动设置变量值（本地 HTTP 接口 / 后端推送调用）。
+    /// 手动值优先：设置后轮询与变量集聚合都不再覆盖该变量，直到 ClearVariableValue 解除。
+    /// corpId（团队密文，可空）随行存入 local_data_variable；返回是否找到同名运行中变量（未找到时值仍会记录，变量出现后自动生效）。
+    /// </summary>
+    public bool SetVariableValue(string varKey, string value, string? corpId = null)
+    {
+        if (string.IsNullOrWhiteSpace(varKey)) return false;
+        varKey = varKey.Trim();
+
+        var scope = CurrentDataScope();
+        EnsureManualLoaded(scope);
+        lock (_manualLock) _manualValues[varKey] = value;
+        try { LocalDbService.UpsertDataVariable(scope, varKey, value, string.IsNullOrWhiteSpace(corpId) ? null : corpId); }
+        catch (Exception ex) { Debug.WriteLine($"[DataPolling] 保存手动变量值失败: {ex.Message}"); }
+
+        var item = FindItemByVarKey(varKey);
+        if (item == null) return false;
+        UpdateItemValue(item, value);
+        return true;
+    }
+
+    /// <summary>解除手动值：变量恢复轮询/聚合自动取值。返回是否确实存在手动值</summary>
+    public bool ClearVariableValue(string varKey)
+    {
+        if (string.IsNullOrWhiteSpace(varKey)) return false;
+        var scope = CurrentDataScope();
+        EnsureManualLoaded(scope);
+        bool removed;
+        lock (_manualLock) removed = _manualValues.Remove(varKey.Trim());
+        if (!removed) return false;
+        try { LocalDbService.DeleteDataVariable(scope, varKey.Trim()); }
+        catch (Exception ex) { Debug.WriteLine($"[DataPolling] 删除手动变量值失败: {ex.Message}"); }
+        return true;
+    }
+
+    /// <summary>获取指定变量的手动值（null = 无手动覆盖）</summary>
+    public string? GetManualValue(string varKey)
+    {
+        if (string.IsNullOrWhiteSpace(varKey)) return null;
+        EnsureManualLoaded(CurrentDataScope());
+        lock (_manualLock) return _manualValues.TryGetValue(varKey.Trim(), out var v) ? v : null;
+    }
+
+    /// <summary>全部变量快照（轮询项 + 变量集虚拟项 + 仅有手动值的变量），供本地 HTTP 接口列出</summary>
+    public List<(string VarKey, string Value, string Label, bool Manual)> GetVariableSnapshot()
+    {
+        var dict = new Dictionary<string, (string Value, string Label, bool Manual)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in GetAllItems())
+            if (!string.IsNullOrEmpty(item.VarKey))
+                dict[item.VarKey!] = (item.Value ?? "--", item.Label ?? "", GetManualValue(item.VarKey!) != null);
+        foreach (var item in VariableSetService.Instance.GetItems())
+            if (!string.IsNullOrEmpty(item.VarKey) && !dict.ContainsKey(item.VarKey!))
+                dict[item.VarKey!] = (item.Value ?? "--", item.Label ?? "", GetManualValue(item.VarKey!) != null);
+        EnsureManualLoaded(CurrentDataScope());
+        lock (_manualLock)
+            foreach (var kv in _manualValues)
+                if (!dict.ContainsKey(kv.Key)) dict[kv.Key] = (kv.Value, "", true);
+        return dict.Select(kv => (kv.Key, kv.Value.Value, kv.Value.Label, kv.Value.Manual)).ToList();
+    }
 
     /// <summary>
     /// 数据项身份标识 = 数据模块（后端实例）：同模板+同浏览器+同网址/选择器即同一数据模块，
@@ -170,6 +381,15 @@ public class DataPollingService : IDisposable
 
         // 新数据源的启动 key 不在 _autoLaunchDone 中，首次轮询自然允许自动尝试一次；
         // 已有数据源失败后保持安静，配置变更不重置该限制（避免增删改后浏览器反复弹出）。
+
+        // 恢复手动值：配置重建后把外部设置的值重新应用到匹配变量（须在锁外：UpdateItemValue 内部会取 _itemsLock）
+        EnsureManualLoaded(CurrentDataScope());
+        foreach (var item in GetAllItems())
+        {
+            if (string.IsNullOrEmpty(item.VarKey)) continue;
+            var manual = GetManualValue(item.VarKey!);
+            if (manual != null) UpdateItemValue(item, manual);
+        }
 
         RebuildTimers();
         Debug.WriteLine($"[DataPolling] SyncFromConfigs: 共 {totalBefore} 个数据项，去重后 {_items.Count} 个轮询实例");
@@ -384,6 +604,13 @@ public class DataPollingService : IDisposable
     /// </summary>
     private async Task PollItemAsync(DataDashboardItem item, bool forceLaunch = false)
     {
+        // 手动值覆盖：外部已设置值时跳过轮询（含 API 模式），保持手动值直到解除
+        if (!string.IsNullOrEmpty(item.VarKey) && GetManualValue(item.VarKey!) != null)
+        {
+            Debug.WriteLine($"[DataPolling] ↷ \"{item.Label}\" 存在手动值，跳过轮询");
+            return;
+        }
+
         // API 请求模式：HTTP 直连取数，无需浏览器
         if (!string.IsNullOrEmpty(item.ApiMethod))
         {

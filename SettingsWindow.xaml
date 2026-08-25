@@ -1295,6 +1295,66 @@
                                FontSize="{DynamicResource FontSizeSmall}"
                                Margin="0,0,0,20"/>
 
+                    <!-- API 密钥 -->
+                    <Border Background="{DynamicResource BrushInputBG}"
+                            BorderBrush="{DynamicResource BrushBorder}"
+                            BorderThickness="1" CornerRadius="8"
+                            Padding="16" Margin="0,0,0,12">
+                        <StackPanel>
+                            <TextBlock Text="{l:T 'API 密钥'}"
+                                       Foreground="{DynamicResource BrushTextMain}"
+                                       FontSize="{DynamicResource FontSizeNormal}"
+                                       FontWeight="SemiBold"/>
+                            <TextBlock Text="{l:T '供外部程序调用后端接口（如设置数据变量值）。请求时携带 X-API-Key 请求头即可，无需登录 Token。注册用户均可创建。'}"
+                                       Foreground="{DynamicResource BrushTextMuted}"
+                                       FontSize="{DynamicResource FontSizeTiny}"
+                                       Margin="0,2,0,0" TextWrapping="Wrap"/>
+                            <TextBlock Text="{l:T '也可走本机接口（如 http://127.0.0.1:19195/variable/set），带 corpId 参数会自动写入对应团队并推送全体成员；corpId 可在下方团队密钥行点击复制，或用 GET /variable/teams 查询。'}"
+                                       Foreground="{DynamicResource BrushTextMuted}"
+                                       FontSize="{DynamicResource FontSizeTiny}"
+                                       Margin="0,2,0,0" TextWrapping="Wrap"/>
+
+                            <!-- 未登录提示 -->
+                            <TextBlock x:Name="apiKeyLoginHint" Text="{l:T 请先登录后再管理 API 密钥}"
+                                       Foreground="{DynamicResource BrushTextMuted}"
+                                       FontSize="{DynamicResource FontSizeTiny}"
+                                       Visibility="Collapsed" Margin="0,10,0,0"/>
+
+                            <!-- 创建：点击后弹对话框输入名称（备注用） -->
+                            <StackPanel x:Name="apiKeyCreateRow" Orientation="Horizontal" Margin="0,10,0,0">
+                                <Button x:Name="apiKeyCreateBtn" Content="{l:T '+ 添加密钥'}" Click="ApiKeyCreate_Click"
+                                        Style="{StaticResource GhostButtonStyle}" Padding="12,6"
+                                        Cursor="Hand"/>
+                            </StackPanel>
+
+                            <!-- 创建结果：完整密钥仅显示这一次 -->
+                            <Border x:Name="apiKeyResultBox" Visibility="Collapsed"
+                                    Background="{DynamicResource BrushBG}" BorderBrush="{DynamicResource BrushBorder}"
+                                    BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,10,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="{l:T '创建成功！完整密钥仅显示这一次，请立即复制保存'}"
+                                               Foreground="{DynamicResource BrushAccent}" FontSize="11" FontWeight="SemiBold"/>
+                                    <DockPanel Margin="0,6,0,0">
+                                        <Button x:Name="apiKeyCopyBtn" DockPanel.Dock="Right" Content="{l:T 复制}"
+                                                Style="{StaticResource GhostButtonStyle}" Padding="10,4"
+                                                Margin="8,0,0,0" Click="ApiKeyCopy_Click" Cursor="Hand"/>
+                                        <TextBox x:Name="apiKeyResultText" IsReadOnly="True" FontFamily="Consolas"
+                                                 Style="{StaticResource GlobalTextBoxStyle}" FontSize="12" Padding="4,3"/>
+                                    </DockPanel>
+                                    <TextBlock Text="{l:T '调用示例：请求头携带 X-API-Key: 你的密钥，POST /api/sidebar/data-variable/value/set'}"
+                                               Foreground="{DynamicResource BrushTextMuted}" FontSize="10"
+                                               Margin="0,6,0,0" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- 密钥列表（代码动态构建） -->
+                            <StackPanel x:Name="apiKeyListBox" Margin="0,12,0,0"/>
+                            <TextBlock x:Name="apiKeyEmptyText" Text="{l:T '暂无密钥，点击「+ 添加密钥」创建'}"
+                                       Foreground="{DynamicResource BrushTextMuted}"
+                                       FontSize="{DynamicResource FontSizeTiny}" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+
                     <!-- 隐藏测试面板宿主：连按 10 次 F12 后填充并显示 -->
                     <StackPanel x:Name="devTestHost" Visibility="Collapsed"/>
                 </StackPanel>

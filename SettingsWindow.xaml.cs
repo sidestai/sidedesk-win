@@ -22,6 +22,8 @@ namespace SideDesk
         private bool _isLoading = true;
         private ProgramRegistryManager _registry = null!;
         private Guid _selectedDesktopId = Guid.Empty;
+        /// <summary>非模态登录窗登录成功回调（用于关闭设置窗前解除订阅）</summary>
+        private Action? _loginSucceededHandler;
 
         /// <summary>根据当前编辑上下文获取指定显示器的停靠配置</summary>
         private MonitorDockSettings ResolveMonitorConfig(int monitorIndex)
@@ -43,6 +45,11 @@ namespace SideDesk
             Closed += (s, e) =>
             {
                 try { Services.CloudSyncService.Instance.StatusChanged -= OnCloudSyncStatusChanged; } catch { }
+                if (_loginSucceededHandler != null)
+                {
+                    try { LoginWindow.LoginSucceeded -= _loginSucceededHandler; } catch { }
+                    _loginSucceededHandler = null;
+                }
             };
 
             SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(this, App.IsCurrentThemeLight());
@@ -193,7 +200,7 @@ namespace SideDesk
                 case 11: pageMyData.Visibility = Visibility.Visible; RefreshMyDataPage(); break;
                 case 12: pageShortcuts.Visibility = Visibility.Visible; break;
                 case 13: pageAbout.Visibility = Visibility.Visible; break;
-                case 14: pageDeveloper.Visibility = Visibility.Visible; break;
+                case 14: pageDeveloper.Visibility = Visibility.Visible; RefreshApiKeyPage(); break;
             }
         }
 
@@ -497,7 +504,8 @@ namespace SideDesk
         {
             if (accountStatusText == null) return; // 尚未加载完成
             var s = _app.AppSettings;
-            bool loggedIn = !string.IsNullOrEmpty(s.AccountToken) && !App.AccountOffline;
+            // 已登录 = 持有 Token + 不离线 + 本次会话经接口确认；未确认/离线都不宣称已登录
+            bool loggedIn = !string.IsNullOrEmpty(s.AccountToken) && !App.AccountOffline && App.AccountVerified;
 
             if (loggedIn)
             {
@@ -510,8 +518,10 @@ namespace SideDesk
             else
             {
                 accountStatusText.Text = Framework.Lang.T("未登录");
-                // 离线（auth 请求失败）→ 离线提示；Token 过期→过期提示；否则默认引导文本
-                if (App.AccountOffline)
+                // 启动后接口校验尚未完成→校验中；离线→离线提示；Token 过期→过期提示；否则默认引导文本
+                if (!string.IsNullOrEmpty(s.AccountToken) && !App.AccountOffline)
+                    accountSubText.Text = Framework.Lang.T("正在向服务器确认登录状态…");
+                else if (App.AccountOffline)
                     accountSubText.Text = Framework.Lang.T("离线：无法连接服务器，当前视为未登录");
                 else if (!string.IsNullOrEmpty(App.AccountTokenExpiredMessage))
                     accountSubText.Text = App.AccountTokenExpiredMessage;
@@ -760,7 +770,10 @@ namespace SideDesk
         private void InvalidateLocalToken(string message)
         {
             var s = _app.AppSettings;
+            // 作用域即将从 u:A 回退到未归属 local：先记录是否曾登录（用于决定是否提示重启）
+            bool wasLoggedIn = !string.IsNullOrEmpty(s.AccountUserId);
             s.AccountToken = null;
+            s.AccountUserId = null;
             s.AccountName = null;
             s.AccountLoginTime = null;
             s.EnableCloudSync = false;
@@ -775,6 +788,10 @@ namespace SideDesk
 
             RefreshAccountUI();
             RefreshCorpSelector();
+
+            // 作用域已回退：窗口仍显示旧账号数据，提示重启加载未登录（本地）数据
+            if (wasLoggedIn)
+                App.PromptRestartForAccountSwitch(Framework.Lang.T("登录已失效。本地数据按账号隔离，请重启应用后重新登录。是否立即重启？"));
         }
 
         /// <summary>刷新本地备份状态。</summary>
@@ -845,17 +862,21 @@ namespace SideDesk
         }
 
         /// <summary>登录 / 退出登录</summary>
-        private void AccountAction_Click(object sender, RoutedEventArgs e)
+        private async void AccountAction_Click(object sender, RoutedEventArgs e)
         {
             var s = _app.AppSettings;
-            if (!string.IsNullOrEmpty(s.AccountToken))
+            // 与 RefreshAccountUI 的显示逻辑保持一致：在线且持有 Token 且经接口确认才视为已登录（走登出）
+            bool loggedIn = !string.IsNullOrEmpty(s.AccountToken) && !App.AccountOffline && App.AccountVerified;
+            if (loggedIn)
             {
-                // 退出登录
                 var r = MessageBox.Show(Framework.Lang.T("确定要退出登录吗？退出后云同步将停止。"), Framework.Lang.T("退出登录"),
                     MessageBoxButton.OKCancel, MessageBoxImage.Question);
                 if (r != MessageBoxResult.OK) return;
 
+                // 作用域即将从 u:A 回退到未归属 local：记录是否已绑定账号（用于退出后提示重启）
+                bool wasLoggedIn = !string.IsNullOrEmpty(s.AccountUserId);
                 s.AccountToken = null;
+                s.AccountUserId = null;
                 s.AccountName = null;
                 s.AccountLoginTime = null;
                 s.EnableCloudSync = false;
@@ -867,42 +888,79 @@ namespace SideDesk
                 _ = Services.McpToolRegistryService.Instance.SyncAsync(); // 登出：注册表回退内置工具（隐私模式）
                 RefreshAccountUI();
                 RefreshCorpSelector();
+
+                // 作用域已回退：窗口仍显示旧账号数据，提示重启加载未登录（本地）数据
+                if (wasLoggedIn)
+                    App.PromptRestartForAccountSwitch(Framework.Lang.T("已退出登录。本地数据按账号隔离，需重启应用加载未登录（本地）数据。是否立即重启？"));
                 return;
             }
 
-            // 登录：打开登录窗口，成功后由 LoginWindow.LastToken 读取
-            var login = new LoginWindow { Owner = this };
-            login.ShowDialog();
-            if (!string.IsNullOrEmpty(LoginWindow.LastToken))
+            if (!string.IsNullOrEmpty(s.AccountToken))
             {
-                s.AccountToken = LoginWindow.LastToken;
-                s.AccountName = LoginWindow.LastUserName;
-                s.AccountLoginTime = DateTime.Now;
-                s.HasLoggedInBefore = true; // 记录会员身份：曾经登录过
-                // 登录成功后，若团队选择为空则默认切到"个人"(corpId='')
-                if (string.IsNullOrWhiteSpace(s.SelectedCorpId))
+                // 离线或启动校验未完成但本地 Token 仍在：点击「登录」= 重新验证现有 Token，接口确认通过后自动回到已登录态
+                accountActionBtn.IsEnabled = false;
+                try
                 {
-                    s.SelectedCorpId = null;
-                    s.SelectedCorpName = null;
+                    await _app.ValidateAccountTokenAsync();
+                    if (App.AccountOffline && !string.IsNullOrEmpty(s.AccountToken))
+                        MessageBox.Show(Framework.Lang.T("仍无法连接服务器，请检查网络或服务器状态后重试。"), Framework.Lang.T("登录"),
+                            MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
-                s.Save();
-                App.AccountTokenExpiredMessage = null; // 清除过期提示
-                App.MarkAccountOffline(false); // 清除离线标记（内部亦会关闭掉线通知）
-                _app.DismissLoggedOutNotification(); // 关闭主窗口上的掉线登录提示
-
-                // 登录成功 → 启动后端 WebSocket 长连接
-                try { Services.BackendWebSocketService.Instance.Start(s.AccountToken!); } catch { }
-                _ = Services.McpToolRegistryService.Instance.SyncAsync(); // 登录：立即拉取服务端 MCP 工具注册表
-
+                finally
+                {
+                    accountActionBtn.IsEnabled = true;
+                }
                 RefreshAccountUI();
                 RefreshCorpSelector();
-
-                // 拉取用户详情（昵称、头像）并刷新个人资料区
-                _ = _app.FetchAndSaveUserInfoAsync(s.AccountToken!).ContinueWith(t =>
-                {
-                    Dispatcher.Invoke(() => UpdateAccountProfileUI());
-                }, System.Threading.Tasks.TaskScheduler.FromCurrentSynchronizationContext());
+                return;
             }
+
+            // 登录：非模态打开登录窗（可继续操作设置窗），成功后经事件回调执行登录后处理
+            if (_loginSucceededHandler != null) LoginWindow.LoginSucceeded -= _loginSucceededHandler;
+            _loginSucceededHandler = () =>
+            {
+                LoginWindow.LoginSucceeded -= _loginSucceededHandler;
+                _loginSucceededHandler = null;
+                ApplyLoginSuccess();
+            };
+            LoginWindow.LoginSucceeded += _loginSucceededHandler;
+            LoginWindow.Open();
+        }
+
+        /// <summary>登录成功后的处理：保存 Token、启动长连接、刷新账户 UI（由登录成功事件触发）</summary>
+        private void ApplyLoginSuccess()
+        {
+            var s = _app.AppSettings;
+            if (string.IsNullOrEmpty(LoginWindow.LastToken)) return;
+
+            s.AccountToken = LoginWindow.LastToken;
+            s.AccountName = LoginWindow.LastUserName;
+            s.AccountLoginTime = DateTime.Now;
+            s.HasLoggedInBefore = true; // 记录会员身份：曾经登录过
+            // 登录成功后，若团队选择为空则默认切到"个人"(corpId='')
+            if (string.IsNullOrWhiteSpace(s.SelectedCorpId))
+            {
+                s.SelectedCorpId = null;
+                s.SelectedCorpName = null;
+            }
+            s.Save();
+            App.AccountTokenExpiredMessage = null; // 清除过期提示
+            App.MarkAccountVerified(); // 登录接口本身即接口确认
+            App.MarkAccountOffline(false); // 清除离线标记（内部亦会关闭掉线通知）
+            _app.DismissLoggedOutNotification(); // 关闭主窗口上的掉线登录提示
+
+            // 登录成功 → 启动后端 WebSocket 长连接
+            try { Services.BackendWebSocketService.Instance.Start(s.AccountToken!); } catch { }
+            _ = Services.McpToolRegistryService.Instance.SyncAsync(); // 登录：立即拉取服务端 MCP 工具注册表
+
+            RefreshAccountUI();
+            RefreshCorpSelector();
+
+            // 拉取用户详情（昵称、头像）并刷新个人资料区
+            _ = _app.FetchAndSaveUserInfoAsync(s.AccountToken!).ContinueWith(t =>
+            {
+                Dispatcher.Invoke(() => UpdateAccountProfileUI());
+            }, System.Threading.Tasks.TaskScheduler.FromCurrentSynchronizationContext());
         }
 
         /// <summary>云同步开关切换</summary>
@@ -953,7 +1011,7 @@ namespace SideDesk
                 // 首次开启需要输入密码派生密钥
                 if (string.IsNullOrEmpty(s.SyncDerivedKey))
                 {
-                    if (s.AccountUserId == null || s.AccountUserId == 0)
+                    if (string.IsNullOrEmpty(s.AccountUserId))
                     {
                         ThemedMessageBox.Show(this, Framework.Lang.T(Framework.Lang.T("无法获取用户 ID，请重新登录后再试")), "提示");
                         _isLoading = true;
@@ -972,7 +1030,7 @@ namespace SideDesk
                     }
 
                     // 派生密钥并用 DPAPI 保护后存本地
-                    byte[] key = Services.SyncEncryption.DeriveKey(dlg.Password, s.AccountUserId.Value);
+                    byte[] key = Services.SyncEncryption.DeriveKey(dlg.Password, s.AccountUserId!);
                     s.SyncDerivedKey = Services.SyncEncryption.ProtectKeyForLocal(key);
                 }
 
@@ -5368,6 +5426,7 @@ namespace SideDesk
             PanelType.ScreenTime => Framework.Lang.T("屏幕时长"),
             PanelType.Countdown => Framework.Lang.T("倒计时"),
             PanelType.Pomodoro => Framework.Lang.T("番茄闹钟"),
+            PanelType.WebBaidu => Framework.Lang.T("百度搜索"),
             _ => type.ToString()
         };
 

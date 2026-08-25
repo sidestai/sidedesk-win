@@ -48,6 +48,12 @@ namespace SideDesk
         [DllImport("user32.dll")]
         internal static extern IntPtr MonitorFromPoint(POINT pt, uint dwFlags);
 
+        [DllImport("user32.dll")]
+        internal static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
+        // MonitorFromWindow/MonitorFromPoint 的 dwFlags
+        public const uint MONITOR_DEFAULTTONEAREST = 2;
+
         // Cursor / window rect (for hover-expand hit-testing)
         [DllImport("user32.dll")]
         internal static extern bool GetCursorPos(out POINT lpPoint);

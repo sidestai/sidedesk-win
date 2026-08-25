@@ -24,6 +24,12 @@ namespace SideDesk
         /// <summary>运行时离线标记：auth 接口请求失败、无法确认登录态，账户页视为未登录（不清本地 Token，恢复后重新验证）</summary>
         public static bool AccountOffline { get; private set; }
 
+        /// <summary>本次会话登录态是否已经接口确认（启动校验 bizCode=200 或登录窗口成功）；未确认前账户页不得仅凭 Token 宣称已登录</summary>
+        public static bool AccountVerified { get; private set; }
+
+        /// <summary>标记登录态已经接口确认</summary>
+        public static void MarkAccountVerified() => AccountVerified = true;
+
         /// <summary>设置离线标记并同步 UI：离线→账户页视为未登录 + 橙色离线通知；恢复→关闭通知并刷新账户页</summary>
         public static void MarkAccountOffline(bool offline)
         {
@@ -38,6 +44,25 @@ namespace SideDesk
                 foreach (Window w in Current.Windows)
                     if (w is SettingsWindow sw) sw.RefreshAccountPage();
             });
+        }
+
+        /// <summary>
+        /// 提示重启应用（切换账号/退出登录）：本地数据按账号作用域隔离，窗口在启动时按当时作用域创建，
+        /// 需重启才能加载目标账号的数据。确认后先拉起新实例再退出当前实例（OnExit 内 Environment.Exit 兜底）。
+        /// </summary>
+        public static void PromptRestartForAccountSwitch(string message)
+        {
+            void Prompt()
+            {
+                var r = MessageBox.Show(message, Framework.Lang.T("切换账号"), MessageBoxButton.OKCancel, MessageBoxImage.Question);
+                if (r != MessageBoxResult.OK) return;
+                try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = true }); }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[App] 拉起新实例失败: {ex.Message}"); }
+                Current.Shutdown();
+            }
+            var dispatcher = Current?.Dispatcher;
+            if (dispatcher == null) return;
+            if (dispatcher.CheckAccess()) Prompt(); else dispatcher.Invoke(Prompt);
         }
 
         private readonly System.Collections.Generic.List<MainWindow> _windows = new();
@@ -277,14 +302,23 @@ namespace SideDesk
             //}, TaskScheduler.Default);
         }
 
-        /// <summary>启动时验证 Token 有效性：调用后端 /auth/userinfo 接口，若服务器明确拒绝则清除本地 Token 并记录提示。</summary>
+        /// <summary>启动时验证 Token 有效性：延迟 2 秒后执行实际验证，避免阻塞启动流程</summary>
         private async Task ValidateTokenOnStartupAsync()
+        {
+            // 延迟 2 秒，避免与其他启动任务争抢网络
+            await Task.Delay(2000);
+            await ValidateAccountTokenAsync();
+        }
+
+        /// <summary>
+        /// 立即验证本地 Token（调用后端 /auth/userinfo）：有效→清除离线标记恢复登录态；
+        /// 明确无效(401/403)→清除本地 Token；不可达→标记离线（不清 Token）。
+        /// 供账户页离线状态下点击「登录」手动重连复用。
+        /// </summary>
+        public async Task ValidateAccountTokenAsync()
         {
             try
             {
-                // 延迟 2 秒，避免与其他启动任务争抢网络
-                await Task.Delay(2000);
-
                 var token = AppSettings.AccountToken;
                 if (string.IsNullOrEmpty(token))
                 {
@@ -327,6 +361,7 @@ namespace SideDesk
                 {
                     // Token 有效，清除过期提示，更新最后登录时间
                     AccountTokenExpiredMessage = null;
+                    MarkAccountVerified(); // 先置已确认，再触发 UI 刷新
                     MarkAccountOffline(false);
                     AppSettings.AccountLoginTime = DateTime.Now;
                     AppSettings.HasLoggedInBefore = true; // 确认会员身份
@@ -350,8 +385,12 @@ namespace SideDesk
                     System.Diagnostics.Debug.WriteLine($"[Auth] Token 验证失败 (code={bizCode})，清除本地登录状态");
                     AccountTokenExpiredMessage = Framework.Lang.T("登录已过期，请重新登录");
 
+                    // 作用域即将从 u:A 回退到未归属 local：先记录是否曾登录（首次启动就失效时无需提示重启）
+                    bool wasLoggedIn = !string.IsNullOrEmpty(AppSettings.AccountUserId);
+
                     // 清除本地登录状态
                     AppSettings.AccountToken = null;
+                    AppSettings.AccountUserId = null;
                     AppSettings.AccountName = null;
                     AppSettings.AccountLoginTime = null;
                     AppSettings.EnableCloudSync = false;
@@ -370,6 +409,13 @@ namespace SideDesk
 
                     // 显示橙色掉线通知
                     ShowLoggedOutNotification();
+
+                    // 作用域已回退：窗口仍显示旧账号数据，提示重启加载未登录（本地）数据
+                    if (wasLoggedIn)
+                        PromptRestartForAccountSwitch(Framework.Lang.T("登录已失效。本地数据按账号隔离，请重启应用后重新登录。是否立即重启？"));
+
+                    // 401/403 是服务器的明确应答（Token 无效），网络可达 → 不算离线，直接结束
+                    return;
                 }
                 // 其他 code（如 500、0=解析失败）：服务器未确认登录态 → 视为离线（不清 Token，避免临时故障误清除）
                 MarkAccountOffline(true);
@@ -434,6 +480,17 @@ namespace SideDesk
 
                 bool changed = false;
 
+                // 用户 ID（encrypt2 密文）：本地数据按账号隔离的作用域 + 加密同步密钥派生 salt
+                string? userIdEnc = data.TryGetProperty("userId", out var uid) ? uid.GetString() : null;
+                // 运行中从 A 切换到 B（旧值非空且不同）：窗口仍是旧账号作用域数据，需提示重启
+                bool accountSwitched = !string.IsNullOrEmpty(AppSettings.AccountUserId)
+                    && !string.IsNullOrWhiteSpace(userIdEnc) && userIdEnc != AppSettings.AccountUserId;
+                if (!string.IsNullOrWhiteSpace(userIdEnc) && userIdEnc != AppSettings.AccountUserId)
+                {
+                    AppSettings.AccountUserId = userIdEnc;
+                    changed = true;
+                }
+
                 // 昵称
                 string? nickName = data.TryGetProperty("nickName", out var n) ? n.GetString() : null;
                 if (!string.IsNullOrWhiteSpace(nickName) && nickName != AppSettings.AccountName)
@@ -471,6 +528,20 @@ namespace SideDesk
                 }
 
                 if (changed) AppSettings.Save();
+
+                // 登录/切换账号后：把未归属（local）的本地变量数据晋升到当前用户并补传服务器（无残留时空查询，幂等）
+                if (!string.IsNullOrWhiteSpace(userIdEnc))
+                {
+                    _ = Task.Run(() =>
+                    {
+                        try { Services.DataPollingService.Instance.AdoptPendingLocalData(); }
+                        catch (Exception adoptEx) { System.Diagnostics.Debug.WriteLine($"[Auth] 晋升未归属数据异常: {adoptEx.Message}"); }
+                    });
+                }
+
+                // 切换账号：窗口数据仍为旧账号作用域，提示重启加载新账号数据
+                if (accountSwitched)
+                    PromptRestartForAccountSwitch(Framework.Lang.T("已切换账号。本地数据按账号隔离，需重启应用加载新账号的数据。是否立即重启？"));
             }
             catch (Exception ex)
             {

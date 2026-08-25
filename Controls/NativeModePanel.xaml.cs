@@ -234,8 +234,22 @@ namespace SideDesk.Controls
 
         private Emoji.Wpf.TextBlock? _pinnedPlaceholder; // 置顶区编辑模式占位提示（复用实例，避免重复创建）
 
+        /// <summary>内嵌网页组件（WebBaidu 等）实例跟踪：全量重绘前统一释放，避免 WebView2 浏览器进程泄漏</summary>
+        private readonly List<Microsoft.Web.WebView2.Wpf.WebView2> _panelWebViews = new();
+
+        private void DisposePanelWebViews()
+        {
+            foreach (var wv in _panelWebViews)
+            {
+                try { wv.Dispose(); }
+                catch (Exception ex) { Debug.WriteLine($"[NativeModePanel] 释放内嵌网页组件失败: {ex.Message}"); }
+            }
+            _panelWebViews.Clear();
+        }
+
         private void RenderPanels()
         {
+            DisposePanelWebViews();
             dynamicContent.Children.Clear();
             pinnedContent.Children.Clear();
 
@@ -438,6 +452,7 @@ namespace SideDesk.Controls
                 PanelType.ScreenTime => BuildScreenTimeWidget(item),
                 PanelType.Countdown => BuildCountdownWidget(item),
                 PanelType.Pomodoro => BuildPomodoroWidget(item),
+                PanelType.WebBaidu => BuildWebBaiduWidget(item),
                 PanelType.Group => BuildGroupWidget(item),
                 _ => null
             };
@@ -446,10 +461,10 @@ namespace SideDesk.Controls
         /// <summary>
         /// 通用面板包裹器：基于 ModuleControl 基础组件，提供统一的标题、菜单、外框、拖拽能力
         /// </summary>
-        private UIElement WrapWidget(string defaultTitle, UIElement content, PanelItem item, Action? onAddClick = null, ContextMenu? actionMenu = null, string addMenuHeader = null)
+        private UIElement WrapWidget(string defaultTitle, UIElement content, PanelItem item, Action? onAddClick = null, ContextMenu? actionMenu = null, string addMenuHeader = null, bool fillContent = false)
         {
             addMenuHeader ??= Framework.Lang.T("添加");
-            var module = CreateModuleControl(defaultTitle, item);
+            var module = CreateModuleControl(defaultTitle, item, fillMode: fillContent);
 
             // 将 onAddClick 转为自定义菜单项（编辑模式下也保留：
             // 否则新建模块自动进入编辑模式后，用户找不到“向当前模块添加内容”的入口，
@@ -500,10 +515,10 @@ namespace SideDesk.Controls
             return tip;
         }
 
-        /// <summary>创建 ModuleControl 实例并注入回调</summary>
-        private ModuleControl CreateModuleControl(string defaultTitle, PanelItem item, bool groupMode = false)
+        /// <summary>创建 ModuleControl 实例并注入回调（fillMode：内容无滚动条铺满，如内嵌网页）</summary>
+        private ModuleControl CreateModuleControl(string defaultTitle, PanelItem item, bool groupMode = false, bool fillMode = false)
         {
-            var module = new ModuleControl(item, defaultTitle, _isEditMode, _configManager, groupMode)
+            var module = new ModuleControl(item, defaultTitle, _isEditMode, _configManager, groupMode, fillMode)
             {
                 OnRenderPanels = () => RenderPanels(),
                 OnRemovePanel = (p) => RemovePanel(p),
@@ -1083,7 +1098,8 @@ namespace SideDesk.Controls
                 (Framework.Lang.T("每日活跃"), PanelType.DailyActivity),
                 (Framework.Lang.T("日历"), PanelType.Calendar),
                 (Framework.Lang.T("好友"), PanelType.Friend),
-                (Framework.Lang.T("屏幕时长"), PanelType.ScreenTime)
+                (Framework.Lang.T("屏幕时长"), PanelType.ScreenTime),
+                (Framework.Lang.T("百度搜索"), PanelType.WebBaidu)
             })
             {
                 var mi = new MenuItem { Header = header };
@@ -1888,6 +1904,34 @@ namespace SideDesk.Controls
             };
             btn.Click += (s, e) => AIChatButton_Click(s, e);
             return WrapWidget(Framework.Lang.T("🤖 AI 对话"), btn, item);
+        }
+
+        /// <summary>
+        /// 构建百度搜索组件：标准 ModuleControl 外框（标题栏/下拉菜单/拖拽手柄），内容区为内嵌 WebView2 加载百度首页。
+        /// 填充模式：内容区无滚动条，WebView 始终 100% 铺满组件内容区（网页自带滚动）。
+        /// </summary>
+        private UIElement BuildWebBaiduWidget(PanelItem item)
+        {
+            var webView = new Microsoft.Web.WebView2.Wpf.WebView2();
+            _panelWebViews.Add(webView);
+
+            webView.Loaded += async (s, e) =>
+            {
+                // 重复附加（置顶切换/局部刷新）时不重复初始化与导航
+                if (webView.Tag as string == "ready") return;
+                try
+                {
+                    await webView.EnsureCoreWebView2Async();
+                    webView.CoreWebView2.Navigate("https://www.baidu.com");
+                    webView.Tag = "ready";
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[WebBaidu] WebView2 初始化失败: {ex.Message}");
+                }
+            };
+
+            return WrapWidget(Framework.Lang.T("🔍 百度搜索"), webView, item, fillContent: true);
         }
 
         private UIElement BuildTodoWidget(PanelItem item)
@@ -5238,6 +5282,7 @@ namespace SideDesk.Controls
         private void AddDailyActivityPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.DailyActivity);
         private void AddCalendarPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.Calendar);
         private void AddScreenTimePanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.ScreenTime);
+        private void AddWebBaiduPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.WebBaidu);
 
         /// <summary>打开团队组件库，选择团队共享模块添加到当前窗口（数据共享互通）</summary>
         private void AddFromTeamLibrary_Click(object sender, RoutedEventArgs e)
@@ -9758,6 +9803,7 @@ namespace SideDesk.Controls
                 (Framework.Lang.T("🚀 窗口瞬移"), (Action)ShowWindowTeleportTool),
                 (Framework.Lang.T("🔒 窗口标题锁定器"), (Action)ShowTitleLockTool),
                 (Framework.Lang.T("🧩 插件编辑器"), (Action)ShowPluginEditorTool),
+                (Framework.Lang.T("📊 使用统计"), () => UsageStatsButton_Click(this, new RoutedEventArgs())),
                 // 后续可以在这里添加更多工具
             };
 
@@ -9810,6 +9856,7 @@ namespace SideDesk.Controls
             menu.Items.Add(Make(Framework.Lang.T("日历"), AddCalendarPanel_Click));
             menu.Items.Add(Make(Framework.Lang.T("数字员工"), AddDigitalEmployeePanel_Click));
             menu.Items.Add(Make(Framework.Lang.T("好友"), AddFriendPanel_Click));
+            menu.Items.Add(Make(Framework.Lang.T("百度搜索"), AddWebBaiduPanel_Click));
             menu.Items.Add(new Separator());
 
             // 添加数据块：子菜单展开时动态加载（与右键菜单共用 AddDataBlockMenu_SubmenuOpened）
@@ -10419,15 +10466,84 @@ namespace SideDesk.Controls
                     _teleportedWindows.Add(windowInfo);
                 }
 
+                // ✅ 启动最大化守护（工具窗口最大化会铺满整个显示器，需收敛到工作区）
+                EnsureTeleportMaximizeGuard();
+
                 // 7. 更新UI显示
                 UpdateTeleportWidget();
 
-                MessageBox.Show(Framework.Lang.TF("已将窗口“{0}”移动到左侧Dock区域", windowInfo.Title), Framework.Lang.T("成功"), MessageBoxButton.OK, MessageBoxImage.Information);
+                Debug.WriteLine($"已将窗口瞬移到左侧Dock区域: {windowInfo.Title}");
             }
             catch (Exception ex)
             {
                 MessageBox.Show(Framework.Lang.TF("移动窗口失败：{0}", ex.Message), Framework.Lang.T("错误"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        // 瞬移窗口最大化守护：瞬移后窗口变为工具窗口（WS_EX_TOOLWINDOW），
+        // 工具窗口最大化会铺满整个显示器（盖住 AppBar 与任务栏），
+        // 而窗口属于其他进程无法子类化拦截，故周期性检测并收敛到工作区
+        private DispatcherTimer? _teleportMaximizeGuard;
+
+        /// <summary>
+        /// 根据瞬移列表启停最大化守护定时器
+        /// </summary>
+        private void EnsureTeleportMaximizeGuard()
+        {
+            if (_teleportMaximizeGuard == null)
+            {
+                _teleportMaximizeGuard = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+                _teleportMaximizeGuard.Tick += (s, e) => ClampTeleportedMaximizedWindows();
+            }
+
+            if (_teleportedWindows.Count > 0) _teleportMaximizeGuard.Start();
+            else _teleportMaximizeGuard.Stop();
+        }
+
+        /// <summary>
+        /// 把处于最大化状态的瞬移窗口收敛到所在显示器的工作区（已扣除 AppBar 与任务栏）。
+        /// 顺带清理已关闭的窗口
+        /// </summary>
+        private void ClampTeleportedMaximizedWindows()
+        {
+            bool listChanged = false;
+
+            for (int i = _teleportedWindows.Count - 1; i >= 0; i--)
+            {
+                IntPtr hwnd = _teleportedWindows[i].Handle;
+
+                // 窗口已关闭：从瞬移列表移除
+                if (!NativeMethods.IsWindow(hwnd))
+                {
+                    _teleportedWindows.RemoveAt(i);
+                    listChanged = true;
+                    continue;
+                }
+
+                if (!NativeMethods.IsZoomed(hwnd)) continue;
+
+                var hMonitor = NativeMethods.MonitorFromWindow(hwnd, NativeMethods.MONITOR_DEFAULTTONEAREST);
+                var monitorInfo = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+                if (!NativeMethods.GetMonitorInfo(hMonitor, ref monitorInfo)) continue;
+
+                NativeMethods.GetWindowRect(hwnd, out var rect);
+                var work = monitorInfo.rcWork;
+
+                // 正常最大化时窗口框架会向工作区外延伸几个像素（不可见边框），留容差；
+                // 超出容差说明铺满了整个显示器，需要收敛
+                const int tolerance = 16;
+                if (rect.Left >= work.Left - tolerance && rect.Top >= work.Top - tolerance &&
+                    rect.Right <= work.Right + tolerance && rect.Bottom <= work.Bottom + tolerance)
+                    continue;
+
+                NativeMethods.SetWindowPos(hwnd, IntPtr.Zero,
+                    work.Left, work.Top, work.Right - work.Left, work.Bottom - work.Top,
+                    SetWindowPosFlags.SWP_NOZORDER | SetWindowPosFlags.SWP_NOACTIVATE | SetWindowPosFlags.SWP_FRAMECHANGED);
+                Debug.WriteLine($"瞬移窗口最大化已收敛到工作区: {hwnd}");
+            }
+
+            if (listChanged) UpdateTeleportWidget();
+            if (_teleportedWindows.Count == 0) _teleportMaximizeGuard?.Stop();
         }
 
         /// <summary>
@@ -10437,18 +10553,18 @@ namespace SideDesk.Controls
         {
             try
             {
-                // 方法1: 使用 ITaskbarList COM 接口从任务栏删除窗口
-                var taskbarList = (ITaskbarList)Activator.CreateInstance(
-                    Type.GetTypeFromCLSID(new Guid("56FDF344-FD6D-11d0-958A-006097C9A090")));
-                taskbarList.HrInit();
-                taskbarList.DeleteTab(hwnd);
-                Marshal.ReleaseComObject(taskbarList);
-                
-                // ✅ 方法2: 设置WS_EX_TOOLWINDOW扩展样式（使窗口不在任务栏显示）
-                int exStyle = NativeMethods.GetWindowLong(hwnd, NativeMethods.GWL_EXSTYLE);
-                exStyle |= (int)NativeMethods.WS_EX_TOOLWINDOW;
-                NativeMethods.SetWindowLong(hwnd, NativeMethods.GWL_EXSTYLE, exStyle);
-                
+                // 加 WS_EX_TOOLWINDOW 并清除 WS_EX_APPWINDOW（后者存在时会强制进任务栏，优先于 TOOLWINDOW）
+                // 与 DataPollingService 的 app 窗口去任务栏方案保持一致。
+                // 曾实验过仅用 ITaskbarList.DeleteTab 不改样式的方案，实测 Win10/11 上无效，已弃用
+                long exStyle = NativeMethods.GetWindowLongPtr(hwnd, NativeMethods.GWL_EXSTYLE);
+                exStyle = (exStyle | NativeMethods.WS_EX_TOOLWINDOW) & ~NativeMethods.WS_EX_APPWINDOW;
+                NativeMethods.SetWindowLongPtr(hwnd, NativeMethods.GWL_EXSTYLE, exStyle);
+
+                // 强制刷新窗口框架，确保任务栏立即移除该窗口的按钮
+                NativeMethods.SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0,
+                    SetWindowPosFlags.SWP_NOMOVE | SetWindowPosFlags.SWP_NOSIZE | SetWindowPosFlags.SWP_NOZORDER |
+                    SetWindowPosFlags.SWP_NOACTIVATE | SetWindowPosFlags.SWP_FRAMECHANGED);
+
                 Debug.WriteLine($"已从任务栏隐藏窗口: {hwnd}");
             }
             catch (Exception ex)
@@ -10476,12 +10592,13 @@ namespace SideDesk.Controls
             if (_teleportWidget == null)
             {
                 _teleportWidget = CreateTeleportWidget();
-                
-                // 插入到动态内容区的最前面
-                if (dynamicContent != null)
-                {
-                    dynamicContent.Children.Insert(0, _teleportWidget);
-                }
+            }
+
+            // RenderPanels 全量重绘会清空 dynamicContent，组件会被甩出视觉树；
+            // 只要不在树里就重新插回最前面
+            if (dynamicContent != null && !dynamicContent.Children.Contains(_teleportWidget))
+            {
+                dynamicContent.Children.Insert(0, _teleportWidget);
             }
 
             // 更新窗口列表
@@ -10491,25 +10608,37 @@ namespace SideDesk.Controls
                 
                 foreach (var window in _teleportedWindows)
                 {
-                    var itemPanel = new StackPanel 
-                    { 
-                        Orientation = Orientation.Horizontal, 
-                        Margin = new Thickness(3, 2, 3, 2) 
+                    // DockPanel 布局：图标左、还原按钮右、标题填满剩余宽度并截断，
+                    // 保证整行擑满组件宽度（横向 StackPanel 会被长标题擑宽溢出）
+                    var itemPanel = new DockPanel
+                    {
+                        Margin = new Thickness(3, 2, 3, 2)
                     };
 
                     // 图标
                     if (window.Icon != null)
                     {
-                        itemPanel.Children.Add(new Image
+                        var icon = new Image
                         {
                             Source = window.Icon,
                             Width = 16,
                             Height = 16,
                             Margin = new Thickness(0, 0, 5, 0)
-                        });
+                        };
+                        DockPanel.SetDock(icon, Dock.Left);
+                        itemPanel.Children.Add(icon);
                     }
 
-                    // 窗口标题
+                    // 右键菜单：还原到任务栏（行内不再放还原按钮）
+                    var capturedWindow = window;
+                    var restoreMenuItem = new MenuItem
+                    {
+                        Header = Framework.Lang.T("还原到任务栏")
+                    };
+                    restoreMenuItem.Click += (s, e) => RestoreWindowFromDock(capturedWindow);
+                    itemPanel.ContextMenu = new ContextMenu { Items = { restoreMenuItem } };
+
+                    // 窗口标题（填充剩余宽度，超长截断）
                     var titleText = new Emoji.Wpf.TextBlock
                     {
                         Text = window.Title,
@@ -10528,32 +10657,11 @@ namespace SideDesk.Controls
                         e.Handled = true;
                     };
 
-                    // 还原按钮
-                    var restoreBtn = new Button
+                    var listBoxItem = new ListBoxItem
                     {
-                        Content = "↺",
-                        Width = 20,
-                        Height = 20,
-                        Margin = new Thickness(4, 0, 0, 0),
-                        ToolTip = Framework.Lang.T("还原到任务栏"),
-                        Cursor = Cursors.Hand,
-                        Padding = new Thickness(0),
-                        FontSize = 12
-                    };
-                    
-                    var capturedWindow = window;
-                    restoreBtn.Click += (s, e) =>
-                    {
-                        RestoreWindowFromDock(capturedWindow);
-                        e.Handled = true; // 防止触发itemPanel的点击事件
-                    };
-                    
-                    itemPanel.Children.Add(restoreBtn);
-
-                    var listBoxItem = new ListBoxItem 
-                    { 
                         Content = itemPanel,
-                        Tag = window
+                        Tag = window,
+                        HorizontalContentAlignment = HorizontalAlignment.Stretch
                     };
                     _teleportListBox.Items.Add(listBoxItem);
                 }
@@ -10584,8 +10692,7 @@ namespace SideDesk.Controls
             var titleText = new Emoji.Wpf.TextBlock
             {
                 Text = Framework.Lang.T("🚀 瞬移窗口"),
-                FontWeight = FontWeights.Bold,
-                FontSize = 14,
+                FontSize = 13,
                 Foreground = (Brush)FindResource("BrushTextMain"),
                 VerticalAlignment = VerticalAlignment.Center
             };
@@ -10606,9 +10713,9 @@ namespace SideDesk.Controls
                 MaxHeight = 300
             };
 
-            // 隐藏滚动条但保持滚动功能
+            // 隐藏滚动条但保持滚动功能；横向用 Disabled 约束内容宽度，让标题截断生效
             ScrollViewer.SetVerticalScrollBarVisibility(_teleportListBox, ScrollBarVisibility.Hidden);
-            ScrollViewer.SetHorizontalScrollBarVisibility(_teleportListBox, ScrollBarVisibility.Hidden);
+            ScrollViewer.SetHorizontalScrollBarVisibility(_teleportListBox, ScrollBarVisibility.Disabled);
 
             stack.Children.Add(_teleportListBox);
             border.Child = stack;
@@ -10617,23 +10724,46 @@ namespace SideDesk.Controls
         }
 
         /// <summary>
-        /// 从 Dock区域还原窗口（保持工具窗口样式，不在任务栏显示）
+        /// 从 Dock 区域还原窗口：清除 WS_EX_TOOLWINDOW，恢复普通顶层窗口行为（回到任务栏/Alt+Tab）
         /// </summary>
         private void RestoreWindowFromDock(TaskbarOverlayManager.WindowInfo windowInfo)
         {
             try
             {
                 IntPtr hwnd = windowInfo.Handle;
-                
-                // ✅ 只从瞬移列表中移除，不改变窗口的工具窗口样式
-                // 窗口将保持 WS_EX_TOOLWINDOW 样式，不会在任务栏显示
+
+                // 从瞬移列表移除
                 _teleportedWindows.RemoveAll(w => w.Handle == hwnd);
-                
+
+                // 清除工具窗口样式，让窗口回到任务栏
+                if (NativeMethods.IsWindow(hwnd))
+                {
+                    long exStyle = NativeMethods.GetWindowLongPtr(hwnd, NativeMethods.GWL_EXSTYLE);
+                    if ((exStyle & NativeMethods.WS_EX_TOOLWINDOW) != 0)
+                    {
+                        exStyle &= ~NativeMethods.WS_EX_TOOLWINDOW;
+                        NativeMethods.SetWindowLongPtr(hwnd, NativeMethods.GWL_EXSTYLE, exStyle);
+                        NativeMethods.SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0,
+                            SetWindowPosFlags.SWP_NOMOVE | SetWindowPosFlags.SWP_NOSIZE | SetWindowPosFlags.SWP_NOZORDER |
+                            SetWindowPosFlags.SWP_NOACTIVATE | SetWindowPosFlags.SWP_FRAMECHANGED);
+                    }
+
+                    // 样式变更不会触发 shell 钩子事件，任务栏不会主动重新收录；
+                    // 隐藏再显示一次产生 HSHELL 事件，让任务栏/Alt+Tab 重新评估该窗口
+                    if (NativeMethods.IsWindowVisible(hwnd))
+                    {
+                        NativeMethods.ShowWindow(hwnd, NativeMethods.SW_HIDE);
+                        NativeMethods.ShowWindow(hwnd, NativeMethods.SW_SHOW);
+                    }
+                }
+
+                // 列表变化后同步最大化守护的启停
+                EnsureTeleportMaximizeGuard();
+
                 // 更新UI
                 UpdateTeleportWidget();
-                
-                MessageBox.Show(Framework.Lang.TF("已将窗口“{0}”从瞬移列表中移除\n窗口仍保持工具窗口样式，不会在任务栏显示", windowInfo.Title), Framework.Lang.T("已移除"), MessageBoxButton.OK, MessageBoxImage.Information);
-                Debug.WriteLine($"已从瞬移列表移除窗口: {hwnd}");
+
+                Debug.WriteLine($"已还原窗口到任务栏: {hwnd}");
             }
             catch (Exception ex)
             {
@@ -10668,16 +10798,6 @@ namespace SideDesk.Controls
             {
                 Debug.WriteLine($"带窗口到前台失败：{ex.Message}");
             }
-        }
-
-        [ComImport, Guid("56FDF344-FD6D-11d0-958A-006097C9A090"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-        private interface ITaskbarList
-        {
-            [PreserveSig] int HrInit();
-            [PreserveSig] int AddTab(IntPtr hwnd);
-            [PreserveSig] int DeleteTab(IntPtr hwnd);
-            [PreserveSig] int ActivateTab(IntPtr hwnd);
-            [PreserveSig] int SetActiveAlt(IntPtr hwnd);
         }
 
         #endregion

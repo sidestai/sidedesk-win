@@ -17,9 +17,10 @@ namespace SideDesk.Services
         private const string CipherPrefix = "ENC:v1:";
 
         /// <summary>
-        /// 从用户登录密码 + userId 派生 AES-256 密钥（PBKDF2-SHA256）
+        /// 从用户登录密码 + userId 派生 AES-256 密钥（PBKDF2-SHA256）。
+        /// salt 只需确定性且每用户唯一，直接用 encrypt2 密文 userId 即可，无需数字 ID。
         /// </summary>
-        public static byte[] DeriveKey(string password, int userId)
+        public static byte[] DeriveKey(string password, string userId)
         {
             byte[] salt = Encoding.UTF8.GetBytes($"sidedesk-sync:{userId}");
             using var pbkdf2 = new Rfc2898DeriveBytes(password, salt, SaltIterations, HashAlgorithmName.SHA256);

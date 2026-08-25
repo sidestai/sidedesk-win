@@ -23,6 +23,8 @@ namespace SideDesk.Controls
         public const string DragHandleTag = "panelDragHandle";
         public const string HeaderUid = "panelHeader";
         private const double MinContentHeight = 48;
+        /// <summary>填充模式未设置固定高度时的默认内容区高度</summary>
+        private const double FillDefaultMinHeight = 400;
 
         // ===== 属性 =====
         public PanelItem Item { get; }
@@ -58,9 +60,13 @@ namespace SideDesk.Controls
         private Button _menuBtn = null!;
         private Emoji.Wpf.TextBlock _titleBlock = null!;
         private ScrollViewer? _contentHost;
+        private Border? _fillHost; // 填充模式内容宿主（无滚动条，内容 100% 铺满，如内嵌网页）
+        /// <summary>当前生效的内容宿主（填充模式为 _fillHost，否则为 _contentHost），供 resize 手柄统一操作高度</summary>
+        private FrameworkElement HostElement => _fillHost != null ? _fillHost : (FrameworkElement)_contentHost!;
         private Border? _resizeGrip;
         private ContextMenu? _moduleMenu;
         private readonly bool _groupMode;
+        private readonly bool _fillMode;
 
         // 自定义菜单项（在标准菜单项之后、分隔线之前插入）
         private readonly List<UIElement> _customMenuItems = new();
@@ -71,13 +77,14 @@ namespace SideDesk.Controls
         /// <summary>模块高度拖拽进行中标志</summary>
         private bool _resizingModule;
 
-        public ModuleControl(PanelItem item, string defaultTitle, bool isEditMode, WindowConfigManager? configManager, bool groupMode = false)
+        public ModuleControl(PanelItem item, string defaultTitle, bool isEditMode, WindowConfigManager? configManager, bool groupMode = false, bool fillMode = false)
         {
             Item = item;
             DefaultTitle = defaultTitle;
             IsEditMode = isEditMode;
             ConfigManager = configManager;
             _groupMode = groupMode;
+            _fillMode = fillMode;
 
             // 标记为已处理，避免被 NativeModePanel.WrapResizable 二次包装
             Uid = "wrapHandled";
@@ -95,6 +102,20 @@ namespace SideDesk.Controls
             {
                 // Group 模式：内容直接放入主容器（无 ScrollViewer）
                 _mainStack.Children.Add(effective);
+                return;
+            }
+            if (_fillHost != null)
+            {
+                // 填充模式：内容直接拉伸铺满内容区（无滚动条，如内嵌网页）
+                _fillHost.Child = effective;
+                if (effective is FrameworkElement fillFe)
+                {
+                    fillFe.HorizontalAlignment = HorizontalAlignment.Stretch;
+                    fillFe.VerticalAlignment = VerticalAlignment.Stretch;
+                }
+                // 未设置固定高度时给默认显示高度（网页等无固有高度的内容）
+                if (!Item.PanelHeight.HasValue || Item.PanelHeight.Value <= 0)
+                    _fillHost.MinHeight = FillDefaultMinHeight;
                 return;
             }
             _contentHost!.Content = effective;
@@ -244,16 +265,21 @@ namespace SideDesk.Controls
             _header.Children.Add(_menuBtn);
             _header.Children.Add(_titleBlock);
 
-            // 内容区（Group 模式不使用 ScrollViewer，高度由子内容撑开）
+            // 内容区（Group 模式不使用 ScrollViewer，高度由子内容撑开；填充模式无滚动条，内容铺满）
             if (!_groupMode)
             {
-                _contentHost = CreateContentHost();
+                if (_fillMode)
+                    _fillHost = CreateFillHost();
+                else
+                    _contentHost = CreateContentHost();
             }
 
             // 主容器
             _mainStack = new StackPanel();
             _mainStack.Children.Add(_header);
-            if (_contentHost != null)
+            if (_fillHost != null)
+                _mainStack.Children.Add(_fillHost);
+            else if (_contentHost != null)
                 _mainStack.Children.Add(_contentHost);
 
             // 编辑模式：添加 resize 手柄（Group 模式不需要）
@@ -298,10 +324,17 @@ namespace SideDesk.Controls
         private void BuildHideFrameLayout()
         {
             if (!_groupMode)
-                _contentHost = CreateContentHost();
+            {
+                if (_fillMode)
+                    _fillHost = CreateFillHost();
+                else
+                    _contentHost = CreateContentHost();
+            }
 
             var bareStack = new StackPanel();
-            if (_contentHost != null)
+            if (_fillHost != null)
+                bareStack.Children.Add(_fillHost);
+            else if (_contentHost != null)
                 bareStack.Children.Add(_contentHost);
 
             _rootBorder = new Border
@@ -327,6 +360,15 @@ namespace SideDesk.Controls
             _mainStack = bareStack;
 
             Content = _rootBorder;
+        }
+
+        /// <summary>填充模式内容宿主：无滚动条，子内容拉伸铺满；高度跟随 PanelHeight 或默认值</summary>
+        private Border CreateFillHost()
+        {
+            var host = new Border { Background = Brushes.Transparent };
+            if (Item.PanelHeight.HasValue && Item.PanelHeight.Value > 0)
+                host.Height = Item.PanelHeight.Value;
+            return host;
         }
 
         /// <summary>创建内容区 ScrollViewer（支持固定高度 + 滚轮穿透）</summary>
@@ -395,9 +437,12 @@ namespace SideDesk.Controls
             {
                 if (e.ClickCount == 2)
                 {
-                    _contentHost!.ClearValue(FrameworkElement.HeightProperty);
-                    if (_contentHost.Content is FrameworkElement contentFe)
+                    var host = HostElement;
+                    host.ClearValue(HeightProperty);
+                    if (_contentHost?.Content is FrameworkElement contentFe)
                         BindingOperations.ClearBinding(contentFe, FrameworkElement.MinHeightProperty);
+                    if (_fillHost != null)
+                        _fillHost.MinHeight = FillDefaultMinHeight; // 恢复默认高度
                     Item.PanelHeight = null;
                     ConfigManager?.Save();
                     dragging = false;
@@ -410,8 +455,9 @@ namespace SideDesk.Controls
                 moved = false;
                 _resizingModule = true;
                 startY = e.GetPosition(this).Y;
-                startHeight = (double.IsNaN(_contentHost!.Height) || _contentHost.Height <= 0)
-                    ? _contentHost.ActualHeight : _contentHost.Height;
+                var hostEl = HostElement;
+                startHeight = (double.IsNaN(hostEl.Height) || hostEl.Height <= 0)
+                    ? hostEl.ActualHeight : hostEl.Height;
                 grip.CaptureMouse();
                 e.Handled = true;
             };
@@ -424,7 +470,7 @@ namespace SideDesk.Controls
                 moved = true;
                 double h = startHeight + dy;
                 if (h < MinContentHeight) h = MinContentHeight;
-                _contentHost!.Height = h;
+                HostElement.Height = h;
             };
 
             grip.MouseLeftButtonUp += (s, e) =>
@@ -435,7 +481,7 @@ namespace SideDesk.Controls
                 grip.ReleaseMouseCapture();
                 if (moved)
                 {
-                    Item.PanelHeight = _contentHost!.Height;
+                    Item.PanelHeight = HostElement.Height;
                     ConfigManager?.Save();
                 }
                 e.Handled = true;

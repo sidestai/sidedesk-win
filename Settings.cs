@@ -116,6 +116,9 @@ namespace SideDesk
         /// <summary>登录后保存的账户 token（用于云同步鉴权；非空即视为已登录）</summary>
         public string? AccountToken { get; set; }
 
+        /// <summary>登录后保存的用户 ID（encrypt2 密文，来自 /auth/userinfo；用作本地数据按账号隔离的作用域）</summary>
+        public string? AccountUserId { get; set; }
+
         /// <summary>账户显示名称</summary>
         public string? AccountName { get; set; }
 
@@ -145,9 +148,6 @@ namespace SideDesk
 
         /// <summary>最近一次设置同步成功的时间</summary>
         public DateTime? LastSettingsSyncTime { get; set; }
-
-        /// <summary>用户 ID（登录后从 token 解析或接口获取，用于密钥派生 salt）</summary>
-        public int? AccountUserId { get; set; }
 
         // ========== 百度网盘 ==========
 

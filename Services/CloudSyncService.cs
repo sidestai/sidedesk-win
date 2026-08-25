@@ -1897,6 +1897,9 @@ namespace SideDesk.Services
 
                 bool changed = false;
 
+                // 映射 key 带账号作用域前缀：防止切换账号后 A 的 serverId 泄漏给 B（实际寻址走模型 ServerId 字段）
+                var scopePrefix = LocalDbService.CurrentScope() + ":";
+
                 // bars -> WindowConfig.ServerId
                 if (data["bars"] is JArray barArr)
                 {
@@ -1905,7 +1908,7 @@ namespace SideDesk.Services
                         string? localId = entry["localId"]?.ToString();
                         string? serverId = entry["serverId"]?.ToString();
                         if (string.IsNullOrEmpty(localId) || string.IsNullOrEmpty(serverId)) continue;
-                        settings.CloudIdMap[localId!] = serverId!;
+                        settings.CloudIdMap[scopePrefix + localId!] = serverId!;
                         var win = mgr.GetById(localId!);
                         if (win != null) win.ServerId = serverId;
                         changed = true;
@@ -1921,7 +1924,7 @@ namespace SideDesk.Services
                         string? localId = entry["localId"]?.ToString();
                         string? serverId = entry["serverId"]?.ToString();
                         if (string.IsNullOrEmpty(localId) || string.IsNullOrEmpty(serverId)) continue;
-                        settings.CloudIdMap[localId!] = serverId!;
+                        settings.CloudIdMap[scopePrefix + localId!] = serverId!;
                         var item = FindPanelItem(mgr, localId!);
                         if (item != null) item.ServerId = serverId;
                         changed = true;

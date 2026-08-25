@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -176,6 +178,13 @@ namespace SideDesk.Services
                     return;
                 }
 
+                // ═══════════ 数据变量（外部程序查询/设置变量值） ═══════════
+                if (path.StartsWith("/variable"))
+                {
+                    await HandleVariableAsync(context, method, path);
+                    return;
+                }
+
                 // ═══════════ AI Chat 本地代理（网页版 AI 对话：密钥不出本机） ═══════════
                 if (path.StartsWith("/ai-chat"))
                 {
@@ -216,8 +225,8 @@ namespace SideDesk.Services
                 {
                     ["selectedModelId"] = cfg.SelectedModelId ?? "deepseek",
                     ["customModelId"] = cfg.CustomModelId ?? "",
-                    ["hasApiKey"] = !string.IsNullOrEmpty(cfg.ApiKey),
-                    ["apiKeyMasked"] = MaskKey(cfg.ApiKey),
+                    ["hasApiKey"] = !string.IsNullOrEmpty(AIConfigManager.GetApiKeyFor(cfg.SelectedModelId)),
+                    ["apiKeyMasked"] = MaskKey(AIConfigManager.GetApiKeyFor(cfg.SelectedModelId)),
                     ["models"] = models
                 }.ToString());
                 return;
@@ -239,7 +248,12 @@ namespace SideDesk.Services
                         cfg.CustomModelId = customId.Trim();
                     var apiKey = json.Value<string>("apiKey");
                     if (!string.IsNullOrEmpty(apiKey))
+                    {
                         cfg.ApiKey = apiKey.Trim();
+                        // 同步写入按服务商字典（归属当前选中服务商）
+                        if (cfg.ApiKeys == null) cfg.ApiKeys = new System.Collections.Generic.Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                        cfg.ApiKeys[cfg.SelectedModelId ?? "deepseek"] = apiKey.Trim();
+                    }
                     AIConfigManager.SaveConfig(cfg);
                     WriteJson(resp, 200, new JObject { ["ok"] = true }.ToString());
                 }
@@ -303,13 +317,14 @@ namespace SideDesk.Services
 
             var cfg = AIConfigManager.GetConfig();
             var modelInfo = AIConfigManager.GetSelectedModel();
+            string apiKey = AIConfigManager.GetApiKeyFor(modelInfo.Id);
 
             if (string.IsNullOrEmpty(modelInfo.ApiBaseUrl))
             {
                 WriteJson(resp, 400, new JObject { ["error"] = new JObject { ["message"] = Framework.Lang.T("当前服务商未配置 API 地址，请改用其他服务商") } }.ToString());
                 return;
             }
-            if (string.IsNullOrEmpty(cfg.ApiKey))
+            if (string.IsNullOrEmpty(apiKey))
             {
                 WriteJson(resp, 400, new JObject { ["error"] = new JObject { ["message"] = Framework.Lang.T("尚未配置 API Key，请在客户端 AI 设置或本页设置中填写") } }.ToString());
                 return;
@@ -335,7 +350,7 @@ namespace SideDesk.Services
                 {
                     Content = new StringContent(body, Encoding.UTF8, "application/json")
                 };
-                upstream.Headers.Add("Authorization", "Bearer " + cfg.ApiKey);
+                upstream.Headers.Add("Authorization", "Bearer " + apiKey);
                 upResp = await _proxyHttp.SendAsync(upstream, HttpCompletionOption.ResponseHeadersRead);
             }
             catch (Exception ex)
@@ -366,6 +381,214 @@ namespace SideDesk.Services
                     try { resp.Close(); } catch { }
                 }
             }
+        }
+
+        /// <summary>数据变量相关端点分发（外部程序查询/设置 SideDesk 变量值）</summary>
+        private async Task HandleVariableAsync(HttpListenerContext context, string method, string path)
+        {
+            var req = context.Request;
+            var resp = context.Response;
+            var svc = DataPollingService.Instance;
+
+            // GET /variable/list → 全部变量当前值（含轮询项、变量集与手动值）
+            if (method == "GET" && path == "/variable/list")
+            {
+                var arr = new JArray();
+                foreach (var v in svc.GetVariableSnapshot())
+                    arr.Add(new JObject
+                    {
+                        ["key"] = v.VarKey,
+                        ["value"] = v.Value,
+                        ["label"] = v.Label,
+                        ["manual"] = v.Manual
+                    });
+                WriteJson(resp, 200, new JObject { ["ok"] = true, ["total"] = arr.Count, ["variables"] = arr }.ToString());
+                return;
+            }
+
+            // GET /variable/teams → 当前登录用户可写的团队列表（外部程序据此获取 corpId）
+            if (method == "GET" && path == "/variable/teams")
+            {
+                var teams = await TeamService.Instance.ListTeamsAsync();
+                if (teams == null)
+                {
+                    WriteJson(resp, 401, new JObject { ["ok"] = false, ["error"] = "未登录或团队列表获取失败" }.ToString());
+                    return;
+                }
+                var arr = new JArray();
+                foreach (var t in teams)
+                    arr.Add(new JObject { ["corpId"] = t.Id, ["name"] = t.Name });
+                WriteJson(resp, 200, new JObject { ["ok"] = true, ["total"] = arr.Count, ["teams"] = arr }.ToString());
+                return;
+            }
+
+            // GET /variable/set?key=xx&value=yy[&corpId=zz] → 设置单个变量（手动值优先，轮询不再覆盖）
+            // POST /variable/set → 单个 {key, value} 或批量 {items: [{key, value}]}（兼容 varKey/varValue 字段名），顶层或单条可带 corpId
+            // 已登录时一律同步服务器：不带 corpId → 个人作用域（后端 WS 推给本人其他设备）；
+            // 带 corpId（团队 ID 密文，可先 GET /variable/teams 查询）→ 校验属于本人团队后提交服务端，WS 下发更新团队其他设备的值；
+            // 未登录时只写本机手动值（forwarded=false）
+            if (path == "/variable/set")
+            {
+                var pairs = new List<(string Key, string Value, string? CorpId)>();
+                string? topCorpId = null;
+
+                if (method == "GET")
+                {
+                    var q = ParseQuery(req.Url?.Query);
+                    var key = q.TryGetValue("key", out var k) ? k : null;
+                    if (string.IsNullOrWhiteSpace(key))
+                    {
+                        WriteJson(resp, 400, new JObject { ["ok"] = false, ["error"] = "缺少参数 key（用法: /variable/set?key=变量名&value=值[&corpId=团队ID]）" }.ToString());
+                        return;
+                    }
+                    var value = q.TryGetValue("value", out var v) ? v : (q.TryGetValue("val", out var v2) ? v2 : "");
+                    topCorpId = q.TryGetValue("corpId", out var c0) ? c0 : null;
+                    pairs.Add((key!, value ?? "", null));
+                }
+                else if (method == "POST")
+                {
+                    var body = await ReadBodyAsync(req);
+                    try
+                    {
+                        var json = JObject.Parse(body);
+                        topCorpId = json.Value<string>("corpId");
+                        if (json["items"] is JArray items)
+                        {
+                            foreach (var it in items.OfType<JObject>())
+                            {
+                                var key = it.Value<string>("key") ?? it.Value<string>("varKey");
+                                var value = it.Value<string>("value") ?? it.Value<string>("varValue") ?? "";
+                                var itemCorp = it.Value<string>("corpId"); // 单条 corpId 优先于顶层
+                                if (!string.IsNullOrWhiteSpace(key)) pairs.Add((key!, value, itemCorp));
+                            }
+                        }
+                        else
+                        {
+                            var key = json.Value<string>("key") ?? json.Value<string>("varKey");
+                            var value = json.Value<string>("value") ?? json.Value<string>("varValue") ?? "";
+                            if (!string.IsNullOrWhiteSpace(key)) pairs.Add((key!, value, null));
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteJson(resp, 400, new JObject { ["ok"] = false, ["error"] = "请求体非法 JSON: " + ex.Message }.ToString());
+                        return;
+                    }
+
+                    if (pairs.Count == 0)
+                    {
+                        WriteJson(resp, 400, new JObject { ["ok"] = false, ["error"] = "缺少变量：支持 {key, value} 或 {items: [{key, value}]}，可带 corpId" }.ToString());
+                        return;
+                    }
+                }
+                else
+                {
+                    WriteJson(resp, 405, new JObject { ["ok"] = false, ["error"] = "仅支持 GET / POST" }.ToString());
+                    return;
+                }
+
+                var results = new JArray();
+                foreach (var (key, value, itemCorp) in pairs)
+                {
+                    var corpId = !string.IsNullOrWhiteSpace(itemCorp) ? itemCorp : topCorpId;
+                    var found = svc.SetVariableValue(key, value, corpId); // 手动值与所属团队密文一并落本地表
+                    var result = new JObject { ["key"] = key, ["value"] = value, ["found"] = found };
+                    // 登录用户无论是否带 corpId 都同步服务器（个人/团队作用域）；未登录时静默跳过
+                    var (fwdOk, fwdMsg) = await ForwardVariableToBackendAsync(key, value, corpId);
+                    result["forwarded"] = fwdOk;
+                    if (!fwdOk) result["forwardError"] = fwdMsg;
+                    results.Add(result);
+                    Debug.WriteLine($"[HttpServer] 设置变量 {key} = {value}（found={found}, corpId={corpId ?? "-"}, forwarded={fwdOk}）");
+                }
+                WriteJson(resp, 200, new JObject { ["ok"] = true, ["count"] = results.Count, ["results"] = results }.ToString());
+                return;
+            }
+
+            // GET /variable/clear?key=xx[&corpId=zz] → 解除手动值，变量恢复轮询/聚合自动取值；已登录时同步服务器（带 corpId 时清除团队作用域的值）
+            if (method == "GET" && path == "/variable/clear")
+            {
+                var q = ParseQuery(req.Url?.Query);
+                var key = q.TryGetValue("key", out var k) ? k : null;
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    WriteJson(resp, 400, new JObject { ["ok"] = false, ["error"] = "缺少参数 key（用法: /variable/clear?key=变量名[&corpId=团队ID]）" }.ToString());
+                    return;
+                }
+                var corpId = q.TryGetValue("corpId", out var c) ? c : null;
+                var removed = svc.ClearVariableValue(key!);
+                var result = new JObject { ["ok"] = true, ["key"] = key, ["cleared"] = removed };
+                // 后端无独立清除接口：转发 value=null 即把对应作用域的值置空并推送（本人其他设备/团队成员）
+                var (fwdOk, fwdMsg) = await ForwardVariableToBackendAsync(key!, null, corpId);
+                result["forwarded"] = fwdOk;
+                if (!fwdOk) result["forwardError"] = fwdMsg;
+                WriteJson(resp, 200, result.ToString());
+                return;
+            }
+
+            WriteJson(resp, 404, new JObject { ["error"] = "not found", ["path"] = path }.ToString());
+        }
+
+        /// <summary>
+        /// 以当前登录 JWT 把变量值转发到后端 /value/set（登录用户一律同步服务器；value=null 表示置空/清除）：
+        /// 不带 corpId → 个人作用域，后端 WS 推给本人其他设备；带 corpId → 校验属于本人团队后提交，
+        /// 团队作用域落库并 WS 下发更新团队其他设备的值。未登录/非本人团队/网络失败返回 (false, 原因)；本机手动值不受影响。
+        /// </summary>
+        internal static async Task<(bool ok, string msg)> ForwardVariableToBackendAsync(string key, string? value, string? corpId)
+        {
+            try
+            {
+                var app = (SideDesk.App)System.Windows.Application.Current;
+                var token = app?.AppSettings?.AccountToken;
+                if (string.IsNullOrEmpty(token)) return (false, "未登录，未同步到服务器");
+
+                // 带 corpId 时需与本人所在团队的加密 ID 一致才提交服务端
+                if (!string.IsNullOrWhiteSpace(corpId))
+                {
+                    var teams = await TeamService.Instance.ListTeamsAsync().ConfigureAwait(false);
+                    if (teams == null) return (false, "团队列表获取失败，无法转发");
+                    if (!teams.Any(t => string.Equals(t.Id, corpId, StringComparison.Ordinal)))
+                        return (false, "corpId 与当前账号所在团队不匹配");
+                }
+
+                var body = new JObject
+                {
+                    ["key"] = key,
+                    ["value"] = value ?? "", // 后端把空串视为 null（清除）
+                };
+                if (!string.IsNullOrWhiteSpace(corpId)) body["corpId"] = corpId;
+                using var req = new HttpRequestMessage(HttpMethod.Post, $"{Constants.URLs.ServerBaseUrl}/api/sidebar/data-variable/value/set");
+                req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
+                req.Content = new StringContent(body.ToString(Newtonsoft.Json.Formatting.None), Encoding.UTF8, "application/json");
+                using var resp = await _proxyHttp.SendAsync(req).ConfigureAwait(false);
+                var text = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                Debug.WriteLine($"[HttpServer] 变量转发后端 {(int)resp.StatusCode}: {text}");
+                var root = JObject.Parse(text);
+                if ((root["code"]?.Value<int>() ?? 0) == 200) return (true, "");
+                return (false, root["msg"]?.ToString() ?? "转发失败");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[HttpServer] 变量转发后端异常: {ex.Message}");
+                return (false, ex.Message);
+            }
+        }
+
+        /// <summary>解析 URL 查询串（a=1&b=2，UTF-8 解码，+ 视为空格）</summary>
+        private static Dictionary<string, string> ParseQuery(string? query)
+        {
+            var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (string.IsNullOrEmpty(query)) return dict;
+            foreach (var pair in query.TrimStart('?').Split('&'))
+            {
+                if (pair.Length == 0) continue;
+                var idx = pair.IndexOf('=');
+                var name = idx < 0 ? pair : pair.Substring(0, idx);
+                var val = idx < 0 ? "" : pair.Substring(idx + 1);
+                if (name.Length == 0) continue;
+                try { dict[Uri.UnescapeDataString(name.Replace("+", "%20"))] = Uri.UnescapeDataString(val.Replace("+", "%20")); }
+                catch { dict[name] = val; }
+            }
+            return dict;
         }
 
         /// <summary>读取请求体</summary>

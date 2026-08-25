@@ -50,6 +50,8 @@ namespace SideDesk.Services
         private List<McpToolDef> _tools = new();
         private string _hash = "";
         private bool _seeded;
+        /// <summary>推送触发的延迟刷新时刻（短时间多次推送合并为一次拉取）</summary>
+        private DateTime _pushRefreshAt = DateTime.MinValue;
 
         /// <summary>注册表（含启停标记）；未登录或未拉取成功时为空列表</summary>
         public IReadOnlyList<McpToolDef> Tools { get { lock (_lock) return _tools.ToList(); } }
@@ -71,9 +73,51 @@ namespace SideDesk.Services
 
         private McpToolRegistryService()
         {
-            // 每 30 秒轮询一次服务端清单（网页上改了配置可自动生效）
-            _pollTimer = new System.Threading.Timer(_ => _ = SyncAsync(), null,
-                TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(30));
+            // 清单变更以 WebSocket 推送为主（OnRegistryChangedPush），轮询仅作兜底（推送丢失/未连接时每 10 分钟拉一次）
+            _pollTimer = new System.Threading.Timer(_ =>
+            {
+                // 离线时不发请求，避免无效重试刷后端日志
+                if (App.AccountOffline) return;
+                _ = SyncAsync();
+            }, null, TimeSpan.FromSeconds(5), TimeSpan.FromMinutes(10));
+
+            // 后端推送 mcp_registry_changed（网页端改了工具配置）→ 延迟 500ms 合并多次推送后重新拉取
+            BackendWebSocketService.Instance.MessageReceived += text =>
+            {
+                try
+                {
+                    var obj = Newtonsoft.Json.Linq.JObject.Parse(text);
+                    if ((string?)obj["event"] == "mcp_registry_changed")
+                        OnRegistryChangedPush();
+                }
+                catch { /* 非 JSON 或其它消息：忽略 */ }
+            };
+        }
+
+        /// <summary>收到服务端清单变更推送：延迟 500ms 后拉取一次（期间再次推送只顺延时刻，避免连续操作时连续拉取）</summary>
+        private void OnRegistryChangedPush()
+        {
+            bool first;
+            lock (_lock)
+            {
+                first = _pushRefreshAt <= DateTime.Now;
+                _pushRefreshAt = DateTime.Now.AddMilliseconds(500);
+            }
+            if (!first) return;
+            _ = Task.Run(async () =>
+            {
+                while (true)
+                {
+                    DateTime due;
+                    lock (_lock) due = _pushRefreshAt;
+                    var wait = due - DateTime.Now;
+                    if (wait > TimeSpan.Zero) { await Task.Delay(wait); continue; }
+                    lock (_lock) _pushRefreshAt = DateTime.MinValue;
+                    System.Diagnostics.Debug.WriteLine("[McpRegistry] 收到清单变更推送，重新拉取");
+                    await SyncAsync();
+                    break;
+                }
+            });
         }
 
         /// <summary>

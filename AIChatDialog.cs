@@ -23,6 +23,10 @@ namespace SideDesk
         private TextBox _inputBox = null;
         private ComboBox _modelCombo = null;
         private TextBlock _statusText = null;
+        private Microsoft.Web.WebView2.Wpf.WebView2 _webView = null;
+        private UIElement _inputPanel = null;
+        private bool _webModeReady = false;
+        private const string WebModeTag = "__web__";
         private HttpClient _httpClient = new HttpClient();
         private List<Dictionary<string, string>> _messages = new List<Dictionary<string, string>>();
         private bool _isProcessing = false;
@@ -138,30 +142,23 @@ namespace SideDesk
                 VerticalContentAlignment = VerticalAlignment.Center,
                 Style = (Style)Application.Current.FindResource("GlobalComboBoxStyle")
             };
-            foreach (var model in AIConfigManager.SupportedModels)
-            {
-                _modelCombo.Items.Add(new ComboBoxItem { Content = model.Name, Tag = model.Id });
-            }
-            var config = AIConfigManager.GetConfig();
-            for (int i = 0; i < _modelCombo.Items.Count; i++)
-            {
-                if (((ComboBoxItem)_modelCombo.Items[i]).Tag.ToString() == config.SelectedModelId)
-                {
-                    _modelCombo.SelectedIndex = i;
-                    break;
-                }
-            }
-            if (_modelCombo.SelectedIndex < 0)
-                _modelCombo.SelectedIndex = 0;
+            // 下拉仅显示已配置的服务商 + 网页版，未配置的隐藏
+            bool startInWebMode = RefreshModelCombo(null);
 
             _modelCombo.SelectionChanged += (s, ev) =>
             {
                 var selected = _modelCombo.SelectedItem as ComboBoxItem;
-                if (selected != null)
+                if (selected == null) return;
+                if (Equals(selected.Tag, WebModeTag))
+                {
+                    SwitchToWebMode();
+                }
+                else
                 {
                     var cfg = AIConfigManager.GetConfig();
                     cfg.SelectedModelId = selected.Tag.ToString();
                     AIConfigManager.SaveConfig(cfg);
+                    SwitchToClientMode();
                 }
             };
             DockPanel.SetDock(_modelCombo, Dock.Left);
@@ -170,8 +167,10 @@ namespace SideDesk
             var settingsBtn = new Button
             {
                 Content = Framework.Lang.T("设置"),
-                Width = 50,
-                MinHeight = 26,
+                Width = 64,
+                Height = 28,
+                // StandardButtonStyle 默认 Padding=16,8，窄按钮下会把文字裁掉，这里局部覆盖
+                Padding = new Thickness(8, 4, 8, 4),
                 Margin = new Thickness(0, 0, 0, 0),
                 Style = (Style)Application.Current.FindResource("StandardButtonStyle")
             };
@@ -200,11 +199,19 @@ namespace SideDesk
             };
             _chatStack = new StackPanel();
             _chatScrollViewer.Content = _chatStack;
-            Grid.SetRow(_chatScrollViewer, 2);
-            grid.Children.Add(_chatScrollViewer);
+
+            // 网页版承载控件：切换到“网页版”时显示，无需本地配置但需登录
+            _webView = new Microsoft.Web.WebView2.Wpf.WebView2 { Visibility = Visibility.Collapsed };
+
+            var contentHost = new Grid();
+            contentHost.Children.Add(_chatScrollViewer);
+            contentHost.Children.Add(_webView);
+            Grid.SetRow(contentHost, 2);
+            grid.Children.Add(contentHost);
 
             // Input area
             var inputPanel = new DockPanel { Margin = new Thickness(5) };
+            _inputPanel = inputPanel;
             var sendBtn = new Button
             {
                 Content = Framework.Lang.T("发送"),
@@ -239,7 +246,7 @@ namespace SideDesk
                     return;
 
                 var cfg = AIConfigManager.GetConfig();
-                if (string.IsNullOrEmpty(cfg.ApiKey))
+                if (string.IsNullOrEmpty(AIConfigManager.GetApiKeyFor(AIConfigManager.GetSelectedModel().Id)))
                 {
                     AddMessage("system", "请先点击【设置】配置 API Key");
                     return;
@@ -304,9 +311,13 @@ namespace SideDesk
                 _inputBox = null;
                 _modelCombo = null;
                 _statusText = null;
+                _webView = null;
+                _inputPanel = null;
+                _webModeReady = false;
             };
 
             _dialog.Show();
+            if (startInWebMode) SwitchToWebMode();
         }
 
         public void Activate()
@@ -435,6 +446,7 @@ namespace SideDesk
             const int MaxToolRounds = 8;
             var modelInfo = AIConfigManager.GetSelectedModel();
             string apiBase = modelInfo.ApiBaseUrl;
+            string apiKey = AIConfigManager.GetApiKeyFor(modelInfo.Id);
             string modelId = config.CustomModelId;
             if (string.IsNullOrEmpty(modelId))
                 modelId = modelInfo.DefaultModelId;
@@ -444,7 +456,7 @@ namespace SideDesk
             var tools = McpToolRegistryService.GetActiveToolDefinitions();
 
             System.Diagnostics.Debug.WriteLine($"[AIChat] 请求: POST {url}");
-            System.Diagnostics.Debug.WriteLine($"[AIChat] 模型: {modelId}, ApiKey: {(string.IsNullOrEmpty(config.ApiKey) ? "(空)" : config.ApiKey.Substring(0, Math.Min(6, config.ApiKey.Length)) + "***")}");
+            System.Diagnostics.Debug.WriteLine($"[AIChat] 模型: {modelId}, ApiKey: {(string.IsNullOrEmpty(apiKey) ? "(空)" : apiKey.Substring(0, Math.Min(6, apiKey.Length)) + "***")}");
 
             // 构建带 system prompt 的消息列表
             var apiMessages = new List<Dictionary<string, object>>();
@@ -469,7 +481,7 @@ namespace SideDesk
 
                 string json = JsonConvert.SerializeObject(requestBody);
                 var request = new HttpRequestMessage(HttpMethod.Post, url);
-                request.Headers.Add("Authorization", "Bearer " + config.ApiKey);
+                request.Headers.Add("Authorization", "Bearer " + apiKey);
                 request.Content = new StringContent(json, Encoding.UTF8, "application/json");
 
                 HttpResponseMessage response = await _httpClient.SendAsync(request);
@@ -541,6 +553,7 @@ namespace SideDesk
         {
             var modelInfo = AIConfigManager.GetSelectedModel();
             string apiBase = modelInfo.ApiBaseUrl;
+            string apiKey = AIConfigManager.GetApiKeyFor(modelInfo.Id);
             string modelId = config.CustomModelId;
             if (string.IsNullOrEmpty(modelId))
                 modelId = modelInfo.DefaultModelId;
@@ -558,7 +571,7 @@ namespace SideDesk
 
             string json = JsonConvert.SerializeObject(requestBody);
             var request = new HttpRequestMessage(HttpMethod.Post, url);
-            request.Headers.Add("Authorization", "Bearer " + config.ApiKey);
+            request.Headers.Add("Authorization", "Bearer " + apiKey);
             request.Content = new StringContent(json, Encoding.UTF8, "application/json");
 
             HttpResponseMessage response = await _httpClient.SendAsync(request);
@@ -579,6 +592,72 @@ namespace SideDesk
             }
 
             return Framework.Lang.T("无响应内容");
+        }
+
+        /// <summary>重建服务商下拉：仅已配置的 + 网页版；返回是否选中网页版</summary>
+        private bool RefreshModelCombo(string preferTag)
+        {
+            if (_modelCombo == null) return false;
+            if (string.IsNullOrEmpty(preferTag))
+                preferTag = (_modelCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString()
+                            ?? AIConfigManager.GetConfig().SelectedModelId;
+
+            _modelCombo.Items.Clear();
+            foreach (var model in AIConfigManager.GetConfiguredModels())
+                _modelCombo.Items.Add(new ComboBoxItem { Content = model.Name, Tag = model.Id });
+            _modelCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("🌐 网页版"), Tag = WebModeTag });
+
+            for (int i = 0; i < _modelCombo.Items.Count; i++)
+            {
+                if (((ComboBoxItem)_modelCombo.Items[i]).Tag.ToString() == preferTag)
+                {
+                    _modelCombo.SelectedIndex = i;
+                    return preferTag == WebModeTag;
+                }
+            }
+            // 偏好项不在列表（未配置过）→ 回退网页版
+            _modelCombo.SelectedIndex = _modelCombo.Items.Count - 1;
+            return true;
+        }
+
+        /// <summary>切换到网页版：内嵌 WebView2 加载前端聊天页（无需本地配置，需登录）</summary>
+        private async void SwitchToWebMode()
+        {
+            if (_webView == null) return;
+            _chatScrollViewer.Visibility = Visibility.Collapsed;
+            if (_inputPanel != null) _inputPanel.Visibility = Visibility.Collapsed;
+            _webView.Visibility = Visibility.Visible;
+            if (_statusText != null) _statusText.Text = Framework.Lang.T("网页版");
+
+            if (_webModeReady) return;
+            _webModeReady = true;
+            try
+            {
+                await _webView.EnsureCoreWebView2Async();
+                _webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
+                _webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
+
+                // 与 AIChatWebWindow 一致的参数：proxy 本机代理 / token 登录态 / theme 宿主主题
+                var app = (App)Application.Current;
+                var proxy = $"http://127.0.0.1:{Services.HttpServerService.Instance.CurrentPort}";
+                var token = app.AppSettings.AccountToken ?? "";
+                var url = $"{Constants.URLs.FrontendBaseUrl}/#/ai-chat?proxy={Uri.EscapeDataString(proxy)}&token={Uri.EscapeDataString(token)}&theme={App.FrontendThemeParam}";
+                _webView.CoreWebView2.Navigate(url);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[AIChat] 网页版 WebView2 初始化失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>切换回客户端内置对话（本地已配置的服务商）</summary>
+        private void SwitchToClientMode()
+        {
+            if (_webView == null) return;
+            _webView.Visibility = Visibility.Collapsed;
+            if (_chatScrollViewer != null) _chatScrollViewer.Visibility = Visibility.Visible;
+            if (_inputPanel != null) _inputPanel.Visibility = Visibility.Visible;
+            if (_statusText != null) _statusText.Text = Framework.Lang.T("就绪");
         }
 
         private void ShowSettingsDialog()
@@ -663,12 +742,19 @@ namespace SideDesk
             var keyBox = new TextBox
             {
                 Height = 30,
-                Text = cfg.ApiKey ?? "",
+                Text = AIConfigManager.GetApiKeyFor(cfg.SelectedModelId ?? "deepseek"),
                 Margin = new Thickness(0, 0, 0, 15),
                 VerticalContentAlignment = VerticalAlignment.Center,
                 Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle")
             };
             mainPanel.Children.Add(keyBox);
+
+            // 切换服务商时加载该服务商已配置的 Key（未配置显示空）
+            modelCombo.SelectionChanged += (s, e) =>
+            {
+                var sel = modelCombo.SelectedItem as ComboBoxItem;
+                if (sel != null) keyBox.Text = AIConfigManager.GetApiKeyFor(sel.Tag.ToString());
+            };
 
             // Custom Model ID
             mainPanel.Children.Add(new Emoji.Wpf.TextBlock
@@ -717,21 +803,22 @@ namespace SideDesk
             {
                 var selected = modelCombo.SelectedItem as ComboBoxItem;
                 cfg.SelectedModelId = selected != null ? selected.Tag.ToString() : "deepseek";
-                cfg.ApiKey = keyBox.Text.Trim();
+                // Key 按服务商保存；清空视为未配置，主下拉中隐藏
+                if (cfg.ApiKeys == null) cfg.ApiKeys = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                string newKey = keyBox.Text.Trim();
+                if (string.IsNullOrEmpty(newKey))
+                    cfg.ApiKeys.Remove(cfg.SelectedModelId);
+                else
+                    cfg.ApiKeys[cfg.SelectedModelId] = newKey;
+                cfg.ApiKey = newKey; // 同步旧版单 Key 字段
                 cfg.CustomModelId = customBox.Text.Trim();
                 AIConfigManager.SaveConfig(cfg);
 
-                if (_modelCombo != null)
-                {
-                    for (int i = 0; i < _modelCombo.Items.Count; i++)
-                    {
-                        if (((ComboBoxItem)_modelCombo.Items[i]).Tag.ToString() == cfg.SelectedModelId)
-                        {
-                            _modelCombo.SelectedIndex = i;
-                            break;
-                        }
-                    }
-                }
+                // 重建主下拉并切换到对应模式
+                if (RefreshModelCombo(cfg.SelectedModelId))
+                    SwitchToWebMode();
+                else
+                    SwitchToClientMode();
 
                 dialog.Close();
             };

@@ -408,9 +408,8 @@ namespace SideDesk
 
         private void Login_Click(object sender, RoutedEventArgs e)
         {
-            var loginWindow = new LoginWindow();
-            loginWindow.Owner = this;
-            loginWindow.ShowDialog();
+            // 非模态打开登录窗（已有实例则激活前置，避免重复弹出）
+            LoginWindow.Open();
         }
 
         private void Layout_Left(object sender, RoutedEventArgs e)

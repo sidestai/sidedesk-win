@@ -28,7 +28,8 @@ public enum PanelType
     Plugin,          // 外部插件
     ScreenTime,      // 屏幕时长
     Countdown,       // 倒计时器
-    Pomodoro         // 番茄闹钟
+    Pomodoro,        // 番茄闹钟
+    WebBaidu         // 百度搜索（内嵌网页组件）
 }
 
 public class PanelItem

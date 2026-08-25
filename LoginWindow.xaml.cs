@@ -20,6 +20,30 @@ namespace SideDesk
         /// <summary>最近一次登录解析到的用户名称（尽力提取，可能为空）</summary>
         public static string? LastUserName { get; private set; }
 
+        /// <summary>登录成功事件（非模态打开时供调用方感知登录完成，在 UI 线程触发）</summary>
+        public static event Action? LoginSucceeded;
+
+        /// <summary>当前已打开的登录窗（非模态下防止重复打开，复用同一实例）</summary>
+        public static LoginWindow? ActiveInstance { get; private set; }
+
+        /// <summary>打开登录窗（非模态）：已有实例则激活并前置，避免重复弹出</summary>
+        public static void Open()
+        {
+            var w = ActiveInstance;
+            if (w != null)
+            {
+                try
+                {
+                    if (!w.IsVisible) w.Show();
+                    if (w.WindowState == WindowState.Minimized) w.WindowState = WindowState.Normal;
+                    w.Activate();
+                }
+                catch { }
+                return;
+            }
+            new LoginWindow().Show();
+        }
+
         private string? _targetRequestId;
         private bool _tokenHandled;
 
@@ -27,10 +51,12 @@ namespace SideDesk
         {
             InitializeComponent();
             Loaded += LoginWindow_Loaded;
+            Closed += (_, _) => { if (ReferenceEquals(ActiveInstance, this)) ActiveInstance = null; };
         }
 
         private async void LoginWindow_Loaded(object sender, RoutedEventArgs e)
         {
+            ActiveInstance = this;
             try
             {
                 // 初始化 WebView2
@@ -107,11 +133,13 @@ namespace SideDesk
                 {
                     LastToken = token;
                     LastUserName = ExtractUserName(body);
-                    // 登录成功：关闭窗口并返回成功（由调用方读取 LastToken 处理后续）
+                    // 登录成功：通知订阅方（非模态场景）后关闭窗口（由调用方读取 LastToken 处理后续）
+                    // DialogResult 仅模态打开时有效，非模态会抛异常，用 try 兼容两种打开方式
                     try
                     {
                         Dispatcher.Invoke(() =>
                         {
+                            try { LoginSucceeded?.Invoke(); } catch { }
                             try { DialogResult = true; } catch { }
                             Close();
                         });

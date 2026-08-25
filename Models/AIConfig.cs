@@ -18,6 +18,8 @@ namespace SideDesk.Models
         public string SelectedModelId { get; set; }
         public string ApiKey { get; set; }
         public string CustomModelId { get; set; }
+        /// <summary>按服务商保存的 API Key（provider id → key）；未配置的服务商不在主下拉中显示</summary>
+        public Dictionary<string, string> ApiKeys { get; set; }
     }
 
     public static class AIConfigManager
@@ -113,6 +115,8 @@ namespace SideDesk.Models
                     };
                 }
 
+                MigrateLegacyKey(_config);
+
                 return _config;
             }
         }
@@ -145,5 +149,36 @@ namespace SideDesk.Models
             var config = GetConfig();
             return SupportedModels.Find(m => m.Id == config.SelectedModelId) ?? SupportedModels[0];
         }
+
+        /// <summary>旧版单 Key 迁移：视为属于当时选中的服务商</summary>
+        private static void MigrateLegacyKey(AIConfig config)
+        {
+            if (config.ApiKeys == null)
+                config.ApiKeys = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrEmpty(config.ApiKey)
+                && !string.IsNullOrEmpty(config.SelectedModelId)
+                && !config.ApiKeys.ContainsKey(config.SelectedModelId))
+            {
+                config.ApiKeys[config.SelectedModelId] = config.ApiKey;
+            }
+        }
+
+        /// <summary>取指定服务商的 API Key（优先按服务商字典，回退旧版单 Key）</summary>
+        public static string GetApiKeyFor(string providerId)
+        {
+            if (string.IsNullOrEmpty(providerId)) return string.Empty;
+            var cfg = GetConfig();
+            if (cfg.ApiKeys != null && cfg.ApiKeys.TryGetValue(providerId, out var key) && !string.IsNullOrEmpty(key))
+                return key;
+            if (providerId.Equals(cfg.SelectedModelId, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(cfg.ApiKey))
+                return cfg.ApiKey;
+            return string.Empty;
+        }
+
+        /// <summary>服务商是否已配置（有 API Key）</summary>
+        public static bool IsProviderConfigured(string providerId) => !string.IsNullOrEmpty(GetApiKeyFor(providerId));
+
+        /// <summary>已配置的服务商列表（保持预设顺序），未配置的不在主下拉中显示</summary>
+        public static List<AIModelInfo> GetConfiguredModels() => SupportedModels.FindAll(m => IsProviderConfigured(m.Id));
     }
 }

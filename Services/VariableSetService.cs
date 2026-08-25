@@ -209,6 +209,8 @@ public sealed class VariableSetService
         foreach (var set in sets)
         {
             if (!_items.TryGetValue(set.VarKey, out var item)) continue;
+            // 手动值覆盖：外部已设置值时跳过自动重算，保持手动值直到解除
+            if (DataPollingService.Instance.GetManualValue(set.VarKey) != null) continue;
             var newValue = ComputeValue(set, running);
             if (!string.Equals(item.Value, newValue, StringComparison.Ordinal))
             {
