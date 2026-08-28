@@ -223,12 +223,27 @@ namespace SideDesk
             }
         }
 
-        /// <summary>显示上下文内容（新内容直接替换旧内容；关闭只是隐藏，下次触发仍会重新出现）</summary>
+        /// <summary>显示上下文内容：多主窗口时仅在离鼠标最近的主窗口显示（新内容替换旧内容；关闭只是隐藏，下次触发仍会重新出现）</summary>
         private void ShowFloatingContext(FloatingContextSource source, string title, string content, string signature)
         {
-            // 语音热键录音期间，不被输入框/剪贴板事件抢占，保证实时转写内容稳定显示
-            if (source != FloatingContextSource.Voice && VoiceHotkeyPanel?.IsVoiceRecording == true) return;
+            // 语音热键录音期间（任一主窗口在录），不被输入框/剪贴板事件抢占，保证实时转写内容稳定显示
+            if (source != FloatingContextSource.Voice && AnyWindowIsVoiceRecording()) return;
 
+            // 多屏/左右侧边栏：仅在离鼠标最近的主窗口显示浮动框；本窗口非宿主时隐藏自身并转发给宿主窗口显示（语音等单窗口事件也能落到正确屏幕）
+            MainWindow? host = PickFloatingContextHost();
+            if (host != null && host != this)
+            {
+                HideFloatingContextIfVisible();
+                host.ShowFloatingContextLocal(source, title, content, signature);
+                return;
+            }
+
+            ShowFloatingContextLocal(source, title, content, signature);
+        }
+
+        /// <summary>本窗口实际展示浮动框内容（宿主判定通过后才执行）</summary>
+        private void ShowFloatingContextLocal(FloatingContextSource source, string title, string content, string signature)
+        {
             if (string.IsNullOrEmpty(content))
                 content = Framework.Lang.T("nativePanel.empty");
             if (content.Length > FcMaxContentLength)
@@ -272,6 +287,44 @@ namespace SideDesk
 
         /// <summary>停止失焦延迟隐藏计时器</summary>
         private void StopFcAutoHideTimer() => _fcAutoHideTimer?.Stop();
+
+        /// <summary>宿主切换时隐藏本窗口浮动框（等同关闭按钮语义）</summary>
+        private void HideFloatingContextIfVisible()
+        {
+            if (floatingContext.Visibility != Visibility.Visible) return;
+            FloatingContext_CloseRequested();
+        }
+
+        /// <summary>任一主窗口是否正在语音录音</summary>
+        private static bool AnyWindowIsVoiceRecording()
+        {
+            foreach (Window w in Application.Current.Windows)
+                if (w is MainWindow mw && mw.VoiceHotkeyPanel?.IsVoiceRecording == true) return true;
+            return false;
+        }
+
+        /// <summary>选取离当前鼠标位置最近的主窗口作为浮动框宿主（同一屏左右侧栏取更近一侧；跨屏取鼠标所在屏的侧栏）</summary>
+        private static MainWindow? PickFloatingContextHost()
+        {
+            if (!NativeMethods.GetCursorPos(out var cursor)) return null;
+
+            MainWindow? best = null;
+            long bestDist = long.MaxValue;
+            foreach (Window w in Application.Current.Windows)
+            {
+                if (w is not MainWindow mw || mw.Visibility != Visibility.Visible) continue;
+                IntPtr hwnd = new WindowInteropHelper(mw).Handle;
+                if (hwnd == IntPtr.Zero) continue;
+                if (!NativeMethods.GetWindowRect(hwnd, out var r)) continue;
+
+                // 鼠标在窗口内时距离为 0，否则取到窗口矩形的平方距离（与 HoverTimer 一致的物理像素比较，无 DPI 换算问题）
+                long dx = cursor.X < r.Left ? r.Left - cursor.X : (cursor.X > r.Right ? cursor.X - r.Right : 0);
+                long dy = cursor.Y < r.Top ? r.Top - cursor.Y : (cursor.Y > r.Bottom ? cursor.Y - r.Bottom : 0);
+                long dist = dx * dx + dy * dy;
+                if (dist < bestDist) { bestDist = dist; best = mw; }
+            }
+            return best;
+        }
 
         /// <summary>用户交互（点击/拖拽/双击）：取消待定的自动隐藏，本轮失焦不再自动消失</summary>
         private void FloatingContext_UserInteracted()
