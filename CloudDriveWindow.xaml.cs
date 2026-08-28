@@ -26,7 +26,7 @@ namespace SideDesk
             // 标题栏显示当前团队名（个人模式显示“个人”）
             var app = (App)Application.Current;
             var corpName = app.AppSettings.SelectedCorpName;
-            titleText.Text = string.IsNullOrEmpty(corpName) ? Framework.Lang.T("☁️ 个人") : $"☁️ {corpName}";
+            titleText.Text = string.IsNullOrEmpty(corpName) ? Framework.Lang.T("cloudDrive.personal") : $"☁️ {corpName}";
             corpNameText.Text = "";
 
             Loaded += async (_, _) => await LoadFilesAsync(updateCapacity: true);
@@ -80,7 +80,7 @@ namespace SideDesk
             else
                 ShowPanel(fileListView);
         
-            statusText.Text = Framework.Lang.TF("共 {0} 项", files.Count);
+            statusText.Text = Framework.Lang.TF("cloudDrive.itemsInTotal", files.Count);
         
             if (updateCapacity) _ = UpdateCapacityAsync();
         }
@@ -91,7 +91,7 @@ namespace SideDesk
             try
             {
                 long bytes = await CloudDriveService.Instance.GetTotalUsedBytesAsync();
-                capacityText.Text = Framework.Lang.TF("💾 已用 {0}", CloudDriveFile.FormatSize(bytes));
+                capacityText.Text = Framework.Lang.TF("cloudDrive.used", CloudDriveFile.FormatSize(bytes));
             }
             catch
             {
@@ -243,7 +243,7 @@ namespace SideDesk
             // 简单输入对话框
             var inputDialog = new Window
             {
-                Title = Framework.Lang.T("新建文件夹"), Width = 320, Height = 160,
+                Title = Framework.Lang.T("cloudDrive.newFolder"), Width = 320, Height = 160,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Owner = this, ResizeMode = ResizeMode.NoResize,
                 Background = (Brush)FindResource("BrushBG")

@@ -44,11 +44,11 @@ namespace SideDesk
         /// </summary>
         private void InitFromRule()
         {
-            Title = Framework.Lang.TF("编辑规则: [{0}] {1}", _editRule.LockText, _editRule.ProcessName);
-            windowInfoText.Text = Framework.Lang.TF("进程：{0}", _editRule.ProcessName);
+            Title = Framework.Lang.TF("nativePanel.editRuleNamed", _editRule.LockText, _editRule.ProcessName);
+            windowInfoText.Text = Framework.Lang.TF("window.processLabel", _editRule.ProcessName);
             processInfoText.Text = !string.IsNullOrEmpty(_editRule.OriginalTitle)
-                ? Framework.Lang.TF("原标题：{0}", _editRule.OriginalTitle)
-                : Framework.Lang.TF("目录：{0}", _editRule.ExecutableDir);
+                ? Framework.Lang.TF("window.originalTitle", _editRule.OriginalTitle)
+                : Framework.Lang.TF("window.directoryLabel", _editRule.ExecutableDir);
 
             lockTextBox.Text = _editRule.LockText ?? string.Empty;
             matchPatternBox.Text = _editRule.MatchPattern ?? string.Empty;
@@ -62,14 +62,14 @@ namespace SideDesk
 
             // 详细信息区显示规则摘要
             var sb = new StringBuilder();
-            sb.AppendLine($"进程名         : {_editRule.ProcessName}");
-            sb.AppendLine($"原标题         : {_editRule.OriginalTitle}");
-            sb.AppendLine($"可执行文件目录 : {_editRule.ExecutableDir}");
-            sb.AppendLine($"锁定文字       : {_editRule.LockText}");
-            sb.AppendLine($"匹配字符串     : {_editRule.MatchPattern}");
-            sb.AppendLine($"匹配模式       : {(_editRule.MatchMode == TitleMatchMode.Equals ? "完全相同" : "包含")}");
-            sb.AppendLine($"创建时间       : {_editRule.CreatedAt:yyyy-MM-dd HH:mm:ss}");
-            sb.AppendLine($"更新时间       : {_editRule.UpdatedAt:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine(Framework.Lang.TF("window.detailProcessName", _editRule.ProcessName));
+            sb.AppendLine(Framework.Lang.TF("window.originalTitle", _editRule.OriginalTitle));
+            sb.AppendLine(Framework.Lang.TF("window.detailExeDir", _editRule.ExecutableDir));
+            sb.AppendLine(Framework.Lang.TF("window.detailLockText", _editRule.LockText));
+            sb.AppendLine(Framework.Lang.TF("window.detailMatchPattern", _editRule.MatchPattern));
+            sb.AppendLine(Framework.Lang.TF("window.detailMatchMode", _editRule.MatchMode == TitleMatchMode.Equals ? Framework.Lang.T("common.exactlyTheSame") : Framework.Lang.T("common.contains")));
+            sb.AppendLine(Framework.Lang.TF("window.detailCreatedAt", _editRule.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")));
+            sb.AppendLine(Framework.Lang.TF("window.detailUpdatedAt", _editRule.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss")));
             detailsBox.Text = sb.ToString();
 
             lockTextBox.Focus();
@@ -81,9 +81,9 @@ namespace SideDesk
         /// </summary>
         private void InitFromWindow()
         {
-            Title = Framework.Lang.TF("锁定标题: {0}", _window.Title);
-            windowInfoText.Text = Framework.Lang.TF("窗口：{0}", _window.Title);
-            processInfoText.Text = Framework.Lang.TF("进程：{0}", _window.ProcessName);
+            Title = Framework.Lang.TF("nativePanel.lockTitleStatus", _window.Title);
+            windowInfoText.Text = Framework.Lang.TF("window.windowLabel", _window.Title);
+            processInfoText.Text = Framework.Lang.TF("window.processLabel", _window.ProcessName);
 
             // 初始锁定文字：已锁定文字 > 标题前 2 字符
             string initialText = string.Empty;
@@ -122,7 +122,7 @@ namespace SideDesk
             }
             catch
             {
-                detailsBox.Text = Framework.Lang.T("(无法获取窗口详细信息)");
+                detailsBox.Text = Framework.Lang.T("window.detailCannotRetrieve");
             }
 
             matchPatternBox.Text = preMatchPattern;
@@ -137,25 +137,25 @@ namespace SideDesk
 
         private static string BuildDetailsText(TaskbarOverlayManager.WindowDetails d)
         {
-            if (d == null) return Framework.Lang.T("(无信息)");
+            if (d == null) return Framework.Lang.T("window.noInfo");
             var sb = new StringBuilder();
-            sb.AppendLine($"窗口句柄 (HWND) : 0x{d.Handle.ToInt64():X}");
-            sb.AppendLine($"窗口标题       : {d.Title}");
-            sb.AppendLine($"窗口类名       : {d.ClassName}");
-            sb.AppendLine($"窗口 Style     : 0x{d.StyleFlags:X8}");
-            sb.AppendLine($"窗口 ExStyle   : 0x{d.ExStyleFlags:X8}");
+            sb.AppendLine(Framework.Lang.TF("window.detailHandle", $"0x{d.Handle.ToInt64():X}"));
+            sb.AppendLine(Framework.Lang.TF("window.detailWindowTitle", d.Title));
+            sb.AppendLine(Framework.Lang.TF("window.detailClassName", d.ClassName));
+            sb.AppendLine(Framework.Lang.TF("window.detailStyle", $"0x{d.StyleFlags:X8}"));
+            sb.AppendLine(Framework.Lang.TF("window.detailExStyle", $"0x{d.ExStyleFlags:X8}"));
             sb.AppendLine();
-            sb.AppendLine($"进程 ID (PID)  : {d.ProcessId}");
-            sb.AppendLine($"进程名         : {d.ProcessName}");
-            sb.AppendLine($"可执行文件     : {d.ExecutablePath}");
-            sb.AppendLine($"工作目录       : {d.WorkingDirectory}");
-            sb.AppendLine($"运行用户       : {d.UserName}");
-            sb.AppendLine($"启动时间       : {(d.StartTime.HasValue ? d.StartTime.Value.ToString("yyyy-MM-dd HH:mm:ss") : "")}");
-            sb.AppendLine($"父进程 ID      : {d.ParentProcessId}");
-            sb.AppendLine($"父进程名       : {d.ParentProcessName}");
+            sb.AppendLine(Framework.Lang.TF("window.detailPid", d.ProcessId));
+            sb.AppendLine(Framework.Lang.TF("window.detailProcessName", d.ProcessName));
+            sb.AppendLine(Framework.Lang.TF("window.detailExecutable", d.ExecutablePath));
+            sb.AppendLine(Framework.Lang.TF("window.detailWorkingDir", d.WorkingDirectory));
+            sb.AppendLine(Framework.Lang.TF("window.detailUser", d.UserName));
+            sb.AppendLine(Framework.Lang.TF("window.detailStartTime", d.StartTime.HasValue ? d.StartTime.Value.ToString("yyyy-MM-dd HH:mm:ss") : ""));
+            sb.AppendLine(Framework.Lang.TF("window.detailParentPid", d.ParentProcessId));
+            sb.AppendLine(Framework.Lang.TF("window.detailParentName", d.ParentProcessName));
             sb.AppendLine();
-            sb.AppendLine("命令行参数：");
-            sb.AppendLine(string.IsNullOrEmpty(d.CommandLine) ? Framework.Lang.T("  (无法获取，可能需要管理员权限)") : "  " + d.CommandLine);
+            sb.AppendLine(Framework.Lang.T("window.detailCommandLine"));
+            sb.AppendLine(string.IsNullOrEmpty(d.CommandLine) ? Framework.Lang.T("window.detailCannotRetrieveAdmin") : "  " + d.CommandLine);
             return sb.ToString();
         }
 
@@ -164,7 +164,7 @@ namespace SideDesk
             try
             {
                 Clipboard.SetText(detailsBox.Text ?? string.Empty);
-                MessageBox.Show(Framework.Lang.T("信息已复制到剪贴板"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(Framework.Lang.T("common.infoCopied"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch { }
         }
@@ -187,7 +187,7 @@ namespace SideDesk
             string lockText = lockTextBox.Text?.Trim() ?? string.Empty;
             if (string.IsNullOrEmpty(lockText))
             {
-                MessageBox.Show(Framework.Lang.T("请输入锁定文字"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Framework.Lang.T("misc.pleaseEnterTheLock"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 lockTextBox.Focus();
                 return;
             }
@@ -229,7 +229,7 @@ namespace SideDesk
 
             if (!ok)
             {
-                MessageBox.Show(Framework.Lang.T("锁定标题失败，可能权限不足。请以管理员身份运行。"), Framework.Lang.T("锁定失败"),
+                MessageBox.Show(Framework.Lang.T("nativePanel.lockTitleFailedAdmin"), Framework.Lang.T("nativePanel.lockFailed"),
                     MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }

@@ -252,7 +252,7 @@ namespace SideDesk.Services
                     break;
                 default:
                     // 参数 > 3：退化为单参数 JSON 串，描述中说明用法
-                    mcp.AddTool(t.Name, Framework.Lang.TF("{0}（参数以 JSON 对象字符串传入）", t.Description),
+                    mcp.AddTool(t.Name, Framework.Lang.TF("system.toolArgsJsonNote", t.Description),
                         (string arguments) =>
                         {
                             try

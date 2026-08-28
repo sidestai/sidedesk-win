@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:l="clr-namespace:SideDesk.Framework"
         xmlns:emoji="clr-namespace:Emoji.Wpf;assembly=Emoji.Wpf"
-        Title="{l:T 小屏管理}" Width="475"
+        Title="{l:T common.screenManagement}" Width="475"
         SizeToContent="Height"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
@@ -11,7 +11,7 @@
         Background="{DynamicResource BrushDialogBG}"
         Foreground="{DynamicResource BrushTextMain}">
     <StackPanel Margin="20">
-        <emoji:TextBlock Text="{l:T 勾选「显示」的小屏才会出现在顶部标签栏；删除小屏将同时移除其下方所有模块。}"
+        <emoji:TextBlock Text="{l:T screenTime.screenVisibilityHint}"
                          FontSize="12"
                          Foreground="{DynamicResource BrushTextSec}"
                          TextWrapping="Wrap"
@@ -19,7 +19,7 @@
 
         <StackPanel x:Name="listPanel"/>
 
-        <Button Content="{l:T 关闭}" Width="75" MinHeight="30"
+        <Button Content="{l:T common.close}" Width="75" MinHeight="30"
                 HorizontalAlignment="Right" Margin="0,16,0,0"
                 Style="{StaticResource StandardButtonStyle}"
                 IsCancel="True" Click="CloseBtn_Click"/>

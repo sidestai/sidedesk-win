@@ -171,7 +171,7 @@ public partial class SystemCleanerControl : UserControl
     private void BtnCleanMemory_Click(object sender, RoutedEventArgs e)
     {
         btnCleanMemory.IsEnabled = false;
-        txtCleanResult.Text = "正在清理...";
+        txtCleanResult.Text = SideDesk.Framework.Lang.T("systemCleaner.cleaningInProgress");
 
         // 记录清理前的可用内存
         var beforeStatus = new MEMORYSTATUSEX();
@@ -214,9 +214,9 @@ public partial class SystemCleanerControl : UserControl
                 double freedMB = freedBytes / (1024.0 * 1024.0);
 
                 if (freedMB > 0)
-                    txtCleanResult.Text = $"✅ 已释放约 {freedMB:F0} MB 内存";
+                    txtCleanResult.Text = SideDesk.Framework.Lang.TF("systemCleaner.freedMemoryAmount", $"{freedMB:F0}");
                 else
-                    txtCleanResult.Text = "ℹ 当前内存状态良好，无需额外释放";
+                    txtCleanResult.Text = SideDesk.Framework.Lang.T("systemCleaner.memoryStateGood");
 
                 btnCleanMemory.IsEnabled = true;
                 RefreshSystemInfo();

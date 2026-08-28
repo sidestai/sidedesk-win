@@ -232,7 +232,7 @@ namespace SideDesk.Controls
         /// <summary>外部触发重新渲染面板（例如设置变更后）。</summary>
         public void RefreshLayout() => RenderPanels();
 
-        private Emoji.Wpf.TextBlock? _pinnedPlaceholder; // 置顶区编辑模式占位提示（复用实例，避免重复创建）
+        private Emoji.Wpf.TextBlock? _pinnedPlaceholder; // 置顶区拖放目标占位提示（仅拖拽期间临时显示，复用实例避免重复创建）
 
         /// <summary>内嵌网页组件（WebBaidu 等）实例跟踪：全量重绘前统一释放，避免 WebView2 浏览器进程泄漏</summary>
         private readonly List<Microsoft.Web.WebView2.Wpf.WebView2> _panelWebViews = new();
@@ -305,7 +305,7 @@ namespace SideDesk.Controls
                 }
             }
 
-            // 置顶区可见性 + 编辑模式占位提示
+            // 置顶区可见性（无置顶项时整块隐藏）
             SyncPinnedAreaVisibility(hasPinned);
 
             // 空窗口提示
@@ -313,7 +313,7 @@ namespace SideDesk.Controls
             {
                 dynamicContent.Children.Add(new Emoji.Wpf.TextBlock
                 {
-                    Text = Framework.Lang.T("右键添加模块"),
+                    Text = Framework.Lang.T("nativePanel.rightClickToAdd"),
                     Foreground = (Brush)FindResource("BrushTextMuted"),
                     HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center,
@@ -362,31 +362,33 @@ namespace SideDesk.Controls
             return false;
         }
 
-        /// <summary>同步置顶区可见性：有置顶模块时显示；编辑模式下始终显示（空时附占位提示，方便拖入置顶）</summary>
+        /// <summary>同步置顶区可见性：有置顶模块时显示；无置顶项时整块隐藏（占位提示一并清理）</summary>
         private void SyncPinnedAreaVisibility(bool hasPinned)
         {
-            pinnedArea.Visibility = (hasPinned || _isEditMode) ? Visibility.Visible : Visibility.Collapsed;
-            if (_isEditMode && !hasPinned)
-            {
-                if (_pinnedPlaceholder == null)
-                {
-                    _pinnedPlaceholder = new Emoji.Wpf.TextBlock
-                    {
-                        Text = Framework.Lang.T("📌 拖拽模块到此处可置顶"),
-                        Foreground = (Brush)FindResource("BrushTextMuted"),
-                        HorizontalAlignment = HorizontalAlignment.Center,
-                        Margin = new Thickness(0, 4, 0, 2),
-                        FontSize = 12,
-                        Opacity = 0.6
-                    };
-                }
-                if (!pinnedContent.Children.Contains(_pinnedPlaceholder))
-                    pinnedContent.Children.Add(_pinnedPlaceholder);
-            }
-            else if (_pinnedPlaceholder != null)
-            {
+            pinnedArea.Visibility = hasPinned ? Visibility.Visible : Visibility.Collapsed;
+            if (!hasPinned && _pinnedPlaceholder != null)
                 pinnedContent.Children.Remove(_pinnedPlaceholder);
+        }
+
+        /// <summary>编辑模式下置顶区为空时临时展开并附占位提示，作为拖放目标；拖拽结束后由发起方调用 SyncPinnedAreaVisibility 还原</summary>
+        private void BeginPinnedDropTarget()
+        {
+            if (!_isEditMode || AnyPinnedPanels()) return;
+            if (_pinnedPlaceholder == null)
+            {
+                _pinnedPlaceholder = new Emoji.Wpf.TextBlock
+                {
+                    Text = Framework.Lang.T("nativePanel.dragToPinHint"),
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 4, 0, 2),
+                    FontSize = 12,
+                    Opacity = 0.6
+                };
             }
+            if (!pinnedContent.Children.Contains(_pinnedPlaceholder))
+                pinnedContent.Children.Add(_pinnedPlaceholder);
+            pinnedArea.Visibility = Visibility.Visible;
         }
 
         /// <summary>
@@ -463,7 +465,7 @@ namespace SideDesk.Controls
         /// </summary>
         private UIElement WrapWidget(string defaultTitle, UIElement content, PanelItem item, Action? onAddClick = null, ContextMenu? actionMenu = null, string addMenuHeader = null, bool fillContent = false)
         {
-            addMenuHeader ??= Framework.Lang.T("添加");
+            addMenuHeader ??= Framework.Lang.T("common.add");
             var module = CreateModuleControl(defaultTitle, item, fillMode: fillContent);
 
             // 将 onAddClick 转为自定义菜单项（编辑模式下也保留：
@@ -537,7 +539,7 @@ namespace SideDesk.Controls
                 && (item.ShareMode != "reference" || item.AllowReShare))
             {
                 // Tag=keepWhenReadOnly：只读模块若允许再分享，菜单项不被禁用
-                var shareMi = new MenuItem { Header = Framework.Lang.T("分享模块"), Tag = "keepWhenReadOnly" };
+                var shareMi = new MenuItem { Header = Framework.Lang.T("nativePanel.shareModule"), Tag = "keepWhenReadOnly" };
                 shareMi.Click += (_, _) => ShareModule_Click(item);
                 module.AddCustomMenuItem(shareMi);
             }
@@ -550,7 +552,7 @@ namespace SideDesk.Controls
         {
             var mi = new MenuItem
             {
-                Header = Framework.Lang.T("置顶显示"),
+                Header = Framework.Lang.T("nativePanel.pinOnTop"),
                 IsCheckable = true,
                 IsChecked = item.IsPinned
             };
@@ -620,7 +622,7 @@ namespace SideDesk.Controls
                 Cursor = Cursors.SizeNS,
                 Margin = new Thickness(0, 1, 0, 0),
                 HorizontalAlignment = HorizontalAlignment.Stretch,
-                ToolTip = Framework.Lang.T("拖拽调整模块高度（双击恢复自动高度）")
+                ToolTip = Framework.Lang.T("nativePanel.dragToAdjustHeightHint")
             };
             var line = new Border
             {
@@ -820,13 +822,13 @@ namespace SideDesk.Controls
             {
                 if (string.IsNullOrEmpty(barServerId))
                 {
-                    MessageBox.Show(Framework.Lang.T("窗口尚未同步，请先执行一次云同步。"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show(Framework.Lang.T("nativePanel.windowNotSynced"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
                 var newId = await Services.CloudSyncService.Instance.EnsureItemServerIdAsync(item, barServerId);
                 if (string.IsNullOrEmpty(newId))
                 {
-                    MessageBox.Show(Framework.Lang.T("模块同步失败，无法创建分享。请确保已登录并开启云同步。"), Framework.Lang.T("错误"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show(Framework.Lang.T("nativePanel.moduleSyncFailedCannot"), Framework.Lang.T("common.error"), MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
             }
@@ -835,7 +837,7 @@ namespace SideDesk.Controls
 
             var dialog = new System.Windows.Window
             {
-                Title = Framework.Lang.T("分享模块"),
+                Title = Framework.Lang.T("nativePanel.shareModule"),
                 Width = 320,
                 SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -852,35 +854,35 @@ namespace SideDesk.Controls
             var panel = new StackPanel { Margin = new Thickness(20) };
             panel.Children.Add(new TextBlock
             {
-                Text = Framework.Lang.T("选择分享模式："),
+                Text = Framework.Lang.T("settings.chooseASharingMode"),
                 FontSize = 12,
                 Foreground = (Brush)FindResource("BrushTextSec"),
                 Margin = new Thickness(0, 0, 0, 10)
             });
 
-            var copyRadio = new RadioButton { Content = Framework.Lang.T("复制（对方获得独立副本）"), Style = radioStyle, IsChecked = true, Margin = new Thickness(0, 0, 0, 8) };
-            var refRadio = new RadioButton { Content = Framework.Lang.T("引用（对方看到你的实时数据）"), Style = radioStyle, Margin = new Thickness(0, 0, 0, 16) };
+            var copyRadio = new RadioButton { Content = Framework.Lang.T("settings.shareModeCopyHint"), Style = radioStyle, IsChecked = true, Margin = new Thickness(0, 0, 0, 8) };
+            var refRadio = new RadioButton { Content = Framework.Lang.T("settings.referenceLiveDataHint"), Style = radioStyle, Margin = new Thickness(0, 0, 0, 16) };
             panel.Children.Add(copyRadio);
             panel.Children.Add(refRadio);
 
             var permLabel = new TextBlock
             {
-                Text = Framework.Lang.T("导入者权限："),
+                Text = Framework.Lang.T("settings.importerPermissions"),
                 FontSize = 12,
                 Foreground = (Brush)FindResource("BrushTextSec"),
                 Margin = new Thickness(0, 0, 0, 8)
             };
             panel.Children.Add(permLabel);
-            var cbEdit = new CheckBox { Content = Framework.Lang.T("允许编辑"), Style = checkStyle, IsChecked = true, Margin = new Thickness(0, 0, 0, 8) };
-            var cbDelete = new CheckBox { Content = Framework.Lang.T("允许删除"), Style = checkStyle, IsChecked = true, Margin = new Thickness(0, 0, 0, 8) };
-            var cbReShare = new CheckBox { Content = Framework.Lang.T("允许再分享"), Style = checkStyle, IsChecked = false, Margin = new Thickness(0, 0, 0, 16) };
+            var cbEdit = new CheckBox { Content = Framework.Lang.T("common.allowEditing"), Style = checkStyle, IsChecked = true, Margin = new Thickness(0, 0, 0, 8) };
+            var cbDelete = new CheckBox { Content = Framework.Lang.T("common.allowDeletion"), Style = checkStyle, IsChecked = true, Margin = new Thickness(0, 0, 0, 8) };
+            var cbReShare = new CheckBox { Content = Framework.Lang.T("settings.allowReSharing"), Style = checkStyle, IsChecked = false, Margin = new Thickness(0, 0, 0, 16) };
             panel.Children.Add(cbEdit);
             panel.Children.Add(cbDelete);
             panel.Children.Add(cbReShare);
 
             var confirmBtn = new Button
             {
-                Content = Framework.Lang.T("创建分享链接"),
+                Content = Framework.Lang.T("settings.createShareLink"),
                 Style = (Style)FindResource("PrimaryButtonStyle"),
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 Cursor = Cursors.Hand
@@ -936,12 +938,12 @@ namespace SideDesk.Controls
                     }
                     else
                     {
-                        MessageBox.Show(root["msg"]?.ToString() ?? Framework.Lang.T("创建分享失败"), Framework.Lang.T("错误"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                        MessageBox.Show(root["msg"]?.ToString() ?? Framework.Lang.T("settings.createShareFailed"), Framework.Lang.T("common.error"), MessageBoxButton.OK, MessageBoxImage.Warning);
                     }
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show(Framework.Lang.TF("创建分享失败: {0}", ex.Message), Framework.Lang.T("错误"), MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show(Framework.Lang.TF("settings.createShareFailedDetail", ex.Message), Framework.Lang.T("common.error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             };
 
@@ -1012,7 +1014,7 @@ namespace SideDesk.Controls
         private void PromptRenamePanel(PanelItem item, string defaultTitle)
         {
             var current = string.IsNullOrEmpty(item.Title) ? defaultTitle : item.Title;
-            var dialog = new RenameDialog(Framework.Lang.T("修改名称"), current)
+            var dialog = new RenameDialog(Framework.Lang.T("common.rename"), current)
             {
                 Owner = Window.GetWindow(this)
             };
@@ -1035,7 +1037,7 @@ namespace SideDesk.Controls
             item.ChildPanels ??= new List<PanelItem>();
 
             // 基于 ModuleControl 基础组件（Group 模式：无 ScrollViewer、无 resize、自定义菜单）
-            var module = CreateModuleControl(Framework.Lang.T("分组"), item, groupMode: true);
+            var module = CreateModuleControl(Framework.Lang.T("common.group"), item, groupMode: true);
             module.BGColorOverride = item.BGColor ?? item.GroupBGColor;
             module.SetMenuButtonContent("⋯");
             module.SetHeaderMargin(new Thickness(0, 0, 0, item.IsExpanded ? 6 : 0));
@@ -1078,28 +1080,27 @@ namespace SideDesk.Controls
                     pendingGroupInsertIdx++;
                 }
             };
-            var addSubMenu = new MenuItem { Header = Framework.Lang.T("添加模块") };
+            var addSubMenu = new MenuItem { Header = Framework.Lang.T("common.addModule") };
             foreach (var (header, type) in new (string, PanelType)[]
             {
-                (Framework.Lang.T("快捷方式"), PanelType.QuickGroup),
-                (Framework.Lang.T("便签"), PanelType.StickyNotes),
-                (Framework.Lang.T("今日待办"), PanelType.TodoList),
-                (Framework.Lang.T("剪贴板收藏"), PanelType.Clipboard),
-                (Framework.Lang.T("系统信息"), PanelType.SystemMonitor),
-                (Framework.Lang.T("使用统计"), PanelType.UsageStats),
-                (Framework.Lang.T("AI 对话"), PanelType.AIChat),
-                (Framework.Lang.T("文件区"), PanelType.FileArea),
-                (Framework.Lang.T("数据看板"), PanelType.DataDashboard),
-                (Framework.Lang.T("计时器"), PanelType.Timer),
-                (Framework.Lang.T("倒计时"), PanelType.Countdown),
-                (Framework.Lang.T("番茄闹钟"), PanelType.Pomodoro),
-                (Framework.Lang.T("信号灯"), PanelType.SignalLight),
-                (Framework.Lang.T("图片轮播"), PanelType.ImageCarousel),
-                (Framework.Lang.T("每日活跃"), PanelType.DailyActivity),
-                (Framework.Lang.T("日历"), PanelType.Calendar),
-                (Framework.Lang.T("好友"), PanelType.Friend),
-                (Framework.Lang.T("屏幕时长"), PanelType.ScreenTime),
-                (Framework.Lang.T("百度搜索"), PanelType.WebBaidu)
+                (Framework.Lang.T("common.shortcut"), PanelType.QuickGroup),
+                (Framework.Lang.T("common.stickyNotes"), PanelType.StickyNotes),
+                (Framework.Lang.T("common.todayTodos"), PanelType.TodoList),
+                (Framework.Lang.T("common.clipboardFavorites"), PanelType.Clipboard),
+                (Framework.Lang.T("common.systemInfo"), PanelType.SystemMonitor),
+                (Framework.Lang.T("common.usageStatistics"), PanelType.UsageStats),
+                (Framework.Lang.T("common.fileArea"), PanelType.FileArea),
+                (Framework.Lang.T("common.dataDashboard"), PanelType.DataDashboard),
+                (Framework.Lang.T("common.timer"), PanelType.Timer),
+                (Framework.Lang.T("common.countdown"), PanelType.Countdown),
+                (Framework.Lang.T("common.pomodoroAlarm"), PanelType.Pomodoro),
+                (Framework.Lang.T("common.signalLight"), PanelType.SignalLight),
+                (Framework.Lang.T("common.imageCarousel"), PanelType.ImageCarousel),
+                (Framework.Lang.T("common.dailyActivity"), PanelType.DailyActivity),
+                (Framework.Lang.T("common.calendar"), PanelType.Calendar),
+                (Framework.Lang.T("common.friends"), PanelType.Friend),
+                (Framework.Lang.T("common.screenTime"), PanelType.ScreenTime),
+                (Framework.Lang.T("settings.baiduSearch"), PanelType.WebBaidu)
             })
             {
                 var mi = new MenuItem { Header = header };
@@ -1108,15 +1109,15 @@ namespace SideDesk.Controls
                 addSubMenu.Items.Add(mi);
             }
             // 插件子菜单（分组内添加插件）
-            var groupPluginSub = new MenuItem { Header = Framework.Lang.T("插件") };
-            groupPluginSub.Items.Add(new MenuItem { Header = Framework.Lang.T("(加载中...)"), IsEnabled = false }); // 占位项，让 WPF 识别为子菜单并显示箭头
+            var groupPluginSub = new MenuItem { Header = Framework.Lang.T("common.plugins") };
+            groupPluginSub.Items.Add(new MenuItem { Header = Framework.Lang.T("nativePanel.loading"), IsEnabled = false }); // 占位项，让 WPF 识别为子菜单并显示箭头
             groupPluginSub.SubmenuOpened += (s, ev) =>
             {
                 groupPluginSub.Items.Clear();
                 var plugins = PluginLoaderService.Instance.Plugins;
                 if (plugins.Count == 0)
                 {
-                    groupPluginSub.Items.Add(new MenuItem { Header = Framework.Lang.T("(无已加载插件)"), IsEnabled = false });
+                    groupPluginSub.Items.Add(new MenuItem { Header = Framework.Lang.T("nativePanel.noLoadedPlugins"), IsEnabled = false });
                     return;
                 }
                 foreach (var p in plugins)
@@ -1141,8 +1142,8 @@ namespace SideDesk.Controls
             addSubMenu.Items.Add(new Separator());
             addSubMenu.Items.Add(groupPluginSub);
             // 添加数据块：子菜单展开时加载设置中的数据项（模版）
-            var groupDataBlockSub = new MenuItem { Header = Framework.Lang.T("添加数据块") };
-            groupDataBlockSub.Items.Add(new MenuItem { Header = Framework.Lang.T("(加载中...)"), IsEnabled = false });
+            var groupDataBlockSub = new MenuItem { Header = Framework.Lang.T("nativePanel.addDataBlock") };
+            groupDataBlockSub.Items.Add(new MenuItem { Header = Framework.Lang.T("nativePanel.loading"), IsEnabled = false });
             var capturedGroup2 = item;
             groupDataBlockSub.SubmenuOpened += (s, ev) =>
                 PopulateDataBlockMenu(groupDataBlockSub, tpl => AddDataBlockToGroup(capturedGroup2, tpl, pendingGroupInsertIdx), () =>
@@ -1163,14 +1164,14 @@ namespace SideDesk.Controls
             addSubMenu.Items.Add(groupDataBlockSub);
             groupContextMenu.Items.Add(addSubMenu);
             groupContextMenu.Items.Add(new Separator());
-            var editGroupCtxMi = new MenuItem { Header = Framework.Lang.T("编辑分组") };
-            editGroupCtxMi.Click += (s, ev) => ShowPanelSettingsDialog(item, Framework.Lang.T("分组"));
+            var editGroupCtxMi = new MenuItem { Header = Framework.Lang.T("nativePanel.editGroup") };
+            editGroupCtxMi.Click += (s, ev) => ShowPanelSettingsDialog(item, Framework.Lang.T("common.group"));
             groupContextMenu.Items.Add(editGroupCtxMi);
-            var copyGroupCtxMi = new MenuItem { Header = Framework.Lang.T("复制分组") };
+            var copyGroupCtxMi = new MenuItem { Header = Framework.Lang.T("nativePanel.duplicateGroup") };
             copyGroupCtxMi.Click += (s, ev) => DuplicateGroup(item);
             groupContextMenu.Items.Add(copyGroupCtxMi);
             groupContextMenu.Items.Add(BuildPinMenuItem(item));
-            var deleteGroupItem = new MenuItem { Header = Framework.Lang.T("删除分组") };
+            var deleteGroupItem = new MenuItem { Header = Framework.Lang.T("nativePanel.deleteGroup") };
             deleteGroupItem.Click += (s, ev) => ConfirmRemoveGroup(item);
             groupContextMenu.Items.Add(deleteGroupItem);
             module.SetModuleContextMenu(groupContextMenu);
@@ -1204,7 +1205,7 @@ namespace SideDesk.Controls
             bool isGroup = item.Type == PanelType.Group;
             var dialog = new Window
             {
-                Title = isGroup ? Framework.Lang.T("分组设置") : Framework.Lang.T("模块设置"),
+                Title = isGroup ? Framework.Lang.T("nativePanel.groupSettings") : Framework.Lang.T("common.moduleSettings"),
                 Width = 380,
                 SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -1221,7 +1222,7 @@ namespace SideDesk.Controls
             // 名称
             root.Children.Add(new TextBlock
             {
-                Text = isGroup ? Framework.Lang.T("分组名称") : Framework.Lang.T("模块名称"),
+                Text = isGroup ? Framework.Lang.T("nativePanel.groupNameFull") : Framework.Lang.T("nativePanel.moduleName"),
                 FontSize = 12,
                 Foreground = (Brush)FindResource("BrushTextSec"),
                 Margin = new Thickness(0, 0, 0, 6)
@@ -1237,7 +1238,7 @@ namespace SideDesk.Controls
             // 归属选择（个人 / 团队）
             root.Children.Add(new TextBlock
             {
-                Text = Framework.Lang.T("归属"),
+                Text = Framework.Lang.T("common.ownership"),
                 FontSize = 12,
                 Foreground = (Brush)FindResource("BrushTextSec"),
                 Margin = new Thickness(0, 0, 0, 6)
@@ -1247,7 +1248,7 @@ namespace SideDesk.Controls
                 Style = (Style)FindResource("GlobalComboBoxStyle"),
                 Margin = new Thickness(0, 0, 0, 14)
             };
-            ownerCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("个人"), Tag = null });
+            ownerCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("common.personal"), Tag = null });
             ownerCombo.SelectedIndex = 0;
             root.Children.Add(ownerCombo);
 
@@ -1294,14 +1295,14 @@ namespace SideDesk.Controls
                 var selected = ownerCombo.SelectedItem as ComboBoxItem;
                 bool isTeam = !string.IsNullOrEmpty(selected?.Tag as string);
                 ownerHint.Text = isTeam
-                    ? Framework.Lang.T("团队可见：团队其他成员可从团队组件库添加此模块，数据共享互通")
+                    ? Framework.Lang.T("nativePanel.teamVisibleOtherTeam")
                     : "";
             };
 
             // 背景色
             root.Children.Add(new TextBlock
             {
-                Text = Framework.Lang.T("背景色"),
+                Text = Framework.Lang.T("common.backgroundColor"),
                 FontSize = 12,
                 Foreground = (Brush)FindResource("BrushTextSec"),
                 Margin = new Thickness(0, 0, 0, 6)
@@ -1324,7 +1325,7 @@ namespace SideDesk.Controls
                 Cursor = Cursors.Hand,
                 Child = new TextBlock
                 {
-                    Text = Framework.Lang.T("默认"), FontSize = 9,
+                    Text = Framework.Lang.T("common.default"), FontSize = 9,
                     HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center,
                     Foreground = (Brush)FindResource("BrushTextMuted")
@@ -1375,7 +1376,7 @@ namespace SideDesk.Controls
             var customDock = new DockPanel { Margin = new Thickness(0, 0, 0, 16) };
             customDock.Children.Add(new TextBlock
             {
-                Text = Framework.Lang.T("自定义："), VerticalAlignment = VerticalAlignment.Center, FontSize = 11,
+                Text = Framework.Lang.T("settings.custom"), VerticalAlignment = VerticalAlignment.Center, FontSize = 11,
                 Foreground = (Brush)FindResource("BrushTextSec")
             });
             var customBox = new TextBox
@@ -1387,7 +1388,7 @@ namespace SideDesk.Controls
             customDock.Children.Add(customBox);
             var applyColorBtn = new Button
             {
-                Content = Framework.Lang.T("应用"), FontSize = 10, Padding = new Thickness(8, 3, 8, 3),
+                Content = Framework.Lang.T("common.apps"), FontSize = 10, Padding = new Thickness(8, 3, 8, 3),
                 Margin = new Thickness(6, 0, 0, 0),
                 Style = (Style)FindResource("GhostButtonStyle")
             };
@@ -1402,7 +1403,7 @@ namespace SideDesk.Controls
                     if (selectedSwatch != null) selectedSwatch.BorderBrush = Brushes.Transparent;
                     selectedSwatch = null;
                 }
-                catch { MessageBox.Show(Framework.Lang.T("无效的颜色值"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning); }
+                catch { MessageBox.Show(Framework.Lang.T("nativePanel.invalidColorValue"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Warning); }
             };
             customDock.Children.Add(applyColorBtn);
             root.Children.Add(customDock);
@@ -1411,13 +1412,13 @@ namespace SideDesk.Controls
             var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
             var cancelBtn = new Button
             {
-                Content = Framework.Lang.T("取消"), Width = 75, MinHeight = 30, Margin = new Thickness(0, 0, 10, 0),
+                Content = Framework.Lang.T("common.cancel"), Width = 75, MinHeight = 30, Margin = new Thickness(0, 0, 10, 0),
                 Style = (Style)FindResource("StandardButtonStyle")
             };
             cancelBtn.Click += (s, e) => dialog.Close();
             var saveBtn = new Button
             {
-                Content = Framework.Lang.T("保存"), Width = 75, MinHeight = 30, IsDefault = true,
+                Content = Framework.Lang.T("common.save"), Width = 75, MinHeight = 30, IsDefault = true,
                 Style = (Style)FindResource("StandardButtonStyle")
             };
             saveBtn.Click += async (s, e) =>
@@ -1450,8 +1451,8 @@ namespace SideDesk.Controls
                     {
                         // 同步失败不阻断本地保存（下次全量同步会重试），但明确提示用户
                         var err = Services.CloudSyncService.Instance.LastOwnershipError;
-                        MessageBox.Show(Framework.Lang.TF("归属已保存到本地，但同步服务器失败：\n{0}\n\n下次云同步时会再次尝试。", err),
-                            Framework.Lang.T("同步提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                        MessageBox.Show(Framework.Lang.TF("nativePanel.ownershipSavedLocallyBut", err),
+                            Framework.Lang.T("settings.syncNotice"), MessageBoxButton.OK, MessageBoxImage.Warning);
                     }
                 }
 
@@ -1470,7 +1471,7 @@ namespace SideDesk.Controls
         /// <summary>构建“模块设置”菜单项</summary>
         private MenuItem BuildSettingsMenuItem(PanelItem item, string defaultTitle)
         {
-            var mi = new MenuItem { Header = Framework.Lang.T("模块设置") };
+            var mi = new MenuItem { Header = Framework.Lang.T("common.moduleSettings") };
             mi.Click += (s, e) => ShowPanelSettingsDialog(item, defaultTitle);
             return mi;
         }
@@ -1485,7 +1486,8 @@ namespace SideDesk.Controls
             if (clone == null) return;
 
             RegeneratePanelIds(clone);
-            clone.Title = (string.IsNullOrEmpty(item.Title) ? Framework.Lang.T("分组") : item.Title) + " 副本";
+            var baseTitle = string.IsNullOrEmpty(item.Title) ? Framework.Lang.T("common.group") : item.Title;
+            clone.Title = Framework.Lang.TF("common.copySuffix", baseTitle);
 
             var idx = _currentWindowConfig.Panels.IndexOf(item);
             _currentWindowConfig.Panels.Insert(idx >= 0 ? idx + 1 : _currentWindowConfig.Panels.Count, clone);
@@ -1504,20 +1506,20 @@ namespace SideDesk.Controls
         /// <summary>删除分组前弹出确认提示</summary>
         private void ConfirmRemoveGroup(PanelItem item)
         {
-            var name = string.IsNullOrEmpty(item.Title) ? Framework.Lang.T("分组") : item.Title;
+            var name = string.IsNullOrEmpty(item.Title) ? Framework.Lang.T("common.group") : item.Title;
             var count = item.ChildPanels?.Count ?? 0;
             var msg = count > 0
-                ? Framework.Lang.TF("确定删除分组「{0}」吗？\n该分组内含有 {1} 个模块，将一并删除。", name, count)
-                : Framework.Lang.TF("确定删除分组「{0}」吗？", name);
-            if (ShowConfirmDialog(Framework.Lang.T("删除分组"), msg))
+                ? Framework.Lang.TF("nativePanel.deleteGroupTheGroup", name, count)
+                : Framework.Lang.TF("nativePanel.deleteGroupConfirmQuoted", name);
+            if (ShowConfirmDialog(Framework.Lang.T("nativePanel.deleteGroup"), msg))
                 RemovePanel(item);
         }
 
         /// <summary>主题风格确认弹框，返回 true 表示用户点击了“确定”</summary>
         private bool ShowConfirmDialog(string title, string message, string okText = null, string cancelText = null)
         {
-            okText ??= Framework.Lang.T("确定");
-            cancelText ??= Framework.Lang.T("取消");
+            okText ??= Framework.Lang.T("common.ok");
+            cancelText ??= Framework.Lang.T("common.cancel");
             var dialog = new Window
             {
                 Title = title,
@@ -1617,7 +1619,7 @@ namespace SideDesk.Controls
                 OpenPanelStickyNoteEditor(note, notePanel, item, n => item.StickyNotes.Insert(0, n));
             }
 
-            return WrapWidget(Framework.Lang.T("📝 便签"), container, item, _isEditMode ? null : AddNote);
+            return WrapWidget(Framework.Lang.T("nativePanel.stickyNotes"), container, item, _isEditMode ? null : AddNote);
         }
 
         private UIElement BuildClipboardWidget(PanelItem item)
@@ -1630,7 +1632,7 @@ namespace SideDesk.Controls
             // 已收藏列表
             if (item.ClipboardItems.Count == 0)
             {
-                container.Children.Add(BuildEmptyAddTip(Framework.Lang.T("（暂无收藏，点击添加）"), () => ShowClipboardPickDialog(item)));
+                container.Children.Add(BuildEmptyAddTip(Framework.Lang.T("nativePanel.noFavoritesClickTo"), () => ShowClipboardPickDialog(item)));
             }
             else
             {
@@ -1644,7 +1646,7 @@ namespace SideDesk.Controls
 
                     // 右键菜单：删除收藏项（无需进入编辑模式）
                     var clipMenu = new ContextMenu();
-                    var clipDelItem = new MenuItem { Header = Framework.Lang.T("删除") };
+                    var clipDelItem = new MenuItem { Header = Framework.Lang.T("common.delete") };
                     var capturedClip = clip;
                     clipDelItem.Click += (s, ev) =>
                     {
@@ -1653,7 +1655,7 @@ namespace SideDesk.Controls
                         RenderPanels();
                     };
                     clipMenu.Items.Add(clipDelItem);
-                    var clipHideMi = new MenuItem { Header = Framework.Lang.T("隐藏模块外框"), IsCheckable = true, IsChecked = item.HideFrame };
+                    var clipHideMi = new MenuItem { Header = Framework.Lang.T("common.hideModuleFrame"), IsCheckable = true, IsChecked = item.HideFrame };
                     clipHideMi.Click += (s, ev) => { item.HideFrame = clipHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
                     clipMenu.Items.Add(clipHideMi);
                     itemPanel.ContextMenu = clipMenu;
@@ -1665,7 +1667,7 @@ namespace SideDesk.Controls
                         Background = Brushes.Transparent,
                         Foreground = (Brush)FindResource("BrushTextMuted"),
                         BorderThickness = new Thickness(0), Padding = new Thickness(0),
-                        Cursor = Cursors.Hand, ToolTip = Framework.Lang.T("删除"),
+                        Cursor = Cursors.Hand, ToolTip = Framework.Lang.T("common.delete"),
                         Visibility = Visibility.Collapsed
                     };
                     DockPanel.SetDock(delBtn, Dock.Right);
@@ -1678,7 +1680,7 @@ namespace SideDesk.Controls
                         Background = Brushes.Transparent,
                         Foreground = (Brush)FindResource("BrushTextSec"),
                         BorderThickness = new Thickness(0), Padding = new Thickness(0),
-                        Cursor = Cursors.Hand, ToolTip = Framework.Lang.T("复制到剪贴板"),
+                        Cursor = Cursors.Hand, ToolTip = Framework.Lang.T("common.copyToClipboard"),
                         Visibility = Visibility.Collapsed
                     };
                     DockPanel.SetDock(copyBtn, Dock.Right);
@@ -1749,7 +1751,7 @@ namespace SideDesk.Controls
                 }
             }
 
-            var favModule = WrapWidget(Framework.Lang.T("📋 剪贴板收藏"), container, item, () => ShowClipboardPickDialog(item));
+            var favModule = WrapWidget(Framework.Lang.T("nativePanel.clipboardFavorites"), container, item, () => ShowClipboardPickDialog(item));
 
             // 拖拽收藏：从剪贴板历史弹窗拖条目到本模块即添加收藏
             favModule.AllowDrop = true;
@@ -1814,7 +1816,7 @@ namespace SideDesk.Controls
                 {
                     var image = Clipboard.GetImage();
                     if (image != null)
-                        AddCandidate(Framework.Lang.TF("[图片 {0}x{1}]", image.PixelWidth, image.PixelHeight), "Image");
+                        AddCandidate(Framework.Lang.TF("nativePanel.imageX", image.PixelWidth, image.PixelHeight), "Image");
                 }
                 else if (Clipboard.ContainsFileDropList())
                 {
@@ -1864,7 +1866,7 @@ namespace SideDesk.Controls
             var container = new StackPanel();
             CreateKeyCountPanel(container);
             CreateMouseDistancePanel(container);
-            return WrapWidget(Framework.Lang.T("💻 系统信息"), container, item);
+            return WrapWidget(Framework.Lang.T("nativePanel.systemInfo"), container, item);
         }
 
         private UIElement BuildUsageStatsWidget(PanelItem item)
@@ -1872,7 +1874,7 @@ namespace SideDesk.Controls
             var container = new StackPanel();
             var btn = new Button
             {
-                Content = Framework.Lang.T("📊 查看使用统计"),
+                Content = Framework.Lang.T("nativePanel.viewUsageStatistics"),
                 Height = 28,
                 Margin = new Thickness(0, 3, 0, 3),
                 Cursor = Cursors.Hand
@@ -1882,7 +1884,7 @@ namespace SideDesk.Controls
 
             var taskbarBtn = new Button
             {
-                Content = Framework.Lang.T("📌 任务栏标记"),
+                Content = Framework.Lang.T("nativePanel.taskbarMarker"),
                 Height = 28,
                 Margin = new Thickness(0, 3, 0, 3),
                 Cursor = Cursors.Hand
@@ -1890,20 +1892,20 @@ namespace SideDesk.Controls
             taskbarBtn.Click += (s, e) => TaskbarOverlayButton_Click(s, e);
             container.Children.Add(taskbarBtn);
 
-            return WrapWidget(Framework.Lang.T("📊 使用统计"), container, item);
+            return WrapWidget(Framework.Lang.T("nativePanel.usageStatistics"), container, item);
         }
 
         private UIElement BuildAIChatWidget(PanelItem item)
         {
             var btn = new Button
             {
-                Content = Framework.Lang.T("🤖 打开AI对话"),
+                Content = Framework.Lang.T("nativePanel.openAiChat"),
                 Height = 28,
                 Margin = new Thickness(0, 3, 0, 3),
                 Cursor = Cursors.Hand
             };
             btn.Click += (s, e) => AIChatButton_Click(s, e);
-            return WrapWidget(Framework.Lang.T("🤖 AI 对话"), btn, item);
+            return WrapWidget(Framework.Lang.T("nativePanel.aiChat"), btn, item);
         }
 
         /// <summary>
@@ -1931,7 +1933,7 @@ namespace SideDesk.Controls
                 }
             };
 
-            return WrapWidget(Framework.Lang.T("🔍 百度搜索"), webView, item, fillContent: true);
+            return WrapWidget(Framework.Lang.T("nativePanel.baiduSearch"), webView, item, fillContent: true);
         }
 
         private UIElement BuildTodoWidget(PanelItem item)
@@ -1948,13 +1950,13 @@ namespace SideDesk.Controls
 
             // 空列表提示：点击直接弹出添加待办对话框
             if (item.TodoItems.Count == 0)
-                container.Children.Add(BuildEmptyAddTip(Framework.Lang.T("暂无待办，点击添加"), () => ShowTodoDialog(item)));
+                container.Children.Add(BuildEmptyAddTip(Framework.Lang.T("nativePanel.noTodosClickTo"), () => ShowTodoDialog(item)));
 
             if (item.SkipWrapper)
                 return container;
 
             // 标题栏「+」弹出添加待办对话框
-            return WrapWidget(Framework.Lang.T("今日待办"), container, item, () => ShowTodoDialog(item));
+            return WrapWidget(Framework.Lang.T("common.todayTodos"), container, item, () => ShowTodoDialog(item));
         }
 
         #region 信号灯面板
@@ -1997,7 +1999,7 @@ namespace SideDesk.Controls
 
             var lightMenu = new ContextMenu();
             // 右键单个灯：编辑灯信息 / 删除该灯
-            var detailMi = new MenuItem { Header = Framework.Lang.T("编辑") };
+            var detailMi = new MenuItem { Header = Framework.Lang.T("common.edit") };
             detailMi.Click += (s, e) =>
             {
                 ShowSignalLightDetailDialog(light);
@@ -2005,7 +2007,7 @@ namespace SideDesk.Controls
                 RenderPanels();
             };
             lightMenu.Items.Add(detailMi);
-            var delLightMi = new MenuItem { Header = Framework.Lang.T("删除") };
+            var delLightMi = new MenuItem { Header = Framework.Lang.T("common.delete") };
             delLightMi.Click += (s, e) =>
             {
                 var owner = FindSignalLightOwner(light);
@@ -2015,7 +2017,7 @@ namespace SideDesk.Controls
             };
             lightMenu.Items.Add(delLightMi);
             lightMenu.Items.Add(new Separator());
-            var editMi = new MenuItem { Header = Framework.Lang.T("设置信号灯") };
+            var editMi = new MenuItem { Header = Framework.Lang.T("nativePanel.setSignalLight") };
             editMi.Click += (s, e) =>
             {
                 var owner = FindSignalLightOwner(light);
@@ -2217,7 +2219,7 @@ namespace SideDesk.Controls
             };
 
             // 每个信号灯模块只有一组灯（单个 PanelItem 内记录多个灯），菜单项用“设置信号灯”更达意
-            return WrapWidget(Framework.Lang.T("🚦 信号灯"), container, item, () => ShowSignalLightEditDialog(item), null, "设置信号灯");
+            return WrapWidget(Framework.Lang.T("nativePanel.signalLight"), container, item, () => ShowSignalLightEditDialog(item), null, Framework.Lang.T("nativePanel.setSignalLight"));
         }
 
         private void ShowSignalLightEditDialog(PanelItem item)
@@ -2226,7 +2228,7 @@ namespace SideDesk.Controls
 
             var dialog = new Window
             {
-                Title = Framework.Lang.T("设置信号灯"),
+                Title = Framework.Lang.T("nativePanel.setSignalLight"),
                 Width = 400,
                 SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -2243,20 +2245,20 @@ namespace SideDesk.Controls
 
             // 第一行：排列方向 + 灯样式
             var row1 = new DockPanel { Margin = new Thickness(0, 0, 0, 12) };
-            var orientLabel = new TextBlock { Text = Framework.Lang.T("排列方向："), Width = 70, VerticalAlignment = VerticalAlignment.Center };
+            var orientLabel = new TextBlock { Text = Framework.Lang.T("nativePanel.arrangementDirection"), Width = 70, VerticalAlignment = VerticalAlignment.Center };
             DockPanel.SetDock(orientLabel, Dock.Left);
             row1.Children.Add(orientLabel);
             var orientCombo = new ComboBox { Style = comboStyle, Width = 100 };
-            orientCombo.Items.Add(Framework.Lang.T("横向"));
-            orientCombo.Items.Add(Framework.Lang.T("纵向"));
+            orientCombo.Items.Add(Framework.Lang.T("common.horizontal"));
+            orientCombo.Items.Add(Framework.Lang.T("common.vertical"));
             orientCombo.SelectedIndex = item.SignalLightVertical ? 1 : 0;
             row1.Children.Add(orientCombo);
 
             // Dock.Right 先加控件（最右），再加标签（控件左边）
             var styleCombo = new ComboBox { Style = comboStyle, Width = 100 };
-            styleCombo.Items.Add(Framework.Lang.T("圆形"));
-            styleCombo.Items.Add(Framework.Lang.T("方形"));
-            styleCombo.Items.Add(Framework.Lang.T("像素"));
+            styleCombo.Items.Add(Framework.Lang.T("settings.circle"));
+            styleCombo.Items.Add(Framework.Lang.T("nativePanel.square"));
+            styleCombo.Items.Add(Framework.Lang.T("common.px"));
             var firstLight = item.SignalLights.FirstOrDefault();
             styleCombo.SelectedIndex = firstLight?.LightStyle switch
             {
@@ -2266,14 +2268,14 @@ namespace SideDesk.Controls
             };
             DockPanel.SetDock(styleCombo, Dock.Right);
             row1.Children.Add(styleCombo);
-            var styleLabel = new TextBlock { Text = Framework.Lang.T("  灯样式："), VerticalAlignment = VerticalAlignment.Center };
+            var styleLabel = new TextBlock { Text = Framework.Lang.T("nativePanel.lightStyle"), VerticalAlignment = VerticalAlignment.Center };
             DockPanel.SetDock(styleLabel, Dock.Right);
             row1.Children.Add(styleLabel);
             root.Children.Add(row1);
 
             // 第二行：大小 + 间距 + 对齐
             var row2 = new DockPanel { Margin = new Thickness(0, 0, 0, 12) };
-            var sizeLabel = new TextBlock { Text = Framework.Lang.T("灯大小："), Width = 70, VerticalAlignment = VerticalAlignment.Center };
+            var sizeLabel = new TextBlock { Text = Framework.Lang.T("nativePanel.lightSize"), Width = 70, VerticalAlignment = VerticalAlignment.Center };
             DockPanel.SetDock(sizeLabel, Dock.Left);
             row2.Children.Add(sizeLabel);
             var sizeBox = new TextBox { Text = firstLight?.Size.ToString() ?? "36", Style = textBoxStyle, Width = 70 };
@@ -2281,9 +2283,9 @@ namespace SideDesk.Controls
 
             // Dock.Right 从右到左：对齐控件 → 对齐标签 → 间距控件 → 间距标签
             var alignCombo = new ComboBox { Style = comboStyle, Width = 80 };
-            alignCombo.Items.Add(Framework.Lang.T("居左"));
-            alignCombo.Items.Add(Framework.Lang.T("居中"));
-            alignCombo.Items.Add(Framework.Lang.T("居右"));
+            alignCombo.Items.Add(Framework.Lang.T("nativePanel.left"));
+            alignCombo.Items.Add(Framework.Lang.T("nativePanel.center"));
+            alignCombo.Items.Add(Framework.Lang.T("nativePanel.right"));
             alignCombo.SelectedIndex = item.SignalLightAlignment switch
             {
                 "Left" => 0,
@@ -2293,7 +2295,7 @@ namespace SideDesk.Controls
             DockPanel.SetDock(alignCombo, Dock.Right);
             row2.Children.Add(alignCombo);
 
-            var alignLabel = new TextBlock { Text = Framework.Lang.T("  对齐："), VerticalAlignment = VerticalAlignment.Center };
+            var alignLabel = new TextBlock { Text = Framework.Lang.T("nativePanel.alignment"), VerticalAlignment = VerticalAlignment.Center };
             DockPanel.SetDock(alignLabel, Dock.Right);
             row2.Children.Add(alignLabel);
 
@@ -2301,7 +2303,7 @@ namespace SideDesk.Controls
             DockPanel.SetDock(spacingBox, Dock.Right);
             row2.Children.Add(spacingBox);
 
-            var spacingLabel = new TextBlock { Text = Framework.Lang.T("  间距："), VerticalAlignment = VerticalAlignment.Center };
+            var spacingLabel = new TextBlock { Text = Framework.Lang.T("nativePanel.spacing"), VerticalAlignment = VerticalAlignment.Center };
             DockPanel.SetDock(spacingLabel, Dock.Right);
             row2.Children.Add(spacingLabel);
             root.Children.Add(row2);
@@ -2331,7 +2333,7 @@ namespace SideDesk.Controls
                         Foreground = (Brush)FindResource("BrushTextSec"),
                         BorderThickness = new Thickness(0), Padding = new Thickness(0),
                         Cursor = Cursors.Hand, Margin = new Thickness(0, 0, 4, 0),
-                        ToolTip = Framework.Lang.T("编辑")
+                        ToolTip = Framework.Lang.T("common.edit")
                     };
                     editBtn.Click += (s, e) => { ShowSignalLightDetailDialog(light); RenderEditList(); };
                     rightBtns.Children.Add(editBtn);
@@ -2361,7 +2363,7 @@ namespace SideDesk.Controls
                     row.Children.Add(colorText);
                     var sizeText = new TextBlock
                     {
-                        Text = $"{Framework.Lang.T("大小:")}{light.Size:0.##}",
+                        Text = $"{Framework.Lang.T("nativePanel.size")}{light.Size:0.##}",
                         VerticalAlignment = VerticalAlignment.Center,
                         Foreground = (Brush)FindResource("BrushTextSec"),
                         Margin = new Thickness(0, 0, 10, 0)
@@ -2382,10 +2384,10 @@ namespace SideDesk.Controls
 
                     // 右键行：编辑 / 删除（与右侧按钮等价）
                     var rowMenu = new ContextMenu();
-                    var rowEditMi = new MenuItem { Header = Framework.Lang.T("编辑") };
+                    var rowEditMi = new MenuItem { Header = Framework.Lang.T("common.edit") };
                     rowEditMi.Click += (s, e) => { ShowSignalLightDetailDialog(light); RenderEditList(); };
                     rowMenu.Items.Add(rowEditMi);
-                    var rowDelMi = new MenuItem { Header = Framework.Lang.T("删除") };
+                    var rowDelMi = new MenuItem { Header = Framework.Lang.T("common.delete") };
                     rowDelMi.Click += (s, e) => { item.SignalLights.RemoveAt(idx); RenderEditList(); };
                     rowMenu.Items.Add(rowDelMi);
                     row.ContextMenu = rowMenu;
@@ -2397,7 +2399,7 @@ namespace SideDesk.Controls
             // 添加灯按钮
             var addBtn = new Button
             {
-                Content = Framework.Lang.T("+ 添加灯"),
+                Content = Framework.Lang.T("nativePanel.addLight"),
                 Style = (Style)FindResource("StandardButtonStyle"),
                 HorizontalAlignment = HorizontalAlignment.Left,
                 Margin = new Thickness(0, 4, 0, 16)
@@ -2411,8 +2413,8 @@ namespace SideDesk.Controls
 
             // 按钮
             var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-            var okBtn = new Button { Content = Framework.Lang.T("确定"), Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)FindResource("PrimaryButtonStyle") };
-            var cancelBtn = new Button { Content = Framework.Lang.T("取消"), Width = 70, Style = (Style)FindResource("StandardButtonStyle") };
+            var okBtn = new Button { Content = Framework.Lang.T("common.ok"), Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)FindResource("PrimaryButtonStyle") };
+            var cancelBtn = new Button { Content = Framework.Lang.T("common.cancel"), Width = 70, Style = (Style)FindResource("StandardButtonStyle") };
             okBtn.Click += (s, e) =>
             {
                 item.SignalLightVertical = orientCombo.SelectedIndex == 1;
@@ -2458,7 +2460,7 @@ namespace SideDesk.Controls
         {
             var dialog = new Window
             {
-                Title = Framework.Lang.T("灯详情"),
+                Title = Framework.Lang.T("nativePanel.lightDetails"),
                 Width = 500,
                 SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -2475,7 +2477,7 @@ namespace SideDesk.Controls
 
             // 颜色（输入框 + 实时色块预览）
             var colorRow = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
-            var colorLabel = new TextBlock { Text = Framework.Lang.T("颜色："), Width = 70, VerticalAlignment = VerticalAlignment.Center };
+            var colorLabel = new TextBlock { Text = Framework.Lang.T("common.color"), Width = 70, VerticalAlignment = VerticalAlignment.Center };
             DockPanel.SetDock(colorLabel, Dock.Left);
             colorRow.Children.Add(colorLabel);
             var swatch = new System.Windows.Shapes.Ellipse { Width = 18, Height = 18, VerticalAlignment = VerticalAlignment.Center, Fill = TryParseLightBrush(light.Color) };
@@ -2488,7 +2490,7 @@ namespace SideDesk.Controls
 
             // 大小
             var sizeRow = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
-            var sizeLabel = new TextBlock { Text = Framework.Lang.T("灯大小："), Width = 70, VerticalAlignment = VerticalAlignment.Center };
+            var sizeLabel = new TextBlock { Text = Framework.Lang.T("nativePanel.lightSize"), Width = 70, VerticalAlignment = VerticalAlignment.Center };
             DockPanel.SetDock(sizeLabel, Dock.Left);
             sizeRow.Children.Add(sizeLabel);
             var sizeBox = new TextBox { Text = light.Size.ToString(), Style = textBoxStyle, Width = 80 };
@@ -2497,7 +2499,7 @@ namespace SideDesk.Controls
 
             // 图标
             var iconRow = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
-            var iconLabel = new TextBlock { Text = Framework.Lang.T("图标："), Width = 70, VerticalAlignment = VerticalAlignment.Center };
+            var iconLabel = new TextBlock { Text = Framework.Lang.T("common.iconLabel"), Width = 70, VerticalAlignment = VerticalAlignment.Center };
             DockPanel.SetDock(iconLabel, Dock.Left);
             iconRow.Children.Add(iconLabel);
             var iconBox = new TextBox { Text = light.Icon ?? "", Style = textBoxStyle };
@@ -2513,8 +2515,8 @@ namespace SideDesk.Controls
                 // 标题行：状态名 + 条件组合方式（OR 任一 / AND 全部）
                 var headRow = new DockPanel { Margin = new Thickness(0, 0, 0, 4) };
                 var modeCombo = new ComboBox { Style = comboStyle, Width = 160 };
-                modeCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("任一满足即触发(或)"), Tag = "OR" });
-                modeCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("全部满足才触发(与)"), Tag = "AND" });
+                modeCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("nativePanel.anyMatchTriggersOr"), Tag = "OR" });
+                modeCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("nativePanel.allMustMatchAnd"), Tag = "AND" });
                 modeCombo.SelectedIndex = string.Equals(getMode(), "AND", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
                 modeCombo.SelectionChanged += (s, e) => { if (modeCombo.SelectedItem is ComboBoxItem ci) setMode(ci.Tag as string ?? "OR"); };
                 DockPanel.SetDock(modeCombo, Dock.Right);
@@ -2557,10 +2559,10 @@ namespace SideDesk.Controls
 
                         // 比较操作符：等于 / 大于 / 小于 / 不存在
                         var opCombo = new ComboBox { Style = comboStyle, Width = 90, Margin = new Thickness(0, 0, 4, 0) };
-                        opCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("等于"), Tag = "EQ" });
-                        opCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("大于"), Tag = "GT" });
-                        opCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("小于"), Tag = "LT" });
-                        opCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("不存在"), Tag = "MISSING" });
+                        opCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("common.equals"), Tag = "EQ" });
+                        opCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("common.greater"), Tag = "GT" });
+                        opCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("common.less"), Tag = "LT" });
+                        opCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("common.missing"), Tag = "MISSING" });
                         opCombo.SelectedIndex = c.Op switch { "GT" => 1, "LT" => 2, "MISSING" => 3, _ => 0 };
                         row.Children.Add(opCombo);
                         var valBox = new TextBox { Text = c.Value, Style = textBoxStyle, Width = 70, Margin = new Thickness(0, 0, 6, 0) };
@@ -2586,7 +2588,7 @@ namespace SideDesk.Controls
                 sec.Children.Add(rows);
                 var addCondBtn = new Button
                 {
-                    Content = Framework.Lang.T("+ 添加条件"),
+                    Content = Framework.Lang.T("nativePanel.addCondition"),
                     Style = (Style)FindResource("StandardButtonStyle"),
                     Padding = new Thickness(8, 3, 8, 3),
                     HorizontalAlignment = HorizontalAlignment.Left,
@@ -2597,13 +2599,13 @@ namespace SideDesk.Controls
                 return sec;
             }
 
-            root.Children.Add(BuildCondSection(Framework.Lang.T("开"), light.OnConditions, () => light.OnConditionMode, m => light.OnConditionMode = m));
-            root.Children.Add(BuildCondSection(Framework.Lang.T("关"), light.OffConditions, () => light.OffConditionMode, m => light.OffConditionMode = m));
-            root.Children.Add(BuildCondSection(Framework.Lang.T("闪烁"), light.BlinkConditions, () => light.BlinkConditionMode, m => light.BlinkConditionMode = m));
+            root.Children.Add(BuildCondSection(Framework.Lang.T("common.on"), light.OnConditions, () => light.OnConditionMode, m => light.OnConditionMode = m));
+            root.Children.Add(BuildCondSection(Framework.Lang.T("common.off"), light.OffConditions, () => light.OffConditionMode, m => light.OffConditionMode = m));
+            root.Children.Add(BuildCondSection(Framework.Lang.T("common.flash"), light.BlinkConditions, () => light.BlinkConditionMode, m => light.BlinkConditionMode = m));
 
             // 闪烁频率
             var freqRow = new DockPanel { Margin = new Thickness(0, 0, 0, 16) };
-            var freqLabel = new TextBlock { Text = Framework.Lang.T("闪烁频率(秒/次)"), Width = 120, VerticalAlignment = VerticalAlignment.Center };
+            var freqLabel = new TextBlock { Text = Framework.Lang.T("nativePanel.blinkIntervalSecCycle"), Width = 120, VerticalAlignment = VerticalAlignment.Center };
             DockPanel.SetDock(freqLabel, Dock.Left);
             freqRow.Children.Add(freqLabel);
             var freqBox = new TextBox { Text = light.BlinkIntervalSeconds.ToString(), Style = textBoxStyle, Width = 80 };
@@ -2613,8 +2615,8 @@ namespace SideDesk.Controls
 
             // 按钮
             var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-            var okBtn = new Button { Content = Framework.Lang.T("确定"), Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)FindResource("PrimaryButtonStyle") };
-            var cancelBtn = new Button { Content = Framework.Lang.T("取消"), Width = 70, Style = (Style)FindResource("StandardButtonStyle") };
+            var okBtn = new Button { Content = Framework.Lang.T("common.ok"), Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)FindResource("PrimaryButtonStyle") };
+            var cancelBtn = new Button { Content = Framework.Lang.T("common.cancel"), Width = 70, Style = (Style)FindResource("StandardButtonStyle") };
             okBtn.Click += (s, e) =>
             {
                 light.Color = colorBox.Text.Trim();
@@ -2687,7 +2689,7 @@ namespace SideDesk.Controls
             {
                 var remindText = todo.RemindBeforeMinutes < 0
                     ? ""
-                    : (todo.RemindBeforeMinutes == 0 ? Framework.Lang.T("，准时提醒") : Framework.Lang.TF("，提前{0}分钟", todo.RemindBeforeMinutes));
+                    : (todo.RemindBeforeMinutes == 0 ? Framework.Lang.T("nativePanel.remindOnTime") : Framework.Lang.TF("nativePanel.minutesEarly", todo.RemindBeforeMinutes));
                 var clock = new Emoji.Wpf.TextBlock
                 {
                     Text = "\u23F0",
@@ -2718,7 +2720,7 @@ namespace SideDesk.Controls
 
             // 单击查看详情
             textStack.MouseLeftButtonUp += (s, e) => ShowTodoDetail(todo, panelItem);
-            textStack.ToolTip = Framework.Lang.TF("{0}\n（点击查看详情）", todo.Text);
+            textStack.ToolTip = Framework.Lang.TF("nativePanel.clickForDetails", todo.Text);
             row.Children.Add(textStack);
 
             check.Checked += (s, e) => { todo.IsDone = true; _configManager?.Save(); RenderPanels(); };
@@ -2726,10 +2728,10 @@ namespace SideDesk.Controls
 
             // 右键菜单：删除
             var menu = new ContextMenu();
-            var del = new MenuItem { Header = Framework.Lang.T("删除") };
+            var del = new MenuItem { Header = Framework.Lang.T("common.delete") };
             del.Click += (s, e) => { panelItem.TodoItems?.Remove(todo); _configManager?.Save(); RenderPanels(); };
             menu.Items.Add(del);
-            var todoHideMi = new MenuItem { Header = Framework.Lang.T("隐藏模块外框"), IsCheckable = true, IsChecked = panelItem.HideFrame };
+            var todoHideMi = new MenuItem { Header = Framework.Lang.T("common.hideModuleFrame"), IsCheckable = true, IsChecked = panelItem.HideFrame };
             todoHideMi.Click += (s, e) => { panelItem.HideFrame = todoHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
             menu.Items.Add(todoHideMi);
             row.ContextMenu = menu;
@@ -2767,7 +2769,7 @@ namespace SideDesk.Controls
             var owner = Window.GetWindow(this);
             var detailWin = new Window
             {
-                Title = Framework.Lang.T("待办详情"),
+                Title = Framework.Lang.T("nativePanel.todoDetails"),
                 Width = 380,
                 Height = 380,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -2781,7 +2783,7 @@ namespace SideDesk.Controls
             var root = new StackPanel { Margin = new Thickness(20) };
 
             // 状态行
-            var statusText = todo.IsDone ? Framework.Lang.T("✅ 已完成") : Framework.Lang.T("⏳ 未完成");
+            var statusText = todo.IsDone ? Framework.Lang.T("nativePanel.completed") : Framework.Lang.T("nativePanel.pending");
             var statusBlock = new Emoji.Wpf.TextBlock
             {
                 Text = statusText,
@@ -2792,7 +2794,7 @@ namespace SideDesk.Controls
             root.Children.Add(statusBlock);
 
             // 标题
-            var titleHeader = new TextBlock { Text = Framework.Lang.T("标题"), FontSize = 12, Foreground = (Brush)FindResource("BrushTextMuted"), Margin = new Thickness(0, 0, 0, 4) };
+            var titleHeader = new TextBlock { Text = Framework.Lang.T("common.title"), FontSize = 12, Foreground = (Brush)FindResource("BrushTextMuted"), Margin = new Thickness(0, 0, 0, 4) };
             root.Children.Add(titleHeader);
             var titleBlock = new Emoji.Wpf.TextBlock
             {
@@ -2805,7 +2807,7 @@ namespace SideDesk.Controls
             root.Children.Add(titleBlock);
 
             // 详细内容
-            var descHeader = new TextBlock { Text = Framework.Lang.T("详细内容"), FontSize = 12, Foreground = (Brush)FindResource("BrushTextMuted"), Margin = new Thickness(0, 0, 0, 4) };
+            var descHeader = new TextBlock { Text = Framework.Lang.T("todo.details"), FontSize = 12, Foreground = (Brush)FindResource("BrushTextMuted"), Margin = new Thickness(0, 0, 0, 4) };
             root.Children.Add(descHeader);
             var descScroll = new ScrollViewer
             {
@@ -2813,7 +2815,7 @@ namespace SideDesk.Controls
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 Content = new Emoji.Wpf.TextBlock
                 {
-                    Text = string.IsNullOrEmpty(todo.Description) ? Framework.Lang.T("（无详细内容）") : todo.Description,
+                    Text = string.IsNullOrEmpty(todo.Description) ? Framework.Lang.T("nativePanel.noDetails") : todo.Description,
                     FontSize = 13,
                     TextWrapping = TextWrapping.Wrap,
                     Foreground = string.IsNullOrEmpty(todo.Description)
@@ -2829,10 +2831,10 @@ namespace SideDesk.Controls
             {
                 var remindText = todo.RemindBeforeMinutes < 0
                     ? ""
-                    : (todo.RemindBeforeMinutes == 0 ? Framework.Lang.T("，准时提醒") : Framework.Lang.TF("，提前{0}分钟提醒", todo.RemindBeforeMinutes));
+                    : (todo.RemindBeforeMinutes == 0 ? Framework.Lang.T("nativePanel.remindOnTime") : Framework.Lang.TF("nativePanel.remindMinutesEarly", todo.RemindBeforeMinutes));
                 var timeBlock = new Emoji.Wpf.TextBlock
                 {
-                    Text = Framework.Lang.TF("\u23F0 任务时间：{0:yyyy-MM-dd HH:mm}{1}", todo.DueTime.Value, remindText),
+                    Text = Framework.Lang.TF("todo.taskTimeLine", todo.DueTime.Value, remindText),
                     FontSize = 12,
                     Foreground = (Brush)FindResource("BrushTextMuted"),
                     Margin = new Thickness(0, 14, 0, 0)
@@ -2843,7 +2845,7 @@ namespace SideDesk.Controls
             // 创建时间
             var createdBlock = new TextBlock
             {
-                Text = Framework.Lang.TF("创建时间：{0:yyyy-MM-dd HH:mm}", todo.CreatedAt),
+                Text = Framework.Lang.TF("nativePanel.created", todo.CreatedAt),
                 FontSize = 12,
                 Foreground = (Brush)FindResource("BrushTextMuted"),
                 Margin = new Thickness(0, 6, 0, 0)
@@ -2853,7 +2855,7 @@ namespace SideDesk.Controls
             // 按钮区
             var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 24, 0, 0) };
 
-            var editBtn = new Button { Content = Framework.Lang.T("编辑"), Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)FindResource("StandardButtonStyle") };
+            var editBtn = new Button { Content = Framework.Lang.T("common.edit"), Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)FindResource("StandardButtonStyle") };
             editBtn.Click += (s, e) =>
             {
                 detailWin.Close();
@@ -2861,7 +2863,7 @@ namespace SideDesk.Controls
             };
             btnPanel.Children.Add(editBtn);
 
-            var closeBtn = new Button { Content = Framework.Lang.T("关闭"), Width = 70, IsCancel = true, Style = (Style)FindResource("StandardButtonStyle") };
+            var closeBtn = new Button { Content = Framework.Lang.T("common.close"), Width = 70, IsCancel = true, Style = (Style)FindResource("StandardButtonStyle") };
             closeBtn.Click += (s, e) => detailWin.Close();
             btnPanel.Children.Add(closeBtn);
 
@@ -2892,8 +2894,8 @@ namespace SideDesk.Controls
                                 todo.Reminded = true;
                                 _remindedTodoIds.Add(todo.Id);
                                 _configManager?.Save();
-                                MessageBox.Show(Framework.Lang.TF("待办提醒：{0}\n任务时间：{1:MM-dd HH:mm}", todo.Text, todo.DueTime.Value),
-                                    Framework.Lang.T("今日待办"), MessageBoxButton.OK, MessageBoxImage.Information);
+                                MessageBox.Show(Framework.Lang.TF("todo.reminderText", todo.Text, todo.DueTime.Value),
+                                    Framework.Lang.T("common.todayTodos"), MessageBoxButton.OK, MessageBoxImage.Information);
                             }
                         }
                     }
@@ -2926,11 +2928,11 @@ namespace SideDesk.Controls
 
             // 空列表提示：点击直接添加计时器
             if (item.TimerItems.Count == 0)
-                container.Children.Add(BuildEmptyAddTip(Framework.Lang.T("暂无计时器，点击添加"), AddTimer));
+                container.Children.Add(BuildEmptyAddTip(Framework.Lang.T("nativePanel.noTimersClickTo"), AddTimer));
         
             // 基于 ModuleControl 基础组件包装
-            var module = CreateModuleControl(Framework.Lang.T("⏱ 计时器"), item);
-            var addTimerMi = new MenuItem { Header = Framework.Lang.T("添加计时器") };
+            var module = CreateModuleControl(Framework.Lang.T("nativePanel.timer"), item);
+            var addTimerMi = new MenuItem { Header = Framework.Lang.T("nativePanel.addTimer") };
             addTimerMi.Click += (s, e) => AddTimer();
             module.AddCustomMenuItem(addTimerMi);
             module.SetContent(container);
@@ -2995,7 +2997,7 @@ namespace SideDesk.Controls
             // 空状态提示
             var emptyHint = new TextBlock
             {
-                Text = Framework.Lang.T("未设置目录或无图片\n点标题栏 ▾ → 设置"),
+                Text = Framework.Lang.T("nativePanel.carouselNoFolderHint"),
                 TextAlignment = TextAlignment.Center,
                 Foreground = (Brush)FindResource("BrushTextMuted"),
                 FontSize = 12,
@@ -3073,17 +3075,17 @@ namespace SideDesk.Controls
             }
 
             // 基于 ModuleControl 基础组件包装
-            var module = CreateModuleControl(Framework.Lang.T("🖼 图片轮播"), item);
-            var carouselSettingsMi = new MenuItem { Header = Framework.Lang.T("设置目录/播放规则...") };
+            var module = CreateModuleControl(Framework.Lang.T("nativePanel.imageCarousel"), item);
+            var carouselSettingsMi = new MenuItem { Header = Framework.Lang.T("nativePanel.setFolderPlayRules") };
             carouselSettingsMi.Click += (s, e) => ShowCarouselSettingsDialog(item);
             module.AddCustomMenuItem(carouselSettingsMi);
-            var prevMi = new MenuItem { Header = Framework.Lang.T("上一张") };
+            var prevMi = new MenuItem { Header = Framework.Lang.T("nativePanel.previous") };
             prevMi.Click += (s, e) => Prev();
             module.AddCustomMenuItem(prevMi);
-            var nextMi = new MenuItem { Header = Framework.Lang.T("下一张") };
+            var nextMi = new MenuItem { Header = Framework.Lang.T("nativePanel.nextPicture") };
             nextMi.Click += (s, e) => Next();
             module.AddCustomMenuItem(nextMi);
-            var playMi = new MenuItem { Header = item.CarouselAutoPlay ? Framework.Lang.T("暂停自动播放") : Framework.Lang.T("开始自动播放") };
+            var playMi = new MenuItem { Header = item.CarouselAutoPlay ? Framework.Lang.T("nativePanel.pauseAutoplay") : Framework.Lang.T("nativePanel.startAutoplay") };
             playMi.Click += (s, e) => { item.CarouselAutoPlay = !item.CarouselAutoPlay; _configManager?.Save(); RenderPanels(); };
             module.AddCustomMenuItem(playMi);
             module.SetContent(displayGrid);
@@ -3095,7 +3097,7 @@ namespace SideDesk.Controls
         {
             var dialog = new Window
             {
-                Title = Framework.Lang.T("图片轮播设置"),
+                Title = Framework.Lang.T("nativePanel.imageCarouselSettings"),
                 Width = 380,
                 SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -3116,14 +3118,14 @@ namespace SideDesk.Controls
             };
 
             // 图片目录
-            root.Children.Add(MakeLabel(Framework.Lang.T("图片目录")));
+            root.Children.Add(MakeLabel(Framework.Lang.T("nativePanel.imageFolder")));
             var folderRow = new DockPanel { Margin = new Thickness(0, 0, 0, 12) };
-            var browseBtn = new Button { Content = Framework.Lang.T("浏览"), Width = 60, Margin = new Thickness(8, 0, 0, 0), Style = (Style)Application.Current.FindResource("StandardButtonStyle") };
+            var browseBtn = new Button { Content = Framework.Lang.T("common.browse"), Width = 60, Margin = new Thickness(8, 0, 0, 0), Style = (Style)Application.Current.FindResource("StandardButtonStyle") };
             DockPanel.SetDock(browseBtn, Dock.Right);
             var folderBox = new TextBox { Text = item.CarouselFolder ?? "", IsReadOnly = true, Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
             browseBtn.Click += (s, e) =>
             {
-                var fd = new Microsoft.Win32.OpenFolderDialog { Title = Framework.Lang.T("选择图片目录") };
+                var fd = new Microsoft.Win32.OpenFolderDialog { Title = Framework.Lang.T("nativePanel.selectImageFolder") };
                 if (!string.IsNullOrWhiteSpace(item.CarouselFolder) && System.IO.Directory.Exists(item.CarouselFolder))
                     fd.InitialDirectory = item.CarouselFolder;
                 if (fd.ShowDialog() == true) folderBox.Text = fd.FolderName;
@@ -3133,42 +3135,42 @@ namespace SideDesk.Controls
             root.Children.Add(folderRow);
 
             // 切换间隔
-            root.Children.Add(MakeLabel(Framework.Lang.T("切换间隔（秒）")));
+            root.Children.Add(MakeLabel(Framework.Lang.T("nativePanel.switchIntervalSeconds")));
             var intervalBox = new TextBox { Text = item.CarouselIntervalSeconds.ToString(), Margin = new Thickness(0, 0, 0, 12), Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
             root.Children.Add(intervalBox);
 
             // 显示高度
-            root.Children.Add(MakeLabel(Framework.Lang.T("显示高度（px）")));
+            root.Children.Add(MakeLabel(Framework.Lang.T("nativePanel.displayHeightPx")));
             var heightBox = new TextBox { Text = ((int)item.CarouselHeight).ToString(), Margin = new Thickness(0, 0, 0, 12), Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
             root.Children.Add(heightBox);
 
             // 播放顺序
-            root.Children.Add(MakeLabel(Framework.Lang.T("播放顺序")));
+            root.Children.Add(MakeLabel(Framework.Lang.T("nativePanel.playOrder")));
             var orderCombo = new ComboBox { Margin = new Thickness(0, 0, 0, 12), Style = (Style)Application.Current.FindResource("GlobalComboBoxStyle") };
-            orderCombo.Items.Add(Framework.Lang.T("顺序播放"));
-            orderCombo.Items.Add(Framework.Lang.T("随机播放"));
+            orderCombo.Items.Add(Framework.Lang.T("nativePanel.sequential"));
+            orderCombo.Items.Add(Framework.Lang.T("nativePanel.shuffle"));
             orderCombo.SelectedIndex = item.CarouselRandom ? 1 : 0;
             root.Children.Add(orderCombo);
 
             // 填充方式
-            root.Children.Add(MakeLabel(Framework.Lang.T("填充方式")));
+            root.Children.Add(MakeLabel(Framework.Lang.T("nativePanel.fillMode")));
             var fitCombo = new ComboBox { Margin = new Thickness(0, 0, 0, 12), Style = (Style)Application.Current.FindResource("GlobalComboBoxStyle") };
-            fitCombo.Items.Add(Framework.Lang.T("适应（完整显示）"));
-            fitCombo.Items.Add(Framework.Lang.T("填满（裁剪铺满）"));
-            fitCombo.Items.Add(Framework.Lang.T("拉伸（变形铺满）"));
+            fitCombo.Items.Add(Framework.Lang.T("nativePanel.fitShowFully"));
+            fitCombo.Items.Add(Framework.Lang.T("nativePanel.fillCropToFill"));
+            fitCombo.Items.Add(Framework.Lang.T("nativePanel.stretchDistortToFill"));
             fitCombo.SelectedIndex = item.CarouselStretch switch { "UniformToFill" => 1, "Fill" => 2, _ => 0 };
             root.Children.Add(fitCombo);
 
             // 开关项
-            var subChk = new CheckBox { Content = Framework.Lang.T("包含子目录"), IsChecked = item.CarouselIncludeSubfolders, Foreground = (Brush)FindResource("BrushTextMain"), Margin = new Thickness(0, 0, 0, 8) };
+            var subChk = new CheckBox { Content = Framework.Lang.T("nativePanel.includeSubfolders"), IsChecked = item.CarouselIncludeSubfolders, Foreground = (Brush)FindResource("BrushTextMain"), Margin = new Thickness(0, 0, 0, 8) };
             root.Children.Add(subChk);
-            var autoChk = new CheckBox { Content = Framework.Lang.T("自动播放"), IsChecked = item.CarouselAutoPlay, Foreground = (Brush)FindResource("BrushTextMain"), Margin = new Thickness(0, 0, 0, 16) };
+            var autoChk = new CheckBox { Content = Framework.Lang.T("nativePanel.autoplay"), IsChecked = item.CarouselAutoPlay, Foreground = (Brush)FindResource("BrushTextMain"), Margin = new Thickness(0, 0, 0, 16) };
             root.Children.Add(autoChk);
 
             // 按钮
             var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-            var okBtn = new Button { Content = Framework.Lang.T("确定"), Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)Application.Current.FindResource("PrimaryButtonStyle") };
-            var cancelBtn = new Button { Content = Framework.Lang.T("取消"), Width = 70, Style = (Style)Application.Current.FindResource("StandardButtonStyle") };
+            var okBtn = new Button { Content = Framework.Lang.T("common.ok"), Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)Application.Current.FindResource("PrimaryButtonStyle") };
+            var cancelBtn = new Button { Content = Framework.Lang.T("common.cancel"), Width = 70, Style = (Style)Application.Current.FindResource("StandardButtonStyle") };
             okBtn.Click += (s, e) =>
             {
                 item.CarouselFolder = string.IsNullOrWhiteSpace(folderBox.Text) ? null : folderBox.Text;
@@ -3205,16 +3207,16 @@ namespace SideDesk.Controls
 
             // 右键菜单：计时器级 + 模块级操作
             var cardMenu = new ContextMenu();
-            var deleteMenuItem = new MenuItem { Header = Framework.Lang.T("删除计时器") };
+            var deleteMenuItem = new MenuItem { Header = Framework.Lang.T("nativePanel.deleteTimer") };
             deleteMenuItem.Click += (s, e) => DeleteTimer(timer, panelItem);
             cardMenu.Items.Add(deleteMenuItem);
             cardMenu.Items.Add(new Separator());
-            cardMenu.Items.Add(BuildSettingsMenuItem(panelItem, Framework.Lang.T("⏱ 计时器")));
-            var cardHideMi = new MenuItem { Header = Framework.Lang.T("隐藏模块外框"), IsCheckable = true, IsChecked = panelItem.HideFrame };
+            cardMenu.Items.Add(BuildSettingsMenuItem(panelItem, Framework.Lang.T("nativePanel.timer")));
+            var cardHideMi = new MenuItem { Header = Framework.Lang.T("common.hideModuleFrame"), IsCheckable = true, IsChecked = panelItem.HideFrame };
             cardHideMi.Click += (s, e) => { panelItem.HideFrame = cardHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
             cardMenu.Items.Add(cardHideMi);
             cardMenu.Items.Add(BuildPinMenuItem(panelItem));
-            var cardDelModuleMi = new MenuItem { Header = Framework.Lang.T("删除模块") };
+            var cardDelModuleMi = new MenuItem { Header = Framework.Lang.T("nativePanel.deleteModule") };
             cardDelModuleMi.Click += (s, e) => RemovePanel(panelItem);
             cardMenu.Items.Add(cardDelModuleMi);
             card.ContextMenu = cardMenu;
@@ -3328,7 +3330,7 @@ namespace SideDesk.Controls
             {
                 var todayStat = new Emoji.Wpf.TextBlock
                 {
-                    Text = Framework.Lang.TF("今日总计：{0}", FormatTimeSpan(TimeSpan.FromSeconds(todaySeconds))),
+                    Text = Framework.Lang.TF("nativePanel.todayTotal", FormatTimeSpan(TimeSpan.FromSeconds(todaySeconds))),
                     FontSize = 11,
                     Foreground = (Brush)FindResource("BrushTextMuted"),
                     HorizontalAlignment = HorizontalAlignment.Center,
@@ -3395,8 +3397,8 @@ namespace SideDesk.Controls
             if (panelItem.TimerItems.Count == 0)
             {
                 var result = MessageBox.Show(
-                    Framework.Lang.T("该计时器模块已没有计时项，是否删除整个模块？"),
-                    Framework.Lang.T("确认"),
+                    Framework.Lang.T("nativePanel.deleteEmptyTimerModuleConfirm"),
+                    Framework.Lang.T("common.confirm"),
                     MessageBoxButton.YesNo,
                     MessageBoxImage.Question);
 
@@ -3459,7 +3461,7 @@ namespace SideDesk.Controls
         {
             var dialog = new Window
             {
-                Title = Framework.Lang.T("编辑计时器"),
+                Title = Framework.Lang.T("nativePanel.editTimer"),
                 Width = 350,
                 Height = 250,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -3471,12 +3473,12 @@ namespace SideDesk.Controls
             var mainPanel = new StackPanel { Margin = new Thickness(20) };
 
             // 名称
-            mainPanel.Children.Add(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("名称："), Margin = new Thickness(0, 0, 0, 5), Foreground = (Brush)FindResource("BrushTextMain") });
+            mainPanel.Children.Add(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("common.nameLabel"), Margin = new Thickness(0, 0, 0, 5), Foreground = (Brush)FindResource("BrushTextMain") });
             var nameBox = new TextBox { Text = timer.Name, Margin = new Thickness(0, 0, 0, 15) };
             mainPanel.Children.Add(nameBox);
 
             // 超时时间
-            mainPanel.Children.Add(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("最大时长（秒）："), Margin = new Thickness(0, 0, 0, 5), Foreground = (Brush)FindResource("BrushTextMain") });
+            mainPanel.Children.Add(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("nativePanel.maxDurationSeconds"), Margin = new Thickness(0, 0, 0, 5), Foreground = (Brush)FindResource("BrushTextMain") });
             var timeoutBox = new TextBox { Text = timer.TimeoutSeconds.ToString(), Margin = new Thickness(0, 0, 0, 15) };
             mainPanel.Children.Add(timeoutBox);
 
@@ -3485,7 +3487,7 @@ namespace SideDesk.Controls
             
             var saveBtn = new Button
             {
-                Content = Framework.Lang.T("保存"),
+                Content = Framework.Lang.T("common.save"),
                 Width = 80,
                 Height = 30,
                 Margin = new Thickness(0, 0, 8, 0),
@@ -3494,7 +3496,7 @@ namespace SideDesk.Controls
             };
             saveBtn.Click += (s, e) =>
             {
-                timer.Name = string.IsNullOrWhiteSpace(nameBox.Text) ? Framework.Lang.T("计时器") : nameBox.Text;
+                timer.Name = string.IsNullOrWhiteSpace(nameBox.Text) ? Framework.Lang.T("common.timer") : nameBox.Text;
                 if (int.TryParse(timeoutBox.Text, out int timeout) && timeout > 0)
                 {
                     timer.TimeoutSeconds = timeout;
@@ -3506,7 +3508,7 @@ namespace SideDesk.Controls
 
             var cancelBtn = new Button
             {
-                Content = Framework.Lang.T("取消"),
+                Content = Framework.Lang.T("common.cancel"),
                 Width = 80,
                 Height = 30
             };
@@ -3638,7 +3640,7 @@ namespace SideDesk.Controls
             {
                 dropZone.Child = new Emoji.Wpf.TextBlock
                 {
-                    Text = Framework.Lang.T("拖拽文件到此处"),
+                    Text = Framework.Lang.T("nativePanel.dragFilesHere"),
                     Foreground = (Brush)FindResource("BrushTextMuted"),
                     HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center,
@@ -4008,41 +4010,41 @@ namespace SideDesk.Controls
             }
 
             // 基于 ModuleControl 基础组件包装
-            var module = CreateModuleControl(Framework.Lang.T("📁 文件区"), item);
+            var module = CreateModuleControl(Framework.Lang.T("nativePanel.fileArea"), item);
 
-            var addFileMi = new MenuItem { Header = Framework.Lang.T("添加文件") };
+            var addFileMi = new MenuItem { Header = Framework.Lang.T("nativePanel.addFile") };
             addFileMi.Click += (s, e) => AddFileToArea(item);
             module.AddCustomMenuItem(addFileMi);
 
-            var addFolderMi = new MenuItem { Header = Framework.Lang.T("添加目录") };
+            var addFolderMi = new MenuItem { Header = Framework.Lang.T("nativePanel.addFolder") };
             addFolderMi.Click += (s, e) => AddFolderToArea(item);
             module.AddCustomMenuItem(addFolderMi);
 
-            var addCloudFileMi = new MenuItem { Header = Framework.Lang.T("☁️ 添加云文件") };
+            var addCloudFileMi = new MenuItem { Header = Framework.Lang.T("cloudDrive.addCloudFileEmoji") };
             addCloudFileMi.Click += (s, e) => AddCloudFileToArea(item);
             module.AddCustomMenuItem(addCloudFileMi);
 
             // 布局子菜单
-            var layoutMenu = new MenuItem { Header = Framework.Lang.T("布局") };
-            var largeIconsMi = new MenuItem { Header = Framework.Lang.T("大图标"), IsCheckable = true, IsChecked = item.FileAreaLayout == "LargeIcons" };
+            var layoutMenu = new MenuItem { Header = Framework.Lang.T("common.layout") };
+            var largeIconsMi = new MenuItem { Header = Framework.Lang.T("nativePanel.largeIcons"), IsCheckable = true, IsChecked = item.FileAreaLayout == "LargeIcons" };
             largeIconsMi.Click += (s, e) => { item.FileAreaLayout = "LargeIcons"; _configManager?.Save(); RenderPanels(); };
             layoutMenu.Items.Add(largeIconsMi);
-            var smallIconsMi = new MenuItem { Header = Framework.Lang.T("小图标"), IsCheckable = true, IsChecked = item.FileAreaLayout == "SmallIcons" };
+            var smallIconsMi = new MenuItem { Header = Framework.Lang.T("nativePanel.smallIcons"), IsCheckable = true, IsChecked = item.FileAreaLayout == "SmallIcons" };
             smallIconsMi.Click += (s, e) => { item.FileAreaLayout = "SmallIcons"; _configManager?.Save(); RenderPanels(); };
             layoutMenu.Items.Add(smallIconsMi);
-            var listMi = new MenuItem { Header = Framework.Lang.T("列表"), IsCheckable = true, IsChecked = item.FileAreaLayout == "List" };
+            var listMi = new MenuItem { Header = Framework.Lang.T("common.list"), IsCheckable = true, IsChecked = item.FileAreaLayout == "List" };
             listMi.Click += (s, e) => { item.FileAreaLayout = "List"; _configManager?.Save(); RenderPanels(); };
             layoutMenu.Items.Add(listMi);
-            var popupMi = new MenuItem { Header = Framework.Lang.T("弹出显示"), IsCheckable = true, IsChecked = item.FileAreaLayout == "Popup" };
+            var popupMi = new MenuItem { Header = Framework.Lang.T("nativePanel.popup"), IsCheckable = true, IsChecked = item.FileAreaLayout == "Popup" };
             popupMi.Click += (s, e) => { item.FileAreaLayout = "Popup"; _configManager?.Save(); RenderPanels(); };
             layoutMenu.Items.Add(popupMi);
             module.AddCustomMenuItem(layoutMenu);
 
             // 列数子菜单
-            var columnsMenu = new MenuItem { Header = Framework.Lang.T("列") };
+            var columnsMenu = new MenuItem { Header = Framework.Lang.T("common.columns") };
             for (int col = 1; col <= 4; col++)
             {
-                var colItem = new MenuItem { Header = Framework.Lang.TF("{0}列", col), IsCheckable = true, IsChecked = item.FileAreaColumns == col };
+                var colItem = new MenuItem { Header = Framework.Lang.TF("nativePanel.columnCountValue", col), IsCheckable = true, IsChecked = item.FileAreaColumns == col };
                 int colCount = col;
                 colItem.Click += (s, e) => { item.FileAreaColumns = colCount; _configManager?.Save(); RenderPanels(); };
                 columnsMenu.Items.Add(colItem);
@@ -4058,7 +4060,7 @@ namespace SideDesk.Controls
             var dialog = new Microsoft.Win32.OpenFileDialog
             {
                 Multiselect = true,
-                Title = Framework.Lang.T("选择文件")
+                Title = Framework.Lang.T("cloudDrive.selectFiles")
             };
             if (dialog.ShowDialog() == true)
             {
@@ -4081,7 +4083,7 @@ namespace SideDesk.Controls
         {
             var dialog = new Microsoft.Win32.OpenFolderDialog
             {
-                Title = Framework.Lang.T("选择文件夹"),
+                Title = Framework.Lang.T("nativePanel.selectFolder"),
                 Multiselect = false
             };
             if (dialog.ShowDialog() == true)
@@ -4114,7 +4116,7 @@ namespace SideDesk.Controls
         /// <summary>云文件 ToolTip：云盘名 + 文件ID/链接</summary>
         private static string BuildCloudToolTip(FileAreaItem fileItem)
         {
-            string space = string.IsNullOrEmpty(fileItem.CloudSpaceName) ? Framework.Lang.T("网络文件") : fileItem.CloudSpaceName;
+            string space = string.IsNullOrEmpty(fileItem.CloudSpaceName) ? Framework.Lang.T("cloudDrive.networkFile") : fileItem.CloudSpaceName;
             string target = fileItem.CloudFileId ?? fileItem.CloudUrl ?? fileItem.Path;
             return $"☁️ {space}：{target}";
         }
@@ -4161,11 +4163,11 @@ namespace SideDesk.Controls
         {
             var ctx = new ContextMenu();
 
-            var openMi = new MenuItem { Header = Framework.Lang.T("打开") };
+            var openMi = new MenuItem { Header = Framework.Lang.T("common.open") };
             openMi.Click += (s, e) => OpenCloudFile(fileItem);
             ctx.Items.Add(openMi);
 
-            var copyLinkMi = new MenuItem { Header = Framework.Lang.T("复制链接") };
+            var copyLinkMi = new MenuItem { Header = Framework.Lang.T("nativePanel.copyLink") };
             copyLinkMi.Click += (s, e) =>
             {
                 try { Clipboard.SetText(fileItem.CloudUrl ?? fileItem.Path); } catch { }
@@ -4174,7 +4176,7 @@ namespace SideDesk.Controls
 
             if (!string.IsNullOrEmpty(fileItem.CloudFileId))
             {
-                var copyIdMi = new MenuItem { Header = Framework.Lang.T("复制文件ID") };
+                var copyIdMi = new MenuItem { Header = Framework.Lang.T("nativePanel.copyFileId") };
                 copyIdMi.Click += (s, e) =>
                 {
                     try { Clipboard.SetText(fileItem.CloudFileId); } catch { }
@@ -4184,7 +4186,7 @@ namespace SideDesk.Controls
 
             ctx.Items.Add(new Separator());
 
-            var delMi = new MenuItem { Header = Framework.Lang.T("删除") };
+            var delMi = new MenuItem { Header = Framework.Lang.T("common.delete") };
             delMi.Click += (s, e) =>
             {
                 panelItem.FileItems?.Remove(fileItem);
@@ -4221,7 +4223,7 @@ namespace SideDesk.Controls
 
             if (isFolder)
             {
-                var menuOpen = new MenuItem { Header = Framework.Lang.T("打开") };
+                var menuOpen = new MenuItem { Header = Framework.Lang.T("common.open") };
                 menuOpen.Click += (s, e) =>
                 {
                     try { Process.Start(new ProcessStartInfo("explorer.exe", filePath) { UseShellExecute = false }); }
@@ -4229,25 +4231,25 @@ namespace SideDesk.Controls
                 };
                 ctx.Items.Add(menuOpen);
 
-                var menuEmpty = new MenuItem { Header = Framework.Lang.T("清空文件夹") };
+                var menuEmpty = new MenuItem { Header = Framework.Lang.T("nativePanel.emptyFolder") };
                 menuEmpty.Click += (s, e) =>
                 {
-                    if (MessageBox.Show(Framework.Lang.TF("确定清空\n{0}\n下的所有内容？", filePath), Framework.Lang.T("确认清空"), MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK)
+                    if (MessageBox.Show(Framework.Lang.TF("nativePanel.emptyEverythingUnder", filePath), Framework.Lang.T("nativePanel.confirmClear"), MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK)
                     {
                         try
                         {
                             foreach (var f in System.IO.Directory.GetFiles(filePath)) System.IO.File.Delete(f);
                             foreach (var d in System.IO.Directory.GetDirectories(filePath)) System.IO.Directory.Delete(d, true);
                         }
-                        catch (Exception ex) { MessageBox.Show(Framework.Lang.TF("清空失败：{0}", ex.Message)); }
+                        catch (Exception ex) { MessageBox.Show(Framework.Lang.TF("nativePanel.failedToClear", ex.Message)); }
                     }
                 };
                 ctx.Items.Add(menuEmpty);
 
-                var menuDel = new MenuItem { Header = Framework.Lang.T("删除") };
+                var menuDel = new MenuItem { Header = Framework.Lang.T("common.delete") };
                 menuDel.Click += (s, e) =>
                 {
-                    if (MessageBox.Show(Framework.Lang.TF("确定删除文件夹\n{0}\n及其所有内容？", filePath), Framework.Lang.T("确认删除"), MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK)
+                    if (MessageBox.Show(Framework.Lang.TF("nativePanel.deleteFolderAndEverything", filePath), Framework.Lang.T("nativePanel.confirmDeletion"), MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK)
                     {
                         try
                         {
@@ -4256,13 +4258,13 @@ namespace SideDesk.Controls
                             _configManager?.Save();
                             RenderPanels();
                         }
-                        catch (Exception ex) { MessageBox.Show(Framework.Lang.TF("删除失败：{0}", ex.Message)); }
+                        catch (Exception ex) { MessageBox.Show(Framework.Lang.TF("settings.deleteFailedDetail", ex.Message)); }
                     }
                 };
                 ctx.Items.Add(menuDel);
 
                 ctx.Items.Add(new Separator());
-                var menuProps = new MenuItem { Header = Framework.Lang.T("属性") };
+                var menuProps = new MenuItem { Header = Framework.Lang.T("common.properties") };
                 menuProps.Click += (s, e) =>
                 {
                     try { NativeMethods.ShowFileProperties(filePath); }
@@ -4272,7 +4274,7 @@ namespace SideDesk.Controls
             }
             else
             {
-                var menuOpen = new MenuItem { Header = Framework.Lang.T("打开") };
+                var menuOpen = new MenuItem { Header = Framework.Lang.T("common.open") };
                 menuOpen.Click += (s, e) =>
                 {
                     try { Process.Start(new ProcessStartInfo(filePath) { UseShellExecute = true }); }
@@ -4280,7 +4282,7 @@ namespace SideDesk.Controls
                 };
                 ctx.Items.Add(menuOpen);
 
-                var menuLocate = new MenuItem { Header = Framework.Lang.T("定位") };
+                var menuLocate = new MenuItem { Header = Framework.Lang.T("common.locate") };
                 menuLocate.Click += (s, e) =>
                 {
                     try { Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{filePath}\"") { UseShellExecute = false }); }
@@ -4288,10 +4290,10 @@ namespace SideDesk.Controls
                 };
                 ctx.Items.Add(menuLocate);
 
-                var menuDel = new MenuItem { Header = Framework.Lang.T("删除") };
+                var menuDel = new MenuItem { Header = Framework.Lang.T("common.delete") };
                 menuDel.Click += (s, e) =>
                 {
-                    if (MessageBox.Show(Framework.Lang.TF("确定删除文件\n{0}？", filePath), Framework.Lang.T("确认删除"), MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK)
+                    if (MessageBox.Show(Framework.Lang.TF("nativePanel.deleteFile", filePath), Framework.Lang.T("nativePanel.confirmDeletion"), MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK)
                     {
                         try
                         {
@@ -4300,13 +4302,13 @@ namespace SideDesk.Controls
                             _configManager?.Save();
                             RenderPanels();
                         }
-                        catch (Exception ex) { MessageBox.Show(Framework.Lang.TF("删除失败：{0}", ex.Message)); }
+                        catch (Exception ex) { MessageBox.Show(Framework.Lang.TF("settings.deleteFailedDetail", ex.Message)); }
                     }
                 };
                 ctx.Items.Add(menuDel);
 
                 ctx.Items.Add(new Separator());
-                var menuProps = new MenuItem { Header = Framework.Lang.T("属性") };
+                var menuProps = new MenuItem { Header = Framework.Lang.T("common.properties") };
                 menuProps.Click += (s, e) =>
                 {
                     try { NativeMethods.ShowFileProperties(filePath); }
@@ -4317,7 +4319,7 @@ namespace SideDesk.Controls
 
             // 从列表移除（不删除磁盘文件）
             ctx.Items.Add(new Separator());
-            var menuRemoveFromList = new MenuItem { Header = Framework.Lang.T("从列表移除") };
+            var menuRemoveFromList = new MenuItem { Header = Framework.Lang.T("nativePanel.removeFromList") };
             menuRemoveFromList.Click += (s, e) =>
             {
                 panelItem.FileItems.Remove(capturedFileItem);
@@ -4334,7 +4336,7 @@ namespace SideDesk.Controls
         {
             var app = (App)Application.Current;
             if (!string.IsNullOrEmpty(app.AppSettings.AccountToken)) return true;
-            ThemedMessageBox.Show(Window.GetWindow(this), Framework.Lang.T("您当前尚未登录，请登录后操作。"), "提示");
+            ThemedMessageBox.Show(Window.GetWindow(this), Framework.Lang.T("common.loginRequiredToContinue"), Framework.Lang.T("common.notice"));
             return false;
         }
 
@@ -4395,7 +4397,7 @@ namespace SideDesk.Controls
                     }
                     catch (Exception ex)
                     {
-                        MessageBox.Show(Framework.Lang.TF("复制失败：{0}", ex.Message));
+                        MessageBox.Show(Framework.Lang.TF("nativePanel.copyFailed", ex.Message));
                     }
                 }
                 _configManager?.Save();
@@ -4455,9 +4457,9 @@ namespace SideDesk.Controls
         private UIElement BuildFileAreaPopupContent(PanelItem item)
         {
             // label：取模块标题（去掉开头 emoji 避免与文件夹图标重复）并附加项数
-            string title = string.IsNullOrEmpty(item.Title) ? Framework.Lang.T("文件区") : item.Title;
+            string title = string.IsNullOrEmpty(item.Title) ? Framework.Lang.T("common.fileArea") : item.Title;
             string label = StripLeadingEmoji(title);
-            if (label.Length == 0) label = Framework.Lang.T("文件区");
+            if (label.Length == 0) label = Framework.Lang.T("common.fileArea");
             label = $"{label}（{item.FileItems.Count}）";
 
             // 竖排：上方大图标 + 下方 label（桌面快捷方式风格）
@@ -4500,7 +4502,7 @@ namespace SideDesk.Controls
             if (item.FileItems.Count == 0)
             {
                 // 空状态提示：点击直接打开添加文件对话框（并关闭弹窗）
-                popupStack.Children.Add(BuildEmptyAddTip(Framework.Lang.T("暂无文件，点击添加"),
+                popupStack.Children.Add(BuildEmptyAddTip(Framework.Lang.T("nativePanel.noFilesClickTo"),
                     () => { itemPopup.IsOpen = false; AddFileToArea(item); },
                     new Thickness(10, 8, 10, 8)));
             }
@@ -4832,7 +4834,7 @@ namespace SideDesk.Controls
             // 初始渲染
             RefreshClipboardHistoryUI();
 
-            var module = CreateModuleControl(Framework.Lang.T("📋 剪贴板历史"), item);
+            var module = CreateModuleControl(Framework.Lang.T("nativePanel.clipboardHistory"), item);
 
             // 标题栏右侧：历史弹窗按钮（点击弹出侧边 popup，列出最近 50 条）
             var expandBtn = new Button
@@ -4844,7 +4846,7 @@ namespace SideDesk.Controls
                 Foreground = (Brush)FindResource("BrushTextMuted"),
                 BorderThickness = new Thickness(0),
                 Cursor = Cursors.Hand,
-                ToolTip = Framework.Lang.T("查看最近剪贴板历史")
+                ToolTip = Framework.Lang.T("nativePanel.viewRecentClipboardHistory")
             };
             expandBtn.Click += (s, e) => ShowClipboardHistoryPopup(expandBtn);
             DockPanel.SetDock(expandBtn, Dock.Right);
@@ -4885,7 +4887,7 @@ namespace SideDesk.Controls
             {
                 _clipboardHistoryContainer.Children.Add(new Emoji.Wpf.TextBlock
                 {
-                    Text = Framework.Lang.T("暂无记录，复制内容后自动显示"),
+                    Text = Framework.Lang.T("nativePanel.noRecordsContentAppears"),
                     Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
                     FontSize = (double)Application.Current.FindResource("FontSizeTiny"),
                     Margin = new Thickness(4)
@@ -4910,7 +4912,7 @@ namespace SideDesk.Controls
 
             // 右键菜单：从历史删除该条记录
             var histMenu = new ContextMenu();
-            var histDelItem = new MenuItem { Header = Framework.Lang.T("从历史删除") };
+            var histDelItem = new MenuItem { Header = Framework.Lang.T("nativePanel.deleteFromHistory") };
             histDelItem.Click += (s, e) => _clipboardService?.RemoveEntry(entry);
             histMenu.Items.Add(histDelItem);
             row.ContextMenu = histMenu;
@@ -4941,7 +4943,7 @@ namespace SideDesk.Controls
                 FontSize = 12,
                 Padding = new Thickness(0),
                 Cursor = Cursors.Hand,
-                ToolTip = Framework.Lang.T("复制到剪贴板"),
+                ToolTip = Framework.Lang.T("common.copyToClipboard"),
                 Visibility = Visibility.Collapsed
             };
             DockPanel.SetDock(copyBtn, Dock.Right);
@@ -5037,7 +5039,7 @@ namespace SideDesk.Controls
                 {
                     listPanel.Children.Add(new Emoji.Wpf.TextBlock
                     {
-                        Text = Framework.Lang.T("暂无记录，复制内容后自动显示"),
+                        Text = Framework.Lang.T("nativePanel.noRecordsContentAppears"),
                         Foreground = (Brush)FindResource("BrushTextMuted"),
                         FontSize = (double)FindResource("FontSizeTiny"),
                         Margin = new Thickness(4)
@@ -5160,7 +5162,7 @@ namespace SideDesk.Controls
             string resultName = null;
             var dialog = new Window
             {
-                Title = Framework.Lang.T("新建快捷方式"),
+                Title = Framework.Lang.T("nativePanel.newShortcut"),
                 Width = 340, Height = 170,
                 WindowStartupLocation = WindowStartupLocation.CenterScreen,
                 ResizeMode = ResizeMode.NoResize,
@@ -5175,19 +5177,19 @@ namespace SideDesk.Controls
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
             var namePanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(10, 15, 10, 5) };
-            namePanel.Children.Add(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("分组名:"), Foreground = (Brush)FindResource("BrushTextMain"), VerticalAlignment = VerticalAlignment.Center, Width = 60 });
+            namePanel.Children.Add(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("nativePanel.shortcutGroupName"), Foreground = (Brush)FindResource("BrushTextMain"), VerticalAlignment = VerticalAlignment.Center, Width = 60 });
             var nameBox = new TextBox { Width = 220, Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
             namePanel.Children.Add(nameBox);
             Grid.SetRow(namePanel, 0);
             grid.Children.Add(namePanel);
 
             var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(10, 15, 10, 10) };
-            var okBtn = new Button { Content = Framework.Lang.T("确定"), Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)Application.Current.FindResource("PrimaryButtonStyle") };
-            var cancelBtn = new Button { Content = Framework.Lang.T("取消"), Width = 70, Style = (Style)Application.Current.FindResource("StandardButtonStyle") };
+            var okBtn = new Button { Content = Framework.Lang.T("common.ok"), Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)Application.Current.FindResource("PrimaryButtonStyle") };
+            var cancelBtn = new Button { Content = Framework.Lang.T("common.cancel"), Width = 70, Style = (Style)Application.Current.FindResource("StandardButtonStyle") };
             okBtn.Click += (s, ev) =>
             {
                 string name = nameBox.Text.Trim();
-                if (string.IsNullOrEmpty(name)) { MessageBox.Show(Framework.Lang.T("请输入分组名称")); return; }
+                if (string.IsNullOrEmpty(name)) { MessageBox.Show(Framework.Lang.T("nativePanel.pleaseEnterAShortcut")); return; }
                 resultName = name;
                 dialog.Close();
             };
@@ -5206,7 +5208,7 @@ namespace SideDesk.Controls
             AddTopLevelPanel(new PanelItem
             {
                 Type = PanelType.Group,
-                Title = Framework.Lang.T("新分组"),
+                Title = Framework.Lang.T("nativePanel.newGroup"),
                 ChildPanels = new List<PanelItem>(),
                 IsExpanded = true
             });
@@ -5290,7 +5292,7 @@ namespace SideDesk.Controls
             var app = (App)Application.Current;
             if (string.IsNullOrEmpty(app.AppSettings.AccountToken))
             {
-                MessageBox.Show(Framework.Lang.T("请先登录后再使用团队组件库"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(Framework.Lang.T("nativePanel.loginRequiredTeamLibrary"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -5313,7 +5315,7 @@ namespace SideDesk.Controls
             var plugins = PluginLoaderService.Instance.Plugins;
             if (plugins.Count == 0)
             {
-                menu.Items.Add(new MenuItem { Header = Framework.Lang.T("(无已加载插件)"), IsEnabled = false });
+                menu.Items.Add(new MenuItem { Header = Framework.Lang.T("nativePanel.noLoadedPlugins"), IsEnabled = false });
                 return;
             }
 
@@ -5345,7 +5347,7 @@ namespace SideDesk.Controls
             var newPanel = new PanelItem
             {
                 Type = PanelType.DataDashboard,
-                Title = Framework.Lang.T("数据看板"),
+                Title = Framework.Lang.T("common.dataDashboard"),
                 DashboardItems = new List<DataDashboardItem>()
             };
             AddTopLevelPanel(newPanel);
@@ -5364,7 +5366,7 @@ namespace SideDesk.Controls
                     var newPanel = new PanelItem
                     {
                         Type = PanelType.DataDashboard,
-                        Title = Framework.Lang.T("数据看板"),
+                        Title = Framework.Lang.T("common.dataDashboard"),
                         DashboardItems = new List<DataDashboardItem> { customItem }
                     };
                     AddTopLevelPanel(newPanel);
@@ -5380,11 +5382,11 @@ namespace SideDesk.Controls
             var templates = DataTemplateManager.Load().Templates;
             if (templates.Count == 0)
             {
-                menu.Items.Add(new MenuItem { Header = Framework.Lang.T("(无数据项，请在设置中添加)"), IsEnabled = false });
+                menu.Items.Add(new MenuItem { Header = Framework.Lang.T("nativePanel.noDataItemsAddInSettings"), IsEnabled = false });
                 if (onCustomClick != null)
                 {
                     menu.Items.Add(new Separator());
-                    var customMi = new MenuItem { Header = Framework.Lang.T("定制数据块") };
+                    var customMi = new MenuItem { Header = Framework.Lang.T("nativePanel.customDataBlock") };
                     customMi.Click += (s, ev) => onCustomClick();
                     menu.Items.Add(customMi);
                 }
@@ -5402,7 +5404,7 @@ namespace SideDesk.Controls
             if (onCustomClick != null)
             {
                 menu.Items.Add(new Separator());
-                var customMi = new MenuItem { Header = Framework.Lang.T("定制数据块") };
+                var customMi = new MenuItem { Header = Framework.Lang.T("nativePanel.customDataBlock") };
                 customMi.Click += (s, ev) => onCustomClick();
                 menu.Items.Add(customMi);
             }
@@ -5413,8 +5415,8 @@ namespace SideDesk.Controls
         private static void AppendDataTemplateMarketEntry(MenuItem menu)
         {
             menu.Items.Add(new Separator());
-            var marketMi = new MenuItem { Header = Framework.Lang.T("📊 数据模板市场") };
-            marketMi.Click += (s, ev) => Windows.MarketWindow.Open("/data-template-market", Framework.Lang.T("📊 数据模板市场"));
+            var marketMi = new MenuItem { Header = Framework.Lang.T("market.dataTemplateMarket") };
+            marketMi.Click += (s, ev) => Windows.MarketWindow.Open("/data-template-market", Framework.Lang.T("market.dataTemplateMarket"));
             menu.Items.Add(marketMi);
         }
 
@@ -5439,7 +5441,7 @@ namespace SideDesk.Controls
             var newPanel = new PanelItem
             {
                 Type = PanelType.DataDashboard,
-                Title = Framework.Lang.T("数据看板"),
+                Title = Framework.Lang.T("common.dataDashboard"),
                 DashboardItems = new List<DataDashboardItem> { BuildDashboardItemFromTemplate(tpl) }
             };
             AddTopLevelPanel(newPanel);
@@ -5462,7 +5464,7 @@ namespace SideDesk.Controls
             var newPanel = new PanelItem
             {
                 Type = PanelType.DataDashboard,
-                Title = Framework.Lang.T("数据看板"),
+                Title = Framework.Lang.T("common.dataDashboard"),
                 DashboardItems = new List<DataDashboardItem> { item }
             };
             AddTopLevelPanel(newPanel);
@@ -5487,7 +5489,7 @@ namespace SideDesk.Controls
             var newPanel = new PanelItem
             {
                 Type = PanelType.Timer,
-                Title = Framework.Lang.T("⏱ 计时器"),
+                Title = Framework.Lang.T("nativePanel.timer"),
                 TimerItems = new List<TimerItem>()
             };
             AddTopLevelPanel(newPanel);
@@ -5499,7 +5501,7 @@ namespace SideDesk.Controls
             var newPanel = new PanelItem
             {
                 Type = PanelType.Countdown,
-                Title = Framework.Lang.T("⏳ 倒计时"),
+                Title = Framework.Lang.T("nativePanel.countdown"),
                 CountdownItems = new List<CountdownItem>()
             };
             AddTopLevelPanel(newPanel);
@@ -5511,7 +5513,7 @@ namespace SideDesk.Controls
             var newPanel = new PanelItem
             {
                 Type = PanelType.Pomodoro,
-                Title = Framework.Lang.T("🍅 番茄闹钟"),
+                Title = Framework.Lang.T("nativePanel.pomodoro"),
                 Pomodoro = new PomodoroSettings()
             };
             AddTopLevelPanel(newPanel);
@@ -5550,7 +5552,7 @@ namespace SideDesk.Controls
             var newPanel = new PanelItem
             {
                 Type = PanelType.SignalLight,
-                Title = Framework.Lang.T("🚦 信号灯"),
+                Title = Framework.Lang.T("nativePanel.signalLight"),
                 SignalLights = new List<SignalLightItem>
                 {
                     new() { Color = "#FF4444", Size = 36, Icon = "", IsOn = true },
@@ -5569,7 +5571,7 @@ namespace SideDesk.Controls
             var newPanel = new PanelItem
             {
                 Type = PanelType.DigitalEmployee,
-                Title = Framework.Lang.T("👥 数字员工"),
+                Title = Framework.Lang.T("nativePanel.digitalEmployees"),
                 DigitalEmployeeIds = defaultIds
             };
             AddTopLevelPanel(newPanel);
@@ -5597,7 +5599,7 @@ namespace SideDesk.Controls
             {
                 container.Children.Add(new Emoji.Wpf.TextBlock
                 {
-                    Text = Framework.Lang.T("暂未选择展示员工，点击标题栏 ▾ 选择"),
+                    Text = Framework.Lang.T("nativePanel.noEmployeeSelectedClick"),
                     Foreground = (Brush)FindResource("BrushTextMuted"),
                     FontSize = 12,
                     Opacity = 0.7,
@@ -5613,21 +5615,21 @@ namespace SideDesk.Controls
             }
 
             // 基于 ModuleControl 基础组件包装
-            var module = CreateModuleControl(Framework.Lang.T("👥 数字员工"), item);
+            var module = CreateModuleControl(Framework.Lang.T("nativePanel.digitalEmployees"), item);
 
             // 管理数字员工
-            var manageMi = new MenuItem { Header = Framework.Lang.T("管理数字员工") };
+            var manageMi = new MenuItem { Header = Framework.Lang.T("nativePanel.manageDigitalEmployees") };
             manageMi.Click += (s, e) => OpenDigitalEmployeeManager();
             module.AddCustomMenuItem(manageMi);
 
             // 选择展示员工（子菜单勾选）
-            var selectMi = new MenuItem { Header = Framework.Lang.T("选择展示员工") };
+            var selectMi = new MenuItem { Header = Framework.Lang.T("nativePanel.selectEmployeeToDisplay") };
             selectMi.SubmenuOpened += (s, e) => PopulateEmployeeSelectMenu(selectMi, item);
             PopulateEmployeeSelectMenu(selectMi, item);
             module.AddCustomMenuItem(selectMi);
 
             // 每排列数
-            var columnsMi = new MenuItem { Header = Framework.Lang.T("每排列数") };
+            var columnsMi = new MenuItem { Header = Framework.Lang.T("nativePanel.itemsPerRow") };
             for (int c = 1; c <= 5; c++)
             {
                 int cc = c;
@@ -5762,7 +5764,7 @@ namespace SideDesk.Controls
             var all = DigitalEmployees.Employees;
             if (all.Count == 0)
             {
-                menu.Items.Add(new MenuItem { Header = Framework.Lang.T("(暂无员工，请先管理添加)"), IsEnabled = false });
+                menu.Items.Add(new MenuItem { Header = Framework.Lang.T("nativePanel.noEmployeesPleaseAdd"), IsEnabled = false });
                 return;
             }
             foreach (var emp in all)
@@ -5881,9 +5883,9 @@ namespace SideDesk.Controls
                 root.Children.Add(row);
             }
 
-            AddInfoRow(Framework.Lang.T("擅长/技能"), emp.Skills);
-            AddInfoRow(Framework.Lang.T("联系方式"), emp.Contact);
-            AddInfoRow(Framework.Lang.T("简介/职责"), emp.Description);
+            AddInfoRow(Framework.Lang.T("digitalEmployee.skills"), emp.Skills);
+            AddInfoRow(Framework.Lang.T("digitalEmployee.contact"), emp.Contact);
+            AddInfoRow(Framework.Lang.T("digitalEmployee.bioResponsibilities"), emp.Description);
 
             dialog.Content = new ScrollViewer
             {
@@ -5978,7 +5980,7 @@ namespace SideDesk.Controls
             {
                 panel.Children.Add(new TextBlock
                 {
-                    Text = Framework.Lang.TF("擅长：{0}", emp.Skills),
+                    Text = Framework.Lang.TF("nativePanel.skills", emp.Skills),
                     FontSize = 11,
                     Foreground = (Brush)FindResource("BrushTextMuted"),
                     Margin = new Thickness(0, 6, 0, 0),
@@ -5990,7 +5992,7 @@ namespace SideDesk.Controls
             // 提示点击打开详情
             panel.Children.Add(new TextBlock
             {
-                Text = Framework.Lang.T("点击查看数字员工后台 →"),
+                Text = Framework.Lang.T("nativePanel.openBackendHint"),
                 FontSize = 10,
                 Foreground = (Brush)FindResource("BrushTextMuted"),
                 Opacity = 0.7,
@@ -6066,9 +6068,9 @@ namespace SideDesk.Controls
         /// <summary>视图模式定义：显示名 → 存储键</summary>
         private static readonly (string Label, string Key)[] DailyActivityViews =
         {
-            (Framework.Lang.T("本月"), "Month"),
-            (Framework.Lang.T("今日"), "Today"),
-            (Framework.Lang.T("本周"), "Week")
+            (Framework.Lang.T("nativePanel.thisMonth"), "Month"),
+            (Framework.Lang.T("common.today"), "Today"),
+            (Framework.Lang.T("nativePanel.thisWeek"), "Week")
         };
 
         /// <summary>每日活跃取数统一入口：screen=本地屏幕使用分钟，其他类型=服务端独立数据（缓存，未缓存返回 null）</summary>
@@ -6134,9 +6136,9 @@ namespace SideDesk.Controls
             };
 
             // ===== 右上角下拉菜单：数据类型 + 视图切换 + 刷新 =====
-            var module = CreateModuleControl(Framework.Lang.T("每日活跃"), item);
+            var module = CreateModuleControl(Framework.Lang.T("common.dailyActivity"), item);
 
-            var typeMenu = new MenuItem { Header = Framework.Lang.T("数据类型") };
+            var typeMenu = new MenuItem { Header = Framework.Lang.T("common.dataType") };
             void AddTypeOption(string label, string key)
             {
                 var tmi = new MenuItem { Header = label, IsCheckable = true, IsChecked = key == type };
@@ -6148,7 +6150,7 @@ namespace SideDesk.Controls
                 };
                 typeMenu.Items.Add(tmi);
             }
-            AddTypeOption(Framework.Lang.T("屏幕使用"), "screen");
+            AddTypeOption(Framework.Lang.T("screenTime.screenUsage"), "screen");
             // 内置固定类型（番茄/屏幕时长/健身记录/鼠标键盘活跃）：始终展示，暂无数据时显示 0
             foreach (var builtIn in Services.DailyActivityTypes.BuiltIn)
                 if (builtIn != type) AddTypeOption(builtIn, builtIn);
@@ -6168,7 +6170,7 @@ namespace SideDesk.Controls
             });
             module.AddCustomMenuItem(typeMenu);
 
-            var viewMenu = new MenuItem { Header = Framework.Lang.T("视图") };
+            var viewMenu = new MenuItem { Header = Framework.Lang.T("common.view") };
             foreach (var (label, key) in DailyActivityViews)
             {
                 string capturedKey = key;
@@ -6188,7 +6190,7 @@ namespace SideDesk.Controls
             }
             module.AddCustomMenuItem(viewMenu);
 
-            var refreshMi = new MenuItem { Header = Framework.Lang.T("刷新") };
+            var refreshMi = new MenuItem { Header = Framework.Lang.T("common.refresh") };
             refreshMi.Click += (s, e) =>
             {
                 if (type != "screen")
@@ -6207,14 +6209,14 @@ namespace SideDesk.Controls
             var today = DateTime.Today;
             double minutes = GetDailyActivityValue(corpId, type, today) ?? 0;
             int level = GetActivityLevel(minutes);
-            var weekNames = new[] { "周日", "周一", "周二", "周三", "周四", "周五", "周六" };
+            var weekNames = Framework.Lang.T("common.weekNamesCsv").Split(',');
 
             var root = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
 
             // 日期标题
             root.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.TF("{0:M月d日} {1}", today, weekNames[(int)today.DayOfWeek]),
+                Text = Framework.Lang.TF("nativePanel.sym8cc3", today, weekNames[(int)today.DayOfWeek]),
                 FontSize = 12,
                 Foreground = (Brush)FindResource("BrushTextMuted"),
                 Margin = new Thickness(0, 0, 0, 8),
@@ -6232,8 +6234,8 @@ namespace SideDesk.Controls
                 BorderThickness = new Thickness(1.5),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 ToolTip = minutes > 0
-                    ? Framework.Lang.TF("{0:M月d日}  活跃 {1}", today, FormatDailyActivityValue(type, minutes))
-                    : Framework.Lang.TF("{0:M月d日}  无活跃记录", today)
+                    ? Framework.Lang.TF("nativePanel.active", today, FormatDailyActivityValue(type, minutes))
+                    : Framework.Lang.TF("nativePanel.noActivityRecords", today)
             };
             cell.Child = new TextBlock
             {
@@ -6251,7 +6253,7 @@ namespace SideDesk.Controls
             // 摘要文字
             root.Children.Add(new TextBlock
             {
-                Text = minutes > 0 ? Framework.Lang.TF("今日活跃 {0}", FormatDailyActivityValue(type, minutes)) : Framework.Lang.T("今日暂无活跃记录"),
+                Text = minutes > 0 ? Framework.Lang.TF("nativePanel.activeToday", FormatDailyActivityValue(type, minutes)) : Framework.Lang.T("nativePanel.noActivityRecordsToday"),
                 FontSize = 11,
                 Foreground = (Brush)FindResource("BrushTextSec"),
                 Margin = new Thickness(0, 8, 0, 0),
@@ -6265,7 +6267,7 @@ namespace SideDesk.Controls
         private UIElement BuildDailyActivityWeek(string? corpId, string type)
         {
             var today = DateTime.Today;
-            var weekNames = new[] { "周日", "周一", "周二", "周三", "周四", "周五", "周六" };
+            var weekNames = Framework.Lang.T("common.weekNamesCsv").Split(',');
             var accent = (Brush)FindResource("BrushAccent");
 
             var root = new StackPanel();
@@ -6275,7 +6277,7 @@ namespace SideDesk.Controls
             var end = today.AddDays(2);
             root.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.TF("{0:M月d日} ~ {1:M月d日}", start, end),
+                Text = Framework.Lang.TF("nativePanel.sym8b43", start, end),
                 FontSize = 12,
                 Foreground = (Brush)FindResource("BrushTextMuted"),
                 Margin = new Thickness(0, 0, 0, 6),
@@ -6299,7 +6301,7 @@ namespace SideDesk.Controls
                 // 日期标签
                 var label = new TextBlock
                 {
-                    Text = isToday ? Framework.Lang.TF("{0:M/d} 今天", date) : $"{date:M/d} {weekNames[(int)date.DayOfWeek]}",
+                    Text = isToday ? Framework.Lang.TF("nativePanel.dateToday", date) : $"{date:M/d} {weekNames[(int)date.DayOfWeek]}",
                     FontSize = 10,
                     Foreground = isToday ? accent : (Brush)FindResource("BrushTextMuted"),
                     FontWeight = isToday ? FontWeights.SemiBold : FontWeights.Normal,
@@ -6318,10 +6320,10 @@ namespace SideDesk.Controls
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(4, 0, 6, 0),
                     ToolTip = isFuture
-                        ? Framework.Lang.TF("{0:M月d日}", date)
+                        ? Framework.Lang.TF("nativePanel.sym8c7c", date)
                         : minutes > 0
-                            ? Framework.Lang.TF("{0:M月d日}  活跃 {1}", date, FormatDailyActivityValue(type, minutes))
-                            : Framework.Lang.TF("{0:M月d日}  无活跃记录", date)
+                            ? Framework.Lang.TF("nativePanel.active", date, FormatDailyActivityValue(type, minutes))
+                            : Framework.Lang.TF("nativePanel.noActivityRecords", date)
                 };
                 if (isToday)
                 {
@@ -6337,7 +6339,7 @@ namespace SideDesk.Controls
                 {
                     Text = isFuture ? "" : minutes > 0
                         ? FormatDailyActivityValue(type, minutes)
-                        : Framework.Lang.T("无记录"),
+                        : Framework.Lang.T("window.noRecords"),
                     FontSize = 10,
                     Foreground = (Brush)FindResource("BrushTextSec"),
                     VerticalAlignment = VerticalAlignment.Center,
@@ -6369,7 +6371,7 @@ namespace SideDesk.Controls
             // 月份标题
             root.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.TF("{0}年{1}月", today.Year, today.Month),
+                Text = Framework.Lang.TF("nativePanel.sym69ad", today.Year, today.Month),
                 FontSize = 12,
                 Foreground = (Brush)FindResource("BrushTextMuted"),
                 Margin = new Thickness(0, 0, 0, 6),
@@ -6383,7 +6385,7 @@ namespace SideDesk.Controls
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 Margin = new Thickness(0, 0, 0, 3)
             };
-            foreach (var wd in new[] { "一", "二", "三", "四", "五", "六", "日" })
+            foreach (var wd in Framework.Lang.T("common.weekHeaderCharsCsv").Split(','))
             {
                 weekHeader.Children.Add(new TextBlock
                 {
@@ -6424,7 +6426,7 @@ namespace SideDesk.Controls
                 {
                     cell.Background = GetActivityLevelBrush(0);
                     cell.Opacity = 0.4;
-                    cell.ToolTip = Framework.Lang.TF("{0:M月d日}", date);
+                    cell.ToolTip = Framework.Lang.TF("nativePanel.sym8c7c", date);
                 }
                 else
                 {
@@ -6432,8 +6434,8 @@ namespace SideDesk.Controls
                     int level = GetActivityLevel(minutes);
                     cell.Background = GetActivityLevelBrush(level);
                     cell.ToolTip = minutes > 0
-                        ? Framework.Lang.TF("{0:M月d日}  活跃 {1}", date, FormatDailyActivityValue(type, minutes))
-                        : Framework.Lang.TF("{0:M月d日}  无活跃记录", date);
+                        ? Framework.Lang.TF("nativePanel.active", date, FormatDailyActivityValue(type, minutes))
+                        : Framework.Lang.TF("nativePanel.noActivityRecords", date);
                 }
 
                 // 今天：高亮描边
@@ -6484,10 +6486,10 @@ namespace SideDesk.Controls
             root.Children.Add(dayText);
 
             // 月份 + 星期
-            var weekNames = new[] { "周日", "周一", "周二", "周三", "周四", "周五", "周六" };
+            var weekNames = Framework.Lang.T("common.weekNamesCsv").Split(',');
             var subText = new TextBlock
             {
-                Text = Framework.Lang.TF("{0}年{1}月 {2}", today.Year, today.Month, weekNames[(int)today.DayOfWeek]),
+                Text = Framework.Lang.TF("nativePanel.sym1613", today.Year, today.Month, weekNames[(int)today.DayOfWeek]),
                 FontSize = 11,
                 Foreground = (Brush)FindResource("BrushTextSec"),
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -6530,7 +6532,7 @@ namespace SideDesk.Controls
 
             popup.Child = BuildCalendarPopupContent(today, today);
 
-            return WrapWidget(Framework.Lang.T("📅 日历"), root, item);
+            return WrapWidget(Framework.Lang.T("nativePanel.calendar"), root, item);
         }
 
         /// <summary>添加活动小点（日历组件用）</summary>
@@ -6703,9 +6705,9 @@ namespace SideDesk.Controls
             var pluginId = item.PluginId;
             if (string.IsNullOrEmpty(pluginId))
             {
-                return WrapWidget(Framework.Lang.T("🧩 插件"), new TextBlock
+                return WrapWidget(Framework.Lang.T("common.pluginsEmoji"), new TextBlock
                 {
-                    Text = Framework.Lang.T("未指定插件"),
+                    Text = Framework.Lang.T("nativePanel.noPluginSpecified"),
                     Foreground = (Brush)FindResource("BrushTextMuted"),
                     Opacity = 0.6,
                     Margin = new Thickness(8)
@@ -6716,9 +6718,9 @@ namespace SideDesk.Controls
             var plugin = loader.GetPlugin(pluginId);
             if (plugin == null)
             {
-                return WrapWidget(Framework.Lang.T("🧩 插件"), new TextBlock
+                return WrapWidget(Framework.Lang.T("common.pluginsEmoji"), new TextBlock
                 {
-                    Text = Framework.Lang.TF("插件未加载: {0}", pluginId),
+                    Text = Framework.Lang.TF("market.pluginNotLoaded", pluginId),
                     Foreground = (Brush)FindResource("BrushTextMuted"),
                     Opacity = 0.6,
                     Margin = new Thickness(8)
@@ -6730,7 +6732,7 @@ namespace SideDesk.Controls
             {
                 return WrapWidget($"{plugin.Config.Icon} {plugin.Config.Name}", new TextBlock
                 {
-                    Text = Framework.Lang.T("插件 UI 创建失败"),
+                    Text = Framework.Lang.T("market.createPluginUiFailed"),
                     Foreground = (Brush)FindResource("BrushTextMuted"),
                     Opacity = 0.6,
                     Margin = new Thickness(8)
@@ -6760,10 +6762,10 @@ namespace SideDesk.Controls
         /// <summary>好友在线状态 → 中文标签</summary>
         private string GetFriendStatusLabel(string? status) => status switch
         {
-            "online" => Framework.Lang.T("在线"),
-            "away"   => Framework.Lang.T("离开"),
-            "busy"   => Framework.Lang.T("忙碌"),
-            _        => Framework.Lang.T("离线"),
+            "online" => Framework.Lang.T("common.online"),
+            "away"   => Framework.Lang.T("common.away"),
+            "busy"   => Framework.Lang.T("digitalEmployee.busy"),
+            _        => Framework.Lang.T("common.offline"),
         };
 
         /// <summary>后端好友列表缓存（供好友模块展示与选择器使用）</summary>
@@ -6859,15 +6861,15 @@ namespace SideDesk.Controls
             UIElement content = BuildFriendListContent(item);
 
             // 基于 ModuleControl 基础组件包装（直接添加菜单项，保留子菜单）
-            var module = CreateModuleControl(Framework.Lang.T("好友"), item);
+            var module = CreateModuleControl(Framework.Lang.T("common.friends"), item);
 
             // 选择好友（从后端好友列表勾选展示，可多选）
-            var selectMi = new MenuItem { Header = Framework.Lang.T("选择好友") };
+            var selectMi = new MenuItem { Header = Framework.Lang.T("nativePanel.selectFriends") };
             selectMi.Click += (s, e) => ShowFriendPickerDialog(item);
             module.AddCustomMenuItem(selectMi);
 
             // 添加新好友
-            var addMi = new MenuItem { Header = Framework.Lang.T("添加新好友") };
+            var addMi = new MenuItem { Header = Framework.Lang.T("nativePanel.addNewFriend") };
             addMi.Click += (s, e) => ShowAddFriendByCodeDialog();
             module.AddCustomMenuItem(addMi);
 
@@ -6920,7 +6922,7 @@ namespace SideDesk.Controls
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
                 Cursor = Cursors.Hand,
-                ToolTip = Framework.Lang.T("点击选择要展示的好友"),
+                ToolTip = Framework.Lang.T("nativePanel.clickToSelectFriends"),
                 Margin = new Thickness(0, 8, 0, 8)
             };
             circle.Child = new TextBlock
@@ -6946,7 +6948,7 @@ namespace SideDesk.Controls
                 Orientation = Orientation.Horizontal,
                 Margin = new Thickness(0, 4, 0, 4),
                 Cursor = Cursors.Hand,
-                ToolTip = Framework.Lang.T("点击标题栏 ▾ → 选择好友，可管理展示的好友")
+                ToolTip = Framework.Lang.T("nativePanel.friendDisplayHint")
             };
 
             // 圆形头像 + 右下角在线状态点
@@ -7016,7 +7018,7 @@ namespace SideDesk.Controls
             var app = (App)Application.Current;
             if (string.IsNullOrEmpty(app.AppSettings.AccountToken))
             {
-                ThemedMessageBox.Show(Window.GetWindow(this), Framework.Lang.T("请先登录后再选择好友。"), "提示");
+                ThemedMessageBox.Show(Window.GetWindow(this), Framework.Lang.T("nativePanel.loginRequiredSelectFriends"), Framework.Lang.T("common.notice"));
                 return;
             }
 
@@ -7024,14 +7026,14 @@ namespace SideDesk.Controls
             var friends = await FriendService.Instance.GetFriendListAsync();
             if (friends == null)
             {
-                ThemedMessageBox.Show(Window.GetWindow(this), Framework.Lang.T("获取好友列表失败，请稍后重试。"), "提示");
+                ThemedMessageBox.Show(Window.GetWindow(this), Framework.Lang.T("nativePanel.fetchFriendsFailed"), Framework.Lang.T("common.notice"));
                 return;
             }
             _friendListCache = friends; // 顺便更新缓存
 
             var dialog = new Window
             {
-                Title = Framework.Lang.T("选择好友"),
+                Title = Framework.Lang.T("nativePanel.selectFriends"),
                 Width = 360,
                 SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -7046,7 +7048,7 @@ namespace SideDesk.Controls
             var root = new StackPanel { Margin = new Thickness(16) };
             root.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.T("勾选要在模块中展示的好友（可多选）"),
+                Text = Framework.Lang.T("nativePanel.checkTheFriendsTo"),
                 Foreground = (Brush)FindResource("BrushTextMuted"),
                 FontSize = 12,
                 Margin = new Thickness(0, 0, 0, 12)
@@ -7059,7 +7061,7 @@ namespace SideDesk.Controls
             {
                 listPanel.Children.Add(new Emoji.Wpf.TextBlock
                 {
-                    Text = Framework.Lang.T("暂无好友，请先添加好友。"),
+                    Text = Framework.Lang.T("nativePanel.noFriendsYetPlease"),
                     Foreground = (Brush)FindResource("BrushTextMuted"),
                     FontSize = 12
                 });
@@ -7106,7 +7108,7 @@ namespace SideDesk.Controls
                     });
                     nameCol.Children.Add(new Emoji.Wpf.TextBlock
                     {
-                        Text = f.IsOnline == 1 ? Framework.Lang.T("在线") : Framework.Lang.T("离线"),
+                        Text = f.IsOnline == 1 ? Framework.Lang.T("common.online") : Framework.Lang.T("common.offline"),
                         Foreground = (Brush)FindResource("BrushTextMuted"),
                         FontSize = 10,
                         Margin = new Thickness(0, 1, 0, 0)
@@ -7127,10 +7129,10 @@ namespace SideDesk.Controls
             });
 
             var btnPanel = new DockPanel { Margin = new Thickness(0, 16, 0, 0), LastChildFill = false };
-            var okBtn = new Button { Content = Framework.Lang.T("确定"), Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)FindResource("PrimaryButtonStyle") };
-            var cancelBtn = new Button { Content = Framework.Lang.T("取消"), Width = 70, Style = (Style)FindResource("StandardButtonStyle") };
+            var okBtn = new Button { Content = Framework.Lang.T("common.ok"), Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)FindResource("PrimaryButtonStyle") };
+            var cancelBtn = new Button { Content = Framework.Lang.T("common.cancel"), Width = 70, Style = (Style)FindResource("StandardButtonStyle") };
             bool goAddFriend = false;
-            var addBtn = new Button { Content = Framework.Lang.T("+ 添加好友"), Padding = new Thickness(10, 4, 10, 4), Style = (Style)FindResource("StandardButtonStyle") };
+            var addBtn = new Button { Content = Framework.Lang.T("nativePanel.addFriend"), Padding = new Thickness(10, 4, 10, 4), Style = (Style)FindResource("StandardButtonStyle") };
             addBtn.Click += (s, e) => { goAddFriend = true; dialog.DialogResult = false; };
             okBtn.Click += (s, e) =>
             {
@@ -7162,7 +7164,7 @@ namespace SideDesk.Controls
             var newPanel = new PanelItem
             {
                 Type = PanelType.Friend,
-                Title = Framework.Lang.T("好友")
+                Title = Framework.Lang.T("common.friends")
             };
             AddTopLevelPanel(newPanel);
         }
@@ -7174,7 +7176,7 @@ namespace SideDesk.Controls
 
             var dialog = new Window
             {
-                Title = Framework.Lang.T("添加新好友"),
+                Title = Framework.Lang.T("nativePanel.addNewFriend"),
                 Width = 340,
                 SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -7189,7 +7191,7 @@ namespace SideDesk.Controls
             var root = new StackPanel { Margin = new Thickness(16) };
             root.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.T("输入好友邀请码"),
+                Text = Framework.Lang.T("nativePanel.enterAFriendInvite"),
                 Foreground = (Brush)FindResource("BrushTextMain"),
                 Margin = new Thickness(0, 0, 0, 8)
             });
@@ -7197,30 +7199,30 @@ namespace SideDesk.Controls
             root.Children.Add(codeBox);
             root.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.T("输入对方的邀请码即可添加为好友"),
+                Text = Framework.Lang.T("nativePanel.enterTheOtherParty"),
                 Foreground = (Brush)FindResource("BrushTextMuted"),
                 FontSize = 11,
                 Margin = new Thickness(0, 6, 0, 16)
             });
 
             var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-            var okBtn = new Button { Content = Framework.Lang.T("添加"), Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)Application.Current.FindResource("PrimaryButtonStyle") };
-            var cancelBtn = new Button { Content = Framework.Lang.T("取消"), Width = 70, Style = (Style)Application.Current.FindResource("StandardButtonStyle") };
+            var okBtn = new Button { Content = Framework.Lang.T("common.add"), Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)Application.Current.FindResource("PrimaryButtonStyle") };
+            var cancelBtn = new Button { Content = Framework.Lang.T("common.cancel"), Width = 70, Style = (Style)Application.Current.FindResource("StandardButtonStyle") };
             okBtn.Click += (s, e) =>
             {
                 var code = codeBox.Text.Trim();
                 if (string.IsNullOrEmpty(code))
                 {
-                    MessageBox.Show(Framework.Lang.T("请输入邀请码"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Information);
+                    MessageBox.Show(Framework.Lang.T("nativePanel.pleaseEnterTheInvite"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
                 var newPanel = new PanelItem
                 {
                     Type = PanelType.Friend,
-                    Title = Framework.Lang.T("好友"),
-                    FriendName = Framework.Lang.T("好友 ") + code,
+                    Title = Framework.Lang.T("common.friends"),
+                    FriendName = Framework.Lang.T("settings.friendsPadded") + code,
                     FriendEmoji = "\U0001F642",
-                    FriendStatusText = Framework.Lang.T("在线"),
+                    FriendStatusText = Framework.Lang.T("common.online"),
                     FriendOnlineStatus = "online"
                 };
                 AddTopLevelPanel(newPanel);
@@ -7247,7 +7249,7 @@ namespace SideDesk.Controls
             Dispatcher.BeginInvoke(() =>
             {
                 if (_keyCountValueButton != null)
-                    _keyCountValueButton.Content = KeyboardHookService.FormatCount(count);
+                    _keyCountValueButton.Content = $"⌨ {KeyboardHookService.FormatCount(count)}";
                 keyCountText.Text = $"⌨ {KeyboardHookService.FormatCount(count)}";
             });
         }
@@ -7259,77 +7261,45 @@ namespace SideDesk.Controls
             Dispatcher.BeginInvoke(() =>
             {
                 if (_mouseDistanceValueButton != null)
-                    _mouseDistanceValueButton.Content = MouseHookService.FormatDistance(distance);
+                    _mouseDistanceValueButton.Content = $"🖱 {MouseHookService.FormatDistance(distance)}";
                 mouseDistText.Text = $"🖱 {MouseHookService.FormatDistance(distance)}";
             });
         }
 
         private void CreateKeyCountPanel(StackPanel container)
         {
-            var panel = new DockPanel
-            {
-                Margin = new Thickness(0, 2, 0, 2),
-                Background = Brushes.Transparent
-            };
-
+            // 数字块自带 ⌨ 图标自说明并撑满整行；左侧不再放标签（窄组件下标签会被截成省略号白点）
             _keyCountValueButton = new Button
             {
-                Content = KeyboardHookService.FormatCount(_keyboardHookService?.TodayKeyCount ?? 0),
-                Width = 70, Height = 28,
-                Margin = new Thickness(2, 0, 4, 0), Padding = new Thickness(2),
+                Content = $"⌨ {KeyboardHookService.FormatCount(_keyboardHookService?.TodayKeyCount ?? 0)}",
+                Height = 28,
+                Margin = new Thickness(4, 2, 4, 2), Padding = new Thickness(2),
                 Background = (Brush)FindResource("BrushAccent"),
                 Foreground = (Brush)FindResource("BrushTextMain"), BorderThickness = new Thickness(0),
                 FontSize = 12, FontWeight = FontWeights.Bold,
-                HorizontalAlignment = HorizontalAlignment.Right
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Center
             };
-            DockPanel.SetDock(_keyCountValueButton, Dock.Right);
-            panel.Children.Add(_keyCountValueButton);
 
-            var nameText = new Emoji.Wpf.TextBlock
-            {
-                Text = Framework.Lang.T("今日按键"),
-                Padding = new Thickness(8, 5, 0, 5),
-                Foreground = (Brush)FindResource("BrushTextMain"),
-                VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming = TextTrimming.CharacterEllipsis
-            };
-            panel.Children.Add(nameText);
-
-            container.Children.Insert(0, panel);
+            container.Children.Insert(0, _keyCountValueButton);
         }
 
         private void CreateMouseDistancePanel(StackPanel container)
         {
-            var panel = new DockPanel
-            {
-                Margin = new Thickness(0, 2, 0, 2),
-                Background = Brushes.Transparent
-            };
-
+            // 数字块自带 🖱 图标自说明并撑满整行；左侧不再放标签（窄组件下标签会被截成省略号白点）
             _mouseDistanceValueButton = new Button
             {
-                Content = MouseHookService.FormatDistance(_mouseHookService?.TodayMouseDistance ?? 0),
-                Width = 70, Height = 28,
-                Margin = new Thickness(2, 0, 4, 0), Padding = new Thickness(2),
+                Content = $"🖱 {MouseHookService.FormatDistance(_mouseHookService?.TodayMouseDistance ?? 0)}",
+                Height = 28,
+                Margin = new Thickness(4, 2, 4, 2), Padding = new Thickness(2),
                 Background = (Brush)FindResource("BrushAccent"),
                 Foreground = (Brush)FindResource("BrushTextMain"), BorderThickness = new Thickness(0),
                 FontSize = 12, FontWeight = FontWeights.Bold,
-                HorizontalAlignment = HorizontalAlignment.Right
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Center
             };
-            DockPanel.SetDock(_mouseDistanceValueButton, Dock.Right);
-            panel.Children.Add(_mouseDistanceValueButton);
 
-            var nameText = new Emoji.Wpf.TextBlock
-            {
-                Text = Framework.Lang.T("鼠标移动"),
-                Padding = new Thickness(8, 5, 0, 5),
-                Foreground = (Brush)FindResource("BrushTextMain"),
-                VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming = TextTrimming.CharacterEllipsis
-            };
-            panel.Children.Add(nameText);
-
-            container.Children.Add(panel);
+            container.Children.Add(_mouseDistanceValueButton);
         }
 
         #endregion
@@ -7350,7 +7320,7 @@ namespace SideDesk.Controls
             {
                 container.Children.Add(new Emoji.Wpf.TextBlock
                 {
-                    Text = Framework.Lang.T("（暂无便签）"),
+                    Text = Framework.Lang.T("nativePanel.noStickyNotes"),
                     Foreground = (Brush)FindResource("BrushTextMuted"),
                     FontSize = 11,
                     Margin = new Thickness(4)
@@ -7370,10 +7340,10 @@ namespace SideDesk.Controls
             if (notes.Count == 0)
             {
                 container.Children.Add(onEmptyAdd != null
-                    ? BuildEmptyAddTip(Framework.Lang.T("（暂无便签，点击添加）"), onEmptyAdd)
+                    ? BuildEmptyAddTip(Framework.Lang.T("nativePanel.noStickyNotesClick"), onEmptyAdd)
                     : new Emoji.Wpf.TextBlock
                     {
-                        Text = Framework.Lang.T("（暂无便签）"),
+                        Text = Framework.Lang.T("nativePanel.noStickyNotes"),
                         Foreground = (Brush)FindResource("BrushTextMuted"),
                         FontSize = 11,
                         Margin = new Thickness(4)
@@ -7392,7 +7362,7 @@ namespace SideDesk.Controls
 
             // 右键菜单：删除便签（无需进入编辑模式）
             var noteMenu = new ContextMenu();
-            var deleteNoteItem = new MenuItem { Header = Framework.Lang.T("删除便签") };
+            var deleteNoteItem = new MenuItem { Header = Framework.Lang.T("common.deleteStickyNote") };
             deleteNoteItem.Click += (s, e) =>
             {
                 item.StickyNotes?.RemoveAll(n => n.Id == note.Id);
@@ -7400,7 +7370,7 @@ namespace SideDesk.Controls
                 RefreshPanelStickyNotes(container, item);
             };
             noteMenu.Items.Add(deleteNoteItem);
-            var noteHideMi = new MenuItem { Header = Framework.Lang.T("隐藏模块外框"), IsCheckable = true, IsChecked = item.HideFrame };
+            var noteHideMi = new MenuItem { Header = Framework.Lang.T("common.hideModuleFrame"), IsCheckable = true, IsChecked = item.HideFrame };
             noteHideMi.Click += (s, e) => { item.HideFrame = noteHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
             noteMenu.Items.Add(noteHideMi);
             row.ContextMenu = noteMenu;
@@ -7412,7 +7382,7 @@ namespace SideDesk.Controls
                 Foreground = (Brush)FindResource("BrushTextMuted"),
                 BorderThickness = new Thickness(0), FontSize = 10,
                 Padding = new Thickness(0), Cursor = Cursors.Hand,
-                ToolTip = Framework.Lang.T("删除"), Visibility = Visibility.Collapsed
+                ToolTip = Framework.Lang.T("common.delete"), Visibility = Visibility.Collapsed
             };
             DockPanel.SetDock(delBtn, Dock.Right);
             row.Children.Add(delBtn);
@@ -7493,7 +7463,7 @@ namespace SideDesk.Controls
                 Foreground = (Brush)FindResource("BrushTextMuted"),
                 BorderThickness = new Thickness(0), FontSize = 10,
                 Padding = new Thickness(0), Cursor = Cursors.Hand,
-                ToolTip = Framework.Lang.T("删除"), Visibility = Visibility.Collapsed
+                ToolTip = Framework.Lang.T("common.delete"), Visibility = Visibility.Collapsed
             };
             DockPanel.SetDock(delBtn, Dock.Right);
             row.Children.Add(delBtn);
@@ -7616,8 +7586,15 @@ namespace SideDesk.Controls
                 {
                     ready = false;
                     var data = new DataObject("PanelItemId", item.Id);
+                    // 置顶区为空时临时展开为拖放目标（保留拖拽置顶能力），拖拽结束后还原
+                    BeginPinnedDropTarget();
                     try { DragDrop.DoDragDrop(fe, data, DragDropEffects.Move); }
-                    finally { HidePanelDragIndicator(); HidePinnedDragIndicator(); }
+                    finally
+                    {
+                        HidePanelDragIndicator();
+                        HidePinnedDragIndicator();
+                        SyncPinnedAreaVisibility(AnyPinnedPanels());
+                    }
                 }
             };
             fe.PreviewMouseLeftButtonUp += (s, e) => { ready = false; };
@@ -7874,10 +7851,10 @@ namespace SideDesk.Controls
         private void AIChatButton_Click(object sender, RoutedEventArgs e)
         {
             var app = (App)Application.Current;
-            var mode = app.AppSettings.AIChatMode ?? "client";
+            var mode = app.AppSettings.AIChatMode ?? "web";
             bool loggedIn = !string.IsNullOrEmpty(app.AppSettings.AccountToken);
 
-            // 默认本地化（保护隐私）；auto：已登录用网页版，未登录用本地化；也可手动强制指定
+            // 默认网页版（未登录/未注册也直接打开）；auto：已登录用网页版，未登录用本地化；也可手动强制指定本地化（保护隐私）
             bool useWeb = mode == "web" || (mode == "auto" && loggedIn);
 
             if (useWeb)
@@ -7938,13 +7915,13 @@ namespace SideDesk.Controls
                 var windows = TaskbarOverlayManager.GetTaskbarWindows();
                 if (windows.Count == 0)
                 {
-                    MessageBox.Show(Framework.Lang.T("未找到可用的任务栏窗口"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Information);
+                    MessageBox.Show(Framework.Lang.T("nativePanel.noAvailableTaskbarWindows"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
 
                 Window pickerDialog = new Window
                 {
-                    Title = Framework.Lang.T("选择窗口"),
+                    Title = Framework.Lang.T("common.selectWindow"),
                     Width = 800,
                     Height = 540,
                     WindowStartupLocation = WindowStartupLocation.CenterScreen,
@@ -7964,7 +7941,7 @@ namespace SideDesk.Controls
                 Grid.SetColumn(leftPanel, 0);
                 var leftHeader = new Emoji.Wpf.TextBlock
                 {
-                    Text = Framework.Lang.T("已锁定窗口列表"),
+                    Text = Framework.Lang.T("nativePanel.lockedWindowList"),
                     FontSize = 14,
                     FontWeight = FontWeights.Bold,
                     Margin = new Thickness(0, 0, 0, 8)
@@ -7977,8 +7954,8 @@ namespace SideDesk.Controls
 
                 var lockedBtnPanel = new StackPanel { Orientation = Orientation.Horizontal };
                 DockPanel.SetDock(lockedBtnPanel, Dock.Bottom);
-                var deleteRuleBtn = new Button { Content = Framework.Lang.T("删除规则"), Width = 90, Height = 28, Margin = new Thickness(0, 0, 8, 0) };
-                var refreshLockedBtn = new Button { Content = Framework.Lang.T("刷新"), Width = 60, Height = 28 };
+                var deleteRuleBtn = new Button { Content = Framework.Lang.T("nativePanel.deleteRule"), Width = 90, Height = 28, Margin = new Thickness(0, 0, 8, 0) };
+                var refreshLockedBtn = new Button { Content = Framework.Lang.T("common.refresh"), Width = 60, Height = 28 };
                 lockedBtnPanel.Children.Add(deleteRuleBtn);
                 lockedBtnPanel.Children.Add(refreshLockedBtn);
                 leftPanel.Children.Add(lockedBtnPanel);
@@ -8033,8 +8010,8 @@ namespace SideDesk.Controls
                             TextTrimming = TextTrimming.CharacterEllipsis
                         });
                         string detail = !string.IsNullOrEmpty(r.MatchPattern)
-                            ? $"匹配（{(r.MatchMode == TitleMatchMode.Equals ? "等于" : "包含")}）：{r.MatchPattern}"
-                            : Framework.Lang.TF("原标题：{0}", r.OriginalTitle);
+                            ? Framework.Lang.TF("window.matchModeDetail", r.MatchMode == TitleMatchMode.Equals ? Framework.Lang.T("common.equals") : Framework.Lang.T("common.contains"), r.MatchPattern)
+                            : Framework.Lang.TF("window.originalTitle", r.OriginalTitle);
                         sp.Children.Add(new Emoji.Wpf.TextBlock
                         {
                             Text = detail,
@@ -8052,7 +8029,7 @@ namespace SideDesk.Controls
                         {
                             Content = new Emoji.Wpf.TextBlock
                             {
-                                Text = Framework.Lang.T("（暂无锁定规则）"),
+                                Text = Framework.Lang.T("nativePanel.noLockRules"),
                                 Foreground = (Brush)FindResource("BrushTextMuted"),
                                 FontStyle = FontStyles.Italic
                             },
@@ -8066,8 +8043,8 @@ namespace SideDesk.Controls
                 {
                     if (lockedListBox.SelectedItem is ListBoxItem li && li.Tag is TitleLockRule selRule)
                     {
-                        if (MessageBox.Show(Framework.Lang.TF("确定删除规则：[{0}] {1}？\n\n注意：仅删除规则，如果该窗口当前仍被锁定，下次开机将不再自动锁定。", selRule.LockText, selRule.ProcessName),
-                            Framework.Lang.T("确认删除"), MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK)
+                        if (MessageBox.Show(Framework.Lang.TF("nativePanel.deleteRuleNoteOnly", selRule.LockText, selRule.ProcessName),
+                            Framework.Lang.T("nativePanel.confirmDeletion"), MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK)
                         {
                             TitleLockRuleManager.RemoveExact(selRule);
                             reloadLocked();
@@ -8075,7 +8052,7 @@ namespace SideDesk.Controls
                     }
                     else
                     {
-                        MessageBox.Show(Framework.Lang.T("请选中要删除的规则"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Information);
+                        MessageBox.Show(Framework.Lang.T("nativePanel.selectRuleToDelete"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Information);
                     }
                 };
                 refreshLockedBtn.Click += (s, ev) => reloadLocked();
@@ -8087,7 +8064,7 @@ namespace SideDesk.Controls
                 Grid.SetColumn(rightPanel, 2);
                 var rightHeader = new Emoji.Wpf.TextBlock
                 {
-                    Text = Framework.Lang.T("选择一个窗口来锁定任务栏标题"),
+                    Text = Framework.Lang.T("nativePanel.pickWindowToLockTaskbarTitle"),
                     FontSize = 14,
                     FontWeight = FontWeights.Bold,
                     Margin = new Thickness(0, 0, 0, 8)
@@ -8097,9 +8074,9 @@ namespace SideDesk.Controls
 
                 var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
                 DockPanel.SetDock(btnPanel, Dock.Bottom);
-                var cancelBtn = new Button { Content = Framework.Lang.T("取消"), Width = 80, Height = 30, Margin = new Thickness(0, 0, 10, 0) };
+                var cancelBtn = new Button { Content = Framework.Lang.T("common.cancel"), Width = 80, Height = 30, Margin = new Thickness(0, 0, 10, 0) };
                 cancelBtn.Click += (s, ev) => pickerDialog.Close();
-                var okBtn = new Button { Content = Framework.Lang.T("下一步"), Width = 80, Height = 30, IsDefault = true };
+                var okBtn = new Button { Content = Framework.Lang.T("common.nextStep"), Width = 80, Height = 30, IsDefault = true };
                 btnPanel.Children.Add(cancelBtn);
                 btnPanel.Children.Add(okBtn);
                 rightPanel.Children.Add(btnPanel);
@@ -8143,7 +8120,7 @@ namespace SideDesk.Controls
                 {
                     if (listBox.SelectedItem == null)
                     {
-                        MessageBox.Show(Framework.Lang.T("请选择一个窗口"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                        MessageBox.Show(Framework.Lang.T("nativePanel.pleaseSelectAWindow"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Warning);
                         return;
                     }
                     var selected = (TaskbarOverlayManager.WindowInfo)((ListBoxItem)listBox.SelectedItem).Tag;
@@ -8158,7 +8135,7 @@ namespace SideDesk.Controls
             }
             catch (Exception ex)
             {
-                MessageBox.Show(Framework.Lang.TF("任务栏标记功能出错：{0}", ex.Message), Framework.Lang.T("错误"), MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(Framework.Lang.TF("nativePanel.taskbarMarkerError", ex.Message), Framework.Lang.T("common.error"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -8205,9 +8182,9 @@ namespace SideDesk.Controls
             {
                 var toolDisplays = new (string Key, string Header, Action Action)[]
                 {
-                    ("ClipboardHistory", "📋 剪贴板历史", ShowClipboardHistoryTool),
-                    ("AIChat",           "🤖 AI 助手",    ShowAIChatTool),
-                    ("VoiceInput",       "🎤 语音输入",  ShowVoiceInputTool)
+                    ("ClipboardHistory", Framework.Lang.T("nativePanel.clipboardHistory"), ShowClipboardHistoryTool),
+                    ("AIChat",           Framework.Lang.T("nativePanel.aiAssistant"),    ShowAIChatTool),
+                    ("VoiceInput",       Framework.Lang.T("nativePanel.voiceInput"),  ShowVoiceInputTool)
                 };
                 foreach (var (key, header, action) in toolDisplays)
                 {
@@ -8230,7 +8207,7 @@ namespace SideDesk.Controls
             var settings = AppSettings.Instance;
             var usageMi = new MenuItem
             {
-                Header = Framework.Lang.T("使用时长分析"),
+                Header = Framework.Lang.T("common.usageAnalysis"),
                 IsCheckable = true,
                 IsChecked = settings.ShowUsageStats,
                 Tag = "ShowUsageStats"
@@ -8261,11 +8238,6 @@ namespace SideDesk.Controls
         }
 
 
-
-        private void ContextMenu_UsageStatsClick(object sender, RoutedEventArgs e)
-        {
-            UsageStatsButton_Click(sender, e);
-        }
 
         private void ToggleEditMode_Click(object sender, RoutedEventArgs e)
         {
@@ -8355,7 +8327,7 @@ namespace SideDesk.Controls
                     var capturedDash = dashItem;
                     var dashItemMenu = new ContextMenu();
 
-                    var refreshItem = new MenuItem { Header = Framework.Lang.T("立即更新数据") };
+                    var refreshItem = new MenuItem { Header = Framework.Lang.T("data.updateNow") };
                     refreshItem.Click += async (s, e) =>
                     {
                         try
@@ -8370,7 +8342,7 @@ namespace SideDesk.Controls
                     };
                     dashItemMenu.Items.Add(refreshItem);
 
-                    var editStyleItem = new MenuItem { Header = Framework.Lang.T("编辑样式") };
+                    var editStyleItem = new MenuItem { Header = Framework.Lang.T("nativePanel.editStyle") };
                     editStyleItem.Click += (s, e) =>
                     {
                         if (ShowDashboardItemStyleDialog(capturedDash))
@@ -8381,7 +8353,7 @@ namespace SideDesk.Controls
                     };
                     dashItemMenu.Items.Add(editStyleItem);
 
-                    var editItem = new MenuItem { Header = Framework.Lang.T("编辑数据项") };
+                    var editItem = new MenuItem { Header = Framework.Lang.T("nativePanel.editDataItem") };
                     editItem.Click += (s, e) =>
                     {
                         string? oldRefVarKey = capturedDash.RefVarKey;
@@ -8404,7 +8376,7 @@ namespace SideDesk.Controls
                     };
                     dashItemMenu.Items.Add(editItem);
 
-                    var dashItemDel = new MenuItem { Header = Framework.Lang.T("删除数据项") };
+                    var dashItemDel = new MenuItem { Header = Framework.Lang.T("nativePanel.deleteDataItem") };
                     dashItemDel.Click += (s, e) =>
                     {
                         item.DashboardItems?.Remove(capturedDash);
@@ -8431,7 +8403,7 @@ namespace SideDesk.Controls
             {
                 contentPanel.Children.Add(new Emoji.Wpf.TextBlock
                 {
-                    Text = Framework.Lang.T("暂无数据项，请编辑添加"),
+                    Text = Framework.Lang.T("nativePanel.noDataItemsEdit"),
                     FontSize = 12,
                     Foreground = (Brush)FindResource("BrushTextMuted"),
                     Margin = new Thickness(0, 4, 0, 4)
@@ -8459,7 +8431,7 @@ namespace SideDesk.Controls
                 {
                     var addBtn = new Button
                     {
-                        Content = Framework.Lang.T("+ 添加数据项"),
+                        Content = Framework.Lang.T("nativePanel.addDataItemButton"),
                         Background = Brushes.Transparent,
                         Foreground = (Brush)FindResource("BrushAccent"),
                         BorderThickness = new Thickness(0),
@@ -8477,17 +8449,17 @@ namespace SideDesk.Controls
             }
 
             // 基于 ModuleControl 基础组件包装
-            var module = CreateModuleControl(Framework.Lang.T("📊 数据看板"), item);
+            var module = CreateModuleControl(Framework.Lang.T("nativePanel.dataDashboardAlt"), item);
 
-            var addMenuItem = new MenuItem { Header = Framework.Lang.T("添加数据项") };
+            var addMenuItem = new MenuItem { Header = Framework.Lang.T("nativePanel.addDataItem") };
             addMenuItem.Click += (s, e) => AddDashItem();
             module.AddCustomMenuItem(addMenuItem);
 
             // 布局子菜单：几列
-            var layoutMenu = new MenuItem { Header = Framework.Lang.T("布局") };
+            var layoutMenu = new MenuItem { Header = Framework.Lang.T("common.layout") };
             for (int n = 1; n <= 4; n++)
             {
-                var colItem = new MenuItem { Header = Framework.Lang.TF("{0} 列", n), IsCheckable = true, IsChecked = cols == n };
+                var colItem = new MenuItem { Header = Framework.Lang.TF("nativePanel.columnCountValue", n), IsCheckable = true, IsChecked = cols == n };
                 int colCount = n;
                 colItem.Click += (s, e) =>
                 {
@@ -8553,7 +8525,7 @@ namespace SideDesk.Controls
         {
             var dialog = new Window
             {
-                Title = Framework.Lang.T("编辑样式 - ") + dashItem.Label,
+                Title = Framework.Lang.T("nativePanel.editStylePrefix") + dashItem.Label,
                 Width = 360,
                 SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -8570,7 +8542,7 @@ namespace SideDesk.Controls
             // 标题
             root.Children.Add(new TextBlock
             {
-                Text = Framework.Lang.T("编辑数据块样式"),
+                Text = Framework.Lang.T("nativePanel.editDataBlockStyle"),
                 FontWeight = FontWeights.Bold,
                 FontSize = 15,
                 Margin = new Thickness(0, 0, 0, 16),
@@ -8662,14 +8634,14 @@ namespace SideDesk.Controls
 
                 // 自定义颜色输入
                 var customDock = new DockPanel { Margin = new Thickness(0, 6, 0, 0) };
-                var customLabel = new TextBlock { Text = Framework.Lang.T("自定义："), VerticalAlignment = VerticalAlignment.Center, FontSize = 11 };
+                var customLabel = new TextBlock { Text = Framework.Lang.T("settings.custom"), VerticalAlignment = VerticalAlignment.Center, FontSize = 11 };
                 DockPanel.SetDock(customLabel, Dock.Left);
                 customDock.Children.Add(customLabel);
                 var customBox = new TextBox { Width = 100, FontSize = 11, Style = textBoxStyle };
                 customDock.Children.Add(customBox);
                 var applyBtn = new Button
                 {
-                    Content = Framework.Lang.T("应用"), FontSize = 10, Padding = new Thickness(6, 2, 6, 2),
+                    Content = Framework.Lang.T("common.apps"), FontSize = 10, Padding = new Thickness(6, 2, 6, 2),
                     Margin = new Thickness(4, 0, 0, 0),
                     Style = (Style)FindResource("GhostButtonStyle")
                 };
@@ -8704,7 +8676,7 @@ namespace SideDesk.Controls
 
             // 标题（颜色 + 字号 + 粗体 同一行）
             var labelRow = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
-            var labelRowLabel = new TextBlock { Text = Framework.Lang.T("标题："), Width = 50, VerticalAlignment = VerticalAlignment.Center };
+            var labelRowLabel = new TextBlock { Text = Framework.Lang.T("common.titleLabel"), Width = 50, VerticalAlignment = VerticalAlignment.Center };
             DockPanel.SetDock(labelRowLabel, Dock.Left);
             labelRow.Children.Add(labelRowLabel);
             var (labelSwatch, labelHexBox) = BuildColorPicker(labelSelectedColor);
@@ -8719,10 +8691,10 @@ namespace SideDesk.Controls
             labelRow.Children.Add(labelSizeBox);
             var labelBoldCheck = new CheckBox
             {
-                Content = Framework.Lang.T("粗体"), IsChecked = dashItem.LabelBold,
+                Content = Framework.Lang.T("common.bold"), IsChecked = dashItem.LabelBold,
                 VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0),
                 Style = (Style)FindResource("DarkCheckBoxStyle"),
-                ToolTip = Framework.Lang.T("标题文字粗体")
+                ToolTip = Framework.Lang.T("nativePanel.titleTextBold")
             };
             DockPanel.SetDock(labelBoldCheck, Dock.Right);
             labelRow.Children.Add(labelBoldCheck);
@@ -8730,7 +8702,7 @@ namespace SideDesk.Controls
 
             // 数据（颜色 + 字号 + 粗体 同一行）
             var valueRow = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
-            var valueRowLabel = new TextBlock { Text = Framework.Lang.T("数据："), Width = 50, VerticalAlignment = VerticalAlignment.Center };
+            var valueRowLabel = new TextBlock { Text = Framework.Lang.T("common.data"), Width = 50, VerticalAlignment = VerticalAlignment.Center };
             DockPanel.SetDock(valueRowLabel, Dock.Left);
             valueRow.Children.Add(valueRowLabel);
             var (valueSwatch, valueHexBox) = BuildColorPicker(valueSelectedColor);
@@ -8745,10 +8717,10 @@ namespace SideDesk.Controls
             valueRow.Children.Add(valueSizeBox);
             var valueBoldCheck = new CheckBox
             {
-                Content = Framework.Lang.T("粗体"), IsChecked = dashItem.ValueBold,
+                Content = Framework.Lang.T("common.bold"), IsChecked = dashItem.ValueBold,
                 VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0),
                 Style = (Style)FindResource("DarkCheckBoxStyle"),
-                ToolTip = Framework.Lang.T("数据文字粗体")
+                ToolTip = Framework.Lang.T("nativePanel.valueTextBold")
             };
             DockPanel.SetDock(valueBoldCheck, Dock.Right);
             valueRow.Children.Add(valueBoldCheck);
@@ -8756,13 +8728,13 @@ namespace SideDesk.Controls
 
             // 水平对齐
             var alignDock = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
-            var alignLabel = new TextBlock { Text = Framework.Lang.T("水平对齐："), Width = 70, VerticalAlignment = VerticalAlignment.Center };
+            var alignLabel = new TextBlock { Text = Framework.Lang.T("nativePanel.horizontalAlignmentLabel"), Width = 70, VerticalAlignment = VerticalAlignment.Center };
             DockPanel.SetDock(alignLabel, Dock.Left);
             alignDock.Children.Add(alignLabel);
             var alignCombo = new ComboBox { Style = comboStyle };
-            alignCombo.Items.Add(Framework.Lang.T("左对齐"));
-            alignCombo.Items.Add(Framework.Lang.T("居中"));
-            alignCombo.Items.Add(Framework.Lang.T("右对齐"));
+            alignCombo.Items.Add(Framework.Lang.T("nativePanel.alignLeft"));
+            alignCombo.Items.Add(Framework.Lang.T("nativePanel.center"));
+            alignCombo.Items.Add(Framework.Lang.T("nativePanel.alignRight"));
             alignCombo.SelectedIndex = dashItem.HorizontalAlignment switch
             {
                 "Center" => 1,
@@ -8774,7 +8746,7 @@ namespace SideDesk.Controls
 
             // 值格式（可选）：{0} 或「变量」代表值，如 你好：{0}
             var fmtDock = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
-            var fmtLabel = new TextBlock { Text = Framework.Lang.T("格式："), Width = 70, VerticalAlignment = VerticalAlignment.Center };
+            var fmtLabel = new TextBlock { Text = Framework.Lang.T("cloudDrive.formatLabel"), Width = 70, VerticalAlignment = VerticalAlignment.Center };
             DockPanel.SetDock(fmtLabel, Dock.Left);
             fmtDock.Children.Add(fmtLabel);
             var fmtBox = new TextBox { Text = dashItem.ValueFormat ?? "", Style = textBoxStyle };
@@ -8782,7 +8754,7 @@ namespace SideDesk.Controls
             root.Children.Add(fmtDock);
             root.Children.Add(new TextBlock
             {
-                Text = Framework.Lang.T("用 {0} 或 {变量名} 代表值，如：你好：{0}、在线：{qoder.count}；留空则直接显示值"),
+                Text = Framework.Lang.T("nativePanel.valueFormatHint"),
                 FontSize = 11,
                 Foreground = (Brush)FindResource("BrushTextMuted"),
                 TextWrapping = TextWrapping.Wrap,
@@ -8792,7 +8764,7 @@ namespace SideDesk.Controls
             // 提示
             root.Children.Add(new TextBlock
             {
-                Text = Framework.Lang.T("点击色块选择预设颜色，也可直接输入 #RRGGBB 色值，留空使用默认主题色"),
+                Text = Framework.Lang.T("nativePanel.colorSwatchHint"),
                 FontSize = 11,
                 Foreground = (Brush)FindResource("BrushTextMuted"),
                 TextWrapping = TextWrapping.Wrap,
@@ -8801,8 +8773,8 @@ namespace SideDesk.Controls
 
             // 按钮
             var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-            var okBtn = new Button { Content = Framework.Lang.T("确定"), Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)FindResource("PrimaryButtonStyle") };
-            var cancelBtn = new Button { Content = Framework.Lang.T("取消"), Width = 70, Style = (Style)FindResource("StandardButtonStyle") };
+            var okBtn = new Button { Content = Framework.Lang.T("common.ok"), Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)FindResource("PrimaryButtonStyle") };
+            var cancelBtn = new Button { Content = Framework.Lang.T("common.cancel"), Width = 70, Style = (Style)FindResource("StandardButtonStyle") };
             okBtn.Click += (s, e) =>
             {
                 dashItem.LabelColor = labelHexBox.Text.Trim();
@@ -8925,7 +8897,7 @@ namespace SideDesk.Controls
 
             var dialog = new Window
             {
-                Title = editItem != null ? Framework.Lang.T("编辑数据项") : Framework.Lang.T("添加数据项"),
+                Title = editItem != null ? Framework.Lang.T("nativePanel.editDataItem") : Framework.Lang.T("nativePanel.addDataItem"),
                 Width = 520,
                 SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -8949,7 +8921,7 @@ namespace SideDesk.Controls
             var nameBox = new TextBox { Style = textBoxStyle, Margin = new Thickness(0, 0, 0, 12) };
             rootPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.T("数据项名称"),
+                Text = Framework.Lang.T("nativePanel.dataItemName"),
                 Foreground = labelBrush,
                 Margin = new Thickness(0, 0, 0, 4)
             });
@@ -8957,10 +8929,10 @@ namespace SideDesk.Controls
 
             // ===== 顶部页签：新建（无模板自定义） / 数据模板 / 数据模板市场 / 我的数据看板 =====
             var tabRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
-            var tabNew = new Button { Content = Framework.Lang.T("🆕 新建"), Style = primaryBtnStyle, Padding = new Thickness(14, 6, 14, 6), Margin = new Thickness(0, 0, 8, 0), Cursor = Cursors.Hand };
-            var tabTpl = new Button { Content = Framework.Lang.T("📋 数据模板"), Style = standardBtnStyle, Padding = new Thickness(14, 6, 14, 6), Margin = new Thickness(0, 0, 8, 0), Cursor = Cursors.Hand };
-            var tabMkt = new Button { Content = Framework.Lang.T("📊 数据模板市场"), Style = standardBtnStyle, Padding = new Thickness(14, 6, 14, 6), Margin = new Thickness(0, 0, 8, 0), Cursor = Cursors.Hand };
-            var tabPick = new Button { Content = Framework.Lang.T("📊 我的数据看板"), Style = standardBtnStyle, Padding = new Thickness(14, 6, 14, 6), Cursor = Cursors.Hand };
+            var tabNew = new Button { Content = Framework.Lang.T("nativePanel.new"), Style = primaryBtnStyle, Padding = new Thickness(14, 6, 14, 6), Margin = new Thickness(0, 0, 8, 0), Cursor = Cursors.Hand };
+            var tabTpl = new Button { Content = Framework.Lang.T("nativePanel.dataTemplates"), Style = standardBtnStyle, Padding = new Thickness(14, 6, 14, 6), Margin = new Thickness(0, 0, 8, 0), Cursor = Cursors.Hand };
+            var tabMkt = new Button { Content = Framework.Lang.T("market.dataTemplateMarket"), Style = standardBtnStyle, Padding = new Thickness(14, 6, 14, 6), Margin = new Thickness(0, 0, 8, 0), Cursor = Cursors.Hand };
+            var tabPick = new Button { Content = Framework.Lang.T("nativePanel.myDataDashboard"), Style = standardBtnStyle, Padding = new Thickness(14, 6, 14, 6), Cursor = Cursors.Hand };
             tabRow.Children.Add(tabNew);
             tabRow.Children.Add(tabTpl);
             tabRow.Children.Add(tabMkt);
@@ -8972,7 +8944,7 @@ namespace SideDesk.Controls
 
             tplPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.T("数据模板"),
+                Text = Framework.Lang.T("common.dataTemplates"),
                 Foreground = labelBrush,
                 Margin = new Thickness(0, 0, 0, 4)
             });
@@ -8985,7 +8957,7 @@ namespace SideDesk.Controls
             }
             else
             {
-                templateCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("（暂无数据模板）"), IsEnabled = false });
+                templateCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("nativePanel.noDataTemplates"), IsEnabled = false });
             }
             tplPanel.Children.Add(templateCombo);
 
@@ -9003,7 +8975,7 @@ namespace SideDesk.Controls
                     if (boxes.ContainsKey(p)) continue;
                     panel.Children.Add(new Emoji.Wpf.TextBlock
                     {
-                        Text = Framework.Lang.TF("参数 {0}", p),
+                        Text = Framework.Lang.TF("nativePanel.parameter", p),
                         Foreground = labelBrush,
                         Margin = new Thickness(0, 0, 0, 4)
                     });
@@ -9021,7 +8993,7 @@ namespace SideDesk.Controls
 
             mktPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.T("市场模板"),
+                Text = Framework.Lang.T("market.marketTemplate"),
                 Foreground = labelBrush,
                 Margin = new Thickness(0, 0, 0, 4)
             });
@@ -9033,7 +9005,7 @@ namespace SideDesk.Controls
             }
             else
             {
-                mktCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("（暂无市场模板）"), IsEnabled = false });
+                mktCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("nativePanel.noMarketTemplates"), IsEnabled = false });
             }
             mktPanel.Children.Add(mktCombo);
 
@@ -9049,14 +9021,14 @@ namespace SideDesk.Controls
             {
                 mktHintText = new Emoji.Wpf.TextBlock
                 {
-                    Text = Framework.Lang.T("在「数据模板市场」页面选择模板并点击添加，将自动填入此处。"),
+                    Text = Framework.Lang.T("nativePanel.pickATemplateOn"),
                     Foreground = labelBrush,
                     TextWrapping = TextWrapping.Wrap,
                     Margin = new Thickness(0, 0, 0, 12)
                 };
                 mktPanel.Children.Add(mktHintText);
-                openMarketBtn = new Button { Content = Framework.Lang.T("📊 数据模板市场"), Style = standardBtnStyle, Padding = new Thickness(14, 6, 14, 6), Cursor = Cursors.Hand, HorizontalAlignment = HorizontalAlignment.Left };
-                openMarketBtn.Click += (s, e) => Windows.MarketWindow.Open("/data-template-market", Framework.Lang.T("📊 数据模板市场"));
+                openMarketBtn = new Button { Content = Framework.Lang.T("market.dataTemplateMarket"), Style = standardBtnStyle, Padding = new Thickness(14, 6, 14, 6), Cursor = Cursors.Hand, HorizontalAlignment = HorizontalAlignment.Left };
+                openMarketBtn.Click += (s, e) => Windows.MarketWindow.Open("/data-template-market", Framework.Lang.T("market.dataTemplateMarket"));
                 mktPanel.Children.Add(openMarketBtn);
             }
 
@@ -9068,19 +9040,19 @@ namespace SideDesk.Controls
 
             customPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.T("获取方式"),
+                Text = Framework.Lang.T("settings.fetchMethod"),
                 Foreground = labelBrush,
                 Margin = new Thickness(0, 0, 0, 4)
             });
             var modeCombo = new ComboBox { Style = comboStyle, Margin = new Thickness(0, 0, 0, 12), IsEditable = false };
-            modeCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("页面选择器"), Tag = "SEL" });
-            modeCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("API 请求"), Tag = "API" });
+            modeCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("settings.pageSelector"), Tag = "SEL" });
+            modeCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("common.apiRequest"), Tag = "API" });
             modeCombo.SelectedIndex = 0;
             customPanel.Children.Add(modeCombo);
 
             customPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.T("网址"),
+                Text = Framework.Lang.T("common.url"),
                 Foreground = labelBrush,
                 Margin = new Thickness(0, 0, 0, 4)
             });
@@ -9089,22 +9061,22 @@ namespace SideDesk.Controls
 
             var selTypeLabel = new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.T("选择器类型"),
+                Text = Framework.Lang.T("settings.selectorType"),
                 Foreground = labelBrush,
                 Margin = new Thickness(0, 0, 0, 4)
             };
             customPanel.Children.Add(selTypeLabel);
             var selTypeCombo = new ComboBox { Style = comboStyle, Margin = new Thickness(0, 0, 0, 12), IsEditable = false };
             selTypeCombo.Items.Add(new ComboBoxItem { Content = "XPath", Tag = "xpath" });
-            selTypeCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("CSS 选择器"), Tag = "css" });
-            selTypeCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("正则表达式"), Tag = "regex" });
-            selTypeCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("JS 脚本"), Tag = "js" });
+            selTypeCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("settings.cssSelector"), Tag = "css" });
+            selTypeCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("settings.regularExpression"), Tag = "regex" });
+            selTypeCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("settings.jsScript"), Tag = "js" });
             selTypeCombo.SelectedIndex = 0;
             customPanel.Children.Add(selTypeCombo);
 
             var selectorLabel = new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.T("选择器内容"),
+                Text = Framework.Lang.T("settings.selectorContent"),
                 Foreground = labelBrush,
                 Margin = new Thickness(0, 0, 0, 4)
             };
@@ -9114,7 +9086,7 @@ namespace SideDesk.Controls
 
             var methodLabel = new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.T("请求方式"),
+                Text = Framework.Lang.T("settings.requestMethod"),
                 Foreground = labelBrush,
                 Margin = new Thickness(0, 0, 0, 4)
             };
@@ -9127,7 +9099,7 @@ namespace SideDesk.Controls
 
             var postBodyLabel = new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.T("POST 内容"),
+                Text = Framework.Lang.T("settings.postBody"),
                 Foreground = labelBrush,
                 Margin = new Thickness(0, 0, 0, 4)
             };
@@ -9137,7 +9109,7 @@ namespace SideDesk.Controls
 
             var extractLabel = new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.T("响应提取（JSON 路径，如 data.count）"),
+                Text = Framework.Lang.T("settings.responseExtractJsonPath"),
                 Foreground = labelBrush,
                 Margin = new Thickness(0, 0, 0, 4)
             };
@@ -9147,7 +9119,7 @@ namespace SideDesk.Controls
 
             customPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.T("刷新间隔（秒）"),
+                Text = Framework.Lang.T("settings.refreshIntervalSeconds"),
                 Foreground = labelBrush,
                 Margin = new Thickness(0, 0, 0, 4)
             });
@@ -9160,12 +9132,12 @@ namespace SideDesk.Controls
             // 所属团队（个人 + 团队列表，异步加载；决定变量名唯一性作用域）
             commonPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.T("所属团队"),
+                Text = Framework.Lang.T("common.affiliatedTeam"),
                 Foreground = labelBrush,
                 Margin = new Thickness(0, 0, 0, 4)
             });
             var teamCombo = new ComboBox { Style = comboStyle, Margin = new Thickness(0, 0, 0, 12), IsEditable = false };
-            teamCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("个人"), Tag = (string?)null });
+            teamCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("common.personal"), Tag = (string?)null });
             teamCombo.SelectedIndex = 0;
             commonPanel.Children.Add(teamCombo);
             string? pendingTeamId = null; // 模板切换时待恢复的团队选中
@@ -9197,7 +9169,7 @@ namespace SideDesk.Controls
 
             commonPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.T("变量名（团队/个人内唯一，如 qcoder.count）"),
+                Text = Framework.Lang.T("settings.variableNameHint"),
                 Foreground = labelBrush,
                 Margin = new Thickness(0, 0, 0, 4)
             });
@@ -9208,13 +9180,13 @@ namespace SideDesk.Controls
             var browsers = app.ProgramRegistry.Browsers;
             var browserLabel = new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.T("浏览器"),
+                Text = Framework.Lang.T("common.browser"),
                 Foreground = labelBrush,
                 Margin = new Thickness(0, 0, 0, 4)
             };
             commonPanel.Children.Add(browserLabel);
             var browserCombo = new ComboBox { Style = comboStyle, Margin = new Thickness(0, 0, 0, 12), IsEditable = false };
-            browserCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("默认浏览器"), Tag = (string?)null });
+            browserCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("common.defaultBrowser"), Tag = (string?)null });
             foreach (var b in browsers)
                 browserCombo.Items.Add(new ComboBoxItem { Content = b.Name, Tag = b.Id });
             browserCombo.SelectedIndex = 0;
@@ -9326,7 +9298,7 @@ namespace SideDesk.Controls
 
             refPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.T("请选择一个运行中的数据源，本数据项仅展示其数据，无需配置网址/选择器。"),
+                Text = Framework.Lang.T("nativePanel.pleaseSelectARunning"),
                 Foreground = labelBrush,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 0, 0, 12)
@@ -9334,14 +9306,14 @@ namespace SideDesk.Controls
 
             refPanel.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.T("从后台数据选择"),
+                Text = Framework.Lang.T("nativePanel.chooseFromBackgroundData"),
                 Foreground = labelBrush,
                 Margin = new Thickness(0, 0, 0, 4)
             });
             var bgCombo = new ComboBox { Style = comboStyle, Margin = new Thickness(0, 0, 0, 12), IsEditable = false };
             if (bgSources.Count == 0)
             {
-                bgCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("（暂无运行中的数据项）"), IsEnabled = false });
+                bgCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("nativePanel.noRunningDataItems"), IsEnabled = false });
             }
             else
             {
@@ -9515,7 +9487,7 @@ namespace SideDesk.Controls
 
             var cancelBtn = new Button
             {
-                Content = Framework.Lang.T("取消"),
+                Content = Framework.Lang.T("common.cancel"),
                 Style = (Style)FindResource("StandardButtonStyle"),
                 Padding = new Thickness(20, 8, 20, 8),
                 Margin = new Thickness(0, 0, 10, 0)
@@ -9528,7 +9500,7 @@ namespace SideDesk.Controls
 
             var confirmBtn = new Button
             {
-                Content = Framework.Lang.T("确定"),
+                Content = Framework.Lang.T("common.ok"),
                 Style = (Style)FindResource("PrimaryButtonStyle"),
                 Padding = new Thickness(20, 8, 20, 8)
             };
@@ -9545,7 +9517,7 @@ namespace SideDesk.Controls
                         var tplId = (templateCombo.SelectedItem as ComboBoxItem)?.Tag as string;
                         if (tplId == null || templates.FirstOrDefault(t => t.Id == tplId) == null)
                         {
-                            MessageBox.Show(Framework.Lang.T("请选择数据模板"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                            MessageBox.Show(Framework.Lang.T("settings.pleaseSelectAData"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Warning);
                             return;
                         }
                     }
@@ -9553,7 +9525,7 @@ namespace SideDesk.Controls
                     {
                         if (mktTpl == null)
                         {
-                            MessageBox.Show(Framework.Lang.T("请先从数据模板市场添加模板"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                            MessageBox.Show(Framework.Lang.T("nativePanel.addTemplateFromMarketFirst"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Warning);
                             return;
                         }
                     }
@@ -9562,21 +9534,21 @@ namespace SideDesk.Controls
                         // 无模板自定义：网址必填；选择器模式下选择器必填
                         if (string.IsNullOrWhiteSpace(urlBox.Text))
                         {
-                            MessageBox.Show(Framework.Lang.T("请输入请求网址"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                            MessageBox.Show(Framework.Lang.T("settings.enterRequestUrl"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Warning);
                             urlBox.Focus();
                             return;
                         }
                         bool isApi = (modeCombo.SelectedItem as ComboBoxItem)?.Tag as string == "API";
                         if (!isApi && string.IsNullOrWhiteSpace(selectorBox.Text))
                         {
-                            MessageBox.Show(Framework.Lang.T("请输入选择器"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                            MessageBox.Show(Framework.Lang.T("settings.pleaseEnterASelector"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Warning);
                             selectorBox.Focus();
                             return;
                         }
                     }
                     if (string.IsNullOrWhiteSpace(nameBox.Text))
                     {
-                        MessageBox.Show(Framework.Lang.T("请输入数据项名称"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                        MessageBox.Show(Framework.Lang.T("nativePanel.pleaseEnterTheData"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Warning);
                         nameBox.Focus();
                         return;
                     }
@@ -9588,7 +9560,7 @@ namespace SideDesk.Controls
                         {
                             if (string.IsNullOrWhiteSpace(kv.Value.Text))
                             {
-                                MessageBox.Show(Framework.Lang.TF("请输入参数 {0}", kv.Key), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                                MessageBox.Show(Framework.Lang.TF("nativePanel.pleaseEnterParameter", kv.Key), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Warning);
                                 kv.Value.Focus();
                                 return;
                             }
@@ -9597,7 +9569,7 @@ namespace SideDesk.Controls
                     string varKey = varKeyBox.Text.Trim();
                     if (string.IsNullOrEmpty(varKey))
                     {
-                        MessageBox.Show(Framework.Lang.T("请输入变量名"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                        MessageBox.Show(Framework.Lang.T("settings.pleaseEnterAVariable"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Warning);
                         varKeyBox.Focus();
                         return;
                     }
@@ -9605,7 +9577,7 @@ namespace SideDesk.Controls
                     // 变量名唯一性校验：本地（全部面板 + 后台数据项）+ 后端权威校验
                     if (IsVarKeyDuplicateLocally(varKey, teamId, editItem?.Id))
                     {
-                        MessageBox.Show(Framework.Lang.TF("变量名 \"{0}\" 在当前范围（团队/个人）内已存在，请换一个名称。", varKey), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                        MessageBox.Show(Framework.Lang.TF("settings.variableNameAlreadyExists", varKey), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Warning);
                         varKeyBox.Focus();
                         return;
                     }
@@ -9615,7 +9587,7 @@ namespace SideDesk.Controls
                     finally { confirmBtn.IsEnabled = true; }
                     if (!available)
                     {
-                        MessageBox.Show(Framework.Lang.TF("变量名 \"{0}\" 在当前范围（团队/个人）内已存在，请换一个名称。", varKey), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                        MessageBox.Show(Framework.Lang.TF("settings.variableNameAlreadyExists", varKey), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Warning);
                         varKeyBox.Focus();
                         return;
                     }
@@ -9626,12 +9598,12 @@ namespace SideDesk.Controls
                     var srcBg = (bgCombo.SelectedItem as ComboBoxItem)?.Tag as DataDashboardItem;
                     if (srcBg == null)
                     {
-                        MessageBox.Show(Framework.Lang.T("请选择一个数据源（后台数据或变量名）"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                        MessageBox.Show(Framework.Lang.T("nativePanel.pleaseSelectAData"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Warning);
                         return;
                     }
                     if (string.IsNullOrWhiteSpace(nameBox.Text))
                     {
-                        MessageBox.Show(Framework.Lang.T("请输入数据项名称"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                        MessageBox.Show(Framework.Lang.T("nativePanel.pleaseEnterTheData"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Warning);
                         nameBox.Focus();
                         return;
                     }
@@ -9794,16 +9766,16 @@ namespace SideDesk.Controls
 
             if (_currentWindowConfig == null)
             {
-                menu.Items.Add(new MenuItem { Header = Framework.Lang.T("(未加载窗口配置)"), IsEnabled = false });
+                menu.Items.Add(new MenuItem { Header = Framework.Lang.T("nativePanel.windowConfigurationNotLoaded"), IsEnabled = false });
                 return;
             }
 
             var availableTools = new (string Header, Action Action)[]
             {
-                (Framework.Lang.T("🚀 窗口瞬移"), (Action)ShowWindowTeleportTool),
-                (Framework.Lang.T("🔒 窗口标题锁定器"), (Action)ShowTitleLockTool),
-                (Framework.Lang.T("🧩 插件编辑器"), (Action)ShowPluginEditorTool),
-                (Framework.Lang.T("📊 使用统计"), () => UsageStatsButton_Click(this, new RoutedEventArgs())),
+                (Framework.Lang.T("nativePanel.windowTeleport"), (Action)ShowWindowTeleportTool),
+                (Framework.Lang.T("nativePanel.windowTitleLocker"), (Action)ShowTitleLockTool),
+                (Framework.Lang.T("market.pluginEditor"), (Action)ShowPluginEditorTool),
+                (Framework.Lang.T("nativePanel.usageStatistics"), () => UsageStatsButton_Click(this, new RoutedEventArgs())),
                 // 后续可以在这里添加更多工具
             };
 
@@ -9834,45 +9806,44 @@ namespace SideDesk.Controls
                 return mi;
             }
 
-            menu.Items.Add(Make(Framework.Lang.T("分组"), AddGroupPanel_Click));
+            menu.Items.Add(Make(Framework.Lang.T("common.group"), AddGroupPanel_Click));
             menu.Items.Add(new Separator());
-            menu.Items.Add(Make(Framework.Lang.T("快捷方式"), AddQuickGroupPanel_Click));
-            menu.Items.Add(Make(Framework.Lang.T("便签"), AddStickyNotesPanel_Click));
-            menu.Items.Add(Make(Framework.Lang.T("今日待办"), AddTodoPanel_Click));
-            menu.Items.Add(Make(Framework.Lang.T("剪贴板收藏"), AddClipboardPanel_Click));
-            menu.Items.Add(Make(Framework.Lang.T("系统信息"), AddSystemMonitorPanel_Click));
-            menu.Items.Add(Make(Framework.Lang.T("使用统计"), AddUsageStatsPanel_Click));
-            menu.Items.Add(Make(Framework.Lang.T("屏幕时长"), AddScreenTimePanel_Click));
-            menu.Items.Add(Make(Framework.Lang.T("AI 对话"), AddAIChatPanel_Click));
-            menu.Items.Add(Make(Framework.Lang.T("文件区"), AddFileAreaPanel_Click));
-            menu.Items.Add(Make(Framework.Lang.T("数据看板"), AddDataDashboard_Click));
+            menu.Items.Add(Make(Framework.Lang.T("common.shortcut"), AddQuickGroupPanel_Click));
+            menu.Items.Add(Make(Framework.Lang.T("common.stickyNotes"), AddStickyNotesPanel_Click));
+            menu.Items.Add(Make(Framework.Lang.T("common.todayTodos"), AddTodoPanel_Click));
+            menu.Items.Add(Make(Framework.Lang.T("common.clipboardFavorites"), AddClipboardPanel_Click));
+            menu.Items.Add(Make(Framework.Lang.T("common.systemInfo"), AddSystemMonitorPanel_Click));
+            menu.Items.Add(Make(Framework.Lang.T("common.usageStatistics"), AddUsageStatsPanel_Click));
+            menu.Items.Add(Make(Framework.Lang.T("common.screenTime"), AddScreenTimePanel_Click));
+            menu.Items.Add(Make(Framework.Lang.T("common.fileArea"), AddFileAreaPanel_Click));
+            menu.Items.Add(Make(Framework.Lang.T("common.dataDashboard"), AddDataDashboard_Click));
 
-            menu.Items.Add(Make(Framework.Lang.T("计时器"), AddTimerPanel_Click));
-            menu.Items.Add(Make(Framework.Lang.T("倒计时"), AddCountdownPanel_Click));
-            menu.Items.Add(Make(Framework.Lang.T("番茄闹钟"), AddPomodoroPanel_Click));
-            menu.Items.Add(Make(Framework.Lang.T("信号灯"), AddSignalLightPanel_Click));
-            menu.Items.Add(Make(Framework.Lang.T("图片轮播"), AddImageCarouselPanel_Click));
-            menu.Items.Add(Make(Framework.Lang.T("每日活跃"), AddDailyActivityPanel_Click));
-            menu.Items.Add(Make(Framework.Lang.T("日历"), AddCalendarPanel_Click));
-            menu.Items.Add(Make(Framework.Lang.T("数字员工"), AddDigitalEmployeePanel_Click));
-            menu.Items.Add(Make(Framework.Lang.T("好友"), AddFriendPanel_Click));
-            menu.Items.Add(Make(Framework.Lang.T("百度搜索"), AddWebBaiduPanel_Click));
+            menu.Items.Add(Make(Framework.Lang.T("common.timer"), AddTimerPanel_Click));
+            menu.Items.Add(Make(Framework.Lang.T("common.countdown"), AddCountdownPanel_Click));
+            menu.Items.Add(Make(Framework.Lang.T("common.pomodoroAlarm"), AddPomodoroPanel_Click));
+            menu.Items.Add(Make(Framework.Lang.T("common.signalLight"), AddSignalLightPanel_Click));
+            menu.Items.Add(Make(Framework.Lang.T("common.imageCarousel"), AddImageCarouselPanel_Click));
+            menu.Items.Add(Make(Framework.Lang.T("common.dailyActivity"), AddDailyActivityPanel_Click));
+            menu.Items.Add(Make(Framework.Lang.T("common.calendar"), AddCalendarPanel_Click));
+            menu.Items.Add(Make(Framework.Lang.T("common.digitalEmployees"), AddDigitalEmployeePanel_Click));
+            menu.Items.Add(Make(Framework.Lang.T("common.friends"), AddFriendPanel_Click));
+            menu.Items.Add(Make(Framework.Lang.T("settings.baiduSearch"), AddWebBaiduPanel_Click));
             menu.Items.Add(new Separator());
 
             // 添加数据块：子菜单展开时动态加载（与右键菜单共用 AddDataBlockMenu_SubmenuOpened）
-            var dataBlockSub = new MenuItem { Header = Framework.Lang.T("添加数据块") };
-            dataBlockSub.Items.Add(new MenuItem { Header = Framework.Lang.T("(加载中...)"), IsEnabled = false });
+            var dataBlockSub = new MenuItem { Header = Framework.Lang.T("nativePanel.addDataBlock") };
+            dataBlockSub.Items.Add(new MenuItem { Header = Framework.Lang.T("nativePanel.loading"), IsEnabled = false });
             dataBlockSub.SubmenuOpened += AddDataBlockMenu_SubmenuOpened;
             menu.Items.Add(dataBlockSub);
 
             // 插件子菜单：展开时动态加载已安装插件（与右键菜单共用 AddPluginMenu_SubmenuOpened）
-            var pluginSub = new MenuItem { Header = Framework.Lang.T("插件") };
-            pluginSub.Items.Add(new MenuItem { Header = Framework.Lang.T("(加载中...)"), IsEnabled = false });
+            var pluginSub = new MenuItem { Header = Framework.Lang.T("common.plugins") };
+            pluginSub.Items.Add(new MenuItem { Header = Framework.Lang.T("nativePanel.loading"), IsEnabled = false });
             pluginSub.SubmenuOpened += AddPluginMenu_SubmenuOpened;
             menu.Items.Add(pluginSub);
 
             menu.Items.Add(new Separator());
-            menu.Items.Add(Make(Framework.Lang.T("从团队组件库添加..."), AddFromTeamLibrary_Click));
+            menu.Items.Add(Make(Framework.Lang.T("nativePanel.addFromTeamComponent"), AddFromTeamLibrary_Click));
         }
 
         /// <summary>
@@ -10004,7 +9975,7 @@ namespace SideDesk.Controls
             {
                 "ClipboardHistory" => new Button
                 {
-                    Content = new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("📋 剪贴板历史") },
+                    Content = new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("nativePanel.clipboardHistory") },
                     Padding = new Thickness(8, 4, 8, 4),
                     MinHeight = 22,
                     Background = Brushes.Transparent,
@@ -10017,7 +9988,7 @@ namespace SideDesk.Controls
                 
                 "AIChat" => new Button
                 {
-                    Content = new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("🤖 AI 助手") },
+                    Content = new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("nativePanel.aiAssistant") },
                     Padding = new Thickness(8, 4, 8, 4),
                     MinHeight = 22,
                     Background = Brushes.Transparent,
@@ -10030,7 +10001,7 @@ namespace SideDesk.Controls
                 
                 "VoiceInput" => new Button
                 {
-                    Content = new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("🎤 语音输入") },
+                    Content = new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("nativePanel.voiceInput") },
                     Padding = new Thickness(8, 4, 8, 4),
                     MinHeight = 22,
                     Background = Brushes.Transparent,
@@ -10094,13 +10065,27 @@ namespace SideDesk.Controls
             }
             catch (Exception ex)
             {
-                MessageBox.Show(Framework.Lang.TF("语音输入功能初始化失败：{0}\n\n{1}", ex.Message, ex.StackTrace), Framework.Lang.T("错误"), MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(Framework.Lang.TF("nativePanel.voiceInputInitializationFailed", ex.Message, ex.StackTrace), Framework.Lang.T("common.error"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
         private StackPanel? _voiceInputContainer;
         private System.Speech.Recognition.SpeechRecognitionEngine? _speechEngine;
         private bool _isVoiceRecording = false;
+        // 语音会话（热键或按钮长按触发）：累计识别文本；热键结束粘贴到焦点位置，按钮结束显示到浮动窗并复制剪贴板；
+        // 按钮/状态控件引用供热键路径同步状态（工具栏未启用语音工具时容器仍会被创建）
+        private bool _voiceSession = false;
+        private bool _voiceSessionByHotkey = false;
+        private string _voiceSessionText = "";
+        private Button? _voiceBtnRef;
+        private TextBlock? _voiceStatusRef;
+        private Border? _voiceBtnBorderRef;
+
+        /// <summary>语音识别文本变化（本轮会话累计值；空串表示会话开始，热键与按钮长按模式均触发）</summary>
+        public event Action<string>? VoiceTextChanged;
+
+        /// <summary>按钮长按语音会话结束（松开按钮），参数为本轮累计文本</summary>
+        public event Action<string>? VoiceButtonSessionCompleted;
         
         // 瞬移窗口管理
         private List<TaskbarOverlayManager.WindowInfo> _teleportedWindows = new();
@@ -10125,7 +10110,7 @@ namespace SideDesk.Controls
                 VerticalAlignment = VerticalAlignment.Center,
                 Child = new Button
                 {
-                    Content = Framework.Lang.T("🎤 点击开始"),
+                    Content = Framework.Lang.T("nativePanel.clickToStart"),
                     Padding = new Thickness(12, 5, 12, 5),
                     Foreground = (Brush)FindResource("BrushAccentText"),
                     FontWeight = FontWeights.Bold,
@@ -10139,7 +10124,7 @@ namespace SideDesk.Controls
             // 状态文本
             var statusText = new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.T("就绪"),
+                Text = Framework.Lang.T("common.ready"),
                 Margin = new Thickness(10, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center,
                 Foreground = (Brush)FindResource("BrushTextMuted"),
@@ -10149,6 +10134,11 @@ namespace SideDesk.Controls
 
             container.Children.Add(voiceBtnBorder);
             container.Children.Add(statusText);
+
+            // 保存控件引用：供全局热键路径同步按钮状态（工具栏未启用语音工具时容器仍会被创建）
+            _voiceBtnRef = voiceBtnBorder.Child as Button;
+            _voiceStatusRef = statusText;
+            _voiceBtnBorderRef = voiceBtnBorder;
 
             // 初始化语音识别
             var voiceBtn = voiceBtnBorder.Child as Button;
@@ -10174,16 +10164,23 @@ namespace SideDesk.Controls
                 var dictationGrammar = new System.Speech.Recognition.DictationGrammar();
                 _speechEngine.LoadGrammar(dictationGrammar);
 
-                // 语音识别完成事件
+                // 语音识别完成事件：会话模式（热键/按钮长按）逐句累计并实时推送显示；否则保留旧的单句行为
                 _speechEngine.SpeechRecognized += (s, e) =>
                 {
                     Dispatcher.Invoke(() =>
                     {
                         var recognizedText = e.Result.Text;
-                        statusText.Text = Framework.Lang.TF("识别：{0}", recognizedText);
-                        
-                        // 可以将识别结果发送到AI对话或其他处理逻辑
-                        HandleVoiceInput(recognizedText);
+                        if (_voiceSession)
+                        {
+                            _voiceSessionText += recognizedText;
+                            statusText.Text = Framework.Lang.TF("nativePanel.recognized", _voiceSessionText);
+                            VoiceTextChanged?.Invoke(_voiceSessionText);
+                        }
+                        else
+                        {
+                            statusText.Text = Framework.Lang.TF("nativePanel.recognized", recognizedText);
+                            HandleVoiceInput(recognizedText);
+                        }
                     });
                 };
 
@@ -10192,33 +10189,35 @@ namespace SideDesk.Controls
                 {
                     Dispatcher.Invoke(() =>
                     {
-                        voiceBtn.Content = Framework.Lang.T("🎤 点击开始");
+                        voiceBtn.Content = Framework.Lang.T("nativePanel.clickToStart");
                         voiceBtn.Background = Brushes.Transparent;
                         voiceBtnBorder.Background = (Brush)FindResource("BrushAccent");
-                        statusText.Text = Framework.Lang.T("就绪");
+                        statusText.Text = Framework.Lang.T("common.ready");
                         _isVoiceRecording = false;
+                        _voiceSession = false;
                     });
                 };
 
                 // 设置音频输入
                 _speechEngine.SetInputToDefaultAudioDevice();
 
-                // 按钮点击事件
-                voiceBtn.Click += (s, e) =>
+                // 按住说话：按下开始录音，松开停止（捕获鼠标后在按钮外松开也会停止）
+                voiceBtn.PreviewMouseLeftButtonDown += (s, e) =>
                 {
-                    if (!_isVoiceRecording)
-                    {
-                        StartVoiceRecognition(voiceBtn, statusText, voiceBtnBorder);
-                    }
-                    else
-                    {
-                        StopVoiceRecognition(voiceBtn, statusText, voiceBtnBorder);
-                    }
+                    StartVoiceFromButton();
+                    voiceBtn.CaptureMouse();
+                };
+                voiceBtn.PreviewMouseLeftButtonUp += (s, e) =>
+                {
+                    if (voiceBtn.IsMouseCaptured) voiceBtn.ReleaseMouseCapture();
+                    string text = StopVoiceFromButton();
+                    if (!string.IsNullOrWhiteSpace(text))
+                        VoiceButtonSessionCompleted?.Invoke(text);
                 };
             }
             catch (Exception ex)
             {
-                statusText.Text = Framework.Lang.TF("语音初始化失败：{0}", ex.Message);
+                statusText.Text = Framework.Lang.TF("nativePanel.voiceInitializationFailed", ex.Message);
             }
         }
 
@@ -10227,14 +10226,14 @@ namespace SideDesk.Controls
             try
             {
                 _isVoiceRecording = true;
-                voiceBtn.Content = Framework.Lang.T("🎤 正在聆听...");
+                voiceBtn.Content = Framework.Lang.T("nativePanel.listeningEmoji");
                 voiceBtnBorder.Background = Brushes.Red;
-                statusText.Text = Framework.Lang.T("正在聆听...");
+                statusText.Text = Framework.Lang.T("nativePanel.listening");
                 _speechEngine?.RecognizeAsync(System.Speech.Recognition.RecognizeMode.Multiple);
             }
             catch (Exception ex)
             {
-                statusText.Text = Framework.Lang.TF("启动失败：{0}", ex.Message);
+                statusText.Text = Framework.Lang.TF("nativePanel.failedToStart", ex.Message);
                 _isVoiceRecording = false;
             }
         }
@@ -10248,8 +10247,85 @@ namespace SideDesk.Controls
             }
             catch (Exception ex)
             {
-                statusText.Text = Framework.Lang.TF("停止失败：{0}", ex.Message);
+                statusText.Text = Framework.Lang.TF("nativePanel.failedToStop", ex.Message);
             }
+        }
+
+        /// <summary>当前是否正在语音识别（含热键/按钮会话；供多主窗口去重）</summary>
+        public bool IsVoiceRecording => _isVoiceRecording;
+
+        /// <summary>
+        /// 全局热键启动语音识别：开始累计会话，底部语音按钮同步变为“正在聆听”红色状态。
+        /// 返回 false 表示启动失败（引擎不可用等）。
+        /// </summary>
+        public bool StartVoiceFromHotkey()
+        {
+            try
+            {
+                if (_isVoiceRecording) return true;
+                if (_voiceInputContainer == null) _voiceInputContainer = CreateVoiceInputContainer();
+                if (_voiceBtnRef == null || _voiceStatusRef == null || _voiceBtnBorderRef == null || _speechEngine == null) return false;
+
+                _voiceSession = true;
+                _voiceSessionByHotkey = true;
+                _voiceSessionText = "";
+                VoiceTextChanged?.Invoke(""); // 通知浮动窗先展示“正在聆听”占位
+                StartVoiceRecognition(_voiceBtnRef, _voiceStatusRef, _voiceBtnBorderRef);
+                return _isVoiceRecording;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[VoiceHotkey] 启动失败: {ex.Message}");
+                _voiceSession = false;
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 全局热键停止语音识别：返回本轮会话累计文本（仅热键启动的会话；按钮状态由 RecognizeCompleted 复位）。
+        /// </summary>
+        public string StopVoiceFromHotkey()
+        {
+            if (!_voiceSession || !_voiceSessionByHotkey) return "";
+            _voiceSession = false;
+            if (_voiceBtnRef != null && _voiceStatusRef != null && _voiceBtnBorderRef != null)
+                StopVoiceRecognition(_voiceBtnRef, _voiceStatusRef, _voiceBtnBorderRef);
+            string text = _voiceSessionText;
+            _voiceSessionText = "";
+            return text;
+        }
+
+        /// <summary>按钮按住说话：按下开始录音（累计会话）</summary>
+        private void StartVoiceFromButton()
+        {
+            try
+            {
+                if (_isVoiceRecording) return;
+                if (_voiceBtnRef == null || _voiceStatusRef == null || _voiceBtnBorderRef == null || _speechEngine == null) return;
+
+                _voiceSession = true;
+                _voiceSessionByHotkey = false;
+                _voiceSessionText = "";
+                VoiceTextChanged?.Invoke(""); // 浮动窗先展示“正在聆听”占位
+                StartVoiceRecognition(_voiceBtnRef, _voiceStatusRef, _voiceBtnBorderRef);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[VoiceButton] 启动失败: {ex.Message}");
+                _voiceSession = false;
+            }
+        }
+
+        /// <summary>按钮按住说话：松开停止录音，返回本轮累计文本</summary>
+        private string StopVoiceFromButton()
+        {
+            if (!_voiceSession || _voiceSessionByHotkey) return "";
+            _voiceSession = false;
+            if (_voiceBtnRef != null && _voiceStatusRef != null && _voiceBtnBorderRef != null)
+                StopVoiceRecognition(_voiceBtnRef, _voiceStatusRef, _voiceBtnBorderRef);
+            string text = _voiceSessionText;
+            _voiceSessionText = "";
+            return text;
         }
 
         private void HandleVoiceInput(string recognizedText)
@@ -10277,14 +10353,14 @@ namespace SideDesk.Controls
                 var windows = TaskbarOverlayManager.GetTaskbarWindows();
                 if (windows.Count == 0)
                 {
-                    MessageBox.Show(Framework.Lang.T("未找到可用的任务栏窗口"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Information);
+                    MessageBox.Show(Framework.Lang.T("nativePanel.noAvailableTaskbarWindows"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
 
                 // 创建窗口选择对话框
                 var pickerDialog = new Window
                 {
-                    Title = Framework.Lang.T("🚀 窗口瞬移 - 选择要移动的窗口"),
+                    Title = Framework.Lang.T("nativePanel.windowTeleportSelectThe"),
                     Width = 600,
                     Height = 500,
                     WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -10298,7 +10374,7 @@ namespace SideDesk.Controls
                 // 顶部说明
                 var headerText = new Emoji.Wpf.TextBlock
                 {
-                    Text = Framework.Lang.T("选择任务栏中的窗口，点击\"瞬移\"将其移动到左侧Dock区域"),
+                    Text = Framework.Lang.T("nativePanel.teleportHint"),
                     FontSize = 12,
                     Foreground = (Brush)FindResource("BrushTextMuted"),
                     Margin = new Thickness(0, 0, 0, 15),
@@ -10344,7 +10420,7 @@ namespace SideDesk.Controls
                     });
                     infoPanel.Children.Add(new Emoji.Wpf.TextBlock
                     {
-                        Text = Framework.Lang.TF("进程: {0}", win.ProcessName),
+                        Text = Framework.Lang.TF("window.processLabel", win.ProcessName),
                         FontSize = 11,
                         Margin = new Thickness(0, 3, 0, 0),
                         Foreground = (Brush)FindResource("BrushTextMuted")
@@ -10365,7 +10441,7 @@ namespace SideDesk.Controls
 
                 var teleportBtn = new Button
                 {
-                    Content = Framework.Lang.T("🚀 瞬移到左侧"),
+                    Content = Framework.Lang.T("nativePanel.teleportToLeft"),
                     Width = 140,
                     Height = 35,
                     Margin = new Thickness(0, 0, 10, 0),
@@ -10376,7 +10452,7 @@ namespace SideDesk.Controls
 
                 var cancelBtn = new Button
                 {
-                    Content = Framework.Lang.T("取消"),
+                    Content = Framework.Lang.T("common.cancel"),
                     Width = 80,
                     Height = 35
                 };
@@ -10398,7 +10474,7 @@ namespace SideDesk.Controls
                     }
                     else
                     {
-                        MessageBox.Show(Framework.Lang.T("请先选择一个窗口"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                        MessageBox.Show(Framework.Lang.T("nativePanel.selectWindowFirst"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Warning);
                     }
                 };
 
@@ -10424,7 +10500,7 @@ namespace SideDesk.Controls
             }
             catch (Exception ex)
             {
-                MessageBox.Show(Framework.Lang.TF("打开窗口瞬移工具失败：{0}", ex.Message), Framework.Lang.T("错误"), MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(Framework.Lang.TF("nativePanel.openTeleportFailed", ex.Message), Framework.Lang.T("common.error"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -10476,7 +10552,7 @@ namespace SideDesk.Controls
             }
             catch (Exception ex)
             {
-                MessageBox.Show(Framework.Lang.TF("移动窗口失败：{0}", ex.Message), Framework.Lang.T("错误"), MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(Framework.Lang.TF("nativePanel.moveWindowFailed", ex.Message), Framework.Lang.T("common.error"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -10633,7 +10709,7 @@ namespace SideDesk.Controls
                     var capturedWindow = window;
                     var restoreMenuItem = new MenuItem
                     {
-                        Header = Framework.Lang.T("还原到任务栏")
+                        Header = Framework.Lang.T("nativePanel.restoreToTaskbar")
                     };
                     restoreMenuItem.Click += (s, e) => RestoreWindowFromDock(capturedWindow);
                     itemPanel.ContextMenu = new ContextMenu { Items = { restoreMenuItem } };
@@ -10691,7 +10767,7 @@ namespace SideDesk.Controls
             var headerPanel = new DockPanel();
             var titleText = new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.T("🚀 瞬移窗口"),
+                Text = Framework.Lang.T("nativePanel.teleportWindow"),
                 FontSize = 13,
                 Foreground = (Brush)FindResource("BrushTextMain"),
                 VerticalAlignment = VerticalAlignment.Center
@@ -10767,7 +10843,7 @@ namespace SideDesk.Controls
             }
             catch (Exception ex)
             {
-                MessageBox.Show(Framework.Lang.TF("移除窗口失败：{0}", ex.Message), Framework.Lang.T("错误"), MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(Framework.Lang.TF("nativePanel.removeWindowFailed", ex.Message), Framework.Lang.T("common.error"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 

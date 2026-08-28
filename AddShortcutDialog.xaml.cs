@@ -31,7 +31,7 @@ public partial class AddShortcutDialog : Window
 
         // 加载浏览器列表
         var app = (App)Application.Current;
-        browserCombo.Items.Add(Framework.Lang.T("默认浏览器"));
+        browserCombo.Items.Add(Framework.Lang.T("common.defaultBrowser"));
         foreach (var browser in app.ProgramRegistry.Browsers)
         {
             browserCombo.Items.Add(browser.Name);
@@ -120,7 +120,7 @@ public partial class AddShortcutDialog : Window
         {
             var browser = app.ProgramRegistry.Browsers[browserIndex];
             profileCombo.Items.Clear();
-            profileCombo.Items.Add(Framework.Lang.T("无"));
+            profileCombo.Items.Add(Framework.Lang.T("common.none"));
             foreach (var profile in browser.Profiles)
             {
                 profileCombo.Items.Add(profile.Name);
@@ -132,7 +132,7 @@ public partial class AddShortcutDialog : Window
 
     private void OpenWebMarket_Click(object sender, RoutedEventArgs e)
     {
-        Windows.MarketWindow.Open("/web-market", "🌐 网页市场");
+        Windows.MarketWindow.Open("/web-market", Framework.Lang.T("shortcut.webMarket"));
     }
 
     private void ToggleBatch_Click(object sender, RoutedEventArgs e)
@@ -140,7 +140,7 @@ public partial class AddShortcutDialog : Window
         _isBatchMode = !_isBatchMode;
         singlePanel.Visibility = _isBatchMode ? Visibility.Collapsed : Visibility.Visible;
         batchPanel.Visibility = _isBatchMode ? Visibility.Visible : Visibility.Collapsed;
-        toggleBatchBtn.Content = _isBatchMode ? Framework.Lang.T("单个模式") : Framework.Lang.T("批量模式");
+        toggleBatchBtn.Content = _isBatchMode ? Framework.Lang.T("shortcut.singleMode") : Framework.Lang.T("shortcut.batchMode");
         this.Height = _isBatchMode ? 350 : 290;
         this.Width = _isBatchMode ? 500 : 400;
 

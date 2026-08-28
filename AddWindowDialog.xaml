@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:l="clr-namespace:SideDesk.Framework"
-        Title="{l:T 添加窗口}" SizeToContent="Height" MinHeight="200" Width="380"
+        Title="{l:T window.addWindow}" SizeToContent="Height" MinHeight="200" Width="380"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False"
         Background="{DynamicResource BrushDialogBG}" Foreground="{DynamicResource BrushTextMain}">
     <Grid Margin="20">
@@ -13,33 +13,33 @@
         </Grid.RowDefinitions>
 
         <!-- 标题 -->
-        <TextBlock Grid.Row="0" Text="{l:T 添加窗口}" FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
+        <TextBlock Grid.Row="0" Text="{l:T window.addWindow}" FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
                    Foreground="{DynamicResource BrushTextMain}" Margin="0,0,0,14"/>
 
         <!-- 内容面板 -->
         <StackPanel Grid.Row="1">
             <!-- 名称 -->
             <DockPanel Margin="0,0,0,12">
-                <TextBlock DockPanel.Dock="Left" Text="{l:T 名称：}" Width="60" VerticalAlignment="Center"
+                <TextBlock DockPanel.Dock="Left" Text="{l:T common.nameLabel}" Width="60" VerticalAlignment="Center"
                            FontSize="{DynamicResource FontSizeNormal}" Foreground="{DynamicResource BrushTextMain}"/>
-                <TextBox x:Name="nameBox" Text="{l:T 新窗口}" Style="{StaticResource GlobalTextBoxStyle}"/>
+                <TextBox x:Name="nameBox" Text="{l:T common.newWindow}" Style="{StaticResource GlobalTextBoxStyle}"/>
             </DockPanel>
 
             <!-- 归属选择 -->
             <DockPanel Margin="0,0,0,12">
-                <TextBlock DockPanel.Dock="Left" Text="{l:T 归属：}" Width="60" VerticalAlignment="Center"
+                <TextBlock DockPanel.Dock="Left" Text="{l:T window.ownershipLabel}" Width="60" VerticalAlignment="Center"
                            FontSize="{DynamicResource FontSizeNormal}" Foreground="{DynamicResource BrushTextMain}"/>
                 <ComboBox x:Name="ownerCombo" Style="{StaticResource GlobalComboBoxStyle}" SelectedIndex="0"/>
             </DockPanel>
 
             <!-- 模式选择 -->
             <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                <TextBlock Text="{l:T 模式：}" Width="60" VerticalAlignment="Center"
+                <TextBlock Text="{l:T common.mode}" Width="60" VerticalAlignment="Center"
                            FontSize="{DynamicResource FontSizeNormal}" Foreground="{DynamicResource BrushTextMain}"/>
-                <RadioButton x:Name="nativeRadio" Content="{l:T 本地模式}" IsChecked="True"
+                <RadioButton x:Name="nativeRadio" Content="{l:T common.localMode}" IsChecked="True"
                              FontSize="{DynamicResource FontSizeNormal}"
                              Foreground="{DynamicResource BrushTextSec}" Margin="0,0,15,0"/>
-                <RadioButton x:Name="webviewRadio" Content="{l:T 网页模式}"
+                <RadioButton x:Name="webviewRadio" Content="{l:T window.webMode}"
                              FontSize="{DynamicResource FontSizeNormal}"
                              Foreground="{DynamicResource BrushTextSec}"/>
             </StackPanel>
@@ -47,9 +47,9 @@
 
         <!-- 按钮 -->
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
-            <Button Content="{l:T 确定}" Width="75" Margin="0,0,10,0" Click="OkButton_Click"
+            <Button Content="{l:T common.ok}" Width="75" Margin="0,0,10,0" Click="OkButton_Click"
                     Style="{StaticResource PrimaryButtonStyle}"/>
-            <Button Content="{l:T 取消}" Width="75" Click="CancelButton_Click"
+            <Button Content="{l:T common.cancel}" Width="75" Click="CancelButton_Click"
                     Style="{StaticResource StandardButtonStyle}"/>
         </StackPanel>
     </Grid>

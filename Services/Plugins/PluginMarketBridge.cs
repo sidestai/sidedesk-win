@@ -104,7 +104,7 @@ public static class PluginMarketBridge
     public static void InstallFromLocalZip(string zipPath)
     {
         if (string.IsNullOrEmpty(zipPath) || !System.IO.File.Exists(zipPath)) return;
-        _ = Task.Run(() => InstallFromZipFileAsync(zipPath, Framework.Lang.T("导入插件")));
+        _ = Task.Run(() => InstallFromZipFileAsync(zipPath, Framework.Lang.T("market.importPlugin")));
     }
 
     /// <summary>拉取开源插件源码到插件编辑器目录，并打开编辑器（fire-and-forget）</summary>
@@ -118,7 +118,7 @@ public static class PluginMarketBridge
 
     private static async Task InstallAsync(string url, string authorization)
     {
-        var notifyTitle = Framework.Lang.T("插件市场");
+        var notifyTitle = Framework.Lang.T("market.pluginMarket");
         var tempZip = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"sd_market_{Guid.NewGuid():N}.zip");
         try
         {
@@ -133,8 +133,8 @@ public static class PluginMarketBridge
                 {
                     var code = (int)resp.StatusCode;
                     Notify(false, code == 403
-                        ? Framework.Lang.T("未登录或未购买，无法下载该插件")
-                        : Framework.Lang.TF("插件下载失败（HTTP {0}）", code), notifyTitle);
+                        ? Framework.Lang.T("market.downloadRequiresLoginOrPurchase")
+                        : Framework.Lang.TF("market.pluginDownloadFailedHttp", code), notifyTitle);
                     return;
                 }
                 await using var fs = System.IO.File.Create(tempZip);
@@ -147,7 +147,7 @@ public static class PluginMarketBridge
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[PluginMarketBridge] 安装失败: {ex.Message}");
-            Notify(false, Framework.Lang.TF("插件安装失败: {0}", ex.Message), notifyTitle);
+            Notify(false, Framework.Lang.TF("market.pluginInstallFailed", ex.Message), notifyTitle);
         }
         finally
         {
@@ -174,7 +174,7 @@ public static class PluginMarketBridge
             var pluginRoot = FindPluginRoot(stagingDir);
             if (pluginRoot == null)
             {
-                Notify(false, Framework.Lang.T("插件包格式错误：未找到 plugin.json"), notifyTitle);
+                Notify(false, Framework.Lang.T("market.pluginPackageMissingManifest"), notifyTitle);
                 return;
             }
             var configPath = System.IO.Path.Combine(pluginRoot, "plugin.json");
@@ -182,7 +182,7 @@ public static class PluginMarketBridge
                 System.IO.File.ReadAllText(configPath));
             if (cfg == null || string.IsNullOrEmpty(cfg.Id))
             {
-                Notify(false, Framework.Lang.T("plugin.json 缺少 id 字段"), notifyTitle);
+                Notify(false, Framework.Lang.T("market.pluginManifestMissingId"), notifyTitle);
                 return;
             }
 
@@ -202,9 +202,9 @@ public static class PluginMarketBridge
             await DispatcherInvoke(() => loaded = PluginLoaderService.Instance.LoadDevPlugin(targetDir));
 
             if (loaded != null)
-                Notify(true, Framework.Lang.TF("插件「{0}」安装成功", loaded.Config.Name), notifyTitle);
+                Notify(true, Framework.Lang.TF("market.pluginInstalledSuccess", loaded.Config.Name), notifyTitle);
             else
-                Notify(false, Framework.Lang.T("插件文件已就位，但加载失败（可能 DLL 不兼容），重启应用后重试"), notifyTitle);
+                Notify(false, Framework.Lang.T("market.pluginInstalledLoadFailedRetry"), notifyTitle);
 
             // 设置窗口若开着，同步刷新插件列表
             await DispatcherInvoke(() =>
@@ -216,7 +216,7 @@ public static class PluginMarketBridge
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[PluginMarketBridge] 安装失败: {ex.Message}");
-            Notify(false, Framework.Lang.TF("插件安装失败: {0}", ex.Message), notifyTitle);
+            Notify(false, Framework.Lang.TF("market.pluginInstallFailed", ex.Message), notifyTitle);
         }
         finally
         {
@@ -242,7 +242,7 @@ public static class PluginMarketBridge
             var sourceRoot = FindPluginRoot(stagingDir);
             if (sourceRoot == null)
             {
-                Notify(false, Framework.Lang.T("源码包格式错误：未找到 plugin.json"), Framework.Lang.T("插件市场"));
+                Notify(false, Framework.Lang.T("market.sourcePackageMissingManifest"), Framework.Lang.T("market.pluginMarket"));
                 return;
             }
 
@@ -260,12 +260,12 @@ public static class PluginMarketBridge
                 window.Show();
             });
 
-            Notify(true, Framework.Lang.TF("源码已下载到插件编辑器目录（{0}），请在编辑器中打开该项目", dirName), Framework.Lang.T("插件市场"));
+            Notify(true, Framework.Lang.TF("market.sourceDownloadedOpenInEditor", dirName), Framework.Lang.T("market.pluginMarket"));
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[PluginMarketBridge] 拉取源码失败: {ex.Message}");
-            Notify(false, Framework.Lang.TF("拉取源码失败: {0}", ex.Message), Framework.Lang.T("插件市场"));
+            Notify(false, Framework.Lang.TF("market.sourceFetchFailed", ex.Message), Framework.Lang.T("market.pluginMarket"));
         }
         finally
         {

@@ -61,7 +61,7 @@ namespace SideDesk.Controls
 
             _dialog = new Window
             {
-                Title = Framework.Lang.T("便签"),
+                Title = Framework.Lang.T("common.stickyNotes"),
                 Width = 420,
                 Height = height,
                 Left = left,  // left 已经是 sidebar 右侧边缘的 X 坐标，直接使用
@@ -146,7 +146,7 @@ namespace SideDesk.Controls
             // 标题文本（中间，自动填充）
             var titleLabel = new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.T("便签"),
+                Text = Framework.Lang.T("common.stickyNotes"),
                 Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                 FontSize = 14,
                 FontWeight = FontWeights.Bold,
@@ -255,7 +255,7 @@ namespace SideDesk.Controls
             // 不硬编码宽高：全局按钮样式自带 Padding，固定尺寸会裁剪文字
             var saveBtn = new Button
             {
-                Content = Framework.Lang.T("保存"),
+                Content = Framework.Lang.T("common.save"),
                 Margin = new Thickness(0, 0, 8, 0),
                 Style = (Style)Application.Current.FindResource("PrimaryButtonStyle")
             };
@@ -268,7 +268,7 @@ namespace SideDesk.Controls
 
             var copyBtn = new Button
             {
-                Content = Framework.Lang.T("复制全文"),
+                Content = Framework.Lang.T("sticky.copyAllText"),
                 Style = (Style)Application.Current.FindResource("StandardButtonStyle")
             };
             copyBtn.Click += (s, e) =>

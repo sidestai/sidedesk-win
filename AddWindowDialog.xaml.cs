@@ -30,7 +30,7 @@ public partial class AddWindowDialog : Window
     private async System.Threading.Tasks.Task LoadOwnerOptionsAsync()
     {
         ownerCombo.Items.Clear();
-        ownerCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("个人"), Tag = null });
+        ownerCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("common.personal"), Tag = null });
         ownerCombo.SelectedIndex = 0;
 
         var app = (App)Application.Current;
@@ -50,7 +50,7 @@ public partial class AddWindowDialog : Window
         // 归属：个人 / 团队
         string? corpId = (ownerCombo.SelectedItem as ComboBoxItem)?.Tag as string;
         bool isTeam = !string.IsNullOrEmpty(corpId);
-        string name = string.IsNullOrWhiteSpace(nameBox.Text) ? Framework.Lang.T("新窗口") : nameBox.Text.Trim();
+        string name = string.IsNullOrWhiteSpace(nameBox.Text) ? Framework.Lang.T("common.newWindow") : nameBox.Text.Trim();
 
         string? url = null;
         if (isWebView)
@@ -59,7 +59,7 @@ public partial class AddWindowDialog : Window
             var app = (App)Application.Current;
             if (string.IsNullOrEmpty(app.AppSettings.AccountToken))
             {
-                MessageBox.Show(Framework.Lang.T("网页模式窗口需要先登录"), Framework.Lang.T("无法添加"),
+                MessageBox.Show(Framework.Lang.T("window.webModeLoginRequired"), Framework.Lang.T("window.cannotAdd"),
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
@@ -77,7 +77,7 @@ public partial class AddWindowDialog : Window
 
             if (string.IsNullOrEmpty(serverId))
             {
-                MessageBox.Show(Framework.Lang.T("创建网页窗口失败，请稍后重试"), Framework.Lang.T("无法添加"),
+                MessageBox.Show(Framework.Lang.T("window.createWebWindowFailed"), Framework.Lang.T("window.cannotAdd"),
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }

@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:l="clr-namespace:SideDesk.Framework"
-        Title="{l:T 'WebSocket 连接客户端'}" Height="500" Width="750"
+        Title="{l:T nativePanel.websocketConnectedClients}" Height="500" Width="750"
         WindowStartupLocation="CenterOwner"
         Background="{DynamicResource BrushBG}"
         Foreground="{DynamicResource BrushTextMain}">
@@ -15,12 +15,12 @@
 
         <!-- 标题栏 -->
         <DockPanel Grid.Row="0" Margin="0,0,0,12">
-            <TextBlock Text="{l:T 'WebSocket 连接客户端'}" 
+            <TextBlock Text="{l:T nativePanel.websocketConnectedClients}" 
                        FontSize="{DynamicResource FontSizeSubtitle}" 
                        FontWeight="Bold"
                        Foreground="{DynamicResource BrushTextMain}"
                        VerticalAlignment="Center"/>
-            <Button x:Name="refreshBtn" Content="{l:T 刷新}" DockPanel.Dock="Right"
+            <Button x:Name="refreshBtn" Content="{l:T common.refresh}" DockPanel.Dock="Right"
                     Style="{StaticResource GhostButtonStyle}" Padding="12,6"
                     Click="Refresh_Click" Margin="8,0,0,0"/>
             <TextBlock x:Name="countText" Text="" DockPanel.Dock="Right"
@@ -35,7 +35,7 @@
         </ScrollViewer>
 
         <!-- 底部提示 -->
-        <TextBlock Grid.Row="2" Text="{l:T 提示：未关联数据看板的页面可点击「关闭标签」手动关闭}"
+        <TextBlock Grid.Row="2" Text="{l:T nativePanel.tipPagesNotLinked}"
                    Foreground="{DynamicResource BrushTextMuted}"
                    FontSize="{DynamicResource FontSizeTiny}"
                    Margin="0,8,0,0"/>

@@ -45,13 +45,13 @@ namespace SideDesk
             clientListPanel.Children.Clear();
 
             var clients = WebSocketServerService.Instance.GetConnectedClients();
-            countText.Text = Framework.Lang.TF("共 {0} 个连接", clients.Count);
+            countText.Text = Framework.Lang.TF("nativePanel.connectionsInTotal", clients.Count);
 
             if (clients.Count == 0)
             {
                 clientListPanel.Children.Add(new TextBlock
                 {
-                    Text = Framework.Lang.T("暂无连接的客户端"),
+                    Text = Framework.Lang.T("nativePanel.noConnectedClients"),
                     Foreground = (Brush)FindResource("BrushTextMuted"),
                     FontSize = 13,
                     Margin = new Thickness(0, 20, 0, 0),
@@ -86,7 +86,7 @@ namespace SideDesk
                 var titleRow = new StackPanel { Orientation = Orientation.Horizontal };
                 var titleText = new Emoji.Wpf.TextBlock
                 {
-                    Text = string.IsNullOrEmpty(client.Title) ? Framework.Lang.T("(未注册标题)") : client.Title,
+                    Text = string.IsNullOrEmpty(client.Title) ? Framework.Lang.T("nativePanel.unregisteredTitle") : client.Title,
                     FontSize = 14,
                     FontWeight = FontWeights.SemiBold,
                     Foreground = (Brush)FindResource("BrushTextMain"),
@@ -124,7 +124,7 @@ namespace SideDesk
                         Margin = new Thickness(8, 0, 0, 0),
                         Child = new TextBlock
                         {
-                            Text = Framework.Lang.T("未关联"),
+                            Text = Framework.Lang.T("nativePanel.notLinked"),
                             FontSize = 11,
                             Foreground = (Brush)FindResource("BrushAccentText")
                         }
@@ -147,7 +147,7 @@ namespace SideDesk
                 });
 
                 // 元数据行
-                var metaText = $"UniqID: {client.UniqId}  |  Tab ID: {(client.TabId?.ToString() ?? "N/A")}  |  连接时间: {client.ConnectedAt:HH:mm:ss}";
+                var metaText = $"UniqID: {client.UniqId}  |  Tab ID: {(client.TabId?.ToString() ?? "N/A")}  |  {Framework.Lang.T("common.connectedAt")}: {client.ConnectedAt:HH:mm:ss}";
                 infoPanel.Children.Add(new TextBlock
                 {
                     Text = metaText,
@@ -166,7 +166,7 @@ namespace SideDesk
                 {
                     var closeBtn = new Button
                     {
-                        Content = Framework.Lang.T("关闭标签"),
+                        Content = Framework.Lang.T("nativePanel.closeTab"),
                         Style = (Style)FindResource("GhostButtonStyle"),
                         Padding = new Thickness(10, 5, 10, 5),
                         FontSize = 12,
@@ -179,7 +179,7 @@ namespace SideDesk
                 {
                     actionPanel.Children.Add(new TextBlock
                     {
-                        Text = Framework.Lang.T("已关联"),
+                        Text = Framework.Lang.T("nativePanel.linked"),
                         FontSize = 11,
                         Foreground = new SolidColorBrush(Color.FromRgb(34, 197, 94)),
                         HorizontalAlignment = HorizontalAlignment.Right

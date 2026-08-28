@@ -592,6 +592,40 @@ namespace SideDesk.Framework
 
         #endregion
 
+        #region 浮动上下文窗口
+
+        private bool _floatingContextEnabled { get; set; } = true;
+
+        /// <summary>浮动上下文窗口开关（输入框焦点/剪贴板复制时在主窗口内显示内容）</summary>
+        [JsonProperty]
+        public bool FloatingContextEnabled
+        {
+            get { return _floatingContextEnabled; }
+            set { _floatingContextEnabled = value; NotifyPropertyChanged("FloatingContextEnabled"); }
+        }
+
+        private double _floatingContextOffset { get; set; } = 0.15;
+
+        /// <summary>浮动上下文窗口的垂直相对位置（0~1，相对主窗口内容区高度）</summary>
+        [JsonProperty]
+        public double FloatingContextOffset
+        {
+            get { return _floatingContextOffset; }
+            set { _floatingContextOffset = value; NotifyPropertyChanged("FloatingContextOffset"); }
+        }
+
+        private bool _floatingContextCompact { get; set; } = false;
+
+        /// <summary>浮动上下文窗口是否处于 2 行精简模式</summary>
+        [JsonProperty]
+        public bool FloatingContextCompact
+        {
+            get { return _floatingContextCompact; }
+            set { _floatingContextCompact = value; NotifyPropertyChanged("FloatingContextCompact"); }
+        }
+
+        #endregion
+
         // ========== 单例 ==========
 
         private static AppSettings _instance { get; set; } = null;

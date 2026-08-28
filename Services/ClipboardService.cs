@@ -219,9 +219,9 @@ namespace SideDesk.Services
                     contentType = ClipboardContentType.Image;
                     var image = Clipboard.GetImage();
                     if (image != null)
-                        contentText = Framework.Lang.TF("图片 ({0}x{1})", image.PixelWidth, image.PixelHeight);
+                        contentText = Framework.Lang.TF("clipboard.imageX", image.PixelWidth, image.PixelHeight);
                     else
-                        contentText = Framework.Lang.T("图片");
+                        contentText = Framework.Lang.T("common.image");
                 }
                 else if (Clipboard.ContainsText())
                 {

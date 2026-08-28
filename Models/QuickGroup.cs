@@ -504,7 +504,7 @@ namespace SideDesk.Models
 
         private static void ApplyLegacyGroup(PanelItem panel, LegacyQuickGroup g)
         {
-            panel.QuickGroupName = string.IsNullOrEmpty(g.Name) ? Framework.Lang.T("快捷方式") : g.Name;
+            panel.QuickGroupName = string.IsNullOrEmpty(g.Name) ? Framework.Lang.T("common.shortcut") : g.Name;
             panel.QuickColumns = g.Columns > 0 ? g.Columns : 1;
             panel.IsExpanded = g.IsExpanded;
             panel.QuickHideFrame = g.HideFrame;

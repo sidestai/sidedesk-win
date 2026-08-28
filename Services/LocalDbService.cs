@@ -920,7 +920,7 @@ FROM local_bar WHERE deleted_at IS NULL AND user_id=$scope ORDER BY id";
                 {
                     Id = rd.GetString(0),
                     ServerId = rd.IsDBNull(1) ? null : rd.GetString(1),
-                    Name = rd.IsDBNull(2) ? Framework.Lang.T("新窗口") : rd.GetString(2),
+                    Name = rd.IsDBNull(2) ? Framework.Lang.T("common.newWindow") : rd.GetString(2),
                     BGColor = rd.IsDBNull(3) ? null : rd.GetString(3),
                     Type = (WindowType)rd.GetInt32(4),
                     Url = rd.IsDBNull(5) ? null : rd.GetString(5),

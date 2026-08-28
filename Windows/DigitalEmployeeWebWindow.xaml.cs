@@ -24,7 +24,7 @@ public partial class DigitalEmployeeWebWindow : Window
     {
         InitializeComponent();
         _employee = employee;
-        Title = employee != null ? Framework.Lang.TF("数字员工后台 - {0}", employee.Name) : Framework.Lang.T("数字员工后台");
+        Title = employee != null ? Framework.Lang.TF("digitalEmployee.backendTitleNamed", employee.Name) : Framework.Lang.T("digitalEmployee.digitalEmployeeBackend");
         SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(this);
         Loaded += DigitalEmployeeWebWindow_Loaded;
     }
@@ -59,7 +59,7 @@ public partial class DigitalEmployeeWebWindow : Window
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[DigitalEmployeeWebWindow] WebView2 初始化失败: {ex.Message}");
-            MessageBox.Show(Framework.Lang.TF("WebView2 初始化失败: {0}", ex.Message), Title, MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(Framework.Lang.TF("common.webview2InitializationFailed", ex.Message), Title, MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 }

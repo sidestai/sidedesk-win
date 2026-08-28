@@ -17,7 +17,7 @@ namespace SideDesk
         public ObservableCollection<PickerTreeNode> Children { get; } = new();
 
         // ===== 显示用包装属性（避免 dummy 节点空引用）=====
-        public string DisplayName => IsDummy ? Framework.Lang.T("正在加载...") : File.Name;
+        public string DisplayName => IsDummy ? Framework.Lang.T("cloudDrive.loading") : File.Name;
         public string Icon => IsDummy ? "" : File.TypeIcon;
         public string SizeText => IsDummy ? "" : File.SizeText;
 
@@ -144,7 +144,7 @@ namespace SideDesk
         private void UpdateSelectedCount()
         {
             int count = CountChecked(_roots);
-            selectedCountText.Text = Framework.Lang.TF("已选 {0} 项", count);
+            selectedCountText.Text = Framework.Lang.TF("cloudDrive.itemsSelected", count);
             okBtn.IsEnabled = count > 0;
         }
 

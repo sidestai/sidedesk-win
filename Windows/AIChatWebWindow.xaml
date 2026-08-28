@@ -28,7 +28,7 @@
                                  Margin="12,8,0,8"/>
                 <Button x:Name="closeBtn" Width="26" Height="26" Padding="0"
                         HorizontalAlignment="Right" VerticalAlignment="Center"
-                        Margin="0,0,8,0" Cursor="Hand" ToolTip="{l:T 关闭}"
+                        Margin="0,0,8,0" Cursor="Hand" ToolTip="{l:T common.close}"
                         Style="{DynamicResource GhostButtonStyle}"
                         Click="CloseBtn_Click">
                     <!-- 矢量 Path 画 ✕，不依赖字体字形渲染 -->

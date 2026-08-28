@@ -241,7 +241,7 @@ namespace SideDesk.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[Team] 申请加入团队失败: {ex.Message}");
-                return (false, Framework.Lang.T("网络错误"));
+                return (false, Framework.Lang.T("common.networkError"));
             }
         }
 
@@ -278,7 +278,7 @@ namespace SideDesk.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[Team] 处理加入申请失败: {ex.Message}");
-                return (false, Framework.Lang.T("网络错误"));
+                return (false, Framework.Lang.T("common.networkError"));
             }
         }
 
@@ -297,7 +297,7 @@ namespace SideDesk.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[Team] 邀请成员失败: {ex.Message}");
-                return (false, Framework.Lang.T("网络错误"));
+                return (false, Framework.Lang.T("common.networkError"));
             }
         }
 
@@ -334,7 +334,7 @@ namespace SideDesk.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[Team] 处理团队邀请失败: {ex.Message}");
-                return (false, Framework.Lang.T("网络错误"));
+                return (false, Framework.Lang.T("common.networkError"));
             }
         }
 
@@ -416,7 +416,7 @@ namespace SideDesk.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[Team] 发布团队模板失败: {ex.Message}");
-                return (false, Framework.Lang.T("网络错误"));
+                return (false, Framework.Lang.T("common.networkError"));
             }
         }
 
@@ -435,7 +435,7 @@ namespace SideDesk.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[Team] 删除团队模板失败: {ex.Message}");
-                return (false, Framework.Lang.T("网络错误"));
+                return (false, Framework.Lang.T("common.networkError"));
             }
         }
 

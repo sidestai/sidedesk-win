@@ -137,9 +137,9 @@ public class RemoteDigitalEmployee
     [Newtonsoft.Json.JsonIgnore]
     public string StatusText => Status switch
     {
-        "online" => Framework.Lang.T("在线"),
-        "busy" => Framework.Lang.T("忙碌"),
-        "offline" => Framework.Lang.T("离线"),
-        _ => Framework.Lang.T("在线")
+        "online" => Framework.Lang.T("common.online"),
+        "busy" => Framework.Lang.T("digitalEmployee.busy"),
+        "offline" => Framework.Lang.T("common.offline"),
+        _ => Framework.Lang.T("common.online")
     };
 }

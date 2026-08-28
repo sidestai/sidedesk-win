@@ -101,7 +101,7 @@ namespace SideDesk.Controls
 
             var startBtn = new Button
             {
-                Content = p.IsRunning ? Framework.Lang.T("暂停") : Framework.Lang.T("开始"),
+                Content = p.IsRunning ? Framework.Lang.T("common.pause") : Framework.Lang.T("common.start"),
                 Height = 28,
                 FontSize = 13,
                 FontWeight = FontWeights.Bold,
@@ -136,8 +136,8 @@ namespace SideDesk.Controls
                 if (hasProgress)
                 {
                     var result = MessageBox.Show(
-                        Framework.Lang.T("切换模式将重置当前计时，是否继续？"),
-                        Framework.Lang.T("确认"), MessageBoxButton.YesNo, MessageBoxImage.Question);
+                        Framework.Lang.T("nativePanel.switchModeResetConfirm"),
+                        Framework.Lang.T("common.confirm"), MessageBoxButton.YesNo, MessageBoxImage.Question);
                     if (result != MessageBoxResult.Yes) return;
                 }
 
@@ -149,14 +149,15 @@ namespace SideDesk.Controls
 
                 modeBtn.Content = GetPomodoroModeLabel(mode) + " ▾";
                 timeDisplay.Text = FormatPomodoroTime(p.GetRemaining());
-                startBtn.Content = Framework.Lang.T("开始");
+                startBtn.Content = Framework.Lang.T("common.start");
             };
 
             // ===== 浮动下拉框：番茄钟 / 短休息 / 长休息 + 重置 =====
             var modeMenu = new ContextMenu();
-            foreach (var (mode, label) in new[] { ("Work", "番茄钟"), ("ShortBreak", "短休息"), ("LongBreak", "长休息") })
+            foreach (var mode in new[] { "Work", "ShortBreak", "LongBreak" })
             {
-                var mi = new MenuItem { Header = label };
+                // 模式标签经 GetPomodoroModeLabel 走多语言（common.pomodoro/shortBreak/longBreak）
+                var mi = new MenuItem { Header = GetPomodoroModeLabel(mode) };
                 var capturedMode = mode;
                 mi.Click += (s, e) => switchMode(capturedMode);
                 modeMenu.Items.Add(mi);
@@ -170,12 +171,12 @@ namespace SideDesk.Controls
                 p.RemainingSeconds = p.GetModeTotalSeconds();
                 _configManager?.Save();
 
-                startBtn.Content = Framework.Lang.T("开始");
+                startBtn.Content = Framework.Lang.T("common.start");
                 timeDisplay.Text = FormatPomodoroTime(p.GetRemaining());
             };
 
             modeMenu.Items.Add(new Separator());
-            var resetMi = new MenuItem { Header = Framework.Lang.T("重置") };
+            var resetMi = new MenuItem { Header = Framework.Lang.T("common.reset") };
             resetMi.Click += (s, e) => resetTimer();
             modeMenu.Items.Add(resetMi);
 
@@ -200,7 +201,7 @@ namespace SideDesk.Controls
                     _configManager?.Save();
 
                     StartPomodoroTick(p, timeDisplay, startBtn, statusText);
-                    startBtn.Content = Framework.Lang.T("暂停");
+                    startBtn.Content = Framework.Lang.T("common.pause");
                 }
                 else
                 {
@@ -211,7 +212,7 @@ namespace SideDesk.Controls
                     p.StartTime = null;
                     _configManager?.Save();
 
-                    startBtn.Content = Framework.Lang.T("开始");
+                    startBtn.Content = Framework.Lang.T("common.start");
                     timeDisplay.Text = FormatPomodoroTime(p.GetRemaining());
                 }
             };
@@ -223,8 +224,8 @@ namespace SideDesk.Controls
             }
 
             // ===== 基于 ModuleControl 基础组件包装 =====
-            var module = CreateModuleControl(Framework.Lang.T("🍅 番茄闹钟"), item);
-            var settingsMi = new MenuItem { Header = Framework.Lang.T("番茄钟设置") };
+            var module = CreateModuleControl(Framework.Lang.T("nativePanel.pomodoro"), item);
+            var settingsMi = new MenuItem { Header = Framework.Lang.T("nativePanel.pomodoroSettings") };
             settingsMi.Click += (s, e) => ShowPomodoroSettingsDialog(item);
             module.AddCustomMenuItem(settingsMi);
             module.SetContent(card);
@@ -319,7 +320,7 @@ namespace SideDesk.Controls
 
             var dialog = new Window
             {
-                Title = Framework.Lang.T("番茄钟设置"),
+                Title = Framework.Lang.T("nativePanel.pomodoroSettings"),
                 Width = 360,
                 SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -340,36 +341,36 @@ namespace SideDesk.Controls
             };
 
             // 各阶段时长
-            root.Children.Add(MakeLabel(Framework.Lang.T("番茄钟时长（分钟）")));
+            root.Children.Add(MakeLabel(Framework.Lang.T("nativePanel.pomodoroMinutes")));
             var workBox = new TextBox { Text = p.WorkMinutes.ToString(), Margin = new Thickness(0, 0, 0, 12), Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
             root.Children.Add(workBox);
 
-            root.Children.Add(MakeLabel(Framework.Lang.T("短休息时长（分钟）")));
+            root.Children.Add(MakeLabel(Framework.Lang.T("nativePanel.shortBreakMinutes")));
             var shortBox = new TextBox { Text = p.ShortBreakMinutes.ToString(), Margin = new Thickness(0, 0, 0, 12), Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
             root.Children.Add(shortBox);
 
-            root.Children.Add(MakeLabel(Framework.Lang.T("长休息时长（分钟）")));
+            root.Children.Add(MakeLabel(Framework.Lang.T("nativePanel.longBreakMinutes")));
             var longBox = new TextBox { Text = p.LongBreakMinutes.ToString(), Margin = new Thickness(0, 0, 0, 12), Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
             root.Children.Add(longBox);
 
-            root.Children.Add(MakeLabel(Framework.Lang.T("每完成几个番茄后长休息")));
+            root.Children.Add(MakeLabel(Framework.Lang.T("nativePanel.longBreakInterval")));
             var intervalBox = new TextBox { Text = p.LongBreakInterval.ToString(), Margin = new Thickness(0, 0, 0, 12), Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
             root.Children.Add(intervalBox);
 
             // 行为选项
-            root.Children.Add(MakeLabel(Framework.Lang.T("行为")));
-            var autoChk = new CheckBox { Content = Framework.Lang.T("阶段结束后自动开始下一阶段"), IsChecked = p.AutoStartNext, Foreground = (Brush)FindResource("BrushTextMain"), Margin = new Thickness(0, 0, 0, 6) };
+            root.Children.Add(MakeLabel(Framework.Lang.T("common.behavior")));
+            var autoChk = new CheckBox { Content = Framework.Lang.T("nativePanel.autoStartNextPhase"), IsChecked = p.AutoStartNext, Foreground = (Brush)FindResource("BrushTextMain"), Margin = new Thickness(0, 0, 0, 6) };
             root.Children.Add(autoChk);
-            var flashChk = new CheckBox { Content = Framework.Lang.T("结束时闪烁窗口"), IsChecked = p.RemindFlash, Foreground = (Brush)FindResource("BrushTextMain"), Margin = new Thickness(0, 0, 0, 6) };
+            var flashChk = new CheckBox { Content = Framework.Lang.T("nativePanel.flashOnFinish"), IsChecked = p.RemindFlash, Foreground = (Brush)FindResource("BrushTextMain"), Margin = new Thickness(0, 0, 0, 6) };
             root.Children.Add(flashChk);
-            var popupChk = new CheckBox { Content = Framework.Lang.T("结束时弹出提示窗口"), IsChecked = p.RemindPopup, Foreground = (Brush)FindResource("BrushTextMain"), Margin = new Thickness(0, 0, 0, 16) };
+            var popupChk = new CheckBox { Content = Framework.Lang.T("nativePanel.popupOnFinish"), IsChecked = p.RemindPopup, Foreground = (Brush)FindResource("BrushTextMain"), Margin = new Thickness(0, 0, 0, 16) };
             root.Children.Add(popupChk);
 
             // ===== 每日活跃记录说明（固定类型「番茄」，每完成一个番茄当日数值 +1）=====
-            root.Children.Add(MakeLabel(Framework.Lang.T("每日活跃记录")));
+            root.Children.Add(MakeLabel(Framework.Lang.T("settings.dailyActivityRecords")));
             root.Children.Add(new TextBlock
             {
-                Text = Framework.Lang.TF("每完成一个番茄，自动记录到每日活跃「{0}」（当日数值 +1）", Services.DailyActivityTypes.Pomodoro),
+                Text = Framework.Lang.TF("nativePanel.pomodoroAutoRecordHint", Services.DailyActivityTypes.Pomodoro),
                 Foreground = (Brush)FindResource("BrushTextSec"),
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
@@ -378,8 +379,8 @@ namespace SideDesk.Controls
 
             // 按钮
             var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-            var okBtn = new Button { Content = Framework.Lang.T("确定"), Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)Application.Current.FindResource("PrimaryButtonStyle") };
-            var cancelBtn = new Button { Content = Framework.Lang.T("取消"), Width = 70, Style = (Style)Application.Current.FindResource("StandardButtonStyle") };
+            var okBtn = new Button { Content = Framework.Lang.T("common.ok"), Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)Application.Current.FindResource("PrimaryButtonStyle") };
+            var cancelBtn = new Button { Content = Framework.Lang.T("common.cancel"), Width = 70, Style = (Style)Application.Current.FindResource("StandardButtonStyle") };
             okBtn.Click += (s, e) =>
             {
                 if (!int.TryParse(workBox.Text, out int work) || work < 1) work = 25;
@@ -420,7 +421,7 @@ namespace SideDesk.Controls
         {
             var popup = new Window
             {
-                Title = wasWork ? Framework.Lang.T("番茄完成") : Framework.Lang.T("休息结束"),
+                Title = wasWork ? Framework.Lang.T("nativePanel.pomodoroCompleted") : Framework.Lang.T("nativePanel.breakOver"),
                 Width = 300,
                 SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterScreen,
@@ -435,7 +436,7 @@ namespace SideDesk.Controls
             var root = new StackPanel { Margin = new Thickness(20) };
             root.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = wasWork ? Framework.Lang.T("🍅 番茄完成！") : Framework.Lang.T("☕ 休息结束！"),
+                Text = wasWork ? Framework.Lang.T("nativePanel.pomodoroComplete") : Framework.Lang.T("nativePanel.breakOverEmoji"),
                 FontSize = 18,
                 FontWeight = FontWeights.Bold,
                 Foreground = (Brush)FindResource("BrushTextMain"),
@@ -445,8 +446,8 @@ namespace SideDesk.Controls
             root.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = wasWork
-                    ? Framework.Lang.TF("今日已完成 {0} 个番茄，开始休息吧", p.CompletedCount)
-                    : Framework.Lang.T("精力恢复，开始新的番茄钟吧"),
+                    ? Framework.Lang.TF("nativePanel.pomodoroDayComplete", p.CompletedCount)
+                    : Framework.Lang.T("nativePanel.breakComplete"),
                 FontSize = 13,
                 Foreground = (Brush)FindResource("BrushTextMuted"),
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -458,7 +459,7 @@ namespace SideDesk.Controls
             // 强制 Height=28 会把文字裁掉，改为由内容自适应
             var okBtn = new Button
             {
-                Content = Framework.Lang.T("知道了"),
+                Content = Framework.Lang.T("common.gotIt"),
                 MinWidth = 80,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Style = (Style)Application.Current.FindResource("PrimaryButtonStyle")
@@ -476,9 +477,9 @@ namespace SideDesk.Controls
         /// <summary>模式显示名称</summary>
         private static string GetPomodoroModeLabel(string mode) => mode switch
         {
-            "ShortBreak" => Framework.Lang.T("短休息"),
-            "LongBreak" => Framework.Lang.T("长休息"),
-            _ => Framework.Lang.T("番茄钟")
+            "ShortBreak" => Framework.Lang.T("common.shortBreak"),
+            "LongBreak" => Framework.Lang.T("common.longBreak"),
+            _ => Framework.Lang.T("common.pomodoro")
         };
 
         /// <summary>矩形按钮模板：白色圆角背景（开始/暂停按钮），宽度随内容自适应（绑定 Padding）</summary>
@@ -511,9 +512,9 @@ namespace SideDesk.Controls
         {
             var modeLabel = p.Mode switch
             {
-                "ShortBreak" => Framework.Lang.T("短休息中"),
-                "LongBreak" => Framework.Lang.T("长休息中"),
-                _ => Framework.Lang.T("专注中")
+                "ShortBreak" => Framework.Lang.T("nativePanel.onShortBreak"),
+                "LongBreak" => Framework.Lang.T("nativePanel.onLongBreak"),
+                _ => Framework.Lang.T("nativePanel.focusing")
             };
             string status = p.IsRunning ? $"🍅 × {p.CompletedCount}  |  {modeLabel}" : $"🍅 × {p.CompletedCount}";
             return status;

@@ -22,7 +22,7 @@ public partial class ApiKeyCreateDialog : Window
         InitializeComponent();
         SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(this);
 
-        scopeCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("个人"), Tag = null });
+        scopeCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("common.personal"), Tag = null });
         foreach (var t in teams)
         {
             // Team.Id 是 encrypt2 密文，原样放入 Tag，创建时传给后端反解，不能 TryParse 成 int

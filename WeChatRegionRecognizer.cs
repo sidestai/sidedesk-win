@@ -190,7 +190,7 @@ namespace SideDesk
                         {
                             var dialog = new Window
                             {
-                                Title = Framework.Lang.T("微信联系人识别"),
+                                Title = Framework.Lang.T("misc.wechatContactRecognition"),
                                 Width = 650,
                                 Height = 200,
                                 WindowStartupLocation = WindowStartupLocation.CenterScreen,
@@ -224,7 +224,7 @@ namespace SideDesk
                             // 提示文字
                             var hintText = new System.Windows.Controls.TextBlock
                             {
-                                Text = Framework.Lang.T("请识别截图中的联系人/群聊名称："),
+                                Text = Framework.Lang.T("misc.pleaseIdentifyTheContact"),
                                 FontSize = 13,
                                 Margin = new Thickness(0, 0, 0, 5)
                             };
@@ -250,7 +250,7 @@ namespace SideDesk
 
                             var okBtn = new System.Windows.Controls.Button
                             {
-                                Content = Framework.Lang.T("确定"),
+                                Content = Framework.Lang.T("common.ok"),
                                 Width = 80,
                                 Height = 28,
                                 Margin = new Thickness(0, 0, 10, 0),
@@ -260,7 +260,7 @@ namespace SideDesk
 
                             var skipBtn = new System.Windows.Controls.Button
                             {
-                                Content = Framework.Lang.T("跳过"),
+                                Content = Framework.Lang.T("common.skip"),
                                 Width = 80,
                                 Height = 28
                             };

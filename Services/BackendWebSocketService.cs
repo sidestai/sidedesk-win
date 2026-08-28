@@ -98,7 +98,7 @@ namespace SideDesk.Services
             _running = true;
             _reconnectAttempts = 0;
             _cts = new CancellationTokenSource();
-            Debug.WriteLine(_token == null ? Framework.Lang.T("[BackendWS] 服务启动（访客模式），准备连接后端 WebSocket") : Framework.Lang.T("[BackendWS] 服务启动（已登录模式），准备连接后端 WebSocket"));
+            Debug.WriteLine(_token == null ? Framework.Lang.T("system.backendWsStartedGuest") : Framework.Lang.T("system.backendWsStartedLoggedIn"));
             _ = ConnectLoopAsync(_cts.Token);
         }
 

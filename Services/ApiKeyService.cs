@@ -63,11 +63,11 @@ namespace SideDesk.Services
                 var root = JObject.Parse(json);
                 int bizCode = root["code"]?.Value<int>() ?? 0;
                 if (bizCode == 200) return (root["data"], "");
-                return (null, root["msg"]?.ToString() ?? Framework.Lang.T("请求失败"));
+                return (null, root["msg"]?.ToString() ?? Framework.Lang.T("settings.apiKey.requestFailed"));
             }
             catch
             {
-                return (null, Framework.Lang.T("响应解析失败"));
+                return (null, Framework.Lang.T("settings.apiKey.responseParseFailed"));
             }
         }
 
@@ -107,7 +107,7 @@ namespace SideDesk.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[ApiKey] 创建失败: {ex.Message}");
-                return (false, Framework.Lang.T("网络错误"), "");
+                return (false, Framework.Lang.T("common.networkError"), "");
             }
         }
 
@@ -127,7 +127,7 @@ namespace SideDesk.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[ApiKey] 删除失败: {ex.Message}");
-                return (false, Framework.Lang.T("网络错误"));
+                return (false, Framework.Lang.T("common.networkError"));
             }
         }
     }

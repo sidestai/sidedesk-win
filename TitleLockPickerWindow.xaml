@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:l="clr-namespace:SideDesk.Framework"
-        Title="{l:T 窗口标题锁定}" Height="540" Width="800"
+        Title="{l:T nativePanel.windowTitleLock}" Height="540" Width="800"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
         Background="{DynamicResource BrushDialogBG}" Foreground="{DynamicResource BrushTextMain}">
@@ -15,15 +15,15 @@
 
         <!-- 左侧：已锁定窗口列表 -->
         <DockPanel Grid.Column="0">
-            <TextBlock DockPanel.Dock="Top" Text="{l:T 已锁定窗口列表}" FontWeight="Bold"
+            <TextBlock DockPanel.Dock="Top" Text="{l:T nativePanel.lockedWindowList}" FontWeight="Bold"
                        FontSize="{DynamicResource FontSizeNormal}"
                        Foreground="{DynamicResource BrushTextMain}" Margin="0,0,0,8"/>
             <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal">
-                <Button x:Name="editRuleBtn" Content="{l:T 编辑规则}" Style="{StaticResource GhostButtonStyle}"
+                <Button x:Name="editRuleBtn" Content="{l:T nativePanel.editRule}" Style="{StaticResource GhostButtonStyle}"
                         Padding="10,6" Margin="0,0,8,0" Click="EditRuleBtn_Click"/>
-                <Button x:Name="deleteRuleBtn" Content="{l:T 删除规则}" Style="{StaticResource GhostButtonStyle}"
+                <Button x:Name="deleteRuleBtn" Content="{l:T nativePanel.deleteRule}" Style="{StaticResource GhostButtonStyle}"
                         Padding="10,6" Margin="0,0,8,0" Click="DeleteRuleBtn_Click"/>
-                <Button x:Name="refreshLockedBtn" Content="{l:T 刷新}" Style="{StaticResource GhostButtonStyle}"
+                <Button x:Name="refreshLockedBtn" Content="{l:T common.refresh}" Style="{StaticResource GhostButtonStyle}"
                         Padding="10,6" Click="RefreshLockedBtn_Click"/>
             </StackPanel>
             <ListBox x:Name="lockedListBox" Background="{DynamicResource BrushInputBG}"
@@ -33,13 +33,13 @@
 
         <!-- 右侧：可选窗口 -->
         <DockPanel Grid.Column="2">
-            <TextBlock DockPanel.Dock="Top" Text="{l:T 选择一个窗口来锁定标题}" FontWeight="Bold"
+            <TextBlock DockPanel.Dock="Top" Text="{l:T nativePanel.pickWindowToLockTitle}" FontWeight="Bold"
                        FontSize="{DynamicResource FontSizeNormal}"
                        Foreground="{DynamicResource BrushTextMain}" Margin="0,0,0,8"/>
             <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button Content="{l:T 关闭}" Style="{StaticResource StandardButtonStyle}"
+                <Button Content="{l:T common.close}" Style="{StaticResource StandardButtonStyle}"
                         Padding="16,8" Margin="0,0,10,0" Click="CancelBtn_Click"/>
-                <Button Content="{l:T 下一步}" Style="{StaticResource PrimaryButtonStyle}"
+                <Button Content="{l:T common.nextStep}" Style="{StaticResource PrimaryButtonStyle}"
                         Padding="16,8" Click="NextBtn_Click"/>
             </StackPanel>
             <ListBox x:Name="windowListBox" Background="{DynamicResource BrushInputBG}"

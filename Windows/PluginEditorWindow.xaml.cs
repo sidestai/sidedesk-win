@@ -35,7 +35,7 @@ public partial class PluginEditorWindow : Window
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[PluginEditor] WebView2 初始化失败: {ex.Message}");
-            MessageBox.Show(Framework.Lang.TF("WebView2 初始化失败: {0}", ex.Message), Framework.Lang.T("插件编辑器"), MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(Framework.Lang.TF("common.webview2InitializationFailed", ex.Message), Framework.Lang.T("common.pluginEditor"), MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 }

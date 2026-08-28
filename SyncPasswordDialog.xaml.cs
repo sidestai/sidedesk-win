@@ -19,13 +19,13 @@ namespace SideDesk
 
             if (string.IsNullOrEmpty(pwd))
             {
-                ThemedMessageBox.Show(this, Framework.Lang.T(Framework.Lang.T("请输入密码")), Framework.Lang.T("提示"));
+                ThemedMessageBox.Show(this, Framework.Lang.T(Framework.Lang.T("misc.pleaseEnterThePassword")), Framework.Lang.T("common.notice"));
                 return;
             }
 
             if (pwd != confirm)
             {
-                ThemedMessageBox.Show(this, Framework.Lang.T(Framework.Lang.T("两次输入的密码不一致")), Framework.Lang.T("提示"));
+                ThemedMessageBox.Show(this, Framework.Lang.T(Framework.Lang.T("common.passwordMismatch")), Framework.Lang.T("common.notice"));
                 return;
             }
 

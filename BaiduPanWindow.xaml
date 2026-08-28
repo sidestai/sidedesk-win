@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:l="clr-namespace:SideDesk.Framework"
         xmlns:emoji="clr-namespace:Emoji.Wpf;assembly=Emoji.Wpf"
-        Title="{l:T 百度网盘}" Height="560" Width="780"
+        Title="{l:T common.baiduPan}" Height="560" Width="780"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource BrushBG}"
         Foreground="{DynamicResource BrushTextMain}">
@@ -17,20 +17,20 @@
 
         <!-- 标题栏 -->
         <DockPanel Grid.Row="0" Margin="0,0,0,10" LastChildFill="True">
-            <Button x:Name="uploadBtn" Content="{l:T '⬆ 上传文件'}" DockPanel.Dock="Right"
+            <Button x:Name="uploadBtn" Content="{l:T cloudDrive.uploadFile}" DockPanel.Dock="Right"
                     Style="{StaticResource PrimaryButtonStyle}" Padding="12,6"
                     Click="Upload_Click" Margin="8,0,0,0"/>
-            <Button Content="{l:T '📁 新建文件夹'}" DockPanel.Dock="Right"
+            <Button Content="{l:T cloudDrive.newFolderEmoji}" DockPanel.Dock="Right"
                     Style="{StaticResource GhostButtonStyle}" Padding="12,6"
                     Click="NewFolder_Click" Margin="8,0,0,0"/>
             <Button x:Name="refreshBtn" Content="🔄" DockPanel.Dock="Right"
                     Style="{StaticResource GhostButtonStyle}" Padding="6,4" FontSize="13"
-                    Click="Refresh_Click" Margin="8,0,0,0" ToolTip="{l:T 刷新}"/>
+                    Click="Refresh_Click" Margin="8,0,0,0" ToolTip="{l:T common.refresh}"/>
             <emoji:TextBlock x:Name="quotaText" DockPanel.Dock="Right" Text=""
                     FontSize="11" Foreground="{DynamicResource BrushTextMuted}"
                     VerticalAlignment="Center" Margin="0,0,6,0"/>
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <emoji:TextBlock Text="{l:T '☁️ 百度网盘'}"
+                <emoji:TextBlock Text="{l:T cloudDrive.baiduPan}"
                            FontSize="{DynamicResource FontSizeSubtitle}"
                            FontWeight="Bold"
                            Foreground="{DynamicResource BrushTextMain}"
@@ -46,23 +46,23 @@
         <!-- 未授权提示 -->
         <StackPanel x:Name="notAuthPanel" Grid.Row="2" VerticalAlignment="Center" HorizontalAlignment="Center" Visibility="Collapsed">
             <emoji:TextBlock Text="🔗" FontSize="36" HorizontalAlignment="Center" Margin="0,0,0,10"/>
-            <TextBlock Text="{l:T 尚未授权百度网盘，点击下方按钮登录授权}"
+            <TextBlock Text="{l:T cloudDrive.baiduPanAuthHint}"
                        FontSize="{DynamicResource FontSizeNormal}"
                        Foreground="{DynamicResource BrushTextMuted}"
                        HorizontalAlignment="Center" Margin="0,0,0,12"/>
-            <Button Content="{l:T 授权登录百度网盘}" Style="{StaticResource PrimaryButtonStyle}" Padding="20,8"
+            <Button Content="{l:T cloudDrive.authorizeBaiduPanLogin}" Style="{StaticResource PrimaryButtonStyle}" Padding="20,8"
                     HorizontalAlignment="Center" Click="Authorize_Click"/>
         </StackPanel>
 
         <!-- 加载中提示 -->
-        <TextBlock x:Name="loadingText" Grid.Row="2" Text="{l:T 正在加载...}"
+        <TextBlock x:Name="loadingText" Grid.Row="2" Text="{l:T cloudDrive.loading}"
                    FontSize="{DynamicResource FontSizeNormal}"
                    Foreground="{DynamicResource BrushTextMuted}"
                    VerticalAlignment="Center" HorizontalAlignment="Center"
                    Visibility="Collapsed"/>
 
         <!-- 空目录提示 -->
-        <emoji:TextBlock x:Name="emptyText" Grid.Row="2" Text="{l:T '📂 此文件夹为空，点击右上角「上传文件」添加内容'}"
+        <emoji:TextBlock x:Name="emptyText" Grid.Row="2" Text="{l:T cloudDrive.emptyFolderHint}"
                    FontSize="{DynamicResource FontSizeNormal}"
                    Foreground="{DynamicResource BrushTextMuted}"
                    VerticalAlignment="Center" HorizontalAlignment="Center"
@@ -70,11 +70,11 @@
 
         <!-- 加载失败提示 -->
         <StackPanel x:Name="errorPanel" Grid.Row="2" VerticalAlignment="Center" HorizontalAlignment="Center" Visibility="Collapsed">
-            <emoji:TextBlock Text="{l:T '⚠️ 加载失败，请检查网络或稍后重试'}"
+            <emoji:TextBlock Text="{l:T cloudDrive.loadFailedNetwork}"
                        FontSize="{DynamicResource FontSizeNormal}"
                        Foreground="{DynamicResource BrushTextMuted}"
                        HorizontalAlignment="Center"/>
-            <Button Content="{l:T 重试}" Style="{StaticResource GhostButtonStyle}" Padding="16,6"
+            <Button Content="{l:T common.retry}" Style="{StaticResource GhostButtonStyle}" Padding="16,6"
                     HorizontalAlignment="Center" Margin="0,10,0,0" Click="Refresh_Click"/>
         </StackPanel>
 
@@ -85,8 +85,8 @@
                   MouseDoubleClick="FileList_MouseDoubleClick">
             <ListView.ContextMenu>
                 <ContextMenu>
-                    <MenuItem Header="{l:T 下载}" Click="Download_Click"/>
-                    <MenuItem Header="{l:T 删除}" Click="Delete_Click"/>
+                    <MenuItem Header="{l:T common.download}" Click="Download_Click"/>
+                    <MenuItem Header="{l:T common.delete}" Click="Delete_Click"/>
                 </ContextMenu>
             </ListView.ContextMenu>
             <ListView.ItemContainerStyle>

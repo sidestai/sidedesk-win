@@ -579,7 +579,7 @@ public class DataPollingService : IDisposable
             if ((now - _lastRemoteDebugNotified).TotalSeconds >= 15)
             {
                 _lastRemoteDebugNotified = now;
-                var text = Framework.Lang.T("✅ 已自动允许浏览器远程调试");
+                var text = Framework.Lang.T("window.remoteDebuggingAllowed");
                 Application.Current?.Dispatcher.InvokeAsync(() =>
                 {
                     foreach (var w in Application.Current.Windows)

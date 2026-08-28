@@ -36,7 +36,7 @@ namespace SideDesk
             {
                 listPanel.Children.Add(new Emoji.Wpf.TextBlock
                 {
-                    Text = Framework.Lang.T("（暂无小屏）"),
+                    Text = Framework.Lang.T("screenTime.noScreens"),
                     FontSize = 13,
                     Foreground = (Brush)FindResource("BrushTextMuted"),
                     Margin = new Thickness(0, 8, 0, 8)
@@ -52,7 +52,7 @@ namespace SideDesk
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(50) });
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
 
-            string[] headers = { "序号", "名称", "类型", "显示", "操作" };
+            string[] headers = { Framework.Lang.T("common.indexNumber"), Framework.Lang.T("common.name"), Framework.Lang.T("common.type"), Framework.Lang.T("common.show"), Framework.Lang.T("common.actions") };
             for (int c = 0; c < headers.Length; c++)
             {
                 var hText = new TextBlock
@@ -113,7 +113,7 @@ namespace SideDesk
                 // 类型列（原生/网页）
                 var typeText = new TextBlock
                 {
-                    Text = config.Type == WindowType.WebView ? Framework.Lang.T("网页") : Framework.Lang.T("原生"),
+                    Text = config.Type == WindowType.WebView ? Framework.Lang.T("common.web") : Framework.Lang.T("common.native"),
                     FontSize = 12,
                     Foreground = (Brush)FindResource("BrushTextMuted"),
                     VerticalAlignment = VerticalAlignment.Center
@@ -137,7 +137,7 @@ namespace SideDesk
                 // 操作列（删除按钮）
                 var delBtn = new Button
                 {
-                    Content = Framework.Lang.T("删除"),
+                    Content = Framework.Lang.T("common.delete"),
                     MinWidth = 52,
                     MinHeight = 24,
                     FontSize = 12,
@@ -214,9 +214,9 @@ namespace SideDesk
 
             int moduleCount = config.Panels?.Count ?? 0;
             string msg = moduleCount > 0
-                ? Framework.Lang.TF("确定删除小屏「{0}」吗？\n其下方的 {1} 个模块也将一并删除，此操作不可撤销。", config.Name, moduleCount)
-                : Framework.Lang.TF("确定删除小屏「{0}」吗？此操作不可撤销。", config.Name);
-            if (!_owner.ShowConfirmDialog(Framework.Lang.T("删除小屏"), msg, "删除")) return;
+                ? Framework.Lang.TF("screenTime.deleteScreenWithModulesConfirm", config.Name, moduleCount)
+                : Framework.Lang.TF("screenTime.deleteScreenConfirm", config.Name);
+            if (!_owner.ShowConfirmDialog(Framework.Lang.T("screenTime.deleteScreen"), msg, Framework.Lang.T("common.delete"))) return;
 
             // 在本地删除前先捕获 serverId，用于后续通知服务器删除
             string? serverId = config.ServerId;

@@ -47,13 +47,13 @@ namespace SideDesk
                 apiKeyListBox.Children.Clear();
                 if (keys == null)
                 {
-                    apiKeyEmptyText.Text = Framework.Lang.T("加载失败，请重新打开此页重试");
+                    apiKeyEmptyText.Text = Framework.Lang.T("settings.apiKey.loadFailedRetry");
                     apiKeyEmptyText.Visibility = Visibility.Visible;
                     return;
                 }
                 if (keys.Count == 0)
                 {
-                    apiKeyEmptyText.Text = Framework.Lang.T("暂无密钥，点击「+ 添加密钥」创建");
+                    apiKeyEmptyText.Text = Framework.Lang.T("settings.apiKey.noKeysHint");
                     apiKeyEmptyText.Visibility = Visibility.Visible;
                     return;
                 }
@@ -81,16 +81,16 @@ namespace SideDesk
             var parts = new List<string>();
             parts.Add(key.CorpId != null
                 ? (!string.IsNullOrEmpty(key.CorpName)
-                    ? Framework.Lang.T("团队") + "：" + key.CorpName
-                    : Framework.Lang.T("团队") + " #" + key.CorpId)
-                : Framework.Lang.T("个人"));
+                    ? Framework.Lang.T("common.team") + "：" + key.CorpName
+                    : Framework.Lang.T("common.team") + " #" + key.CorpId)
+                : Framework.Lang.T("common.personal"));
             if (!string.IsNullOrEmpty(key.Scope)) parts.Add(key.Scope);
             parts.Add(key.ExpiresAt != null
-                ? $"{Framework.Lang.T("到期")} {key.ExpiresAt:yyyy-MM-dd}"
-                : Framework.Lang.T("永久有效"));
+                ? $"{Framework.Lang.T("settings.apiKey.expires")} {key.ExpiresAt:yyyy-MM-dd}"
+                : Framework.Lang.T("settings.apiKey.neverExpires"));
             parts.Add(key.LastUsedAt != null
-                ? $"{Framework.Lang.T("最近使用")} {key.LastUsedAt:yyyy-MM-dd HH:mm}"
-                : Framework.Lang.T("尚未使用"));
+                ? $"{Framework.Lang.T("settings.apiKey.lastUsed")} {key.LastUsedAt:yyyy-MM-dd HH:mm}"
+                : Framework.Lang.T("settings.apiKey.neverUsed"));
             var sub = new TextBlock
             {
                 Text = string.Join(" · ", parts),
@@ -111,7 +111,7 @@ namespace SideDesk
                     FontSize = 10,
                     Margin = new Thickness(0, 2, 0, 0),
                     Cursor = Cursors.Hand,
-                    ToolTip = Framework.Lang.T("点击复制 corpId（团队 ID）"),
+                    ToolTip = Framework.Lang.T("settings.apiKey.copyCorpIdHint"),
                     Tag = key.CorpCode,
                 };
                 corpCodeText.MouseLeftButtonUp += ApiKeyCorpCode_Click;
@@ -119,7 +119,7 @@ namespace SideDesk
 
             var deleteBtn = new Button
             {
-                Content = Framework.Lang.T("删除"),
+                Content = Framework.Lang.T("common.delete"),
                 Style = (Style)FindResource("GhostButtonStyle"),
                 Padding = new Thickness(10, 4, 10, 4),
                 Cursor = Cursors.Hand,
@@ -154,7 +154,7 @@ namespace SideDesk
             var dlg = new ApiKeyCreateDialog(teams) { Owner = this };
             if (dlg.ShowDialog() != true) return;
             var name = dlg.KeyName;
-            if (name == "") name = Framework.Lang.T("API 密钥"); // 留空时用默认备注
+            if (name == "") name = Framework.Lang.T("settings.apiKey.title"); // 留空时用默认备注
             var corpId = dlg.CorpId;
 
             apiKeyCreateBtn.IsEnabled = false;
@@ -163,7 +163,7 @@ namespace SideDesk
                 var (ok, msg, key) = await ApiKeyService.Instance.CreateAsync(name, corpId);
                 if (!ok)
                 {
-                    ThemedMessageBox.Show(this, string.IsNullOrEmpty(msg) ? Framework.Lang.T("创建失败") : msg, Framework.Lang.T("提示"));
+                    ThemedMessageBox.Show(this, string.IsNullOrEmpty(msg) ? Framework.Lang.T("settings.apiKey.createFailed") : msg, Framework.Lang.T("common.notice"));
                     return;
                 }
                 apiKeyResultText.Text = key;
@@ -182,7 +182,7 @@ namespace SideDesk
             if (sender is not TextBlock tb || tb.Tag is not string code || string.IsNullOrEmpty(code)) return;
             try { Clipboard.SetText(code); } catch { return; }
             var origin = tb.Text;
-            tb.Text = Framework.Lang.T("已复制 ✓");
+            tb.Text = Framework.Lang.T("settings.copiedCheck");
             await Task.Delay(1200);
             tb.Text = origin;
         }
@@ -194,7 +194,7 @@ namespace SideDesk
             if (string.IsNullOrEmpty(key)) return;
             try { Clipboard.SetText(key); } catch { return; }
             var origin = apiKeyCopyBtn.Content;
-            apiKeyCopyBtn.Content = Framework.Lang.T("已复制");
+            apiKeyCopyBtn.Content = Framework.Lang.T("common.copied");
             await Task.Delay(1500);
             apiKeyCopyBtn.Content = origin;
         }
@@ -204,14 +204,14 @@ namespace SideDesk
         {
             if (sender is not Button btn || btn.Tag is not int id) return;
             if (!ThemedMessageBox.Confirm(this,
-                    Framework.Lang.T("删除后该密钥立即失效，使用它的外部程序将无法再调用接口。确定删除？"),
-                    Framework.Lang.T("删除密钥"))) return;
+                    Framework.Lang.T("settings.apiKey.deleteConfirm"),
+                    Framework.Lang.T("settings.apiKey.deleteKey"))) return;
 
             btn.IsEnabled = false;
             var (ok, msg) = await ApiKeyService.Instance.DeleteAsync(id);
             if (!ok)
             {
-                ThemedMessageBox.Show(this, string.IsNullOrEmpty(msg) ? Framework.Lang.T("删除失败") : msg, Framework.Lang.T("提示"));
+                ThemedMessageBox.Show(this, string.IsNullOrEmpty(msg) ? Framework.Lang.T("common.deletionFailed") : msg, Framework.Lang.T("common.notice"));
                 btn.IsEnabled = true;
                 return;
             }

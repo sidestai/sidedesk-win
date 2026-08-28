@@ -24,7 +24,7 @@ public partial class AddCloudFileDialog : Window
     private void LoadCloudSpaces()
     {
         cloudSpaceCombo.Items.Clear();
-        cloudSpaceCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("（请选择云盘）"), Tag = null });
+        cloudSpaceCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("cloudDrive.selectDrivePlaceholder"), Tag = null });
         int builtinIndex = -1;
         int index = 1;
         foreach (var space in CloudSpaceManager.GetAll())
@@ -57,7 +57,7 @@ public partial class AddCloudFileDialog : Window
         var space = SelectedSpace;
         if (space == null)
         {
-            MessageBox.Show(Framework.Lang.T("请先选择一个云盘。"), Framework.Lang.T("无法选择"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(Framework.Lang.T("cloudDrive.pleaseSelectDriveFirst"), Framework.Lang.T("cloudDrive.cannotSelect"), MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
@@ -70,7 +70,7 @@ public partial class AddCloudFileDialog : Window
 
         if (!space.IsBuiltin)
         {
-            MessageBox.Show(Framework.Lang.T("仅内置的云盘支持浏览选择文件。"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(Framework.Lang.T("cloudDrive.browseOnlyBuiltIn"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
@@ -118,7 +118,7 @@ public partial class AddCloudFileDialog : Window
         var space = SelectedSpace;
         if (space == null)
         {
-            MessageBox.Show(Framework.Lang.T("请选择一个云盘。"), Framework.Lang.T("无法导入"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(Framework.Lang.T("cloudDrive.pleaseSelectDrive"), Framework.Lang.T("cloudDrive.cannotImport"), MessageBoxButton.OK, MessageBoxImage.Warning);
             return null;
         }
 
@@ -145,7 +145,7 @@ public partial class AddCloudFileDialog : Window
         string fileId = netFileIdBox.Text.Trim();
         if (string.IsNullOrEmpty(fileId))
         {
-            MessageBox.Show(Framework.Lang.T("请输入云文件ID或分享链接。"), Framework.Lang.T("无法导入"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(Framework.Lang.T("cloudDrive.pleaseEnterACloud"), Framework.Lang.T("cloudDrive.cannotImport"), MessageBoxButton.OK, MessageBoxImage.Warning);
             return null;
         }
 
@@ -154,7 +154,7 @@ public partial class AddCloudFileDialog : Window
 
         string name = nameBox.Text.Trim();
         if (string.IsNullOrEmpty(name))
-            name = Framework.Lang.TF("网络文件 {0}", ShortId(fileId));
+            name = Framework.Lang.TF("cloudDrive.networkFileNamed", ShortId(fileId));
 
         return new FileAreaItem
         {

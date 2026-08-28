@@ -87,11 +87,20 @@ namespace SideDesk
         // 全局窗口切换热键（Ctrl+1~9），默认关闭以避免与浏览器等应用的 Ctrl+数字切标签冲突
         public bool EnableWindowSwitchHotkey { get; set; } = false;
 
+        /// <summary>是否开启全局语音输入热键（默认开启：启动键开始语音识别，停止键结束并把识别文字粘贴到当前焦点位置）</summary>
+        public bool EnableVoiceInputHotkey { get; set; } = true;
+
+        /// <summary>启动语音识别的全局热键（格式如 "Ctrl+B"，可在 设置-快捷键 中修改）</summary>
+        public string VoiceStartHotkey { get; set; } = "Ctrl+B";
+
+        /// <summary>停止语音识别的全局热键（格式如 "Ctrl+Alt+B"，可在 设置-快捷键 中修改）</summary>
+        public string VoiceStopHotkey { get; set; } = "Ctrl+Alt+B";
+
         /// <summary>是否开启 MCP Server（HTTP/SSE，端口 19192）</summary>
         public bool EnableMcpServer { get; set; } = false;
 
-        /// <summary>AI 对话模式："client" = 本地化（默认，完全本机运行保护隐私），"web" = 网页版，"auto" = 已登录用网页版/未登录用本地化</summary>
-        public string AIChatMode { get; set; } = "client";
+        /// <summary>AI 对话模式："web" = 网页版（默认，未登录也可打开），"client" = 本地化（完全本机运行保护隐私），"auto" = 已登录用网页版/未登录用本地化</summary>
+        public string AIChatMode { get; set; } = "web";
 
         /// <summary>是否开启内置 HTTP Server（默认开启，监听 127.0.0.1:HttpServerPort）</summary>
         public bool EnableHttpServer { get; set; } = true;

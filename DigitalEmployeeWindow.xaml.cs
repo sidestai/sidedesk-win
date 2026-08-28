@@ -103,7 +103,7 @@ namespace SideDesk
         private void Field_Changed(object sender, TextChangedEventArgs e)
         {
             if (_isLoading || _current == null) return;
-            _current.Name = string.IsNullOrWhiteSpace(nameBox.Text) ? Framework.Lang.T("未命名") : nameBox.Text.Trim();
+            _current.Name = string.IsNullOrWhiteSpace(nameBox.Text) ? Framework.Lang.T("digitalEmployee.untitled") : nameBox.Text.Trim();
             _current.Emoji = emojiBox.Text.Trim();
             _current.Role = roleBox.Text.Trim();
             _current.Department = departmentBox.Text.Trim();
@@ -123,7 +123,7 @@ namespace SideDesk
 
         private void AddEmployee_Click(object sender, RoutedEventArgs e)
         {
-            var emp = _manager.Add(Framework.Lang.T("新员工"));
+            var emp = _manager.Add(Framework.Lang.T("digitalEmployee.newEmployee"));
             OnChanged?.Invoke();
             RefreshList();
             employeeList.SelectedItem = emp;
@@ -134,7 +134,7 @@ namespace SideDesk
         private void DeleteEmployee_Click(object sender, RoutedEventArgs e)
         {
             if (_current == null) return;
-            if (MessageBox.Show(Framework.Lang.TF("确定删除员工「{0}」吗？", _current.Name), Framework.Lang.T("删除确认"),
+            if (MessageBox.Show(Framework.Lang.TF("digitalEmployee.deleteEmployee", _current.Name), Framework.Lang.T("cloudDrive.confirmDeletion"),
                     MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK)
                 return;
 
@@ -153,8 +153,8 @@ namespace SideDesk
             if (_current == null) return;
             var dlg = new OpenFileDialog
             {
-                Title = Framework.Lang.T("选择头像图片"),
-                Filter = Framework.Lang.T("图片文件|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp|所有文件|*.*")
+                Title = Framework.Lang.T("settings.chooseAvatarImage"),
+                Filter = Framework.Lang.T("digitalEmployee.avatarImageFilter")
             };
             if (dlg.ShowDialog(this) == true)
             {

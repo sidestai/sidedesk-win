@@ -603,7 +603,7 @@
                 <ControlTemplate TargetType="DatePickerTextBox">
                     <Grid>
                         <ScrollViewer x:Name="PART_ContentHost" VerticalAlignment="Center" />
-                        <TextBlock x:Name="PART_Watermark" Text="{l:T 选择日期}" IsHitTestVisible="False"
+                        <TextBlock x:Name="PART_Watermark" Text="{l:T common.selectDate}" IsHitTestVisible="False"
                                    Foreground="{DynamicResource BrushTextMuted}" VerticalAlignment="Center"
                                    Visibility="Collapsed" />
                     </Grid>
@@ -1046,7 +1046,7 @@
         <Setter Property="Cursor" Value="SizeNS" />
         <Setter Property="Margin" Value="0,1,0,0" />
         <Setter Property="HorizontalAlignment" Value="Stretch" />
-        <Setter Property="ToolTip" Value="拖拽调整模块高度（双击恢复自动高度）" />
+        <Setter Property="ToolTip" Value="{l:T nativePanel.dragToAdjustHeightHint}" />
     </Style>
 
 </ResourceDictionary>

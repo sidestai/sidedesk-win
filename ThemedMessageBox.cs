@@ -14,13 +14,13 @@ public static class ThemedMessageBox
     /// <summary>显示仅含"确定"按钮的消息框</summary>
     public static void Show(Window? owner, string message, string title = null)
     {
-        ShowCore(owner, message, title ?? Framework.Lang.T("提示"), withCancel: false);
+        ShowCore(owner, message, title ?? Framework.Lang.T("common.notice"), withCancel: false);
     }
 
     /// <summary>显示"确定 / 取消"确认框，返回是否点击了"确定"</summary>
     public static bool Confirm(Window? owner, string message, string title = null)
     {
-        return ShowCore(owner, message, title ?? Framework.Lang.T("确认"), withCancel: true);
+        return ShowCore(owner, message, title ?? Framework.Lang.T("common.confirm"), withCancel: true);
     }
 
     /// <summary>
@@ -90,7 +90,7 @@ public static class ThemedMessageBox
         // 提示文字
         var hint = new TextBlock
         {
-            Text = Framework.Lang.T("分享创建成功！将短码或链接发给对方即可导入。"),
+            Text = Framework.Lang.T("messageBox.shareCreatedHint"),
             FontSize = 12,
             Foreground = (Brush)GetResource(owner, "BrushTextSub"),
             TextWrapping = TextWrapping.Wrap,
@@ -134,7 +134,7 @@ public static class ThemedMessageBox
 
             var btn = new Button
             {
-                Content = Framework.Lang.T("复制"),
+                Content = Framework.Lang.T("common.copy"),
                 Width = 52,
                 Margin = new Thickness(8, 0, 0, 0),
                 Style = (Style)GetResource(owner, "StandardButtonStyle"),
@@ -143,7 +143,7 @@ public static class ThemedMessageBox
             btn.Click += (s, e) =>
             {
                 Clipboard.SetText(value);
-                btn.Content = Framework.Lang.T("已复制 ✓");
+                btn.Content = Framework.Lang.T("settings.copiedCheck");
             };
             Grid.SetColumn(btn, 2);
 
@@ -154,8 +154,8 @@ public static class ThemedMessageBox
             return row;
         }
 
-        var codeRow = MakeCopyRow(Framework.Lang.T("短码："), shareCode, 2);
-        var linkRow = MakeCopyRow(Framework.Lang.T("链接："), shareLink, 3);
+        var codeRow = MakeCopyRow(Framework.Lang.T("messageBox.shortCode"), shareCode, 2);
+        var linkRow = MakeCopyRow(Framework.Lang.T("messageBox.link"), shareLink, 3);
 
         // 关闭按钮
         var btnPanel = new StackPanel
@@ -166,7 +166,7 @@ public static class ThemedMessageBox
         };
         var okBtn = new Button
         {
-            Content = Framework.Lang.T("关闭"),
+            Content = Framework.Lang.T("common.close"),
             Width = 80,
             Style = (Style)GetResource(owner, "PrimaryButtonStyle"),
             Cursor = Cursors.Hand,
@@ -276,7 +276,7 @@ public static class ThemedMessageBox
 
         var okBtn = new Button
         {
-            Content = Framework.Lang.T("确定"),
+            Content = Framework.Lang.T("common.ok"),
             Width = 80,
             Style = (Style)GetResource(owner, "PrimaryButtonStyle"), // 高度自适应，避免固定高度裁掉文字下部
             Cursor = Cursors.Hand,
@@ -288,7 +288,7 @@ public static class ThemedMessageBox
         {
             var cancelBtn = new Button
             {
-                Content = Framework.Lang.T("取消"),
+                Content = Framework.Lang.T("common.cancel"),
                 Width = 80,
                 Margin = new Thickness(0, 0, 10, 0),
                 Style = (Style)GetResource(owner, "StandardButtonStyle"), // 高度自适应，避免固定高度裁掉文字下部

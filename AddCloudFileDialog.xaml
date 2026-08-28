@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:l="clr-namespace:SideDesk.Framework"
         xmlns:emoji="clr-namespace:Emoji.Wpf;assembly=Emoji.Wpf"
-        Title="{l:T 添加云文件}" SizeToContent="Height" MinHeight="200" Width="400"
+        Title="{l:T cloudDrive.addCloudFile}" SizeToContent="Height" MinHeight="200" Width="400"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False"
         Background="{DynamicResource BrushDialogBG}" Foreground="{DynamicResource BrushTextMain}">
     <Window.Resources>
@@ -48,7 +48,7 @@
         </Grid.RowDefinitions>
 
         <!-- 标题 -->
-        <emoji:TextBlock Grid.Row="0" Text="{l:T '☁️ 添加云文件'}" FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
+        <emoji:TextBlock Grid.Row="0" Text="{l:T cloudDrive.addCloudFileEmoji}" FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
                          Foreground="{DynamicResource BrushTextMain}" Margin="0,0,0,10"/>
 
         <!-- 顶部页签：两种导入方式 -->
@@ -57,20 +57,20 @@
             <!-- 方式一：来自云盘 -->
             <TabItem>
                 <TabItem.Header>
-                    <emoji:TextBlock Text="{l:T '☁️ 来自云盘'}" FontSize="{DynamicResource FontSizeNormal}"/>
+                    <emoji:TextBlock Text="{l:T cloudDrive.fromCloudDrive}" FontSize="{DynamicResource FontSizeNormal}"/>
                 </TabItem.Header>
                 <StackPanel Margin="2,8,2,2">
                     <DockPanel Margin="0,0,0,12">
-                        <TextBlock DockPanel.Dock="Left" Text="{l:T 云盘：}" Width="70" VerticalAlignment="Center"
+                        <TextBlock DockPanel.Dock="Left" Text="{l:T cloudDrive.cloudDrive}" Width="70" VerticalAlignment="Center"
                                    FontSize="{DynamicResource FontSizeNormal}" Foreground="{DynamicResource BrushTextMain}"/>
                         <ComboBox x:Name="cloudSpaceCombo" Height="30"
                                   Style="{StaticResource GlobalComboBoxStyle}"/>
                     </DockPanel>
                     <DockPanel Margin="0,0,0,10">
-                        <Button x:Name="pickFromDriveBtn" Content="{l:T '📂 从云盘选择文件...'}" DockPanel.Dock="Right"
+                        <Button x:Name="pickFromDriveBtn" Content="{l:T cloudDrive.chooseFilesFromCloud}" DockPanel.Dock="Right"
                                 Style="{StaticResource StandardButtonStyle}" Padding="12,5" Margin="8,0,0,0"
                                 Click="PickFromDrive_Click"/>
-                        <TextBlock Text="{l:T 从所选云盘中浏览并勾选文件/目录（可多选）}"
+                        <TextBlock Text="{l:T cloudDrive.browseHint}"
                                    FontSize="{DynamicResource FontSizeSmall}" Foreground="{DynamicResource BrushTextMuted}"
                                    VerticalAlignment="Center" TextWrapping="Wrap"/>
                     </DockPanel>
@@ -80,16 +80,16 @@
             <!-- 方式二：文件ID（网络文件） -->
             <TabItem>
                 <TabItem.Header>
-                    <emoji:TextBlock Text="{l:T '🔗 文件ID'}" FontSize="{DynamicResource FontSizeNormal}"/>
+                    <emoji:TextBlock Text="{l:T cloudDrive.fileIdEmoji}" FontSize="{DynamicResource FontSizeNormal}"/>
                 </TabItem.Header>
                 <StackPanel Margin="2,8,2,2">
                     <DockPanel Margin="0,0,0,8">
-                        <TextBlock DockPanel.Dock="Left" Text="{l:T 文件ID：}" Width="70" VerticalAlignment="Center"
+                        <TextBlock DockPanel.Dock="Left" Text="{l:T cloudDrive.fileId}" Width="70" VerticalAlignment="Center"
                                    FontSize="{DynamicResource FontSizeNormal}" Foreground="{DynamicResource BrushTextMain}"/>
                         <TextBox x:Name="netFileIdBox" Style="{StaticResource GlobalTextBoxStyle}"
-                                 ToolTip="{l:T 从他人处获取的网络文件ID或分享链接}"/>
+                                 ToolTip="{l:T cloudDrive.networkFileHint}"/>
                     </DockPanel>
-                    <TextBlock Text="{l:T 粘贴从他人处获取的网络文件ID或分享链接；若为网址则可直接打开，否则点击时自动复制ID。}"
+                    <TextBlock Text="{l:T cloudDrive.networkFilePasteHint}"
                                FontSize="{DynamicResource FontSizeSmall}" Foreground="{DynamicResource BrushTextMuted}"
                                TextWrapping="Wrap" Margin="70,0,0,0"/>
                 </StackPanel>
@@ -98,17 +98,17 @@
 
         <!-- 显示名称（两种方式通用） -->
         <DockPanel Grid.Row="2" Margin="0,0,0,0">
-            <TextBlock DockPanel.Dock="Left" Text="{l:T 名称：}" Width="70" VerticalAlignment="Center"
+            <TextBlock DockPanel.Dock="Left" Text="{l:T common.nameLabel}" Width="70" VerticalAlignment="Center"
                        FontSize="{DynamicResource FontSizeNormal}" Foreground="{DynamicResource BrushTextMain}"/>
             <TextBox x:Name="nameBox" Style="{StaticResource GlobalTextBoxStyle}"
-                     ToolTip="{l:T 留空则自动命名}"/>
+                     ToolTip="{l:T cloudDrive.autoNameHint}"/>
         </DockPanel>
 
         <!-- 按钮 -->
         <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
-            <Button Content="{l:T 导入}" Width="75" Margin="0,0,10,0" Click="OkButton_Click" IsDefault="True"
+            <Button Content="{l:T common.import}" Width="75" Margin="0,0,10,0" Click="OkButton_Click" IsDefault="True"
                     Style="{StaticResource PrimaryButtonStyle}"/>
-            <Button Content="{l:T 取消}" Width="75" Click="CancelButton_Click" IsCancel="True"
+            <Button Content="{l:T common.cancel}" Width="75" Click="CancelButton_Click" IsCancel="True"
                     Style="{StaticResource StandardButtonStyle}"/>
         </StackPanel>
     </Grid>

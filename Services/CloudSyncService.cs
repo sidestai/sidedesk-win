@@ -108,12 +108,12 @@ namespace SideDesk.Services
             var settings = app.AppSettings;
             if (string.IsNullOrEmpty(settings.AccountToken))
             {
-                StatusChanged?.Invoke(CloudSyncState.NotLoggedIn, Framework.Lang.T("未登录，无法同步"));
+                StatusChanged?.Invoke(CloudSyncState.NotLoggedIn, Framework.Lang.T("cloudDrive.cannotSyncNotLogged"));
                 return false;
             }
 
             _reconciling = true;
-            StatusChanged?.Invoke(CloudSyncState.Syncing, Framework.Lang.T("正在同步..."));
+            StatusChanged?.Invoke(CloudSyncState.Syncing, Framework.Lang.T("cloudDrive.syncing"));
             try
             {
                 // 1) 推送本地未同步的结构与行级离线变更（先推后拉，避免全量拉取覆盖本地新数据）
@@ -152,13 +152,13 @@ namespace SideDesk.Services
                     app.RefreshAllWindowTabs();
                 }
 
-                StatusChanged?.Invoke(CloudSyncState.Success, Framework.Lang.TF("已同步 · {0:yyyy-MM-dd HH:mm}", settings.LastCloudSyncTime));
+                StatusChanged?.Invoke(CloudSyncState.Success, Framework.Lang.TF("cloudDrive.synced", settings.LastCloudSyncTime));
                 return true;
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[CloudSync] 对账失败: {ex.Message}");
-                StatusChanged?.Invoke(CloudSyncState.Failed, Framework.Lang.T("同步失败：") + ex.Message);
+                StatusChanged?.Invoke(CloudSyncState.Failed, Framework.Lang.T("cloudDrive.syncFailed") + ex.Message);
                 return false;
             }
             finally
@@ -177,17 +177,17 @@ namespace SideDesk.Services
 
             if (string.IsNullOrEmpty(settings.AccountToken))
             {
-                StatusChanged?.Invoke(CloudSyncState.NotLoggedIn, Framework.Lang.T("未登录，无法同步"));
+                StatusChanged?.Invoke(CloudSyncState.NotLoggedIn, Framework.Lang.T("cloudDrive.cannotSyncNotLogged"));
                 return false;
             }
 
             _syncing = true;
-            StatusChanged?.Invoke(CloudSyncState.Syncing, Framework.Lang.T("正在同步..."));
+            StatusChanged?.Invoke(CloudSyncState.Syncing, Framework.Lang.T("cloudDrive.syncing"));
             try
             {
                 if (!await UploadStructureAsync(settings, app.WindowConfigs).ConfigureAwait(false))
                 {
-                    StatusChanged?.Invoke(CloudSyncState.Failed, Framework.Lang.T("同步失败（结构上传失败）"));
+                    StatusChanged?.Invoke(CloudSyncState.Failed, Framework.Lang.T("cloudDrive.syncFailedUpload"));
                     return false;
                 }
 
@@ -198,13 +198,13 @@ namespace SideDesk.Services
                 await PushAllRowsAsync(app.WindowConfigs, settings).ConfigureAwait(false);
                 await PullAllRowsAsync(app.WindowConfigs, settings).ConfigureAwait(false);
 
-                StatusChanged?.Invoke(CloudSyncState.Success, Framework.Lang.TF("已同步 · {0:yyyy-MM-dd HH:mm}", settings.LastCloudSyncTime));
+                StatusChanged?.Invoke(CloudSyncState.Success, Framework.Lang.TF("cloudDrive.synced", settings.LastCloudSyncTime));
                 return true;
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[CloudSync] 同步失败: {ex.Message}");
-                StatusChanged?.Invoke(CloudSyncState.Failed, Framework.Lang.T("同步失败：") + ex.Message);
+                StatusChanged?.Invoke(CloudSyncState.Failed, Framework.Lang.T("cloudDrive.syncFailed") + ex.Message);
                 return false;
             }
             finally
@@ -342,7 +342,7 @@ namespace SideDesk.Services
             {
                 if (!await CreateBarOnServerAsync(win))
                 {
-                    LastOwnershipError = Framework.Lang.T("窗口同步到服务器失败");
+                    LastOwnershipError = Framework.Lang.T("cloudDrive.syncWindowFailed");
                     return false;
                 }
             }
@@ -355,7 +355,7 @@ namespace SideDesk.Services
                 var sid = await EnsureItemServerIdAsync(item, win.ServerId!);
                 if (string.IsNullOrEmpty(sid))
                 {
-                    LastOwnershipError = Framework.Lang.T("模块同步到服务器失败");
+                    LastOwnershipError = Framework.Lang.T("cloudDrive.syncModuleFailed");
                     return false;
                 }
                 return true;
@@ -381,7 +381,7 @@ namespace SideDesk.Services
                 System.Diagnostics.Debug.WriteLine($"[CloudSync] 模块归属变更响应: {responseJson}");
                 if (!resp.IsSuccessStatusCode)
                 {
-                    LastOwnershipError = Framework.Lang.TF("服务器拒绝（HTTP {0}）", (int)resp.StatusCode);
+                    LastOwnershipError = Framework.Lang.TF("cloudDrive.serverRejected", (int)resp.StatusCode);
                     return false;
                 }
                 // HTTP 200 也可能业务失败（如后端返回“仅创建者可修改模块归属”），解析 code/msg
@@ -390,7 +390,7 @@ namespace SideDesk.Services
                     var root = JObject.Parse(responseJson);
                     if (root["code"]?.ToObject<int>() != 200)
                     {
-                        var msg = root["msg"]?.ToString() ?? Framework.Lang.T("服务器处理失败");
+                        var msg = root["msg"]?.ToString() ?? Framework.Lang.T("cloudDrive.serverProcessingFailed");
                         // 他人创建的模块：服务端归属保持原样（导入组件本就不应改归属），视为无需同步，不报错
                         if (msg.Contains("仅创建者")) return null;
                         LastOwnershipError = msg;
@@ -574,7 +574,7 @@ namespace SideDesk.Services
                         // 团队窗口不自动创建；个人窗口直接新建并补齐模块
                         if (barToken["ownerType"]?.ToString() == "team") continue;
 
-                        string barTitle = barToken["title"]?.ToString() ?? Framework.Lang.T("云端窗口");
+                        string barTitle = barToken["title"]?.ToString() ?? Framework.Lang.T("cloudDrive.cloudWindows");
 
                         // 认领优先：本地存在未同步（ServerId 为空）的同名个人窗口时回写 ServerId，
                         // 避免每次拉取都因匹配失败而重复新建整套窗口

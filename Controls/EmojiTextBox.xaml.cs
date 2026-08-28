@@ -100,7 +100,7 @@ namespace SideDesk.Controls
         /// <summary>emoji 分类数据。“全部”为所有分类去重拼接。</summary>
         private static readonly (string Name, string[] Emojis)[] EmojiCategories =
         {
-            (Framework.Lang.T("娱乐"), new[]
+            (Framework.Lang.T("common.entertainment"), new[]
             {
                 "😀","😁","😂","🤣","😊","😍","🥰","😎","🤩","🥳",
                 "😇","🤔","🤗","😴","🥺","😭","😤","😅","😉","😋",
@@ -112,7 +112,7 @@ namespace SideDesk.Controls
                 "❤️","🧡","💛","💚","💙","💜","🖤","🤍","💔","💕",
                 "💖","💗","💘","💝","💞","💯","🔥","⭐","🌟","✨"
             }),
-            (Framework.Lang.T("办公"), new[]
+            (Framework.Lang.T("nativePanel.work"), new[]
             {
                 "💼","📁","📂","📅","📆","📇","📈","📉","📊","📋",
                 "📌","📍","📎","📏","📐","✂️","✏️","📝","💡","🔔",
@@ -122,7 +122,7 @@ namespace SideDesk.Controls
                 "🛠️","⚙️","🧰","✅","❌","⚠️","❗","❓","🚀","⏰",
                 "⏱️","⏳","🏆","🥇","🥈","🥉","🏅","🎖️"
             }),
-            (Framework.Lang.T("生活"), new[]
+            (Framework.Lang.T("common.life"), new[]
             {
                 "☀️","🌙","⛅","🌤️","🌥️","🌦️","🌧️","⛈️","🌩️","🌨️",
                 "❄️","☃️","🌈","🌊","💧","🌸","🌺","🌻","🌹","🌷",
@@ -137,7 +137,7 @@ namespace SideDesk.Controls
                 "🐼","🐨","🐯","🦁","🐮","🐷","🐸","🐵","🐔","🐧",
                 "🐦","🐤","🦆","🦉","🦄","🐴","🐝","🦋","🐌","🐞"
             }),
-            (Framework.Lang.T("运动"), new[]
+            (Framework.Lang.T("nativePanel.fitness"), new[]
             {
                 "⚽","🏀","🏈","⚾","🎾","🏐","🏉","🎱","🏓","🏸",
                 "🥊","🥋","⛳","🏹","🎣","🤿","🏊","🏄","🚣","🧗",
@@ -172,7 +172,7 @@ namespace SideDesk.Controls
 
             // 分类：全部（去重） + 各分类
             var allEmojis = EmojiCategories.SelectMany(c => c.Emojis).Distinct().ToArray();
-            var categories = new List<(string Name, string[] Emojis)> { (Framework.Lang.T("全部"), allEmojis) };
+            var categories = new List<(string Name, string[] Emojis)> { (Framework.Lang.T("common.all"), allEmojis) };
             categories.AddRange(EmojiCategories);
 
             // 左侧分类栏
@@ -216,7 +216,7 @@ namespace SideDesk.Controls
                 }
             }
 
-            Select(Framework.Lang.T("全部"));
+            Select(Framework.Lang.T("common.all"));
 
             var body = new StackPanel { Orientation = Orientation.Horizontal };
             body.Children.Add(catPanel);

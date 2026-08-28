@@ -36,11 +36,11 @@ namespace SideDesk.Controls
 
             // 空列表提示：点击直接弹出添加倒计时对话框
             if (item.CountdownItems.Count == 0)
-                container.Children.Add(BuildEmptyAddTip(Framework.Lang.T("暂无倒计时，点击添加"), () => ShowAddCountdownDialog(item)));
+                container.Children.Add(BuildEmptyAddTip(Framework.Lang.T("nativePanel.noCountdownsClickTo"), () => ShowAddCountdownDialog(item)));
 
             // 基于 ModuleControl 基础组件包装
-            var module = CreateModuleControl(Framework.Lang.T("⏳ 倒计时"), item);
-            var addMi = new MenuItem { Header = Framework.Lang.T("添加倒计时") };
+            var module = CreateModuleControl(Framework.Lang.T("nativePanel.countdown"), item);
+            var addMi = new MenuItem { Header = Framework.Lang.T("nativePanel.addCountdown") };
             addMi.Click += (s, e) => ShowAddCountdownDialog(item);
             module.AddCustomMenuItem(addMi);
             module.SetContent(container);
@@ -61,10 +61,10 @@ namespace SideDesk.Controls
 
             // 右键菜单
             var cardMenu = new ContextMenu();
-            var editMi = new MenuItem { Header = Framework.Lang.T("编辑倒计时") };
+            var editMi = new MenuItem { Header = Framework.Lang.T("nativePanel.editCountdown") };
             editMi.Click += (s, e) => ShowCountdownEditDialog(cd, panelItem);
             cardMenu.Items.Add(editMi);
-            var resetMi = new MenuItem { Header = Framework.Lang.T("重置") };
+            var resetMi = new MenuItem { Header = Framework.Lang.T("common.reset") };
             resetMi.Click += (s, e) =>
             {
                 cd.IsRunning = false;
@@ -75,16 +75,16 @@ namespace SideDesk.Controls
                 RenderPanels();
             };
             cardMenu.Items.Add(resetMi);
-            var deleteMi = new MenuItem { Header = Framework.Lang.T("删除倒计时") };
+            var deleteMi = new MenuItem { Header = Framework.Lang.T("nativePanel.deleteCountdown") };
             deleteMi.Click += (s, e) => DeleteCountdown(cd, panelItem);
             cardMenu.Items.Add(deleteMi);
             cardMenu.Items.Add(new Separator());
-            cardMenu.Items.Add(BuildSettingsMenuItem(panelItem, Framework.Lang.T("⏳ 倒计时")));
-            var cardHideMi = new MenuItem { Header = Framework.Lang.T("隐藏模块外框"), IsCheckable = true, IsChecked = panelItem.HideFrame };
+            cardMenu.Items.Add(BuildSettingsMenuItem(panelItem, Framework.Lang.T("nativePanel.countdown")));
+            var cardHideMi = new MenuItem { Header = Framework.Lang.T("common.hideModuleFrame"), IsCheckable = true, IsChecked = panelItem.HideFrame };
             cardHideMi.Click += (s, e) => { panelItem.HideFrame = cardHideMi.IsChecked; _configManager?.Save(); RenderPanels(); };
             cardMenu.Items.Add(cardHideMi);
             cardMenu.Items.Add(BuildPinMenuItem(panelItem));
-            var cardDelModuleMi = new MenuItem { Header = Framework.Lang.T("删除模块") };
+            var cardDelModuleMi = new MenuItem { Header = Framework.Lang.T("nativePanel.deleteModule") };
             cardDelModuleMi.Click += (s, e) => RemovePanel(panelItem);
             cardMenu.Items.Add(cardDelModuleMi);
             card.ContextMenu = cardMenu;
@@ -137,7 +137,7 @@ namespace SideDesk.Controls
                 Cursor = Cursors.Hand,
                 Padding = new Thickness(0),
                 Template = BuildCircleButtonTemplate(),
-                ToolTip = cd.IsRunning ? Framework.Lang.T("暂停") : Framework.Lang.T("开始")
+                ToolTip = cd.IsRunning ? Framework.Lang.T("common.pause") : Framework.Lang.T("common.start")
             };
             DockPanel.SetDock(toggleBtn, Dock.Right);
 
@@ -166,7 +166,7 @@ namespace SideDesk.Controls
                     StartCountdownTick(cd, timeDisplay, panelItem, toggleBtn, card);
                     toggleBtn.Content = BuildPauseIcon();
                     toggleBtn.Background = Brushes.DarkOrange;
-                    toggleBtn.ToolTip = Framework.Lang.T("暂停");
+                    toggleBtn.ToolTip = Framework.Lang.T("common.pause");
                     timeDisplay.Foreground = (Brush)FindResource("BrushAccent");
                 }
                 else
@@ -179,7 +179,7 @@ namespace SideDesk.Controls
                     _configManager?.Save();
                     toggleBtn.Content = BuildPlayIcon();
                     toggleBtn.Background = new SolidColorBrush(Color.FromRgb(46, 160, 67));
-                    toggleBtn.ToolTip = Framework.Lang.T("开始");
+                    toggleBtn.ToolTip = Framework.Lang.T("common.start");
                     timeDisplay.Text = FormatCountdown(cd.GetRemaining());
                     timeDisplay.Foreground = (Brush)FindResource("BrushTextMain");
                 }
@@ -253,7 +253,7 @@ namespace SideDesk.Controls
                     timeDisplay.Foreground = Brushes.OrangeRed;
                     toggleBtn.Content = BuildPlayIcon();
                     toggleBtn.Background = new SolidColorBrush(Color.FromRgb(46, 160, 67));
-                    toggleBtn.ToolTip = Framework.Lang.T("重新开始");
+                    toggleBtn.ToolTip = Framework.Lang.T("nativePanel.restart");
 
                     ExecuteCountdownReminder(cd);
                 }
@@ -312,7 +312,7 @@ namespace SideDesk.Controls
             var owner = _mainWindow ?? Window.GetWindow(this);
             var popup = new Window
             {
-                Title = Framework.Lang.T("倒计时结束"),
+                Title = Framework.Lang.T("nativePanel.countdownEnded"),
                 Width = 300,
                 SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterScreen,
@@ -327,7 +327,7 @@ namespace SideDesk.Controls
             var root = new StackPanel { Margin = new Thickness(20) };
             root.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.T("⏳ 时间到！"),
+                Text = Framework.Lang.T("nativePanel.timeSUp"),
                 FontSize = 18,
                 FontWeight = FontWeights.Bold,
                 Foreground = (Brush)FindResource("BrushTextMain"),
@@ -336,7 +336,7 @@ namespace SideDesk.Controls
             });
             root.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.TF("「{0}」倒计时已结束", cd.Name),
+                Text = Framework.Lang.TF("nativePanel.countdownHasEnded", cd.Name),
                 FontSize = 13,
                 Foreground = (Brush)FindResource("BrushTextMuted"),
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -347,7 +347,7 @@ namespace SideDesk.Controls
             // 强制 Height=28 会把文字裁掉，改为由内容自适应
             var okBtn = new Button
             {
-                Content = Framework.Lang.T("知道了"),
+                Content = Framework.Lang.T("common.gotIt"),
                 MinWidth = 80,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Style = (Style)Application.Current.FindResource("PrimaryButtonStyle")
@@ -367,7 +367,7 @@ namespace SideDesk.Controls
         {
             var dialog = new Window
             {
-                Title = Framework.Lang.T("添加倒计时"),
+                Title = Framework.Lang.T("nativePanel.addCountdown"),
                 Width = 360,
                 SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -388,40 +388,40 @@ namespace SideDesk.Controls
             };
 
             // 名称
-            root.Children.Add(MakeLabel(Framework.Lang.T("名称")));
+            root.Children.Add(MakeLabel(Framework.Lang.T("common.name")));
             var nameBox = new TextBox { Text = "", Margin = new Thickness(0, 0, 0, 12), Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
             root.Children.Add(nameBox);
 
             // 时长：小时 + 分钟
-            root.Children.Add(MakeLabel(Framework.Lang.T("倒计时时长")));
+            root.Children.Add(MakeLabel(Framework.Lang.T("nativePanel.countdownDuration")));
             var timeRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
             var hourBox = new TextBox { Text = "0", Width = 50, Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
             timeRow.Children.Add(hourBox);
-            timeRow.Children.Add(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T(" 小时 "), VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("BrushTextMain") });
+            timeRow.Children.Add(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("common.hoursUnit"), VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("BrushTextMain") });
             var minBox = new TextBox { Text = "5", Width = 50, Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
             timeRow.Children.Add(minBox);
-            timeRow.Children.Add(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T(" 分钟"), VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("BrushTextMain") });
+            timeRow.Children.Add(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("common.minutesUnit"), VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("BrushTextMain") });
             root.Children.Add(timeRow);
 
             // 提醒方式
-            root.Children.Add(MakeLabel(Framework.Lang.T("到时提醒")));
-            var flashChk = new CheckBox { Content = Framework.Lang.T("闪烁窗口"), IsChecked = true, Foreground = (Brush)FindResource("BrushTextMain"), Margin = new Thickness(0, 0, 0, 6) };
+            root.Children.Add(MakeLabel(Framework.Lang.T("nativePanel.remindWhenDue")));
+            var flashChk = new CheckBox { Content = Framework.Lang.T("common.flashWindow"), IsChecked = true, Foreground = (Brush)FindResource("BrushTextMain"), Margin = new Thickness(0, 0, 0, 6) };
             root.Children.Add(flashChk);
-            var popupChk = new CheckBox { Content = Framework.Lang.T("弹出提示窗口"), IsChecked = true, Foreground = (Brush)FindResource("BrushTextMain"), Margin = new Thickness(0, 0, 0, 6) };
+            var popupChk = new CheckBox { Content = Framework.Lang.T("common.popupAlertWindow"), IsChecked = true, Foreground = (Brush)FindResource("BrushTextMain"), Margin = new Thickness(0, 0, 0, 6) };
             root.Children.Add(popupChk);
 
-            root.Children.Add(MakeLabel(Framework.Lang.T("到时操作")));
+            root.Children.Add(MakeLabel(Framework.Lang.T("nativePanel.actionWhenDue")));
             var actionCombo = new ComboBox { Margin = new Thickness(0, 0, 0, 16), Style = (Style)Application.Current.FindResource("GlobalComboBoxStyle") };
-            actionCombo.Items.Add(Framework.Lang.T("无"));
-            actionCombo.Items.Add(Framework.Lang.T("休眠"));
-            actionCombo.Items.Add(Framework.Lang.T("关机（30秒后）"));
+            actionCombo.Items.Add(Framework.Lang.T("common.none"));
+            actionCombo.Items.Add(Framework.Lang.T("nativePanel.hibernate"));
+            actionCombo.Items.Add(Framework.Lang.T("nativePanel.shutDownIn30"));
             actionCombo.SelectedIndex = 0;
             root.Children.Add(actionCombo);
 
             // 按钮
             var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-            var okBtn = new Button { Content = Framework.Lang.T("确定"), Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)Application.Current.FindResource("PrimaryButtonStyle") };
-            var cancelBtn = new Button { Content = Framework.Lang.T("取消"), Width = 70, Style = (Style)Application.Current.FindResource("StandardButtonStyle") };
+            var okBtn = new Button { Content = Framework.Lang.T("common.ok"), Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)Application.Current.FindResource("PrimaryButtonStyle") };
+            var cancelBtn = new Button { Content = Framework.Lang.T("common.cancel"), Width = 70, Style = (Style)Application.Current.FindResource("StandardButtonStyle") };
             okBtn.Click += (s, e) =>
             {
                 if (!int.TryParse(hourBox.Text, out int hours) || hours < 0) hours = 0;
@@ -429,13 +429,13 @@ namespace SideDesk.Controls
                 int totalSeconds = hours * 3600 + minutes * 60;
                 if (totalSeconds <= 0)
                 {
-                    MessageBox.Show(Framework.Lang.T("请设置大于 0 的时长"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show(Framework.Lang.T("nativePanel.durationMustBePositive"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
 
                 var cd = new CountdownItem
                 {
-                    Name = string.IsNullOrWhiteSpace(nameBox.Text) ? Framework.Lang.T("新倒计时") : nameBox.Text.Trim(),
+                    Name = string.IsNullOrWhiteSpace(nameBox.Text) ? Framework.Lang.T("nativePanel.newCountdown") : nameBox.Text.Trim(),
                     TotalSeconds = totalSeconds,
                     RemainingSeconds = totalSeconds,
                     RemindFlash = flashChk.IsChecked ?? true,
@@ -462,7 +462,7 @@ namespace SideDesk.Controls
         {
             var dialog = new Window
             {
-                Title = Framework.Lang.T("编辑倒计时"),
+                Title = Framework.Lang.T("nativePanel.editCountdown"),
                 Width = 360,
                 SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -483,40 +483,40 @@ namespace SideDesk.Controls
             };
 
             // 名称
-            root.Children.Add(MakeLabel(Framework.Lang.T("名称")));
+            root.Children.Add(MakeLabel(Framework.Lang.T("common.name")));
             var nameBox = new TextBox { Text = cd.Name, Margin = new Thickness(0, 0, 0, 12), Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
             root.Children.Add(nameBox);
 
             // 时长
-            root.Children.Add(MakeLabel(Framework.Lang.T("倒计时时长")));
+            root.Children.Add(MakeLabel(Framework.Lang.T("nativePanel.countdownDuration")));
             var timeRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
             var hourBox = new TextBox { Text = (cd.TotalSeconds / 3600).ToString(), Width = 50, Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
             timeRow.Children.Add(hourBox);
-            timeRow.Children.Add(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T(" 小时 "), VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("BrushTextMain") });
+            timeRow.Children.Add(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("common.hoursUnit"), VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("BrushTextMain") });
             var minBox = new TextBox { Text = ((cd.TotalSeconds % 3600) / 60).ToString(), Width = 50, Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle") };
             timeRow.Children.Add(minBox);
-            timeRow.Children.Add(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T(" 分钟"), VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("BrushTextMain") });
+            timeRow.Children.Add(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("common.minutesUnit"), VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("BrushTextMain") });
             root.Children.Add(timeRow);
 
             // 提醒方式
-            root.Children.Add(MakeLabel(Framework.Lang.T("到时提醒")));
-            var flashChk = new CheckBox { Content = Framework.Lang.T("闪烁窗口"), IsChecked = cd.RemindFlash, Foreground = (Brush)FindResource("BrushTextMain"), Margin = new Thickness(0, 0, 0, 6) };
+            root.Children.Add(MakeLabel(Framework.Lang.T("nativePanel.remindWhenDue")));
+            var flashChk = new CheckBox { Content = Framework.Lang.T("common.flashWindow"), IsChecked = cd.RemindFlash, Foreground = (Brush)FindResource("BrushTextMain"), Margin = new Thickness(0, 0, 0, 6) };
             root.Children.Add(flashChk);
-            var popupChk = new CheckBox { Content = Framework.Lang.T("弹出提示窗口"), IsChecked = cd.RemindPopup, Foreground = (Brush)FindResource("BrushTextMain"), Margin = new Thickness(0, 0, 0, 6) };
+            var popupChk = new CheckBox { Content = Framework.Lang.T("common.popupAlertWindow"), IsChecked = cd.RemindPopup, Foreground = (Brush)FindResource("BrushTextMain"), Margin = new Thickness(0, 0, 0, 6) };
             root.Children.Add(popupChk);
 
-            root.Children.Add(MakeLabel(Framework.Lang.T("到时操作")));
+            root.Children.Add(MakeLabel(Framework.Lang.T("nativePanel.actionWhenDue")));
             var actionCombo = new ComboBox { Margin = new Thickness(0, 0, 0, 16), Style = (Style)Application.Current.FindResource("GlobalComboBoxStyle") };
-            actionCombo.Items.Add(Framework.Lang.T("无"));
-            actionCombo.Items.Add(Framework.Lang.T("休眠"));
-            actionCombo.Items.Add(Framework.Lang.T("关机（30秒后）"));
+            actionCombo.Items.Add(Framework.Lang.T("common.none"));
+            actionCombo.Items.Add(Framework.Lang.T("nativePanel.hibernate"));
+            actionCombo.Items.Add(Framework.Lang.T("nativePanel.shutDownIn30"));
             actionCombo.SelectedIndex = cd.RemindAction switch { "Hibernate" => 1, "Shutdown" => 2, _ => 0 };
             root.Children.Add(actionCombo);
 
             // 按钮
             var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-            var okBtn = new Button { Content = Framework.Lang.T("确定"), Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)Application.Current.FindResource("PrimaryButtonStyle") };
-            var cancelBtn = new Button { Content = Framework.Lang.T("取消"), Width = 70, Style = (Style)Application.Current.FindResource("StandardButtonStyle") };
+            var okBtn = new Button { Content = Framework.Lang.T("common.ok"), Width = 70, Margin = new Thickness(0, 0, 10, 0), Style = (Style)Application.Current.FindResource("PrimaryButtonStyle") };
+            var cancelBtn = new Button { Content = Framework.Lang.T("common.cancel"), Width = 70, Style = (Style)Application.Current.FindResource("StandardButtonStyle") };
             okBtn.Click += (s, e) =>
             {
                 if (!int.TryParse(hourBox.Text, out int hours) || hours < 0) hours = 0;
@@ -524,12 +524,12 @@ namespace SideDesk.Controls
                 int totalSeconds = hours * 3600 + minutes * 60;
                 if (totalSeconds <= 0)
                 {
-                    MessageBox.Show(Framework.Lang.T("请设置大于 0 的时长"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show(Framework.Lang.T("nativePanel.durationMustBePositive"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
 
                 bool durationChanged = totalSeconds != cd.TotalSeconds;
-                cd.Name = string.IsNullOrWhiteSpace(nameBox.Text) ? Framework.Lang.T("新倒计时") : nameBox.Text.Trim();
+                cd.Name = string.IsNullOrWhiteSpace(nameBox.Text) ? Framework.Lang.T("nativePanel.newCountdown") : nameBox.Text.Trim();
                 cd.TotalSeconds = totalSeconds;
                 if (durationChanged)
                 {
@@ -567,8 +567,8 @@ namespace SideDesk.Controls
             if (panelItem.CountdownItems.Count == 0)
             {
                 var result = MessageBox.Show(
-                    Framework.Lang.T("该倒计时模块已没有倒计时项，是否删除整个模块？"),
-                    Framework.Lang.T("确认"), MessageBoxButton.YesNo, MessageBoxImage.Question);
+                    Framework.Lang.T("nativePanel.deleteEmptyCountdownModuleConfirm"),
+                    Framework.Lang.T("common.confirm"), MessageBoxButton.YesNo, MessageBoxImage.Question);
                 if (result == MessageBoxResult.Yes && _currentWindowConfig != null)
                 {
                     _currentWindowConfig.Panels.Remove(panelItem);
@@ -590,18 +590,18 @@ namespace SideDesk.Controls
         {
             var parts = new List<string>();
             var total = TimeSpan.FromSeconds(cd.TotalSeconds);
-            parts.Add(Framework.Lang.TF("共 {0} 小时 {1} 分", (int)total.TotalHours, total.Minutes));
+            parts.Add(Framework.Lang.TF("nativePanel.hMinInTotal", (int)total.TotalHours, total.Minutes));
 
             var reminds = new List<string>();
-            if (cd.RemindFlash) reminds.Add(Framework.Lang.T("闪烁"));
-            if (cd.RemindPopup) reminds.Add(Framework.Lang.T("弹窗"));
-            if (cd.RemindAction == "Hibernate") reminds.Add(Framework.Lang.T("休眠"));
-            else if (cd.RemindAction == "Shutdown") reminds.Add(Framework.Lang.T("关机"));
+            if (cd.RemindFlash) reminds.Add(Framework.Lang.T("common.flash"));
+            if (cd.RemindPopup) reminds.Add(Framework.Lang.T("common.popup"));
+            if (cd.RemindAction == "Hibernate") reminds.Add(Framework.Lang.T("nativePanel.hibernate"));
+            else if (cd.RemindAction == "Shutdown") reminds.Add(Framework.Lang.T("nativePanel.shutDown"));
             if (reminds.Count > 0)
-                parts.Add(Framework.Lang.T("到时: ") + string.Join("/", reminds));
+                parts.Add(Framework.Lang.T("nativePanel.at") + string.Join("/", reminds));
 
-            if (cd.IsFinished) parts.Add(Framework.Lang.T("✔ 已到期"));
-            else if (!cd.IsRunning && cd.GetRemaining().TotalSeconds < cd.TotalSeconds) parts.Add(Framework.Lang.T("⏸ 已暂停"));
+            if (cd.IsFinished) parts.Add(Framework.Lang.T("nativePanel.overdue"));
+            else if (!cd.IsRunning && cd.GetRemaining().TotalSeconds < cd.TotalSeconds) parts.Add(Framework.Lang.T("nativePanel.paused"));
 
             return string.Join("  |  ", parts);
         }

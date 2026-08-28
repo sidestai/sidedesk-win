@@ -84,6 +84,33 @@ namespace SideDesk
 
         internal const uint SMTO_ABORTIFHUNG = 0x0002;
 
+        // SendMessageTimeout：StringBuilder 重载，用于跨进程读取控件文本（WM_GETTEXT）
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        internal static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, IntPtr wParam, StringBuilder lParam,
+            uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
+
+        internal const uint WM_GETTEXTLENGTH = 0x000E;
+        internal const uint WM_GETTEXT = 0x000D;
+
+        // 前台线程 GUI 信息：获取焦点控件句柄/光标矩形（输入框检测用）
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct GUITHREADINFO
+        {
+            public uint cbSize;
+            public uint flags;
+            public IntPtr hwndActive;
+            public IntPtr hwndFocus;
+            public IntPtr hwndCapture;
+            public IntPtr hwndMenuOwner;
+            public IntPtr hwndMoveSize;
+            public IntPtr hwndCaret;
+            public RECT rcCaret;
+        }
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool GetGUIThreadInfo(uint idThread, ref GUITHREADINFO lpgui);
+
         // DPI
         [DllImport("shcore.dll")]
         internal static extern IntPtr GetDpiForMonitor(IntPtr hmonitor, int dpiType, out uint dpiX, out uint dpiY);
@@ -168,6 +195,14 @@ namespace SideDesk
         // Key state
         [DllImport("user32.dll")]
         internal static extern short GetKeyState(int nVirtKey);
+
+        // 模拟按键（语音热键结束时向前台窗口焦点位置粘贴用）
+        [DllImport("user32.dll")]
+        internal static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
+        internal const byte VK_CONTROL_KEY = 0x11;
+        internal const byte VK_V_KEY = 0x56;
+        internal const uint KEYEVENTF_KEYUP = 0x0002;
 
         // Window state
         [DllImport("user32.dll")]

@@ -1,0 +1,424 @@
+# keymap 冲突与差异报告
+
+- 总键数（并集）: 1379
+- 仅 LangEn.cs: 79，仅 en.json: 3，双源译文不一致: 1
+- 占位符 {n} 不一致: 0
+- 候选键冲突（已消解）: 82
+- 人工合并（多中文键 -> 同一语义键）: 6
+- 代码中未找到调用点: 30
+
+## 域分布
+- aiChat: 16
+- clipboard: 7
+- cloudDrive: 84
+- common: 255
+- crash: 2
+- data: 19
+- digitalEmployee: 24
+- login: 6
+- market: 10
+- messageBox: 3
+- misc: 7
+- nativePanel: 400
+- notification: 6
+- screenTime: 13
+- settings: 434
+- shortcut: 8
+- sticky: 4
+- system: 10
+- team: 7
+- todo: 16
+- update: 17
+- window: 31
+
+## 占位符不一致明细
+
+## 双源译文不一致（en.json 为准）
+- [请输入网址]
+  - en.json: Please enter the request URL
+  - LangEn : Please enter a URL
+
+## 候选键冲突消解记录
+- 候选 `common.ok`
+  - 保留 [确定] (OK)
+  - 改名 [好的] (OK) => `common.okOk`
+- 候选 `common.bothSides`
+  - 保留 [双侧] (Both sides)
+  - 改名 [两侧] (Both sides) => `common.bothSidesBothSides`
+- 候选 `common.name`
+  - 保留 [名称] (Name)
+  - 改名 [名称：] (Name:) => `common.nameName`
+- 候选 `common.title`
+  - 保留 [标题] (Title)
+  - 改名 [标题：] (Title:) => `common.titleTitle`
+- 候选 `nativePanel.next`
+  - 保留 [下一张] (Next)
+  - 改名 [下一步] (Next) => `nativePanel.nextNext`
+- 候选 `common.web`
+  - 保留 [网页] (Web)
+  - 改名 [网页版] (Web) => `common.webWeb`
+- 候选 `common.browser`
+  - 保留 [浏览器] (Browser)
+  - 改名 [浏览器：] (Browser:) => `common.browserBrowser`
+- 候选 `nativePanel.columns`
+  - 保留 [列数:] (Columns:)
+  - 改名 [{0}列] ({0} columns) => `nativePanel.columnsColumns`
+- 候选 `common.add`
+  - 保留 [添加] (Add)
+  - 改名 [+ 添加] (+ Add) => `common.addAdd`
+- 候选 `window.noRecords`
+  - 保留 [无记录] (No records)
+  - 改名 [暂无记录] (No records) => `window.noRecordsNoRecords`
+- 候选 `nativePanel.groupName`
+  - 保留 [分组名:] (Group name:)
+  - 改名 [分组名称] (Group name) => `nativePanel.groupNameGroupName`
+- 候选 `common.pomodoro`
+  - 保留 [番茄钟] (Pomodoro)
+  - 改名 [番茄闹钟] (Pomodoro) => `common.pomodoroPomodoro`
+- 候选 `common.dataTemplates`
+  - 保留 [数据模版] (Data Templates)
+  - 改名 [数据模板] (Data Templates) => `common.dataTemplatesDataTemplates`
+- 候选 `common.team`
+  - 保留 [团队] (Team)
+  - 改名 [所属团队] (Team) => `common.teamTeam`
+- 候选 `shortcut.buttonColor`
+  - 保留 [按钮颜色] (Button color)
+  - 改名 [按钮颜色：] (Button color:) => `shortcut.buttonColorButtonColor`
+- 候选 `nativePanel.columns`
+  - 保留 [列数:] (Columns:)
+  - 改名 [{0} 列] ({0} columns) => `nativePanel.columns2`
+- 候选 `digitalEmployee.busy`
+  - 保留 [忙碌] (Busy)
+  - 改名 [🟡 忙碌] (🟡 Busy) => `digitalEmployee.busyBusy`
+- 候选 `common.plugins`
+  - 保留 [插件] (Plugins)
+  - 改名 [🧩 插件] (🧩 Plugins) => `common.pluginsPlugins`
+- 候选 `settings.min`
+  - 保留 [最小值] (Min)
+  - 改名 [{0} 分钟] ({0} min) => `settings.minMin`
+- 候选 `settings.addProgram`
+  - 保留 [添加程序] (Add Program)
+  - 改名 [+ 添加程序] (+ Add Program) => `settings.addProgramAddProgram`
+- 候选 `nativePanel.pleaseEnterAGroup`
+  - 保留 [请输入分组名] (Please enter a group name)
+  - 改名 [请输入分组名称] (Please enter a group name) => `nativePanel.pleaseEnterAGroup2`
+- 候选 `settings.pleaseEnterTheRequest`
+  - 保留 [请输入网址] (Please enter the request URL)
+  - 改名 [请输入请求网址] (Please enter the request URL) => `settings.pleaseEnterTheRequest2`
+- 候选 `cloudDrive.metadeskDrive`
+  - 保留 [元桌云盘] (MetaDesk Drive)
+  - 改名 [☁️ 元桌云盘] (☁️ MetaDesk Drive) => `cloudDrive.metadeskDriveMetadeskDrive`
+- 候选 `nativePanel.editStyle`
+  - 保留 [编辑样式] (Edit Style)
+  - 改名 [编辑样式 - ] (Edit Style - ) => `nativePanel.editStyleEditStyle`
+- 候选 `nativePanel.breakOver`
+  - 保留 [休息结束] (Break over)
+  - 改名 [☕ 休息结束！] (☕ Break over!) => `nativePanel.breakOverBreakOver`
+- 候选 `settings.createVariableSet`
+  - 保留 [创建变量集] (Create Variable Set)
+  - 改名 [➕ 创建变量集] (➕ Create Variable Set) => `settings.createVariableSetCreate`
+- 候选 `nativePanel.addTimer`
+  - 保留 [添加计时器] (Add Timer)
+  - 改名 [+ 添加计时器] (+ Add Timer) => `nativePanel.addTimerAddTimer`
+- 候选 `cloudDrive.fileId`
+  - 保留 [文件ID：] (File ID:)
+  - 改名 [🔗 文件ID] (🔗 File ID) => `cloudDrive.fileIdFileId`
+- 候选 `nativePanel.addDataItem`
+  - 保留 [添加数据项] (Add Data Item)
+  - 改名 [+ 添加数据项] (+ Add Data Item) => `nativePanel.addDataItemAdd`
+- 候选 `settings.myShares`
+  - 保留 [我的分享] (My Shares)
+  - 改名 [🔗 我的分享] (🔗 My Shares) => `settings.mySharesMyShares`
+- 候选 `nativePanel.dataDashboard`
+  - 保留 [📈 数据看板] (📈 Data Dashboard)
+  - 改名 [📊 数据看板] (📊 Data Dashboard) => `nativePanel.dataDashboardDataDashboard`
+- 候选 `aiChat.noResponseContent`
+  - 保留 [无响应内容] (No response content)
+  - 改名 [(无响应内容)] ((No response content)) => `aiChat.noResponseContentNo`
+- 候选 `cloudDrive.networkFile`
+  - 保留 [网络文件] (Network File)
+  - 改名 [网络文件 {0}] (Network file {0}) => `cloudDrive.networkFileNetworkFile`
+- 候选 `cloudDrive.addCloudFile`
+  - 保留 [添加云文件] (Add Cloud File)
+  - 改名 [☁️ 添加云文件] (☁️ Add Cloud File) => `cloudDrive.addCloudFileAdd`
+- 候选 `cloudDrive.newFolder`
+  - 保留 [新建文件夹] (New Folder)
+  - 改名 [📁 新建文件夹] (📁 New Folder) => `cloudDrive.newFolderNewFolder`
+- 候选 `cloudDrive.pleaseSelectACloud`
+  - 保留 [（请选择云盘）] ((Please select a cloud drive))
+  - 改名 [请选择一个云盘。] (Please select a cloud drive.) => `cloudDrive.pleaseSelectACloud2`
+- 候选 `cloudDrive.allFiles`
+  - 保留 [☁️ 全部文件] (☁️ All Files)
+  - 改名 [所有文件|*.*] (All files|*.*) => `cloudDrive.allFilesAllFiles`
+- 候选 `nativePanel.pleaseSelectAWindow`
+  - 保留 [请选择一个窗口] (Please select a window)
+  - 改名 [请先选择一个窗口] (Please select a window first) => `nativePanel.pleaseSelectAWindow2`
+- 候选 `misc.lockTitle`
+  - 保留 [锁定标题] (Lock Title)
+  - 改名 [锁定标题: {0}] (Lock title: {0}) => `misc.lockTitleLockTitle`
+- 候选 `settings.importFailed`
+  - 保留 [导入失败] (Import failed)
+  - 改名 [导入失败: {0}] (Import failed: {0}) => `settings.importFailedImportFailed`
+- 候选 `nativePanel.pleaseSelectTheRule`
+  - 保留 [请选中要删除的规则] (Please select the rule to delete)
+  - 改名 [请选中要编辑的规则] (Please select the rule to edit) => `nativePanel.pleaseSelectTheRule2`
+- 候选 `cloudDrive.downloading`
+  - 保留 [下载中 {0}%] (Downloading {0}%)
+  - 改名 [正在下载: {0}] (Downloading: {0}) => `cloudDrive.downloadingDownloading`
+- 候选 `settings.clickTheButtonTo`
+  - 保留 [点击按钮打开记事本] (Click the button to open Notepad)
+  - 改名 [点击按钮关闭本通知] (Click the button to dismiss this notification) => `settings.clickTheButtonTo2`
+- 候选 `settings.addBackgroundDataItem`
+  - 保留 [添加后台数据项] (Add Background Data Item)
+  - 改名 [+ 添加后台数据项] (+ Add Background Data Item) => `settings.addBackgroundDataItem2`
+- 候选 `cloudDrive.pleaseSelectACloud`
+  - 保留 [（请选择云盘）] ((Please select a cloud drive))
+  - 改名 [请先选择一个云盘。] (Please select a cloud drive first.) => `cloudDrive.pleaseSelectACloud3`
+- 候选 `nativePanel.listening`
+  - 保留 [正在聆听...] (Listening...)
+  - 改名 [🎤 正在聆听...] (🎤 Listening...) => `nativePanel.listeningListening`
+- 候选 `settings.clickTheButtonTo`
+  - 保留 [点击按钮打开记事本] (Click the button to open Notepad)
+  - 改名 [点击按钮输入回复内容] (Click the button to type a reply) => `settings.clickTheButtonTo3`
+- 候选 `cloudDrive.failedToSyncThe`
+  - 保留 [模块同步到服务器失败] (Failed to sync the module to the server)
+  - 改名 [窗口同步到服务器失败] (Failed to sync the window to the server) => `cloudDrive.failedToSyncThe2`
+- 候选 `nativePanel.today`
+  - 保留 [今日: {0}] (Today: {0})
+  - 改名 [{0:M/d} 今天] ({0:M/d} Today) => `nativePanel.todayToday`
+- 候选 `settings.failedToCreateShare`
+  - 保留 [创建分享失败] (Failed to create share)
+  - 改名 [创建分享失败: {0}] (Failed to create share: {0}) => `settings.failedToCreateShare2`
+- 候选 `settings.failedToCancelThe`
+  - 保留 [取消分享失败] (Failed to cancel the share)
+  - 改名 [取消分享失败: {0}] (Failed to cancel the share: {0}) => `settings.failedToCancelThe2`
+- 候选 `settings.pleaseLogInBefore`
+  - 保留 [请先登录后再查看团队] (Please log in before viewing teams)
+  - 改名 [请先登录后再搜索好友。] (Please log in before searching for friends.) => `settings.pleaseLogInBefore2`
+- 候选 `nativePanel.pleaseLogInBefore`
+  - 保留 [请先登录再导入分享。] (Please log in before importing a share.)
+  - 改名 [请先登录后再选择好友。] (Please log in before selecting friends.) => `nativePanel.pleaseLogInBefore2`
+- 候选 `settings.team`
+  - 保留 [团队「{0}」] (Team "{0}")
+  - 改名 [  |  团队: {0}] (  |  Team: {0}) => `settings.teamTeam`
+- 候选 `digitalEmployee.digitalEmployeeBackend`
+  - 保留 [数字员工后台] (Digital Employee Backend)
+  - 改名 [数字员工后台 - {0}] (Digital Employee Backend - {0}) => `digitalEmployee.digitalEmployeeBackendDigital`
+- 候选 `settings.clickTheButtonTo`
+  - 保留 [点击按钮打开记事本] (Click the button to open Notepad)
+  - 改名 [点击按钮跳转到外观设置页] (Click the button to jump to the Appearance settings page) => `settings.clickTheButtonTo4`
+- 候选 `settings.pleaseLogInBefore`
+  - 保留 [请先登录后再查看团队] (Please log in before viewing teams)
+  - 改名 [请先登录后再开启云同步。] (Please log in before enabling cloud sync.) => `settings.pleaseLogInBefore3`
+- 候选 `settings.importFromDataDashboard`
+  - 保留 [⬇ 从数据看板导入] (⬇ Import from Data Dashboard)
+  - 改名 [从数据看板导入（{0}）] (Import from Data Dashboard ({0})) => `settings.importFromDataDashboard2`
+- 候选 `nativePanel.noAvailableTaskbarWindows`
+  - 保留 [未找到可用的任务栏窗口] (No available taskbar windows found)
+  - 改名 [（未找到可用的任务栏窗口）] ((No available taskbar windows found)) => `nativePanel.noAvailableTaskbarWindows2`
+- 候选 `settings.deleteFriend`
+  - 保留 [删除好友] (Delete friend)
+  - 改名 [确定删除好友「{0}」吗？] (Delete friend "{0}"?) => `settings.deleteFriendDeleteFriend`
+- 候选 `settings.silentNotification`
+  - 保留 [静默通知] (Silent notification)
+  - 改名 [静默通知 (Silent)] (Silent notification) => `settings.silentNotificationSilentNotification`
+- 候选 `settings.failedToFetchThe`
+  - 保留 [获取分享列表失败] (Failed to fetch the share list)
+  - 改名 [获取分享列表失败: {0}] (Failed to fetch the share list: {0}) => `settings.failedToFetchThe2`
+- 候选 `nativePanel.pleaseLogInBefore`
+  - 保留 [请先登录再导入分享。] (Please log in before importing a share.)
+  - 改名 [请先登录后再使用团队组件库] (Please log in before using the team component library) => `nativePanel.pleaseLogInBefore3`
+- 候选 `nativePanel.deleteGroup`
+  - 保留 [删除分组] (Delete group)
+  - 改名 [确定删除分组「{0}」吗？] (Delete group "{0}"?) => `nativePanel.deleteGroupDeleteGroup`
+- 候选 `nativePanel.deleteGroup`
+  - 保留 [删除分组] (Delete group)
+  - 改名 [确定删除分组 "{0}"？] (Delete group "{0}"?) => `nativePanel.deleteGroup2`
+- 候选 `nativePanel.selectAWindowTo`
+  - 保留 [选择一个窗口来锁定标题] (Select a window to lock its title)
+  - 改名 [选择一个窗口来锁定任务栏标题] (Select a window to lock its taskbar title) => `nativePanel.selectAWindowTo2`
+- 候选 `settings.clickTheButtonTo`
+  - 保留 [点击按钮打开记事本] (Click the button to open Notepad)
+  - 改名 [点击按钮 1 分钟后再次提醒] (Click the button to remind again in 1 minute) => `settings.clickTheButtonTo5`
+- 候选 `nativePanel.noDataItemsPlease`
+  - 保留 [暂无数据项，请编辑添加] (No data items. Please edit and add some)
+  - 改名 [(无数据项，请在设置中添加)] ((No data items; please add them in Settings)) => `nativePanel.noDataItemsPlease2`
+- 候选 `misc.editRule`
+  - 保留 [编辑规则] (Edit Rule)
+  - 改名 [编辑规则: [{0}] {1}] (Edit rule: [{0}] {1}) => `misc.editRuleEditRule`
+- 候选 `settings.clickTheButtonTo`
+  - 保留 [点击按钮打开记事本] (Click the button to open Notepad)
+  - 改名 [点击按钮弹出自定义按钮的消息框] (Click the button to show a message box with custom buttons) => `settings.clickTheButtonTo6`
+- 候选 `nativePanel.wantsToAddYou`
+  - 保留 [「{0}」请求添加你为好友] ("{0}" wants to add you as a friend)
+  - 改名 [👤 {0} 请求添加您为好友] (👤 {0} wants to add you as a friend) => `nativePanel.wantsToAddYou2`
+- 候选 `settings.loginExpiredPleaseLog`
+  - 保留 [登录已过期，请重新登录] (Login expired. Please log in again)
+  - 改名 [登录已过期，请重新登录后再查看团队] (Login expired. Please log in again to view teams) => `settings.loginExpiredPleaseLog2`
+- 候选 `nativePanel.deleteRule`
+  - 保留 [删除规则] (Delete rule)
+  - 改名 [确定删除规则：[{0}] {1}？] (Delete rule: [{0}] {1}?) => `nativePanel.deleteRuleDeleteRule`
+- 候选 `nativePanel.referenceASharedModule`
+  - 保留 [引用分享的模块，分享者不允许删除] (Reference a shared module; the sharer disallows deletion)
+  - 改名 [引用分享的模块，分享者不允许修改内容] (Reference a shared module; the sharer disallows modifying content) => `nativePanel.referenceASharedModule2`
+- 候选 `nativePanel.referenceASharedModule`
+  - 保留 [引用分享的模块，分享者不允许删除] (Reference a shared module; the sharer disallows deletion)
+  - 改名 [引用分享的模块，分享者不允许修改设置] (Reference a shared module; the sharer disallows changing settings) => `nativePanel.referenceASharedModule3`
+- 候选 `nativePanel.yourApplicationToJoin`
+  - 保留 [您加入团队「{0}」的申请被拒绝] (Your application to join "{0}" was declined)
+  - 改名 [🎉 您加入团队「{0}」的申请已通过] (🎉 Your application to join "{0}" was approved) => `nativePanel.yourApplicationToJoin2`
+- 候选 `nativePanel.referenceASharedModule`
+  - 保留 [引用分享的模块，分享者不允许删除] (Reference a shared module; the sharer disallows deletion)
+  - 改名 [引用分享的模块，分享者不允许编辑/删除内容] (Reference a shared module; the sharer disallows editing/deleting content) => `nativePanel.referenceASharedModule4`
+- 候选 `settings.pleaseLogInBefore`
+  - 保留 [请先登录后再查看团队] (Please log in before viewing teams)
+  - 改名 [请先登录后使用好友功能（搜索、添加、好友码等）] (Please log in before using friend features (search, add, friend code, etc.)) => `settings.pleaseLogInBefore4`
+- 候选 `settings.clickTheButtonTo`
+  - 保留 [点击按钮打开记事本] (Click the button to open Notepad)
+  - 改名 [点击按钮在独立 WebView2 窗口打开百度] (Click the button to open Baidu in a standalone WebView2 window) => `settings.clickTheButtonTo7`
+- 候选 `settings.notDownloadedUsingBuilt`
+  - 保留 [未下载，使用内置工具] (Not downloaded; using built-in tools)
+  - 改名 [未下载，使用内置工具；点击下载服务端最新配置（无需登录）] (Not downloaded; using built-in tools. Click to download the latest server config (no login required)) => `settings.notDownloadedUsingBuilt2`
+- 候选 `settings.onceDisabledOthersCannot`
+  - 保留 [关闭后别人无法搜索到你，同时清空好友码] (Once disabled, others cannot find you by search and the friend code is cleared)
+  - 改名 [关闭后别人将无法搜索到你，同时会清空你的好友码。
+确定关闭吗？] (Once disabled, others cannot find you by search and your friend code will be cleared.
+Disable it?) => `settings.onceDisabledOthersCannot2`
+- 候选 `settings.cancelSharingTheShort`
+  - 保留 [确定取消分享“{0}”吗？
+取消后短码失效，接收者已导入的副本将保留。] (Cancel sharing "{0}"?
+The short code will expire; copies already imported by receivers are kept.)
+  - 改名 [确定取消分享“{0}”吗？
+取消后短码失效，所有接收者的导入记录也会被清除。] (Cancel sharing "{0}"?
+The short code will expire and all receivers' import records will be cleared.) => `settings.cancelSharingTheShort2`
+
+## 人工合并记录
+- `common.dataTemplates` <= [数据模板] [数据模版]（权威: [数据模板]）
+- `common.iconLabel` <= [图标:] [图标：]（权威: [图标：]）
+- `common.importWindow` <= [📥 导入窗口] [导入窗口]（权威: [导入窗口]）
+- `common.nameLabel` <= [名称:] [名称：]（权威: [名称：]）
+- `nativePanel.columnCountValue` <= [{0} 列] [{0}列]（权威: [{0} 列]）
+- `window.processLabel` <= [进程: {0}] [进程：{0}]（权威: [进程: {0}]）
+
+## 仅 LangEn.cs 存在的键
+- [➕ 创建变量集] => settings.createVariableSetButton = ➕ Create Variable Set
+- [（暂无市场模板）] => nativePanel.noMarketTemplates = (No market templates)
+- [（暂无团队，可点击右上角添加）] => settings.noTeamsAddTopRight = (No teams; click the top-right buttons to add)
+- [{0} 邀请你加入团队] => settings.teamInviteFrom = {0} invited you to join the team
+- [☁️ 云端登记的变量集] => settings.cloudRegisteredVariableSets = ☁️ Cloud-registered Variable Sets
+- [✉️ {0} 邀请您加入团队「{1}」] => nativePanel.teamInviteNotification = ✉️ {0} invited you to join team "{1}"
+- [✅ {0} 已加入团队「{1}」] => nativePanel.joinedTeam = ✅ {0} joined team "{1}"
+- [✅ 已自动允许浏览器远程调试] => window.remoteDebuggingAllowed = ✅ Browser remote debugging allowed automatically
+- [CSS 选择器] => settings.cssSelector = CSS Selector
+- [JS 脚本] => settings.jsScript = JS script
+- [🎉 您加入团队「{0}」的申请已通过] => nativePanel.teamJoinApproved = 🎉 Your application to join "{0}" was approved
+- [👥 {0} 申请加入团队「{1}」] => nativePanel.teamApplyNotification = 👥 {0} applied to join team "{1}"
+- [📊 数据模板市场] => market.dataTemplateMarket = 📊 Data Template Market
+- [📊 我的数据看板] => nativePanel.myDataDashboard = 📊 My Data Dashboard
+- [📋 数据模板] => nativePanel.dataTemplates = 📋 Data Templates
+- [🔍 百度搜索] => nativePanel.baiduSearch = 🔍 Baidu Search
+- [🧮 变量集] => settings.variableSets = 🧮 Variable Sets
+- [百度搜索] => settings.baiduSearch = Baidu Search
+- [本地暂无可聚合的变量。] => settings.noLocalVariablesAvailable = No local variables available for aggregation.
+- [变量集名（如 qoder.count_all）] => settings.variableSetNameExample = Variable set name (e.g. qoder.count_all)
+- [参数 {0}] => nativePanel.parameter = Parameter {0}
+- [查看最近剪贴板历史] => nativePanel.viewRecentClipboardHistory = View recent clipboard history
+- [创建变量集] => settings.createVariableSet = Create Variable Set
+- [待处理的加入申请] => settings.pendingJoinRequests = Pending Join Requests
+- [弹窗内容空白（显卡驱动与 DirectX 握手失败）时可开启，重启应用后生效；开启后界面性能略有下降] => settings.softwareRenderingHint = Enable if dialog content appears blank (GPU driver fails to handshake with DirectX). Takes effect after restart; UI performance may slightly decrease
+- [当前值：{0}] => settings.currentValueLabel = current value: {0}
+- [点击复制] => settings.clickToCopy = Click to copy
+- [勾选 {0} 个] => settings.checkedCount = {0} checked
+- [勾选要聚合的变量] => data.checkVariablesToAggregate = Check the variables to aggregate
+- [管理员] => common.admin = Admin
+- [归属范围] => settings.scope = Scope
+- [计数] => common.count = Count
+- [加入团队] => common.joinTeam = Join Team
+- [检测到 WPF 硬件加速不可用（可能是显卡驱动问题），界面已自动降级为软件渲染。若弹窗内容仍空白，可尝试 设置 → 常规 中开启“软件渲染模式”后重启应用。] => nativePanel.wpfAccelerationUnavailable = WPF hardware acceleration is unavailable (possibly a GPU driver issue); the UI has automatically fallen back to software rendering. If dialog content is still blank, try enabling “Software Rendering Mode” in Settings → General and restart the app.
+- [检测到主显示器为虚拟/远程显示（{0}），WPF 硬件加速在此类驱动下易出现窗口空白，已自动启用软件渲染。] => nativePanel.virtualDisplayDetected = The primary display is a virtual/remote display ({0}). WPF hardware acceleration tends to produce blank windows on such drivers, so software rendering has been enabled automatically.
+- [接受] => common.accept = Accept
+- [聚合逻辑] => data.aggregation = Aggregation
+- [离线：无法连接服务器，当前视为未登录] => settings.offlineServerUnreachable = Offline: cannot reach the server, currently treated as not logged in
+- [您加入团队「{0}」的申请被拒绝] => nativePanel.teamJoinDeclined = Your application to join "{0}" was declined
+- [匹配 {0} 个变量 · 当前值：{1}] => settings.variableMatchSummary = {0} variables matched · current value: {1}
+- [请输入参数 {0}] => nativePanel.pleaseEnterParameter = Please enter parameter {0}
+- [请输入请求网址] => settings.enterRequestUrl = Please enter the request URL
+- [请填写通配符或点「选取变量」选择来源。] => settings.pleaseEnterAWildcard = Please enter a wildcard pattern or use "Pick Variables" to select sources.
+- [请先从数据模板市场添加模板] => nativePanel.addTemplateFromMarketFirst = Please add a template from the Data Template Market first
+- [请至少勾选一个变量或填写通配符。] => data.checkVariableOrWildcard = Please check at least one variable or enter a wildcard pattern.
+- [求和] => common.sum = Sum
+- [求平均] => common.average = Average
+- [确定删除便签「{0}」？此操作不可撤销。] => sticky.deleteNoteConfirm = Delete sticky note "{0}"? This cannot be undone.
+- [仍无法连接服务器，请检查网络或服务器状态后重试。] => settings.serverStillUnreachable = Still unable to connect to the server. Check your network or server status and try again.
+- [如 qoder.count*（* 匹配任意字符），支持逗号分隔多个或点右侧按钮选取；留空不启用] => settings.wildcardPatternHint = e.g. qoder.count* (* matches any characters); supports multiple comma-separated patterns or picking via the button on the right. Leave empty to disable
+- [软件渲染模式（禁用 GPU 加速）] => settings.softwareRenderingMode = Software Rendering Mode (disable GPU acceleration)
+- [删除变量集「{0}」？] => settings.deleteVariableSet = Delete variable set "{0}"?
+- [删除失败，请重试。] => settings.deletionFailedPleaseTry = Deletion failed. Please try again.
+- [删除云端变量集「{0}」？] => settings.deleteCloudVariableSet = Delete cloud variable set "{0}"?
+- [尚未匹配到任何变量] => settings.noVariablesMatchedYet = No variables matched yet
+- [申请加入团队「{0}」] => settings.applyToJoinTeam = Applied to join team "{0}"
+- [申请已发送，等待管理员审批] => settings.applySentWaiting = Application sent. Waiting for admin approval
+- [市场模板] => market.marketTemplate = Market Template
+- [收到的团队邀请] => settings.teamInvitationsReceived = Team Invitations Received
+- [输入团队码] => settings.enterTeamCode = Enter Team Code
+- [输入团队码申请加入团队] => settings.enterTeamCodeHint = Enter a team code to apply to join
+- [通配 {0}] => settings.wildcardLabel = wildcard {0}
+- [通配符匹配] => data.wildcardMatch = Wildcard match
+- [团队码] => settings.teamCode = Team Code
+- [新成员] => team.newMember = New Member
+- [选取变量] => settings.pickVariables = Pick Variables
+- [选择器类型] => settings.selectorType = Selector type
+- [选择器内容] => settings.selectorContent = Selector content
+- [渲染模式提示] => nativePanel.renderingModeNotice = Rendering Mode Notice
+- [邀请成员加入「{0}」] => settings.inviteMemberToJoin = Invite member to join "{0}"
+- [邀请已发送，等待对方接受] => settings.inviteSentWaiting = Invitation sent. Waiting for acceptance
+- [已关闭软件渲染模式，重启应用后恢复 GPU 硬件加速。] => settings.softwareRenderingDisabled = Software rendering disabled. GPU hardware acceleration will be restored after restarting the app.
+- [已开启软件渲染模式，重启应用后生效。] => settings.softwareRenderingEnabled = Software rendering enabled. It will take effect after restarting the app.
+- [已启用软件渲染模式：WPF 的 GPU 硬件加速（DirectX）已禁用。若此前弹窗内容空白，现在应恢复正常。可在 设置 → 常规 中关闭。] => nativePanel.softwareRenderingNotice = Software rendering mode is enabled: WPF GPU hardware acceleration (DirectX) has been disabled. If dialog content was blank before, it should be normal now. You can turn it off in Settings → General.
+- [在「数据模板市场」页面选择模板并点击添加，将自动填入此处。] => nativePanel.pickATemplateOn = Pick a template on the "Data Template Market" page and click Add; it will be filled in here automatically.
+- [正在向服务器确认登录状态…] => settings.verifyingLoginStatus = Verifying login status with the server…
+- [正则表达式] => settings.regularExpression = Regular expression
+- [最大值] => common.max = Max
+- [最小值] => common.min = Min
+
+## 仅 en.json 存在的键
+- [（暂无团队，可点击下方添加）] => team.noTeamsClickBelow = (No teams; click below to add)
+- [👊 我的数据看板] => nativePanel.myDataDashboardLegacy = 👊 My Data Dashboard
+- [👋 数据模板] => nativePanel.dataTemplatesLegacy = 👋 Data Templates
+
+## 代码中未找到调用点的键（可能动态拼接或已废弃）
+- [（暂无后台数据项）] => data.noBackgroundItems
+- [（暂无团队，可点击下方添加）] => team.noTeamsClickBelow
+- [⏰ 任务时间：{0:yyyy-MM-dd HH:mm}{1}] => todo.taskTimeLine
+- [👊 我的数据看板] => nativePanel.myDataDashboardLegacy
+- [👋 数据模板] => nativePanel.dataTemplatesLegacy
+- [📊 从我的数据看板选择] => data.chooseFromMyDashboard
+- [查看连接] => system.viewConnections
+- [当前没有可用的数据模板或数据源。
+请先在 设置-我的看板 添加后台数据项或创建数据模板。] => data.noTemplatesOrSources
+- [勾选要聚合的变量] => data.checkVariablesToAggregate
+- [管理数据看板使用的模版列表，支持内置模版和自定义模版] => data.manageTemplateList
+- [或当该变量不存在] => data.orVariableMissing
+- [或使用变量名（运行中的数据项）] => data.orUseVariableName
+- [浏览器插件模式：通过浏览器插件 + WebSocket(19191) 获取数据
+CDP 连接模式：直连已运行的浏览器（需开启 --remote-debugging-port）] => settings.webFetchModeHint
+- [启动浏览器失败
+
+可能原因：该浏览器已在运行中，请先关闭浏览器后重试] => window.browserLaunchFailed
+- [请先输入目标网址] => settings.enterTargetUrlFirst
+- [请至少勾选一个变量或填写通配符。] => data.checkVariableOrWildcard
+- [确定删除{0}“{1}”？此操作将移入回收站。] => common.deleteConfirmRecycleBin
+- [容器 (Profile)] => settings.containerProfile
+- [数据项「{0}」多次尝试打开目标页面后仍未取到数据，是否重新打开页面并重试？] => data.reopenPageRetryConfirm
+- [图标:] => common.iconLabel
+- [未选择到元素（超时或取消）] => data.selectorPickTimeout
+- [未找到可用浏览器，请在浏览器下拉框中选择一个已注册的浏览器] => settings.noAvailableBrowser
+- [选择后自动填充名称与路径] => settings.autoFillNameAndPath
+- [选择器 (CSS Selector 或 XPath)] => data.selectorHint
+- [选择器获取失败: {0}] => data.selectorFetchFailed
+- [选择中...] => data.selectorPicking
+- [已将窗口“{0}”从瞬移列表中移除
+窗口仍保持工具窗口样式，不会在任务栏显示] => window.teleportRemovedNotice
+- [已将窗口“{0}”移动到左侧Dock区域] => window.teleportMovedNotice
+- [暂无数据模板，请先在 设置-我的看板 添加后台数据项] => data.noTemplatesAddBackgroundFirst
+- [暂无数据模板，请先在侧边栏“数据看板”模块中添加数据项，再回到设置将其导入为模板。] => data.noTemplatesImportHint

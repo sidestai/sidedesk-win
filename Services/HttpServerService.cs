@@ -294,7 +294,7 @@ namespace SideDesk.Services
                 }
                 catch (Exception ex)
                 {
-                    WriteJson(resp, 200, new JObject { ["ok"] = false, ["result"] = Framework.Lang.TF("工具执行失败: {0}", ex.Message) }.ToString());
+                    WriteJson(resp, 200, new JObject { ["ok"] = false, ["result"] = Framework.Lang.TF("aiChat.toolExecutionFailed", ex.Message) }.ToString());
                 }
                 return;
             }
@@ -321,12 +321,12 @@ namespace SideDesk.Services
 
             if (string.IsNullOrEmpty(modelInfo.ApiBaseUrl))
             {
-                WriteJson(resp, 400, new JObject { ["error"] = new JObject { ["message"] = Framework.Lang.T("当前服务商未配置 API 地址，请改用其他服务商") } }.ToString());
+                WriteJson(resp, 400, new JObject { ["error"] = new JObject { ["message"] = Framework.Lang.T("aiChat.providerNotConfigured") } }.ToString());
                 return;
             }
             if (string.IsNullOrEmpty(apiKey))
             {
-                WriteJson(resp, 400, new JObject { ["error"] = new JObject { ["message"] = Framework.Lang.T("尚未配置 API Key，请在客户端 AI 设置或本页设置中填写") } }.ToString());
+                WriteJson(resp, 400, new JObject { ["error"] = new JObject { ["message"] = Framework.Lang.T("aiChat.apiKeyMissingHint") } }.ToString());
                 return;
             }
 
@@ -355,7 +355,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                WriteJson(resp, 502, new JObject { ["error"] = new JObject { ["message"] = Framework.Lang.TF("转发失败: {0}", ex.Message) } }.ToString());
+                WriteJson(resp, 502, new JObject { ["error"] = new JObject { ["message"] = Framework.Lang.TF("system.forwardFailed", ex.Message) } }.ToString());
                 return;
             }
 

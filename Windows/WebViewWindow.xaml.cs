@@ -19,7 +19,7 @@ public partial class WebViewWindow : Window
     {
         InitializeComponent();
         _url = url;
-        Title = title ?? Framework.Lang.T("网页");
+        Title = title ?? Framework.Lang.T("common.web");
         SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(this);
         Loaded += WebViewWindow_Loaded;
     }
@@ -37,7 +37,7 @@ public partial class WebViewWindow : Window
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[WebViewWindow] WebView2 初始化失败: {ex.Message}");
-            MessageBox.Show(Framework.Lang.TF("WebView2 初始化失败: {0}", ex.Message), Title, MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(Framework.Lang.TF("common.webview2InitializationFailed", ex.Message), Title, MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 }

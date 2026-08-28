@@ -107,7 +107,7 @@ namespace SideDesk.Services
                 windowCount = app.WindowConfigs.Windows.Count,
                 themeMode = app.AppSettings.ThemeMode,
                 cloudSyncEnabled = app.AppSettings.EnableCloudSync,
-                accountName = app.AppSettings.AccountName ?? Framework.Lang.T("(未登录)")
+                accountName = app.AppSettings.AccountName ?? Framework.Lang.T("nativePanel.notLoggedIn")
             };
         }
 
@@ -123,7 +123,7 @@ namespace SideDesk.Services
                 enableWindowSwitchHotkey = s.EnableWindowSwitchHotkey,
                 enableCloudSync = s.EnableCloudSync,
                 enableMcpServer = s.EnableMcpServer,
-                accountName = s.AccountName ?? Framework.Lang.T("(未登录)"),
+                accountName = s.AccountName ?? Framework.Lang.T("nativePanel.notLoggedIn"),
                 monitors = s.Monitors.Select((m, i) => new
                 {
                     index = i,
@@ -535,9 +535,9 @@ namespace SideDesk.Services
         /// <summary>模式显示名称</summary>
         private static string GetPomodoroModeLabel(string mode) => mode switch
         {
-            "ShortBreak" => Framework.Lang.T("短休息"),
-            "LongBreak" => Framework.Lang.T("长休息"),
-            _ => Framework.Lang.T("番茄钟")
+            "ShortBreak" => Framework.Lang.T("common.shortBreak"),
+            "LongBreak" => Framework.Lang.T("common.longBreak"),
+            _ => Framework.Lang.T("common.pomodoro")
         };
 
         /// <summary>生成单个番茄组件的状态快照</summary>
@@ -576,8 +576,8 @@ namespace SideDesk.Services
             panels = CollectPomodoroPanels(app, win);
             if (panels.Count == 0)
                 return win == null
-                    ? Framework.Lang.T("未找到番茄闹钟组件，请先在侧栏添加「番茄闹钟」组件")
-                    : Framework.Lang.TF("窗口'{0}'下没有番茄闹钟组件，请先在该窗口添加「番茄闹钟」组件", win.Name);
+                    ? Framework.Lang.T("nativePanel.pomodoroWidgetNotFound")
+                    : Framework.Lang.TF("nativePanel.windowHasNoPomodoro", win.Name);
             return null;
         }
 
@@ -681,8 +681,8 @@ namespace SideDesk.Services
             }
 
             string actionLabel = start
-                ? Framework.Lang.TF("已开始{0}", GetPomodoroModeLabel(mode ?? panels[0].item.Pomodoro!.Mode))
-                : Framework.Lang.T("已停止计时");
+                ? Framework.Lang.TF("nativePanel.started", GetPomodoroModeLabel(mode ?? panels[0].item.Pomodoro!.Mode))
+                : Framework.Lang.T("nativePanel.timingStopped");
             return new
             {
                 success = true,

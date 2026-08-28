@@ -21,6 +21,7 @@ namespace SideDesk.Controls
         private StackPanel _summaryStack = null;
         private StackPanel _recentStack = null;
         private TextBlock _totalTimeText = null;
+        private Border _enableBanner = null;
         private Window _owner = null;
         private HashSet<string> _expandedItems = new HashSet<string>(); // 记录展开的进程名
 
@@ -40,6 +41,7 @@ namespace SideDesk.Controls
         {
             if (IsOpen)
             {
+                UpdateEnableBanner();
                 _dialog.Activate();
                 return;
             }
@@ -48,7 +50,7 @@ namespace SideDesk.Controls
 
             _dialog = new Window
             {
-                Title = Framework.Lang.T("使用统计"),
+                Title = Framework.Lang.T("common.usageStatistics"),
                 Width = 420,
                 Height = height,
                 Left = left,  // left 已经是 sidebar 右侧边缘的 X 坐标，直接使用
@@ -58,9 +60,12 @@ namespace SideDesk.Controls
                 Owner = owner
             };
             _dialog.Loaded += (s, e) => HideFromTaskbar(_dialog);
-            _dialog.SetBinding(Window.BackgroundProperty, new System.Windows.Data.Binding("Background") { Source = owner });
+            _dialog.SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(_dialog);
+            // 背景走主题资源绑定，切换主题时自动刷新
+            _dialog.SetResourceReference(Window.BackgroundProperty, "BrushDialogBG");
 
             BuildUI();
+            UpdateEnableBanner();
             LoadData();
 
             _dialog.Show();
@@ -69,21 +74,59 @@ namespace SideDesk.Controls
         private void BuildUI()
         {
             var grid = new Grid();
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 0: 饼状图
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 1: Header
-            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // 2: Content
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 0: 未开启提示条
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 1: 饼状图
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 2: Header
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // 3: Content
+
+            // 顶部提示条：设置中未开启使用统计时显眼提示，支持一键开启
+            _enableBanner = new Border
+            {
+                Margin = new Thickness(12, 10, 12, 0),
+                Padding = new Thickness(12, 10, 12, 10),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Visibility = Visibility.Collapsed
+            };
+            _enableBanner.SetResourceReference(Border.BackgroundProperty, "BrushInputBG");
+            _enableBanner.SetResourceReference(Border.BorderBrushProperty, "BrushAccent");
+            var bannerPanel = new StackPanel();
+            var bannerText = new Emoji.Wpf.TextBlock
+            {
+                Text = Framework.Lang.T("window.usageStatisticsDisabledWarning"),
+                FontSize = 13,
+                FontWeight = FontWeights.SemiBold,
+                TextWrapping = TextWrapping.Wrap
+            };
+            bannerText.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "BrushTextMain");
+            bannerPanel.Children.Add(bannerText);
+            var enableBtn = new Button
+            {
+                Content = Framework.Lang.T("window.clickToEnable"),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(0, 8, 0, 0),
+                Padding = new Thickness(14, 5, 14, 5),
+                Cursor = System.Windows.Input.Cursors.Hand
+            };
+            enableBtn.Click += (s, e) => EnableUsageStats();
+            bannerPanel.Children.Add(enableBtn);
+            _enableBanner.Child = bannerPanel;
+            Grid.SetRow(_enableBanner, 0);
+            grid.Children.Add(_enableBanner);
 
             // 饼状图区域（最上方）
             var pieBorder = new Border
             {
                 Height = 180,
                 Margin = new Thickness(12, 8, 12, 8),
-                Background = (Brush)Application.Current.FindResource("BrushInputBG"),
+                BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(6)
             };
+            pieBorder.SetResourceReference(Border.BackgroundProperty, "BrushInputBG");
+            pieBorder.SetResourceReference(Border.BorderBrushProperty, "BrushBorder");
             _pieCanvas = new Canvas { Margin = new Thickness(8) };
             pieBorder.Child = _pieCanvas;
-            Grid.SetRow(pieBorder, 0);
+            Grid.SetRow(pieBorder, 1);
             grid.Children.Add(pieBorder);
 
             // Header: 标题 + 刷新按钮
@@ -91,18 +134,18 @@ namespace SideDesk.Controls
 
             var titleText = new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.T("今日使用统计"),
+                Text = Framework.Lang.T("window.todayUsage"),
                 FontSize = 16,
                 FontWeight = FontWeights.Bold,
-                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                 VerticalAlignment = VerticalAlignment.Center
             };
+            titleText.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "BrushTextMain");
             DockPanel.SetDock(titleText, Dock.Left);
             headerPanel.Children.Add(titleText);
 
             var refreshBtn = new Button
             {
-                Content = Framework.Lang.T("刷新"),
+                Content = Framework.Lang.T("common.refresh"),
                 Width = 50,
                 Height = 26,
                 Margin = new Thickness(0)
@@ -115,13 +158,13 @@ namespace SideDesk.Controls
             {
                 Text = "",
                 FontSize = 13,
-                Foreground = (Brush)Application.Current.FindResource("BrushTextSec"),
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(12, 0, 0, 0)
             };
+            _totalTimeText.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "BrushTextSec");
             headerPanel.Children.Add(_totalTimeText);
 
-            Grid.SetRow(headerPanel, 1);
+            Grid.SetRow(headerPanel, 2);
             grid.Children.Add(headerPanel);
 
             // Content: 上下两个区域 (使用时长排行 + 最近记录)
@@ -133,48 +176,89 @@ namespace SideDesk.Controls
 
             var contentPanel = new StackPanel();
 
-            // 使用时长排行区
-            var summaryHeader = new Emoji.Wpf.TextBlock
-            {
-                Text = Framework.Lang.T("应用使用时长"),
-                FontSize = 14,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
-                Margin = new Thickness(0, 8, 0, 6)
-            };
-            contentPanel.Children.Add(summaryHeader);
-
+            // 使用时长排行卡片
+            var summaryCard = BuildSectionCard(Framework.Lang.T("screenTime.appUsageTime"));
             _summaryStack = new StackPanel();
-            contentPanel.Children.Add(_summaryStack);
+            ((StackPanel)summaryCard.Child).Children.Add(_summaryStack);
+            contentPanel.Children.Add(summaryCard);
 
-            // 分隔线
-            var separator = new Border
-            {
-                Height = 1,
-                Background = (Brush)Application.Current.FindResource("BrushBorder"),
-                Margin = new Thickness(0, 12, 0, 12)
-            };
-            contentPanel.Children.Add(separator);
-
-            // 最近窗口记录区
-            var recentHeader = new Emoji.Wpf.TextBlock
-            {
-                Text = Framework.Lang.T("最近窗口记录"),
-                FontSize = 14,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
-                Margin = new Thickness(0, 0, 0, 6)
-            };
-            contentPanel.Children.Add(recentHeader);
-
+            // 最近窗口记录卡片
+            var recentCard = BuildSectionCard(Framework.Lang.T("screenTime.recentWindowRecords"));
             _recentStack = new StackPanel();
-            contentPanel.Children.Add(_recentStack);
+            ((StackPanel)recentCard.Child).Children.Add(_recentStack);
+            contentPanel.Children.Add(recentCard);
 
             contentScroll.Content = contentPanel;
-            Grid.SetRow(contentScroll, 2);
+            Grid.SetRow(contentScroll, 3);
             grid.Children.Add(contentScroll);
 
             _dialog.Content = grid;
+        }
+
+        /// <summary>区块卡片：主题绑定的圆角卡片 + 左侧 accent 竖条标题，返回卡片的 Child 为 StackPanel，调用方往里追加内容</summary>
+        private static Border BuildSectionCard(string headerText)
+        {
+            var card = new Border
+            {
+                Margin = new Thickness(0, 10, 0, 0),
+                Padding = new Thickness(10, 8, 10, 8),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6)
+            };
+            card.SetResourceReference(Border.BackgroundProperty, "BrushInputBG");
+            card.SetResourceReference(Border.BorderBrushProperty, "BrushBorder");
+
+            var inner = new StackPanel();
+            var header = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
+            var bar = new Border
+            {
+                Width = 3,
+                Height = 14,
+                CornerRadius = new CornerRadius(1.5),
+                Margin = new Thickness(0, 0, 6, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            bar.SetResourceReference(Border.BackgroundProperty, "BrushAccent");
+            header.Children.Add(bar);
+            var tb = new Emoji.Wpf.TextBlock
+            {
+                Text = headerText,
+                FontSize = 14,
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            tb.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "BrushTextMain");
+            header.Children.Add(tb);
+            inner.Children.Add(header);
+
+            card.Child = inner;
+            return card;
+        }
+
+        /// <summary>根据设置开关状态切换顶部提示条显示</summary>
+        private void UpdateEnableBanner()
+        {
+            if (_enableBanner == null) return;
+            _enableBanner.Visibility = Framework.AppSettings.Instance.ShowUsageStats
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+        }
+
+        /// <summary>一键开启使用统计：写设置、启动后台采集服务，然后隐藏提示条并刷新数据</summary>
+        private void EnableUsageStats()
+        {
+            Framework.AppSettings.Instance.ShowUsageStats = true;
+            Framework.AppSettings.Instance.Save();
+            try
+            {
+                Services.WindowUsageService.Instance.ApplyEnabled(true);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[UsagePanel] 窗口使用时长采集启停异常: {ex.Message}");
+            }
+            UpdateEnableBanner();
+            LoadData();
         }
 
         private void LoadData(bool keepExpanded = false)
@@ -211,7 +295,7 @@ namespace SideDesk.Controls
             var filteredTotal = summaryForTotal
                 .Where(x => x.Category != "忽略")
                 .Sum(x => x.TotalDuration.TotalSeconds);
-            _totalTimeText.Text = Framework.Lang.TF("总计: {0}", WindowUsageStats.FormatDuration(TimeSpan.FromSeconds(filteredTotal)));
+            _totalTimeText.Text = Framework.Lang.TF("window.totalTime", WindowUsageStats.FormatDuration(TimeSpan.FromSeconds(filteredTotal)));
 
             // 饼状图
             DrawPieChart();
@@ -227,12 +311,13 @@ namespace SideDesk.Controls
 
             if (summary.Count == 0)
             {
-                _summaryStack.Children.Add(new Emoji.Wpf.TextBlock
+                var emptySummary = new Emoji.Wpf.TextBlock
                 {
-                    Text = Framework.Lang.T("暂无数据"),
-                    Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
+                    Text = Framework.Lang.T("common.noData"),
                     Margin = new Thickness(0, 4, 0, 4)
-                });
+                };
+                emptySummary.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "BrushTextMuted");
+                _summaryStack.Children.Add(emptySummary);
             }
 
             // 最近记录
@@ -246,12 +331,13 @@ namespace SideDesk.Controls
 
             if (recent.Count == 0)
             {
-                _recentStack.Children.Add(new Emoji.Wpf.TextBlock
+                var emptyRecent = new Emoji.Wpf.TextBlock
                 {
-                    Text = Framework.Lang.T("暂无记录"),
-                    Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
+                    Text = Framework.Lang.T("window.noRecordsYet"),
                     Margin = new Thickness(0, 4, 0, 4)
-                });
+                };
+                emptyRecent.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "BrushTextMuted");
+                _recentStack.Children.Add(emptyRecent);
             }
         }
 
@@ -401,9 +487,9 @@ namespace SideDesk.Controls
                 {
                     Text = label,
                     FontSize = 11,
-                    Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                     VerticalAlignment = VerticalAlignment.Center
                 };
+                text.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "BrushTextMain");
                 Canvas.SetLeft(text, legendX + 20);
                 Canvas.SetTop(text, legendY);
                 _pieCanvas.Children.Add(text);
@@ -418,9 +504,9 @@ namespace SideDesk.Controls
             var path = new System.Windows.Shapes.Path
             {
                 Fill = new SolidColorBrush(color),
-                Stroke = (Brush)Application.Current.FindResource("BrushBorder"),
                 StrokeThickness = 2
             };
+            path.SetResourceReference(System.Windows.Shapes.Path.StrokeProperty, "BrushBorder");
 
             double startRad = (startAngle - 90) * Math.PI / 180;
             double endRad = (startAngle + sweepAngle - 90) * Math.PI / 180;
@@ -469,11 +555,11 @@ namespace SideDesk.Controls
             {
                 Text = WindowUsageStats.FormatDuration(item.TotalDuration),
                 FontSize = 12,
-                Foreground = new SolidColorBrush(Color.FromRgb(100, 200, 255)),
                 Width = 70,
                 TextAlignment = TextAlignment.Right,
                 VerticalAlignment = VerticalAlignment.Center
             };
+            durationText.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "BrushAccent");
             DockPanel.SetDock(durationText, Dock.Right);
             panel.Children.Add(durationText);
 
@@ -519,10 +605,10 @@ namespace SideDesk.Controls
                     Text = item.ProcessName,
                     FontSize = 12,
                     FontWeight = FontWeights.SemiBold,
-                    Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                     VerticalAlignment = VerticalAlignment.Center,
                     TextTrimming = TextTrimming.CharacterEllipsis
                 };
+                nameTextSub.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "BrushTextMain");
                 panel.Children.Add(nameTextSub);
 
                 // 展开区域
@@ -557,10 +643,10 @@ namespace SideDesk.Controls
             {
                 Text = item.ProcessName,
                 FontSize = 12,
-                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
+            nameText.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "BrushTextMain");
             panel.Children.Add(nameText);
 
             outer.Children.Add(panel);
@@ -577,11 +663,11 @@ namespace SideDesk.Controls
             {
                 Text = WindowUsageStats.FormatDuration(sub.TotalDuration),
                 FontSize = 11,
-                Foreground = new SolidColorBrush(Color.FromRgb(140, 220, 255)),
                 Width = 70,
                 TextAlignment = TextAlignment.Right,
                 VerticalAlignment = VerticalAlignment.Center
             };
+            durText.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "BrushAccent");
             DockPanel.SetDock(durText, Dock.Right);
             panel.Children.Add(durText);
 
@@ -608,10 +694,10 @@ namespace SideDesk.Controls
             {
                 Text = sub.Name,
                 FontSize = 11,
-                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
+            nameText.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "BrushTextMain");
             panel.Children.Add(nameText);
 
             return panel;
@@ -635,14 +721,14 @@ namespace SideDesk.Controls
             if (string.IsNullOrEmpty(category))
             {
                 btn.Content = "+";
-                btn.Background = (Brush)Application.Current.FindResource("BrushSecondaryBtnBG");
-                btn.Foreground = (Brush)Application.Current.FindResource("BrushTextMuted");
+                btn.SetResourceReference(System.Windows.Controls.Control.BackgroundProperty, "BrushSecondaryBtnBG");
+                btn.SetResourceReference(System.Windows.Controls.Control.ForegroundProperty, "BrushTextMuted");
             }
             else
             {
                 btn.Content = category;
-                btn.Background = new SolidColorBrush(Color.FromRgb(40, 80, 60));
-                btn.Foreground = new SolidColorBrush(Color.FromRgb(180, 240, 200));
+                btn.SetResourceReference(System.Windows.Controls.Control.BackgroundProperty, "BrushAccent");
+                btn.Foreground = new SolidColorBrush(Colors.White);
             }
         }
 
@@ -656,7 +742,8 @@ namespace SideDesk.Controls
                 StaysOpen = false
             };
 
-            var pickerStack = new StackPanel { Background = (Brush)Application.Current.FindResource("BrushDialogBG") };
+            var pickerStack = new StackPanel();
+            pickerStack.SetResourceReference(StackPanel.BackgroundProperty, "BrushDialogBG");
             foreach (var cat in ProgramCategoryManager.AvailableCategories)
             {
                 var catBtn = new Button
@@ -681,7 +768,7 @@ namespace SideDesk.Controls
             // 添加"清除分类"选项
             var clearBtn = new Button
             {
-                Content = Framework.Lang.T("清除分类"),
+                Content = Framework.Lang.T("window.clearCategory"),
                 Width = 100,
                 Height = 28,
                 Margin = new Thickness(4, 2, 4, 4),
@@ -711,10 +798,10 @@ namespace SideDesk.Controls
             {
                 Text = record.Timestamp.ToString("HH:mm:ss"),
                 FontSize = 11,
-                Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
                 Width = 60,
                 VerticalAlignment = VerticalAlignment.Center
             };
+            timeText.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "BrushTextMuted");
             DockPanel.SetDock(timeText, Dock.Left);
             topRow.Children.Add(timeText);
 
@@ -722,11 +809,11 @@ namespace SideDesk.Controls
             {
                 Text = WindowUsageStats.FormatDuration(record.Duration),
                 FontSize = 11,
-                Foreground = new SolidColorBrush(Color.FromRgb(100, 200, 255)),
                 Width = 60,
                 TextAlignment = TextAlignment.Right,
                 VerticalAlignment = VerticalAlignment.Center
             };
+            durText.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "BrushAccent");
             DockPanel.SetDock(durText, Dock.Right);
             topRow.Children.Add(durText);
 
@@ -735,10 +822,10 @@ namespace SideDesk.Controls
                 Text = record.ProcessName,
                 FontSize = 12,
                 FontWeight = FontWeights.Medium,
-                Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
+            procText.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "BrushTextMain");
             topRow.Children.Add(procText);
 
             panel.Children.Add(topRow);
@@ -751,12 +838,11 @@ namespace SideDesk.Controls
                 {
                     Text = secondLine,
                     FontSize = 11,
-                    Foreground = !string.IsNullOrEmpty(record.Url)
-                        ? (Brush)Application.Current.FindResource("BrushTextSec")
-                        : (Brush)Application.Current.FindResource("BrushTextMuted"),
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     Margin = new Thickness(60, 0, 60, 0)
                 };
+                titleText.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty,
+                    !string.IsNullOrEmpty(record.Url) ? "BrushTextSec" : "BrushTextMuted");
                 panel.Children.Add(titleText);
             }
 

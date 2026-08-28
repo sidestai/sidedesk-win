@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:l="clr-namespace:SideDesk.Framework"
         xmlns:emoji="clr-namespace:Emoji.Wpf;assembly=Emoji.Wpf"
-        Title="{l:T 从云盘选择}" Height="500" Width="560"
+        Title="{l:T cloudDrive.chooseFromCloudDrive}" Height="500" Width="560"
         WindowStartupLocation="CenterOwner"
         Background="{DynamicResource BrushBG}"
         Foreground="{DynamicResource BrushTextMain}">
@@ -95,24 +95,24 @@
         </Grid.RowDefinitions>
 
         <!-- 顶部提示 -->
-        <TextBlock Grid.Row="0" Text="{l:T 勾选需要导入的文件或目录（可多选），点击箭头展开文件夹}"
+        <TextBlock Grid.Row="0" Text="{l:T cloudDrive.importCheckHint}"
                    FontSize="{DynamicResource FontSizeSmall}"
                    Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,10"/>
 
         <!-- 加载中 -->
-        <TextBlock x:Name="loadingText" Grid.Row="1" Text="{l:T 正在加载...}"
+        <TextBlock x:Name="loadingText" Grid.Row="1" Text="{l:T cloudDrive.loading}"
                    FontSize="{DynamicResource FontSizeNormal}"
                    Foreground="{DynamicResource BrushTextMuted}"
                    VerticalAlignment="Center" HorizontalAlignment="Center" Visibility="Collapsed"/>
 
         <!-- 空目录 -->
-        <TextBlock x:Name="emptyText" Grid.Row="1" Text="{l:T 云盘为空}"
+        <TextBlock x:Name="emptyText" Grid.Row="1" Text="{l:T cloudDrive.cloudDriveIsEmpty}"
                    FontSize="{DynamicResource FontSizeNormal}"
                    Foreground="{DynamicResource BrushTextMuted}"
                    VerticalAlignment="Center" HorizontalAlignment="Center" Visibility="Collapsed"/>
 
         <!-- 加载失败 -->
-        <TextBlock x:Name="errorText" Grid.Row="1" Text="{l:T 加载失败，请重试}"
+        <TextBlock x:Name="errorText" Grid.Row="1" Text="{l:T cloudDrive.loadFailedRetry}"
                    FontSize="{DynamicResource FontSizeNormal}"
                    Foreground="{DynamicResource BrushTextMuted}"
                    VerticalAlignment="Center" HorizontalAlignment="Center" Visibility="Collapsed"/>
@@ -141,15 +141,15 @@
 
         <!-- 底部：已选数量 + 按钮 -->
         <DockPanel Grid.Row="2" Margin="0,12,0,0">
-            <TextBlock x:Name="selectedCountText" Text="{l:T '已选 0 项'}" DockPanel.Dock="Left"
+            <TextBlock x:Name="selectedCountText" Text="{l:T cloudDrive.nothingSelected}" DockPanel.Dock="Left"
                        FontSize="{DynamicResource FontSizeSmall}"
                        Foreground="{DynamicResource BrushTextMuted}"
                        VerticalAlignment="Center"/>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button x:Name="okBtn" Content="{l:T 确定}" Width="75" Margin="0,0,10,0"
+                <Button x:Name="okBtn" Content="{l:T common.ok}" Width="75" Margin="0,0,10,0"
                         Click="Ok_Click" IsDefault="True" IsEnabled="False"
                         Style="{StaticResource PrimaryButtonStyle}"/>
-                <Button Content="{l:T 取消}" Width="75" Click="Cancel_Click" IsCancel="True"
+                <Button Content="{l:T common.cancel}" Width="75" Click="Cancel_Click" IsCancel="True"
                         Style="{StaticResource StandardButtonStyle}"/>
             </StackPanel>
         </DockPanel>

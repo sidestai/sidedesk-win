@@ -39,7 +39,7 @@ namespace SideDesk.Services
         public string SizeText => IsFolder ? "\u2014" : FormatSize(Size);
 
         /// <summary>右侧元信息</summary>
-        public string MetaText => IsFolder ? Framework.Lang.T("文件夹") : Framework.Lang.T("文件");
+        public string MetaText => IsFolder ? Framework.Lang.T("common.folder") : Framework.Lang.T("common.files");
 
         /// <summary>文件类型图标</summary>
         public string TypeIcon => IsFolder ? "\U0001F4C1" : GetFileIcon(Name);
@@ -80,7 +80,7 @@ namespace SideDesk.Services
         [JsonProperty("used")] public long Used { get; set; }
         [JsonProperty("free")] public long Free { get; set; }
 
-        public string Summary => Framework.Lang.TF("已用 {0} / 共 {1}", BaiduPanFile.FormatSize(Used), BaiduPanFile.FormatSize(Total));
+        public string Summary => Framework.Lang.TF("cloudDrive.usedTotal", BaiduPanFile.FormatSize(Used), BaiduPanFile.FormatSize(Total));
     }
 
     /// <summary>OAuth Token 响应</summary>
@@ -271,12 +271,12 @@ namespace SideDesk.Services
                     {
                         authCode = code;
                         html = "<html><body style='font-family:sans-serif;text-align:center;padding:60px'>" +
-                               "<h2>✅ 授权成功</h2><p>您可以关闭此页面，返回元桌继续使用百度网盘。</p></body></html>";
+                               $"<h2>{Framework.Lang.T("cloudDrive.authorizationSucceededEmoji")}</h2><p>{Framework.Lang.T("cloudDrive.authorizationSuccessHint")}</p></body></html>";
                     }
                     else
                     {
                         html = $"<html><body style='font-family:sans-serif;text-align:center;padding:60px'>" +
-                               $"<h2>❌ 授权失败</h2><p>{error ?? "未知错误"}</p></body></html>";
+                               $"<h2>{Framework.Lang.T("cloudDrive.authorizationFailed")}</h2><p>{error ?? Framework.Lang.T("cloudDrive.unknownError")}</p></body></html>";
                     }
 
                     byte[] buffer = Encoding.UTF8.GetBytes(html);

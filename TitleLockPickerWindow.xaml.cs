@@ -40,7 +40,7 @@ namespace SideDesk
                 {
                     Content = new Emoji.Wpf.TextBlock
                     {
-                        Text = Framework.Lang.T("（未找到可用的任务栏窗口）"),
+                        Text = Framework.Lang.T("nativePanel.noTaskbarWindowsPlaceholder"),
                         Foreground = (Brush)FindResource("BrushTextMuted"),
                         FontStyle = FontStyles.Italic
                     },
@@ -98,8 +98,8 @@ namespace SideDesk
                     TextTrimming = TextTrimming.CharacterEllipsis
                 });
                 string detail = !string.IsNullOrEmpty(r.MatchPattern)
-                    ? $"匹配（{(r.MatchMode == TitleMatchMode.Equals ? "等于" : "包含")}）：{r.MatchPattern}"
-                    : Framework.Lang.TF("原标题：{0}", r.OriginalTitle);
+                    ? Framework.Lang.TF("window.matchModeDetail", r.MatchMode == TitleMatchMode.Equals ? Framework.Lang.T("common.equals") : Framework.Lang.T("common.contains"), r.MatchPattern)
+                    : Framework.Lang.TF("window.originalTitle", r.OriginalTitle);
                 sp.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = detail,
@@ -116,7 +116,7 @@ namespace SideDesk
                 {
                     Content = new Emoji.Wpf.TextBlock
                     {
-                        Text = Framework.Lang.T("（暂无锁定规则）"),
+                        Text = Framework.Lang.T("nativePanel.noLockRules"),
                         Foreground = (Brush)FindResource("BrushTextMuted"),
                         FontStyle = FontStyles.Italic
                     },
@@ -129,8 +129,8 @@ namespace SideDesk
         {
             if (lockedListBox.SelectedItem is ListBoxItem li && li.Tag is TitleLockRule rule)
             {
-                if (MessageBox.Show(Framework.Lang.TF("确定删除规则：[{0}] {1}？", rule.LockText, rule.ProcessName),
-                    Framework.Lang.T("确认删除"), MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK)
+                if (MessageBox.Show(Framework.Lang.TF("nativePanel.deleteRuleConfirm", rule.LockText, rule.ProcessName),
+                    Framework.Lang.T("nativePanel.confirmDeletion"), MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK)
                 {
                     TitleLockRuleManager.RemoveExact(rule);
                     ReloadLocked();
@@ -138,7 +138,7 @@ namespace SideDesk
             }
             else
             {
-                MessageBox.Show(Framework.Lang.T("请选中要删除的规则"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(Framework.Lang.T("nativePanel.selectRuleToDelete"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }
 
@@ -157,7 +157,7 @@ namespace SideDesk
         {
             if (lockedListBox.SelectedItem is not ListBoxItem li || li.Tag is not TitleLockRule rule)
             {
-                MessageBox.Show(Framework.Lang.T("请选中要编辑的规则"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(Framework.Lang.T("nativePanel.selectRuleToEdit"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -187,7 +187,7 @@ namespace SideDesk
         {
             if (windowListBox.SelectedItem is not ListBoxItem li || li.Tag is not TaskbarOverlayManager.WindowInfo window)
             {
-                MessageBox.Show(Framework.Lang.T("请选择一个窗口"), Framework.Lang.T("提示"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Framework.Lang.T("nativePanel.pleaseSelectAWindow"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 

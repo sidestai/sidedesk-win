@@ -60,20 +60,20 @@ public sealed class VelopackUpdateService
         if (_updateManager == null)
         {
             Debug.WriteLine("[VelopackUpdate] 更新管理器未初始化");
-            UpdateStatusChanged?.Invoke(Framework.Lang.T("更新管理器未初始化"));
+            UpdateStatusChanged?.Invoke(Framework.Lang.T("update.updateManagerNotInitialized"));
             return null;
         }
 
         try
         {
-            UpdateStatusChanged?.Invoke(Framework.Lang.T("正在检查更新..."));
+            UpdateStatusChanged?.Invoke(Framework.Lang.T("update.checkingForUpdates"));
             Debug.WriteLine("[VelopackUpdate] 开始检查更新...");
 
             // 预诊断网络连通性
             var networkOk = await DiagnoseNetworkAsync();
             if (!networkOk)
             {
-                UpdateStatusChanged?.Invoke(Framework.Lang.T("网络连接失败，无法检查更新"));
+                UpdateStatusChanged?.Invoke(Framework.Lang.T("update.networkUnavailable"));
                 Debug.WriteLine("[VelopackUpdate] 网络诊断失败，跳过更新检查");
                 return null;
             }
@@ -82,12 +82,12 @@ public sealed class VelopackUpdateService
 
             if (updateInfo != null)
             {
-                UpdateStatusChanged?.Invoke(Framework.Lang.TF("发现新版本: {0}", updateInfo.TargetFullRelease.Version));
+                UpdateStatusChanged?.Invoke(Framework.Lang.TF("update.newVersionFound", updateInfo.TargetFullRelease.Version));
                 Debug.WriteLine($"[VelopackUpdate] 发现新版本: {updateInfo.TargetFullRelease.Version}");
             }
             else
             {
-                UpdateStatusChanged?.Invoke(Framework.Lang.T("当前已是最新版本"));
+                UpdateStatusChanged?.Invoke(Framework.Lang.T("update.alreadyLatest"));
                 Debug.WriteLine("[VelopackUpdate] 当前已是最新版本");
             }
 
@@ -116,7 +116,7 @@ public sealed class VelopackUpdateService
         try
         {
             _isDownloading = true;
-            UpdateStatusChanged?.Invoke(Framework.Lang.T("正在下载更新..."));
+            UpdateStatusChanged?.Invoke(Framework.Lang.T("settings.downloadingUpdate"));
             Debug.WriteLine($"[VelopackUpdate] 开始下载更新: {updateInfo.TargetFullRelease.Version}");
 
             await _updateManager.DownloadUpdatesAsync(updateInfo, progress =>
@@ -131,14 +131,14 @@ public sealed class VelopackUpdateService
             ReadyUpdateInfo = updateInfo;
             IsUpdateReady = true;
             UpdateReadyChanged?.Invoke();
-            UpdateStatusChanged?.Invoke(Framework.Lang.TF("更新已就绪: {0}，重启后生效", updateInfo.TargetFullRelease.Version));
+            UpdateStatusChanged?.Invoke(Framework.Lang.TF("update.updateReady", updateInfo.TargetFullRelease.Version));
             Debug.WriteLine($"[VelopackUpdate] 下载完成，更新已就绪");
             return true;
         }
         catch (Exception ex)
         {
             var friendlyMsg = BuildFriendlyErrorMessage(ex);
-            UpdateStatusChanged?.Invoke(Framework.Lang.TF("下载更新失败: {0}", friendlyMsg));
+            UpdateStatusChanged?.Invoke(Framework.Lang.TF("update.failedToDownloadUpdate", friendlyMsg));
             Debug.WriteLine($"[VelopackUpdate] 下载更新失败: {ex}");
             return false;
         }
@@ -161,13 +161,13 @@ public sealed class VelopackUpdateService
 
         try
         {
-            UpdateStatusChanged?.Invoke(Framework.Lang.T("正在应用更新，即将重启..."));
+            UpdateStatusChanged?.Invoke(Framework.Lang.T("update.applyingUpdateRestartingSoon"));
             Debug.WriteLine("[VelopackUpdate] 正在应用更新并重启...");
             _updateManager.ApplyUpdatesAndRestart(updateInfo);
         }
         catch (Exception ex)
         {
-            UpdateStatusChanged?.Invoke(Framework.Lang.TF("应用更新失败: {0}", ex.Message));
+            UpdateStatusChanged?.Invoke(Framework.Lang.TF("update.applyFailed", ex.Message));
             Debug.WriteLine($"[VelopackUpdate] 应用更新失败: {ex}");
         }
     }
@@ -295,7 +295,7 @@ public sealed class VelopackUpdateService
     public static string BuildFriendlyErrorMessage(Exception ex)
     {
         if (ex == null)
-            return Framework.Lang.T("未知错误");
+            return Framework.Lang.T("cloudDrive.unknownError");
 
         var message = ex.Message ?? "";
         var innerMessage = ex.InnerException?.Message ?? "";
@@ -304,32 +304,32 @@ public sealed class VelopackUpdateService
         if (ex is HttpRequestException || message.Contains("network", StringComparison.OrdinalIgnoreCase))
         {
             if (message.Contains("SSL") || message.Contains("TLS") || innerMessage.Contains("SSL"))
-                return Framework.Lang.T("网络安全连接失败（SSL/TLS 错误），请检查系统时间和网络代理设置");
+                return Framework.Lang.T("update.sslError");
 
             if (message.Contains("timeout", StringComparison.OrdinalIgnoreCase) ||
                 message.Contains("timed out", StringComparison.OrdinalIgnoreCase))
-                return Framework.Lang.T("网络连接超时，请检查网络连接后重试");
+                return Framework.Lang.T("update.networkTimeout");
 
             if (message.Contains("No such host", StringComparison.OrdinalIgnoreCase) ||
                 message.Contains("NameResolutionFailure", StringComparison.OrdinalIgnoreCase))
-                return Framework.Lang.T("无法解析服务器地址（DNS 解析失败），请检查网络连接");
+                return Framework.Lang.T("update.dnsFailed");
 
-            return Framework.Lang.TF("网络连接错误，请检查网络设置。详情: {0}", message);
+            return Framework.Lang.TF("update.networkErrorDetail", message);
         }
 
         // 超时
         if (ex is TaskCanceledException || ex is OperationCanceledException)
-            return Framework.Lang.T("操作超时，请检查网络连接后重试");
+            return Framework.Lang.T("update.operationTimedOut");
 
         // IO 错误
         if (ex is System.IO.IOException)
-            return Framework.Lang.TF("文件读写错误: {0}", message);
+            return Framework.Lang.TF("update.fileReadWriteError", message);
 
         // 权限错误
         if (ex is UnauthorizedAccessException)
-            return Framework.Lang.T("权限不足，请尝试以管理员身份运行");
+            return Framework.Lang.T("update.runAsAdminRequired");
 
         // 通用错误
-        return Framework.Lang.TF("检查更新时发生错误: {0}", message);
+        return Framework.Lang.TF("update.checkError", message);
     }
 }

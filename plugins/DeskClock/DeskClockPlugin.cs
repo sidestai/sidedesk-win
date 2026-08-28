@@ -58,7 +58,7 @@ public class DeskClockPlugin : ISideDeskPlugin
     {
         var now = DateTime.Now;
         if (_timeText != null) _timeText.Text = now.ToString("HH:mm:ss");
-        if (_dateText != null) _dateText.Text = now.ToString("yyyy年M月d日 dddd");
+        if (_dateText != null) _dateText.Text = now.ToString("D"); // 长日期格式，随 Lang.ApplyCulture 设置的线程文化本地化
     }
 
     public void OnLoaded()

@@ -19,10 +19,10 @@ namespace SideDesk.Controls
         /// <summary>风格定义：显示名 → 存储键</summary>
         private static readonly (string Label, string Key)[] ScreenTimeStyles =
         {
-            (Framework.Lang.T("列表"), "List"),
-            (Framework.Lang.T("饼图"), "Pie"),
-            (Framework.Lang.T("分类"), "Category"),
-            (Framework.Lang.T("窗口"), "Window")
+            (Framework.Lang.T("common.list"), "List"),
+            (Framework.Lang.T("screenTime.pieChart"), "Pie"),
+            (Framework.Lang.T("common.category"), "Category"),
+            (Framework.Lang.T("common.window"), "Window")
         };
 
         /// <summary>窄宽紧凑模式：组件宽度低于 100px 时为 true，时长省略秒数</summary>
@@ -46,8 +46,8 @@ namespace SideDesk.Controls
             container.Children.Add(content);
 
             // ===== 右上角下拉菜单：展示方式切换 =====
-            var module = CreateModuleControl(Framework.Lang.T("⏱ 屏幕时长"), item);
-            var styleMenu = new MenuItem { Header = Framework.Lang.T("展示方式") };
+            var module = CreateModuleControl(Framework.Lang.T("screenTime.screenTime"), item);
+            var styleMenu = new MenuItem { Header = Framework.Lang.T("screenTime.displayMode") };
             foreach (var (label, key) in ScreenTimeStyles)
             {
                 string capturedKey = key;
@@ -398,7 +398,7 @@ namespace SideDesk.Controls
         {
             return new Emoji.Wpf.TextBlock
             {
-                Text = Framework.Lang.T("暂无数据，开启「使用时长统计」后开始记录"),
+                Text = Framework.Lang.T("screenTime.noDataEnableUsage"),
                 FontSize = 11,
                 Foreground = (Brush)FindResource("BrushTextMuted"),
                 TextWrapping = TextWrapping.Wrap,

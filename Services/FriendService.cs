@@ -145,7 +145,7 @@ namespace SideDesk.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[Friend] 发送好友请求失败: {ex.Message}");
-                return (false, Framework.Lang.T("网络错误"));
+                return (false, Framework.Lang.T("common.networkError"));
             }
         }
 
@@ -189,7 +189,7 @@ namespace SideDesk.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[Friend] 处理好友请求失败: {ex.Message}");
-                return (false, Framework.Lang.T("网络错误"));
+                return (false, Framework.Lang.T("common.networkError"));
             }
         }
 
@@ -233,7 +233,7 @@ namespace SideDesk.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[Friend] 删除好友失败: {ex.Message}");
-                return (false, Framework.Lang.T("网络错误"));
+                return (false, Framework.Lang.T("common.networkError"));
             }
         }
 
@@ -300,7 +300,7 @@ namespace SideDesk.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[Friend] 设置可搜索状态失败: {ex.Message}");
-                return (false, Framework.Lang.T("网络错误"));
+                return (false, Framework.Lang.T("common.networkError"));
             }
         }
 
@@ -324,7 +324,7 @@ namespace SideDesk.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[Friend] 修改本人资料失败: {ex.Message}");
-                return (false, Framework.Lang.T("网络错误"));
+                return (false, Framework.Lang.T("common.networkError"));
             }
         }
 

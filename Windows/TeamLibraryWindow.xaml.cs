@@ -35,7 +35,7 @@ public partial class TeamLibraryWindow : Window
     {
         listPanel.Children.Add(new TextBlock
         {
-            Text = Framework.Lang.T("加载团队列表..."),
+            Text = Framework.Lang.T("team.loadingTeamList"),
             FontSize = 12,
             Foreground = (Brush)FindResource("BrushTextMuted"),
             Margin = new Thickness(0, 20, 0, 0),
@@ -46,7 +46,7 @@ public partial class TeamLibraryWindow : Window
         if (teams == null || teams.Count == 0)
         {
             listPanel.Children.Clear();
-            listPanel.Children.Add(BuildHint(Framework.Lang.T("暂无可切换的团队\n请先在设置中创建或加入团队")));
+            listPanel.Children.Add(BuildHint(Framework.Lang.T("team.noTeamsToSwitch")));
             teamCombo.IsEnabled = false;
             return;
         }
@@ -76,7 +76,7 @@ public partial class TeamLibraryWindow : Window
 
         listPanel.Children.Add(new TextBlock
         {
-            Text = Framework.Lang.T("加载中..."),
+            Text = Framework.Lang.T("common.loading"),
             FontSize = 12,
             Foreground = (Brush)FindResource("BrushTextMuted"),
             Margin = new Thickness(0, 20, 0, 0),
@@ -92,13 +92,13 @@ public partial class TeamLibraryWindow : Window
 
         if (items == null)
         {
-            listPanel.Children.Add(BuildHint(Framework.Lang.T("加载失败，请确认已登录")));
+            listPanel.Children.Add(BuildHint(Framework.Lang.T("team.loadFailedLoginHint")));
             return;
         }
 
         if (items.Count == 0)
         {
-            listPanel.Children.Add(BuildHint(Framework.Lang.T("暂无团队共享组件\n在模块设置中将归属切换为团队即可共享")));
+            listPanel.Children.Add(BuildHint(Framework.Lang.T("team.noTeamSharedComponents")));
             return;
         }
 
@@ -137,7 +137,7 @@ public partial class TeamLibraryWindow : Window
         // 右侧：添加按钮
         var addBtn = new Button
         {
-            Content = Framework.Lang.T("添加"),
+            Content = Framework.Lang.T("common.add"),
             Width = 56,
             MinHeight = 26,
             FontSize = 11,
@@ -173,7 +173,7 @@ public partial class TeamLibraryWindow : Window
         {
             namePanel.Children.Add(new TextBlock
             {
-                Text = Framework.Lang.T(" 我的"),
+                Text = Framework.Lang.T("common.mine"),
                 FontSize = 10,
                 Foreground = (Brush)FindResource("BrushAccent"),
                 VerticalAlignment = VerticalAlignment.Center
@@ -246,7 +246,7 @@ public partial class TeamLibraryWindow : Window
         _ = PullRowsForNewPanel(panel);
 
         // 标记已添加
-        btn.Content = Framework.Lang.T("已添加");
+        btn.Content = Framework.Lang.T("settings.added");
         btn.IsEnabled = false;
     }
 
@@ -352,26 +352,26 @@ public partial class TeamLibraryWindow : Window
     /// <summary>模块类型 -> 中文名称</summary>
     private static string GetTypeName(string itemType) => itemType switch
     {
-        "QuickGroup" => Framework.Lang.T("快捷方式"),
-        "StickyNotes" => Framework.Lang.T("便签"),
-        "TodoList" => Framework.Lang.T("今日待办"),
-        "Clipboard" => Framework.Lang.T("剪贴板收藏"),
-        "SystemMonitor" => Framework.Lang.T("系统信息"),
-        "UsageStats" => Framework.Lang.T("使用统计"),
-        "AIChat" => Framework.Lang.T("AI 对话"),
-        "FileArea" => Framework.Lang.T("文件区"),
-        "DataDashboard" => Framework.Lang.T("数据看板"),
-        "Timer" => Framework.Lang.T("计时器"),
-        "Countdown" => Framework.Lang.T("倒计时"),
-        "Pomodoro" => Framework.Lang.T("番茄闹钟"),
-        "SignalLight" => Framework.Lang.T("信号灯"),
-        "ImageCarousel" => Framework.Lang.T("图片轮播"),
-        "DailyActivity" => Framework.Lang.T("每日活跃"),
-        "Calendar" => Framework.Lang.T("日历"),
-        "DigitalEmployee" => Framework.Lang.T("数字员工"),
-        "Friend" => Framework.Lang.T("好友"),
-        "Group" => Framework.Lang.T("分组"),
-        "ScreenTime" => Framework.Lang.T("屏幕时长"),
+        "QuickGroup" => Framework.Lang.T("common.shortcut"),
+        "StickyNotes" => Framework.Lang.T("common.stickyNotes"),
+        "TodoList" => Framework.Lang.T("common.todayTodos"),
+        "Clipboard" => Framework.Lang.T("common.clipboardFavorites"),
+        "SystemMonitor" => Framework.Lang.T("common.systemInfo"),
+        "UsageStats" => Framework.Lang.T("common.usageStatistics"),
+        "AIChat" => Framework.Lang.T("common.aiChat"),
+        "FileArea" => Framework.Lang.T("common.fileArea"),
+        "DataDashboard" => Framework.Lang.T("common.dataDashboard"),
+        "Timer" => Framework.Lang.T("common.timer"),
+        "Countdown" => Framework.Lang.T("common.countdown"),
+        "Pomodoro" => Framework.Lang.T("common.pomodoroAlarm"),
+        "SignalLight" => Framework.Lang.T("common.signalLight"),
+        "ImageCarousel" => Framework.Lang.T("common.imageCarousel"),
+        "DailyActivity" => Framework.Lang.T("common.dailyActivity"),
+        "Calendar" => Framework.Lang.T("common.calendar"),
+        "DigitalEmployee" => Framework.Lang.T("common.digitalEmployees"),
+        "Friend" => Framework.Lang.T("common.friends"),
+        "Group" => Framework.Lang.T("common.group"),
+        "ScreenTime" => Framework.Lang.T("common.screenTime"),
         _ => itemType
     };
 }

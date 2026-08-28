@@ -3,11 +3,20 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:l="clr-namespace:SideDesk.Framework"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
-        Title="{l:T 登录}" Height="600" Width="800"
+        Title="{l:T common.logIn}" Height="600" Width="800"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource BrushBG}"
         Foreground="{DynamicResource BrushTextMain}">
-    <Grid>
+    <DockPanel LastChildFill="True">
+        <!-- 注册入口：内嵌页跳转在部分环境不可用，改为直接用系统默认浏览器打开注册页 -->
+        <Border DockPanel.Dock="Bottom" Padding="12,6">
+            <TextBlock FontSize="12" Foreground="{DynamicResource BrushTextSec}">
+                <Run Text="{l:T login.noAccount}"/>
+                <Hyperlink Click="OpenRegisterInBrowser_Click" Foreground="{DynamicResource BrushAccent}" TextDecorations="None">
+                    <Run Text="{l:T login.registerOpensInBrowser}"/>
+                </Hyperlink>
+            </TextBlock>
+        </Border>
         <wv2:WebView2 x:Name="webView" />
-    </Grid>
+    </DockPanel>
 </Window>

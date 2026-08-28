@@ -47,6 +47,21 @@ namespace SideDesk
         private string? _targetRequestId;
         private bool _tokenHandled;
 
+        /// <summary>用系统默认浏览器打开注册页（内嵌页跳转在部分环境不可用，改走外部浏览器）</summary>
+        private void OpenRegisterInBrowser_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                    Constants.URLs.FrontendBaseUrl + "/#/auth/register") { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(Framework.Lang.TF("login.openRegisterPageFailed", ex.Message), Framework.Lang.T("common.error"),
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         public LoginWindow()
         {
             InitializeComponent();
@@ -76,7 +91,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                MessageBox.Show(Framework.Lang.TF("加载登录页面失败：{0}", ex.Message), Framework.Lang.T("错误"),
+                MessageBox.Show(Framework.Lang.TF("login.loadPageFailed", ex.Message), Framework.Lang.T("common.error"),
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -146,10 +161,11 @@ namespace SideDesk
                     }
                     catch { }
                 }
-                else
+                else if (Constants.URLs.IsDev)
                 {
-                    MessageBox.Show(Framework.Lang.TF("已拦截到登录接口响应，但未自动识别到 token 字段。\n原始响应如下：\n\n{0}", body),
-                        Framework.Lang.T("接口响应"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                    // 仅测试环境提示：正式环境下登录失败（如密码错误）不弹框，由前端页面自行展示错误
+                    MessageBox.Show(Framework.Lang.TF("login.tokenNotRecognized", body),
+                        Framework.Lang.T("login.apiResponse"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
             }
             catch (Exception ex)

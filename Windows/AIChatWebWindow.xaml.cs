@@ -50,7 +50,7 @@ public partial class AIChatWebWindow : Window
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[AIChatWeb] WebView2 初始化失败: {ex.Message}");
-            MessageBox.Show(Framework.Lang.TF("WebView2 初始化失败: {0}", ex.Message), "AI Chat", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(Framework.Lang.TF("common.webview2InitializationFailed", ex.Message), "AI Chat", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 }

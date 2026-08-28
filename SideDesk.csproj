@@ -19,6 +19,11 @@
     <EmbeddedResource Remove="plugins\**" />
     <None Remove="plugins\**" />
     <Page Remove="plugins\**" />
+    <!-- 排除打包暂存目录（含市场插件样例，不属于主工程） -->
+    <Compile Remove="_PACK\**" />
+    <EmbeddedResource Remove="_PACK\**" />
+    <None Remove="_PACK\**" />
+    <Page Remove="_PACK\**" />
   </ItemGroup>
 
   <ItemGroup>

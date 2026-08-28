@@ -9,7 +9,7 @@
         xmlns:emoji="clr-namespace:Emoji.Wpf;assembly=Emoji.Wpf"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         mc:Ignorable="d"
-        Title="{l:T 元桌小屏}"
+        Title="{l:T common.metadeskScreen}"
         WindowStyle="None"
         AllowsTransparency="True"
         ResizeMode="NoResize"
@@ -33,13 +33,13 @@
         <Border Grid.Row="0" Grid.Column="0" Background="{DynamicResource BrushInputBG}">
             <Border.ContextMenu>
                 <ContextMenu>
-                    <MenuItem Header="{l:T 登录}" Click="Login_Click"/>
+                    <MenuItem Header="{l:T common.logIn}" Click="Login_Click"/>
                     <Separator/>
-                    <MenuItem Header="{l:T 居左}" Click="Layout_Left"/>
-                    <MenuItem Header="{l:T 居右}" Click="Layout_Right"/>
-                    <MenuItem Header="{l:T 双侧}" Click="Layout_Both"/>
+                    <MenuItem Header="{l:T nativePanel.left}" Click="Layout_Left"/>
+                    <MenuItem Header="{l:T nativePanel.right}" Click="Layout_Right"/>
+                    <MenuItem Header="{l:T common.bothSides}" Click="Layout_Both"/>
                     <Separator/>
-                    <MenuItem Header="{l:T 退出}" Click="Exit_Click"/>
+                    <MenuItem Header="{l:T common.exit}" Click="Exit_Click"/>
                 </ContextMenu>
             </Border.ContextMenu>
             <Grid>
@@ -47,7 +47,7 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock x:Name="singleWindowTitle" Text="{l:T 元桌小屏}" Visibility="Collapsed"
+                <TextBlock x:Name="singleWindowTitle" Text="{l:T common.metadeskScreen}" Visibility="Collapsed"
                            VerticalAlignment="Center" Margin="6,0,0,0"
                            Foreground="{DynamicResource BrushTextMain}" FontSize="12"/>
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" ClipToBounds="True">
@@ -59,7 +59,7 @@
                             Foreground="{DynamicResource BrushTextMain}"
                             BorderThickness="0"
                             Cursor="Hand"
-                            ToolTip="{l:T 添加窗口}"
+                            ToolTip="{l:T window.addWindow}"
                             Margin="2,0"/>
                 </StackPanel>
                 <Button x:Name="moreButton" Grid.Column="1" Content="⋯" Click="MoreButton_Click"
@@ -68,26 +68,26 @@
                         FontSize="16" FontWeight="Bold" Padding="5,2"
                         Background="Transparent" Foreground="{DynamicResource BrushTextMain}"
                         BorderThickness="0" Cursor="Hand"
-                        ToolTip="{l:T 更多}">
+                        ToolTip="{l:T common.more}">
                     <Button.ContextMenu>
                         <ContextMenu x:Name="moreMenu" Opened="MoreMenu_Opened">
-                            <MenuItem Header="{l:T 登录}" Click="Login_Click"/>
+                            <MenuItem Header="{l:T common.logIn}" Click="Login_Click"/>
                             <Separator/>
                             <Separator x:Name="menuSeparator1"/>
-                            <MenuItem Header="{l:T 创建小屏}" Click="NewSideScreen_Click"/>
-                            <MenuItem Header="{l:T 导入分享}" Click="ImportShare_Click"/>
-                            <MenuItem Header="{l:T 添加模块}" SubmenuOpened="AddModuleMenu_SubmenuOpened">
-                                <MenuItem Header="{l:T (加载中...)}"/>
+                            <MenuItem Header="{l:T settings.createScreen}" Click="NewSideScreen_Click"/>
+                            <MenuItem Header="{l:T cloudDrive.importShare}" Click="ImportShare_Click"/>
+                            <MenuItem Header="{l:T common.addModule}" SubmenuOpened="AddModuleMenu_SubmenuOpened">
+                                <MenuItem Header="{l:T nativePanel.loading}"/>
                             </MenuItem>
-                            <MenuItem Header="{l:T 小屏管理}" Click="ScreenManager_Click"/>
-                            <MenuItem x:Name="notificationCenterMenu" Header="{l:T 通知中心}" Click="NotificationCenter_Click"/>
-                            <MenuItem Header="{l:T 设置}" Click="Settings_Click"/>
-                            <MenuItem x:Name="toolsMenu" Header="{l:T 工具}" SubmenuOpened="ToolsMenu_SubmenuOpened">
-                                <MenuItem Header="{l:T (加载中...)}"/>
+                            <MenuItem Header="{l:T common.screenManagement}" Click="ScreenManager_Click"/>
+                            <MenuItem x:Name="notificationCenterMenu" Header="{l:T common.notificationCenter}" Click="NotificationCenter_Click"/>
+                            <MenuItem Header="{l:T common.settings}" Click="Settings_Click"/>
+                            <MenuItem x:Name="toolsMenu" Header="{l:T common.tools}" SubmenuOpened="ToolsMenu_SubmenuOpened">
+                                <MenuItem Header="{l:T nativePanel.loading}"/>
                             </MenuItem>
                             <Separator x:Name="closeWindowSeparator"/>
-                            <MenuItem x:Name="closeWindowMenu" Header="{l:T 关闭面板}" Click="CloseWindow_Click"/>
-                            <MenuItem Header="{l:T 退出}" Click="Exit_Click"/>
+                            <MenuItem x:Name="closeWindowMenu" Header="{l:T nativePanel.closePanel}" Click="CloseWindow_Click"/>
+                            <MenuItem Header="{l:T common.exit}" Click="Exit_Click"/>
                         </ContextMenu>
                     </Button.ContextMenu>
                 </Button>
@@ -109,6 +109,12 @@
         <StackPanel x:Name="bubbleStack" Grid.Row="1" Grid.Column="0"
                     VerticalAlignment="Bottom" HorizontalAlignment="Stretch"
                     Panel.ZIndex="200" Margin="6,0,6,8"/>
+
+        <!-- 浮动上下文窗口（全局：输入框焦点/剪贴板复制触发，内容区垂直拖拽，双击切换精简模式） -->
+        <Canvas x:Name="floatingContextLayer" Grid.Row="1" Grid.Column="0" Panel.ZIndex="150">
+            <controls:FloatingContextPanel x:Name="floatingContext" Visibility="Collapsed"
+                                           Width="{Binding ActualWidth, ElementName=floatingContextLayer}"/>
+        </Canvas>
 
         <!-- 通知条（窗口最右侧约 5px 宽的竖条，展示各种颜色的通知提醒；占据独立布局列，显示时左侧内容区收缩；各通知段可悬停提示、点击处理） -->
         <Border x:Name="notificationStrip" Grid.Column="1" Grid.Row="0" Grid.RowSpan="2"
