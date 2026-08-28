@@ -156,7 +156,7 @@ public sealed class VariableSetService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[VariableSet] 拉取云端变量集失败: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"[VariableSet] failed to pull cloud variable sets: {ex.Message}");
         }
     }
 

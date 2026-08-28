@@ -712,11 +712,11 @@ namespace SideDesk
             try
             {
                 var (ok, msg) = await Services.FriendService.Instance.UpdateMyProfileAsync(nickName, avatarUrl);
-                if (!ok) System.Diagnostics.Debug.WriteLine($"[Settings] 资料同步后端失败: {msg}");
+                if (!ok) System.Diagnostics.Debug.WriteLine($"[Settings] profile sync to backend failed: {msg}");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Settings] 资料同步后端异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Settings] profile sync to backend error: {ex.Message}");
             }
         }
 
@@ -731,14 +731,14 @@ namespace SideDesk
                 string? url = await Services.FriendService.Instance.UploadAvatarToCacheAsync(bytes);
                 if (string.IsNullOrEmpty(url))
                 {
-                    System.Diagnostics.Debug.WriteLine("[Settings] 头像上传 OSS 缓存失败，本次不同步后端");
+                    System.Diagnostics.Debug.WriteLine("[Settings] avatar OSS cache upload failed, skipping backend sync this time");
                     return;
                 }
                 await SyncProfileToBackendAsync(null, url);
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Settings] 头像同步后端异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Settings] avatar sync to backend error: {ex.Message}");
             }
         }
 
@@ -3541,7 +3541,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[TitleLock] 切换启停失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[TitleLock] failed to toggle enabled state: {ex.Message}");
             }
         }
 
@@ -3666,7 +3666,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Settings] MCP Server 启停异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Settings] MCP Server toggle error: {ex.Message}");
             }
         }
 
@@ -3763,7 +3763,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Settings] HTTP Server 启停异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Settings] HTTP Server toggle error: {ex.Message}");
             }
             UpdateHttpServerStatus();
         }
@@ -3796,7 +3796,7 @@ namespace SideDesk
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"[Settings] HTTP Server 改端口异常: {ex.Message}");
+                        System.Diagnostics.Debug.WriteLine($"[Settings] HTTP Server port change error: {ex.Message}");
                     }
                 }
             }
@@ -3833,7 +3833,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Settings] 窗口使用时长采集启停异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Settings] window usage collection toggle error: {ex.Message}");
             }
         }
 
@@ -3855,7 +3855,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Settings] 浮动上下文窗口启停异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Settings] floating context window toggle error: {ex.Message}");
             }
         }
 
@@ -5155,7 +5155,7 @@ namespace SideDesk
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[Settings] 拉取窗口列表失败: {ex.Message}");
+                    System.Diagnostics.Debug.WriteLine($"[Settings] failed to pull window list: {ex.Message}");
                 }
             }
 

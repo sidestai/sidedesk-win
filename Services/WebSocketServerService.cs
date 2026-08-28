@@ -74,13 +74,13 @@ namespace SideDesk.Services
                 _listener.Start();
                 _cts = new CancellationTokenSource();
                 _running = true;
-                Debug.WriteLine($"[WebSocketServer] 已启动，监听 {Prefix}");
+                Debug.WriteLine($"[WebSocketServer] started, listening on {Prefix}");
                 _ = AcceptLoopAsync(_cts.Token);
             }
             catch (Exception ex)
             {
                 _running = false;
-                Debug.WriteLine($"[WebSocketServer] 启动失败: {ex.Message}");
+                Debug.WriteLine($"[WebSocketServer] start failed: {ex.Message}");
             }
         }
 
@@ -106,7 +106,7 @@ namespace SideDesk.Services
             try { _cts?.Dispose(); } catch { }
             _cts = null;
 
-            Debug.WriteLine("[WebSocketServer] 已停止");
+            Debug.WriteLine("[WebSocketServer] stopped");
         }
 
         /// <summary>
@@ -127,7 +127,7 @@ namespace SideDesk.Services
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"[WebSocketServer] 接受连接异常: {ex.Message}");
+                    Debug.WriteLine($"[WebSocketServer] accept connection error: {ex.Message}");
                     continue;
                 }
 
@@ -162,7 +162,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[WebSocketServer] 握手失败: {ex.Message}");
+                Debug.WriteLine($"[WebSocketServer] handshake failed: {ex.Message}");
                 try { context.Response.StatusCode = 500; context.Response.Close(); } catch { }
                 return;
             }
@@ -170,7 +170,7 @@ namespace SideDesk.Services
             _clients[id] = socket;
             _clientInfo[id] = new WsClientInfo { Id = id };
             ClientConnected?.Invoke(id);
-            Debug.WriteLine($"[WebSocketServer] 客户端接入: {id} (当前 {_clients.Count})");
+            Debug.WriteLine($"[WebSocketServer] client connected: {id} (current {_clients.Count})");
 
             var buffer = new byte[8192];
             try
@@ -197,7 +197,7 @@ namespace SideDesk.Services
                     if (ms.Length > 0 && result.MessageType == WebSocketMessageType.Text)
                     {
                         var text = Encoding.UTF8.GetString(ms.ToArray());
-                        Debug.WriteLine($"[WebSocketServer] 收到消息[{id}]: {text}");
+                        Debug.WriteLine($"[WebSocketServer] message received [{id}]: {text}");
                         MessageReceived?.Invoke(id, text);
                     }
                 }
@@ -205,7 +205,7 @@ namespace SideDesk.Services
             catch (OperationCanceledException) { /* 服务停止，正常退出 */ }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[WebSocketServer] 连接处理异常[{id}]: {ex.Message}");
+                Debug.WriteLine($"[WebSocketServer] connection handling error [{id}]: {ex.Message}");
             }
             finally
             {
@@ -213,7 +213,7 @@ namespace SideDesk.Services
                 _clientInfo.TryRemove(id, out _);
                 try { socket.Dispose(); } catch { }
                 ClientDisconnected?.Invoke(id);
-                Debug.WriteLine($"[WebSocketServer] 客户端断开: {id} (当前 {_clients.Count})");
+                Debug.WriteLine($"[WebSocketServer] client disconnected: {id} (current {_clients.Count})");
             }
         }
 
@@ -226,19 +226,19 @@ namespace SideDesk.Services
             {
                 try
                 {
-                    Debug.WriteLine($"[WebSocketServer] 发送消息[{clientId}]: {message}");
+                    Debug.WriteLine($"[WebSocketServer] sending message [{clientId}]: {message}");
                     var bytes = Encoding.UTF8.GetBytes(message);
                     await socket.SendAsync(new ArraySegment<byte>(bytes),
                         WebSocketMessageType.Text, true, CancellationToken.None).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"[WebSocketServer] 发送失败[{clientId}]: {ex.Message}");
+                    Debug.WriteLine($"[WebSocketServer] send failed [{clientId}]: {ex.Message}");
                 }
             }
             else
             {
-                Debug.WriteLine($"[WebSocketServer] 发送跳过[{clientId}]: socket不存在或状态不是Open(当前={socket?.State})");
+                Debug.WriteLine($"[WebSocketServer] send skipped [{clientId}]: socket missing or not Open (current={socket?.State})");
             }
         }
 
@@ -273,24 +273,24 @@ namespace SideDesk.Services
         /// </summary>
         public async Task BroadcastAsync(string message)
         {
-            Debug.WriteLine($"[WebSocketServer] 开始广播，当前客户端数={_clients.Count}");
+            Debug.WriteLine($"[WebSocketServer] broadcasting, current client count={_clients.Count}");
             var bytes = Encoding.UTF8.GetBytes(message);
             foreach (var kv in _clients)
             {
                 if (kv.Value.State != WebSocketState.Open)
                 {
-                    Debug.WriteLine($"[WebSocketServer] 广播跳过客户端[{kv.Key}]: 状态={kv.Value.State}");
+                    Debug.WriteLine($"[WebSocketServer] broadcast skipped client [{kv.Key}]: state={kv.Value.State}");
                     continue;
                 }
                 try
                 {
-                    Debug.WriteLine($"[WebSocketServer] 广播到客户端[{kv.Key}]: {message}");
+                    Debug.WriteLine($"[WebSocketServer] broadcast to client [{kv.Key}]: {message}");
                     await kv.Value.SendAsync(new ArraySegment<byte>(bytes),
                         WebSocketMessageType.Text, true, CancellationToken.None).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"[WebSocketServer] 广播失败[{kv.Key}]: {ex.Message}");
+                    Debug.WriteLine($"[WebSocketServer] broadcast failed [{kv.Key}]: {ex.Message}");
                 }
             }
         }

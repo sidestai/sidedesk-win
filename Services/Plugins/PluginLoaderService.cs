@@ -54,7 +54,7 @@ public class PluginLoaderService
 
         if (!Directory.Exists(PluginsDirectory))
         {
-            Debug.WriteLine($"[PluginLoader] 插件目录不存在: {PluginsDirectory}");
+            Debug.WriteLine($"[PluginLoader] plugins directory not found: {PluginsDirectory}");
             return;
         }
 
@@ -70,21 +70,21 @@ public class PluginLoaderService
                     // 跳过用户手动禁用的插件
                     if (disabledIds != null && disabledIds.Contains(plugin.Config.Id))
                     {
-                        Debug.WriteLine($"[PluginLoader] 插件已被用户禁用，跳过: {plugin.Config.Name}");
+                        Debug.WriteLine($"[PluginLoader] plugin disabled by user, skipping: {plugin.Config.Name}");
                         continue;
                     }
                     _plugins.Add(plugin);
                     _pluginMap[plugin.Config.Id] = plugin;
-                    Debug.WriteLine($"[PluginLoader] 已加载插件: {plugin.Config.Name} v{plugin.Config.Version}");
+                    Debug.WriteLine($"[PluginLoader] plugin loaded: {plugin.Config.Name} v{plugin.Config.Version}");
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[PluginLoader] 加载插件失败 ({dir}): {ex.Message}");
+                Debug.WriteLine($"[PluginLoader] failed to load plugin ({dir}): {ex.Message}");
             }
         }
 
-        Debug.WriteLine($"[PluginLoader] 共加载 {_plugins.Count} 个插件");
+        Debug.WriteLine($"[PluginLoader] loaded {_plugins.Count} plugins in total");
     }
 
     /// <summary>
@@ -141,7 +141,7 @@ public class PluginLoaderService
         {
             _plugins.Add(plugin);
             _pluginMap[plugin.Config.Id] = plugin;
-            Debug.WriteLine($"[PluginLoader] 已加载开发插件: {plugin.Config.Name} v{plugin.Config.Version}");
+            Debug.WriteLine($"[PluginLoader] dev plugin loaded: {plugin.Config.Name} v{plugin.Config.Version}");
         }
         return plugin;
     }
@@ -172,7 +172,7 @@ public class PluginLoaderService
             var dllPath = Path.Combine(dir, config.Entry);
             if (!File.Exists(dllPath))
             {
-                Debug.WriteLine($"[PluginLoader] DLL 不存在: {dllPath}");
+                Debug.WriteLine($"[PluginLoader] DLL not found: {dllPath}");
                 return null;
             }
 
@@ -195,7 +195,7 @@ public class PluginLoaderService
 
             if (pluginType == null)
             {
-                Debug.WriteLine($"[PluginLoader] 未找到 ISideDeskPlugin 实现: {dllPath}");
+                Debug.WriteLine($"[PluginLoader] no ISideDeskPlugin implementation found: {dllPath}");
                 loadContext.Unload();
                 return null;
             }
@@ -281,7 +281,7 @@ public class PluginLoaderService
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[PluginLoader] 创建插件 UI 失败 ({pluginId}): {ex.Message}");
+            Debug.WriteLine($"[PluginLoader] failed to create plugin UI ({pluginId}): {ex.Message}");
             return null;
         }
     }
@@ -307,7 +307,7 @@ public class PluginLoaderService
 
         _plugins.Remove(plugin);
         _pluginMap.Remove(pluginId);
-        Debug.WriteLine($"[PluginLoader] 已卸载插件: {pluginId}");
+        Debug.WriteLine($"[PluginLoader] plugin unloaded: {pluginId}");
     }
 
     /// <summary>

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -28,6 +29,8 @@ namespace SideDesk
         private Button _sendBtn = null;
         private bool _webModeReady = false;
         private const string WebModeTag = "__web__";
+        private IntPtr _escHookId = IntPtr.Zero;
+        private NativeMethods.LowLevelKeyboardProc? _escHookProc;
         private HttpClient _httpClient = new HttpClient();
         private List<Dictionary<string, string>> _messages = new List<Dictionary<string, string>>();
         private bool _isProcessing = false;
@@ -251,20 +254,22 @@ namespace SideDesk
                     sendMessage();
                     ev.Handled = true;
                 }
-                else if (ev.Key == Key.Escape)
+                // ESC 由窗口级 PreviewKeyDown 统一处理（关闭对话框）
+            };
+
+            // ESC：无论焦点在输入框还是其它控件，统一关闭对话框（网页版焦点在 WebView2 内时由 AcceleratorKeyPressed 兜底）
+            _dialog.PreviewKeyDown += (s, ev) =>
+            {
+                if (ev.Key == Key.Escape)
                 {
+                    ev.Handled = true;
                     _dialog.Close();
                 }
             };
 
-            _dialog.KeyDown += (s, ev) =>
-            {
-                if (ev.Key == Key.Escape && _inputBox != null && !_inputBox.IsFocused)
-                    _dialog.Close();
-            };
-
             _dialog.Closed += (s, ev) =>
             {
+                UninstallEscapeHook();
                 _dialog = null;
                 _chatStack = null;
                 _chatScrollViewer = null;
@@ -278,6 +283,7 @@ namespace SideDesk
             };
 
             _dialog.Show();
+            InstallEscapeHook();
             if (startInWebMode) SwitchToWebMode();
 
             // 外部提交内容：打开后直接作为用户消息发送（网页版无法注入，忽略）
@@ -295,6 +301,73 @@ namespace SideDesk
             _dialog.Activate();
             _inputBox.Text = text ?? "";
             return await SendMessageCore();
+        }
+
+        // ===== ESC 关闭：窗口级钩子兜底网页版（焦点在 WebView2 内时 WPF 收不到按键） =====
+        private const int WH_KEYBOARD_LL = 13;
+        private const int WM_KEYDOWN = 0x0100;
+        private const int VK_ESCAPE = 0x1B;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct KBDLLHOOKSTRUCT
+        {
+            public uint vkCode;
+            public uint scanCode;
+            public uint flags;
+            public uint time;
+            public IntPtr dwExtraInfo;
+        }
+
+        /// <summary>安装低级键盘钩子：本对话框为前台窗口且光标落在其区域内时，ESC 关闭对话框并吞掉按键</summary>
+        private void InstallEscapeHook()
+        {
+            if (_escHookId != IntPtr.Zero) return;
+            _escHookProc = EscapeHookCallback;
+            using Process curProcess = Process.GetCurrentProcess();
+            using ProcessModule curModule = curProcess.MainModule!;
+            _escHookId = NativeMethods.SetWindowsHookEx(
+                WH_KEYBOARD_LL, _escHookProc,
+                NativeMethods.GetModuleHandle(curModule.ModuleName), 0);
+        }
+
+        private void UninstallEscapeHook()
+        {
+            if (_escHookId != IntPtr.Zero)
+            {
+                NativeMethods.UnhookWindowsHookEx(_escHookId);
+                _escHookId = IntPtr.Zero;
+            }
+        }
+
+        private IntPtr EscapeHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+        {
+            if (nCode >= 0 && wParam == (IntPtr)WM_KEYDOWN)
+            {
+                var data = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
+                if (data.vkCode == VK_ESCAPE && IsCursorOverDialog())
+                {
+                    Window? dlg = _dialog;
+                    dlg?.Dispatcher.BeginInvoke(() =>
+                    {
+                        try { dlg.Close(); } catch { }
+                    });
+                    return (IntPtr)1; // 吞掉按键，不再传给网页/应用
+                }
+            }
+            return NativeMethods.CallNextHookEx(_escHookId, nCode, wParam, lParam);
+        }
+
+        /// <summary>本对话框为前台窗口且光标落在其窗口区域内</summary>
+        private bool IsCursorOverDialog()
+        {
+            Window? dlg = _dialog;
+            if (dlg == null) return false;
+            var helper = new System.Windows.Interop.WindowInteropHelper(dlg);
+            IntPtr hwnd = helper.Handle;
+            if (hwnd == IntPtr.Zero || NativeMethods.GetForegroundWindow() != hwnd) return false;
+            if (!NativeMethods.GetCursorPos(out var pt)) return false;
+            if (!NativeMethods.GetWindowRect(hwnd, out var r)) return false;
+            return pt.X >= r.Left && pt.X <= r.Right && pt.Y >= r.Top && pt.Y <= r.Bottom;
         }
 
         /// <summary>发送输入框当前内容；返回是否真正发起请求</summary>
@@ -478,8 +551,8 @@ namespace SideDesk
             // 注册表生效时（已登录）用服务端清单，否则内置工具（隐私模式）
             var tools = McpToolRegistryService.GetActiveToolDefinitions();
 
-            System.Diagnostics.Debug.WriteLine($"[AIChat] 请求: POST {url}");
-            System.Diagnostics.Debug.WriteLine($"[AIChat] 模型: {modelId}, ApiKey: {(string.IsNullOrEmpty(apiKey) ? "(空)" : apiKey.Substring(0, Math.Min(6, apiKey.Length)) + "***")}");
+            System.Diagnostics.Debug.WriteLine($"[AIChat] request: POST {url}");
+            System.Diagnostics.Debug.WriteLine($"[AIChat] model: {modelId}, ApiKey: {(string.IsNullOrEmpty(apiKey) ? "(empty)" : apiKey.Substring(0, Math.Min(6, apiKey.Length)) + "***")}");
 
             // 构建带 system prompt 的消息列表
             var apiMessages = new List<Dictionary<string, object>>();
@@ -512,12 +585,12 @@ namespace SideDesk
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[AIChat] 请求失败: {(int)response.StatusCode} {response.StatusCode}");
-                    System.Diagnostics.Debug.WriteLine($"[AIChat] 响应体: {responseJson}");
+                    System.Diagnostics.Debug.WriteLine($"[AIChat] request failed: {(int)response.StatusCode} {response.StatusCode}");
+                    System.Diagnostics.Debug.WriteLine($"[AIChat] response body: {responseJson}");
                     throw new Exception($"{(int)response.StatusCode} {response.StatusCode} - {TruncateForDisplay(responseJson)}");
                 }
 
-                System.Diagnostics.Debug.WriteLine($"[AIChat] 响应成功, 长度: {responseJson.Length}");
+                System.Diagnostics.Debug.WriteLine($"[AIChat] response ok, length: {responseJson.Length}");
                 var responseObj = JObject.Parse(responseJson);
                 var choice = responseObj["choices"]?[0];
                 var message = choice?["message"];
@@ -551,7 +624,7 @@ namespace SideDesk
                     // UI 反馈
                     if (_statusText != null)
                         _statusText.Text = Framework.Lang.TF("aiChat.callingTool", funcName);
-                    System.Diagnostics.Debug.WriteLine($"[AIChat] 工具调用: {funcName}({funcArgs})");
+                    System.Diagnostics.Debug.WriteLine($"[AIChat] tool call: {funcName}({funcArgs})");
 
                     // 执行工具
                     string toolResult = AIToolService.ExecuteTool(funcName, funcArgs);
@@ -582,7 +655,7 @@ namespace SideDesk
                 modelId = modelInfo.DefaultModelId;
 
             string url = apiBase + "/v1/chat/completions";
-            System.Diagnostics.Debug.WriteLine($"[AIChat] CallApiAsync 请求: POST {url}, 模型: {modelId}");
+            System.Diagnostics.Debug.WriteLine($"[AIChat] CallApiAsync request: POST {url}, model: {modelId}");
 
             var requestBody = new
             {
@@ -602,8 +675,8 @@ namespace SideDesk
 
             if (!response.IsSuccessStatusCode)
             {
-                System.Diagnostics.Debug.WriteLine($"[AIChat] CallApiAsync 请求失败: {(int)response.StatusCode} {response.StatusCode}");
-                System.Diagnostics.Debug.WriteLine($"[AIChat] 响应体: {responseJson}");
+                System.Diagnostics.Debug.WriteLine($"[AIChat] CallApiAsync request failed: {(int)response.StatusCode} {response.StatusCode}");
+                System.Diagnostics.Debug.WriteLine($"[AIChat] response body: {responseJson}");
                 throw new Exception($"{(int)response.StatusCode} {response.StatusCode} - {TruncateForDisplay(responseJson)}");
             }
 
@@ -676,7 +749,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[AIChat] 网页版 WebView2 初始化失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[AIChat] web mode WebView2 init failed: {ex.Message}");
             }
         }
 

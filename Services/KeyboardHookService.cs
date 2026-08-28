@@ -265,7 +265,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[KeyboardHook] 写入日志失败: {ex.Message}");
+                Debug.WriteLine($"[KeyboardHook] failed to write log: {ex.Message}");
             }
         }
 

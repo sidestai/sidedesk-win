@@ -255,7 +255,7 @@ namespace SideDesk.Controls
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[UsagePanel] 窗口使用时长采集启停异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[UsagePanel] window usage collection toggle error: {ex.Message}");
             }
             UpdateEnableBanner();
             LoadData();

@@ -122,7 +122,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Friend] 搜索用户失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Friend] failed to search users: {ex.Message}");
                 return null;
             }
         }
@@ -144,7 +144,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Friend] 发送好友请求失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Friend] failed to send friend request: {ex.Message}");
                 return (false, Framework.Lang.T("common.networkError"));
             }
         }
@@ -166,7 +166,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Friend] 获取好友请求失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Friend] failed to get friend requests: {ex.Message}");
                 return null;
             }
         }
@@ -188,7 +188,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Friend] 处理好友请求失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Friend] failed to handle friend request: {ex.Message}");
                 return (false, Framework.Lang.T("common.networkError"));
             }
         }
@@ -210,7 +210,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Friend] 获取好友列表失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Friend] failed to get friend list: {ex.Message}");
                 return null;
             }
         }
@@ -232,7 +232,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Friend] 删除好友失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Friend] failed to delete friend: {ex.Message}");
                 return (false, Framework.Lang.T("common.networkError"));
             }
         }
@@ -255,7 +255,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Friend] 获取好友码失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Friend] failed to get friend code: {ex.Message}");
                 return (null, true);
             }
         }
@@ -277,7 +277,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Friend] 更换好友码失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Friend] failed to rotate friend code: {ex.Message}");
                 return null;
             }
         }
@@ -299,7 +299,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Friend] 设置可搜索状态失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Friend] failed to set searchable state: {ex.Message}");
                 return (false, Framework.Lang.T("common.networkError"));
             }
         }
@@ -323,7 +323,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Friend] 修改本人资料失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Friend] failed to update my profile: {ex.Message}");
                 return (false, Framework.Lang.T("common.networkError"));
             }
         }
@@ -358,7 +358,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Friend] 获取云盘缓存配置失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Friend] failed to get cloud drive cache config: {ex.Message}");
                 return null;
             }
         }
@@ -392,7 +392,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Friend] 头像缓存上传失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Friend] avatar cache upload failed: {ex.Message}");
                 return null;
             }
         }
@@ -427,7 +427,7 @@ namespace SideDesk.Services
                 if (!resp.IsSuccessStatusCode)
                 {
                     string errBody = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                    System.Diagnostics.Debug.WriteLine($"[Friend] 头像OSS上传失败: HTTP {(int)resp.StatusCode} - {errBody}");
+                    System.Diagnostics.Debug.WriteLine($"[Friend] avatar OSS upload failed: HTTP {(int)resp.StatusCode} - {errBody}");
                     return false;
                 }
                 await resp.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
@@ -435,7 +435,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Friend] 头像OSS上传异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Friend] avatar OSS upload error: {ex.Message}");
                 return false;
             }
         }

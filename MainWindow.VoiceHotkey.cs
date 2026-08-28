@@ -63,7 +63,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[VoiceHotkey] 启动异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[VoiceHotkey] start error: {ex.Message}");
             }
         }
 
@@ -97,7 +97,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[VoiceHotkey] 停止异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[VoiceHotkey] stop error: {ex.Message}");
             }
         }
 
@@ -115,7 +115,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[VoiceButton] 结束异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[VoiceButton] finish error: {ex.Message}");
             }
         }
 

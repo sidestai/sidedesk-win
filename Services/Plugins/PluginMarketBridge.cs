@@ -58,7 +58,7 @@ public static class PluginMarketBridge
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[PluginMarketBridge] HandleScheme 异常: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"[PluginMarketBridge] HandleScheme error: {ex.Message}");
             return (500, "{\"ok\":false,\"message\":\"internal error\"}");
         }
     }
@@ -88,7 +88,7 @@ public static class PluginMarketBridge
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[PluginMarketBridge] GetInstalled 失败: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"[PluginMarketBridge] GetInstalled failed: {ex.Message}");
             return "[]";
         }
     }
@@ -146,7 +146,7 @@ public static class PluginMarketBridge
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[PluginMarketBridge] 安装失败: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"[PluginMarketBridge] install failed: {ex.Message}");
             Notify(false, Framework.Lang.TF("market.pluginInstallFailed", ex.Message), notifyTitle);
         }
         finally
@@ -215,7 +215,7 @@ public static class PluginMarketBridge
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[PluginMarketBridge] 安装失败: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"[PluginMarketBridge] install failed: {ex.Message}");
             Notify(false, Framework.Lang.TF("market.pluginInstallFailed", ex.Message), notifyTitle);
         }
         finally
@@ -264,7 +264,7 @@ public static class PluginMarketBridge
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[PluginMarketBridge] 拉取源码失败: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"[PluginMarketBridge] failed to pull source: {ex.Message}");
             Notify(false, Framework.Lang.TF("market.sourceFetchFailed", ex.Message), Framework.Lang.T("market.pluginMarket"));
         }
         finally

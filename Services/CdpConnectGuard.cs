@@ -29,7 +29,7 @@ public static class CdpConnectGuard
         {
             if (_inflight.TryGetValue(port, out var existing))
             {
-                Debug.WriteLine($"[CdpGuard] 端口 {port} 已有连接尝试进行中，复用（不重复弹窗）");
+                Debug.WriteLine($"[CdpGuard] port {port} already has a connection attempt in progress, reusing (no duplicate dialog)");
                 return existing;
             }
 

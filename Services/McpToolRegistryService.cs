@@ -113,7 +113,7 @@ namespace SideDesk.Services
                     var wait = due - DateTime.Now;
                     if (wait > TimeSpan.Zero) { await Task.Delay(wait); continue; }
                     lock (_lock) _pushRefreshAt = DateTime.MinValue;
-                    System.Diagnostics.Debug.WriteLine("[McpRegistry] 收到清单变更推送，重新拉取");
+                    System.Diagnostics.Debug.WriteLine("[McpRegistry] manifest change push received, re-pulling");
                     await SyncAsync();
                     break;
                 }
@@ -168,7 +168,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[McpRegistry] 同步异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[McpRegistry] sync error: {ex.Message}");
             }
         }
 
@@ -237,7 +237,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[McpRegistry] 本地配置加载失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[McpRegistry] failed to load local config: {ex.Message}");
                 return null;
             }
         }
@@ -276,7 +276,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[McpRegistry] 下载配置失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[McpRegistry] failed to download config: {ex.Message}");
                 return (false, $"下载失败：{ex.Message}");
             }
         }
@@ -315,7 +315,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[McpRegistry] 拉取失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[McpRegistry] pull failed: {ex.Message}");
                 return null;
             }
         }
@@ -343,11 +343,11 @@ namespace SideDesk.Services
                 };
                 req.Headers.Add("Authorization", "Bearer " + token);
                 using var resp = await _http.SendAsync(req);
-                System.Diagnostics.Debug.WriteLine($"[McpRegistry] 种子同步: HTTP {(int)resp.StatusCode}");
+                System.Diagnostics.Debug.WriteLine($"[McpRegistry] seed sync: HTTP {(int)resp.StatusCode}");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[McpRegistry] 种子同步失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[McpRegistry] seed sync failed: {ex.Message}");
             }
         }
 

@@ -463,7 +463,7 @@ namespace SideDesk.Models
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[QuickGroup] quickgroups.json 迁移失败: {ex.Message}");
+                    System.Diagnostics.Debug.WriteLine($"[QuickGroup] quickgroups.json migration failed: {ex.Message}");
                 }
                 return changed;
             }
@@ -548,7 +548,7 @@ namespace SideDesk.Models
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[QuickGroup] {fileName} 迁移失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[QuickGroup] {fileName} migration failed: {ex.Message}");
                 return false;
             }
         }

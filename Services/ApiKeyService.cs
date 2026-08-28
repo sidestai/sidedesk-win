@@ -84,7 +84,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[ApiKey] 获取列表失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[ApiKey] list fetch failed: {ex.Message}");
                 return null;
             }
         }
@@ -106,7 +106,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[ApiKey] 创建失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[ApiKey] create failed: {ex.Message}");
                 return (false, Framework.Lang.T("common.networkError"), "");
             }
         }
@@ -126,7 +126,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[ApiKey] 删除失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[ApiKey] delete failed: {ex.Message}");
                 return (false, Framework.Lang.T("common.networkError"));
             }
         }

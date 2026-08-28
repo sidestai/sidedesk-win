@@ -83,7 +83,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[GlobalHotkey] 刷新启停失败: {ex.Message}");
+                Debug.WriteLine($"[GlobalHotkey] failed to refresh enabled state: {ex.Message}");
             }
         }
 

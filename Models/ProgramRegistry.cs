@@ -65,7 +65,7 @@ namespace SideDesk.Models
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[ProgramRegistry] 保存失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[ProgramRegistry] save failed: {ex.Message}");
             }
         }
 
@@ -81,7 +81,7 @@ namespace SideDesk.Models
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[ProgramRegistry] 加载失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[ProgramRegistry] load failed: {ex.Message}");
             }
             return new ProgramRegistryManager();
         }

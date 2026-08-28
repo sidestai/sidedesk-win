@@ -416,7 +416,7 @@ public class WindowConfigManager
                 {
                     // db 损坏/读取失败：改名留存坏库便于人工修复（SQLite WAL 下极罕见）；
                     // windows.json 快照已停止写盘不再作为回滚源，窗口数据由云同步从服务端重新拉取
-                    System.Diagnostics.Debug.WriteLine($"[LocalDb] 数据库读取失败: {dbEx.Message}");
+                    System.Diagnostics.Debug.WriteLine($"[LocalDb] database read failed: {dbEx.Message}");
                     try
                     {
                         string corrupt = Services.LocalDbService.DbPath + ".corrupt-" + DateTime.Now.ToString("yyyyMMdd-HHmmss");
@@ -552,7 +552,7 @@ public class WindowConfigManager
                     mgr.LeftDock.WindowIds.Remove(w.Id);
                     mgr.RightDock.WindowIds.Remove(w.Id);
                     changed = true;
-                    System.Diagnostics.Debug.WriteLine($"[WindowConfig] 合并重复窗口: 移除 {w.Name} ({w.Id})，保留 {keep.Id}");
+                    System.Diagnostics.Debug.WriteLine($"[WindowConfig] merged duplicate windows: removed {w.Name} ({w.Id}), kept {keep.Id}");
                 }
             }
             File.WriteAllText(flagPath, DateTime.Now.ToString("o"));
@@ -628,7 +628,7 @@ public class WindowConfigManager
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[LocalDb] 保存失败: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"[LocalDb] save failed: {ex.Message}");
         }
     
         // 行级同步：任何配置保存后通知 CloudSyncService（防抖 2s + 快照对比确保不重复推送）

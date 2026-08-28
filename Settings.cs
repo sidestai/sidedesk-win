@@ -288,7 +288,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Settings] 保存失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Settings] save failed: {ex.Message}");
             }
         }
 
@@ -329,7 +329,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Settings] 加载失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Settings] load failed: {ex.Message}");
             }
             return new Settings();
         }

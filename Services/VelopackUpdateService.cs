@@ -44,11 +44,11 @@ public sealed class VelopackUpdateService
             _resolvedUpdateUrl = _proxyUrlPrefix + _repoUrl;
             var source = new GithubSource(_resolvedUpdateUrl, null, false);
             _updateManager = new UpdateManager(source);
-            Debug.WriteLine($"[VelopackUpdate] 更新管理器已初始化，源地址: {_resolvedUpdateUrl}");
+            Debug.WriteLine($"[VelopackUpdate] update manager initialized, source: {_resolvedUpdateUrl}");
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[VelopackUpdate] 初始化更新管理器失败: {ex.Message}");
+            Debug.WriteLine($"[VelopackUpdate] failed to init update manager: {ex.Message}");
         }
     }
 
@@ -59,7 +59,7 @@ public sealed class VelopackUpdateService
     {
         if (_updateManager == null)
         {
-            Debug.WriteLine("[VelopackUpdate] 更新管理器未初始化");
+            Debug.WriteLine("[VelopackUpdate] update manager not initialized");
             UpdateStatusChanged?.Invoke(Framework.Lang.T("update.updateManagerNotInitialized"));
             return null;
         }
@@ -67,14 +67,14 @@ public sealed class VelopackUpdateService
         try
         {
             UpdateStatusChanged?.Invoke(Framework.Lang.T("update.checkingForUpdates"));
-            Debug.WriteLine("[VelopackUpdate] 开始检查更新...");
+            Debug.WriteLine("[VelopackUpdate] checking for updates...");
 
             // 预诊断网络连通性
             var networkOk = await DiagnoseNetworkAsync();
             if (!networkOk)
             {
                 UpdateStatusChanged?.Invoke(Framework.Lang.T("update.networkUnavailable"));
-                Debug.WriteLine("[VelopackUpdate] 网络诊断失败，跳过更新检查");
+                Debug.WriteLine("[VelopackUpdate] network diagnostics failed, skipping update check");
                 return null;
             }
 
@@ -83,12 +83,12 @@ public sealed class VelopackUpdateService
             if (updateInfo != null)
             {
                 UpdateStatusChanged?.Invoke(Framework.Lang.TF("update.newVersionFound", updateInfo.TargetFullRelease.Version));
-                Debug.WriteLine($"[VelopackUpdate] 发现新版本: {updateInfo.TargetFullRelease.Version}");
+                Debug.WriteLine($"[VelopackUpdate] new version found: {updateInfo.TargetFullRelease.Version}");
             }
             else
             {
                 UpdateStatusChanged?.Invoke(Framework.Lang.T("update.alreadyLatest"));
-                Debug.WriteLine("[VelopackUpdate] 当前已是最新版本");
+                Debug.WriteLine("[VelopackUpdate] already on the latest version");
             }
 
             return updateInfo;
@@ -97,7 +97,7 @@ public sealed class VelopackUpdateService
         {
             var friendlyMsg = BuildFriendlyErrorMessage(ex);
             UpdateStatusChanged?.Invoke(friendlyMsg);
-            Debug.WriteLine($"[VelopackUpdate] 检查更新失败: {ex}");
+            Debug.WriteLine($"[VelopackUpdate] update check failed: {ex}");
             return null;
         }
     }
@@ -109,7 +109,7 @@ public sealed class VelopackUpdateService
     {
         if (_updateManager == null || _isDownloading)
         {
-            Debug.WriteLine("[VelopackUpdate] 更新管理器未初始化或正在下载中");
+            Debug.WriteLine("[VelopackUpdate] update manager not initialized or download in progress");
             return false;
         }
 
@@ -117,14 +117,14 @@ public sealed class VelopackUpdateService
         {
             _isDownloading = true;
             UpdateStatusChanged?.Invoke(Framework.Lang.T("settings.downloadingUpdate"));
-            Debug.WriteLine($"[VelopackUpdate] 开始下载更新: {updateInfo.TargetFullRelease.Version}");
+            Debug.WriteLine($"[VelopackUpdate] downloading update: {updateInfo.TargetFullRelease.Version}");
 
             await _updateManager.DownloadUpdatesAsync(updateInfo, progress =>
             {
                 DownloadProgressChanged?.Invoke(progress);
                 if (progress % 20 == 0)
                 {
-                    Debug.WriteLine($"[VelopackUpdate] 下载进度: {progress}%");
+                    Debug.WriteLine($"[VelopackUpdate] download progress: {progress}%");
                 }
             });
 
@@ -132,14 +132,14 @@ public sealed class VelopackUpdateService
             IsUpdateReady = true;
             UpdateReadyChanged?.Invoke();
             UpdateStatusChanged?.Invoke(Framework.Lang.TF("update.updateReady", updateInfo.TargetFullRelease.Version));
-            Debug.WriteLine($"[VelopackUpdate] 下载完成，更新已就绪");
+            Debug.WriteLine($"[VelopackUpdate] download complete, update ready");
             return true;
         }
         catch (Exception ex)
         {
             var friendlyMsg = BuildFriendlyErrorMessage(ex);
             UpdateStatusChanged?.Invoke(Framework.Lang.TF("update.failedToDownloadUpdate", friendlyMsg));
-            Debug.WriteLine($"[VelopackUpdate] 下载更新失败: {ex}");
+            Debug.WriteLine($"[VelopackUpdate] update download failed: {ex}");
             return false;
         }
         finally
@@ -155,20 +155,20 @@ public sealed class VelopackUpdateService
     {
         if (_updateManager == null)
         {
-            Debug.WriteLine("[VelopackUpdate] 更新管理器未初始化，无法应用更新");
+            Debug.WriteLine("[VelopackUpdate] update manager not initialized, cannot apply update");
             return;
         }
 
         try
         {
             UpdateStatusChanged?.Invoke(Framework.Lang.T("update.applyingUpdateRestartingSoon"));
-            Debug.WriteLine("[VelopackUpdate] 正在应用更新并重启...");
+            Debug.WriteLine("[VelopackUpdate] applying update and restarting...");
             _updateManager.ApplyUpdatesAndRestart(updateInfo);
         }
         catch (Exception ex)
         {
             UpdateStatusChanged?.Invoke(Framework.Lang.TF("update.applyFailed", ex.Message));
-            Debug.WriteLine($"[VelopackUpdate] 应用更新失败: {ex}");
+            Debug.WriteLine($"[VelopackUpdate] failed to apply update: {ex}");
         }
     }
 
@@ -185,24 +185,24 @@ public sealed class VelopackUpdateService
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[VelopackUpdate] 获取自动更新设置失败: {ex.Message}");
+            Debug.WriteLine($"[VelopackUpdate] failed to get auto-update settings: {ex.Message}");
             return;
         }
 
         if (!enableAutoUpdate)
         {
-            Debug.WriteLine("[VelopackUpdate] 自动更新已禁用，跳过静默检查");
+            Debug.WriteLine("[VelopackUpdate] auto-update disabled, skipping silent check");
             return;
         }
 
         // 超过最大静默检查失败次数，不再尝试
         if (_silentCheckFailureCount >= MaxSilentCheckFailures)
         {
-            Debug.WriteLine($"[VelopackUpdate] 静默检查失败次数已达上限({MaxSilentCheckFailures})，停止自动检查");
+            Debug.WriteLine($"[VelopackUpdate] silent check failure limit reached ({MaxSilentCheckFailures}), stopping auto checks");
             return;
         }
 
-        Debug.WriteLine("[VelopackUpdate] 开始静默更新检查...");
+        Debug.WriteLine("[VelopackUpdate] starting silent update check...");
 
         try
         {
@@ -220,36 +220,36 @@ public sealed class VelopackUpdateService
             {
                 try
                 {
-                    Debug.WriteLine($"[VelopackUpdate] 静默下载尝试 {attempt}/{maxRetries}");
+                    Debug.WriteLine($"[VelopackUpdate] silent download attempt {attempt}/{maxRetries}");
                     await DownloadUpdatesAsync(updateInfo);
 
                     if (IsUpdateReady)
                     {
-                        Debug.WriteLine("[VelopackUpdate] 静默更新下载成功");
+                        Debug.WriteLine("[VelopackUpdate] silent update download succeeded");
                         _silentCheckFailureCount = 0; // 成功后重置失败计数
                         return;
                     }
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"[VelopackUpdate] 静默下载第 {attempt} 次尝试失败: {ex.Message}");
+                    Debug.WriteLine($"[VelopackUpdate] silent download attempt {attempt} failed: {ex.Message}");
                 }
 
                 if (attempt < maxRetries)
                 {
-                    Debug.WriteLine($"[VelopackUpdate] 等待 {retryDelayMs}ms 后重试...");
+                    Debug.WriteLine($"[VelopackUpdate] retrying in {retryDelayMs}ms...");
                     await Task.Delay(retryDelayMs);
                 }
             }
 
             // 所有重试都失败
             _silentCheckFailureCount++;
-            Debug.WriteLine($"[VelopackUpdate] 静默更新失败，累计失败次数: {_silentCheckFailureCount}/{MaxSilentCheckFailures}");
+            Debug.WriteLine($"[VelopackUpdate] silent update failed, total failures: {_silentCheckFailureCount}/{MaxSilentCheckFailures}");
         }
         catch (Exception ex)
         {
             _silentCheckFailureCount++;
-            Debug.WriteLine($"[VelopackUpdate] 静默更新检查异常: {ex.Message}，累计失败次数: {_silentCheckFailureCount}/{MaxSilentCheckFailures}");
+            Debug.WriteLine($"[VelopackUpdate] silent update check error: {ex.Message}, total failures: {_silentCheckFailureCount}/{MaxSilentCheckFailures}");
         }
     }
 
@@ -264,27 +264,27 @@ public sealed class VelopackUpdateService
             httpClient.Timeout = TimeSpan.FromSeconds(10);
 
             var testUrl = $"{_resolvedUpdateUrl}/releases/latest";
-            Debug.WriteLine($"[VelopackUpdate] 网络诊断: GET {testUrl}");
+            Debug.WriteLine($"[VelopackUpdate] network diagnostics: GET {testUrl}");
 
             var response = await httpClient.GetAsync(testUrl, HttpCompletionOption.ResponseHeadersRead);
             var isSuccess = response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.Found;
 
-            Debug.WriteLine($"[VelopackUpdate] 网络诊断结果: {response.StatusCode} (连通={isSuccess})");
+            Debug.WriteLine($"[VelopackUpdate] network diagnostics result: {response.StatusCode} (reachable={isSuccess})");
             return isSuccess;
         }
         catch (TaskCanceledException)
         {
-            Debug.WriteLine("[VelopackUpdate] 网络诊断超时");
+            Debug.WriteLine("[VelopackUpdate] network diagnostics timed out");
             return false;
         }
         catch (HttpRequestException ex)
         {
-            Debug.WriteLine($"[VelopackUpdate] 网络诊断请求失败: {ex.Message}");
+            Debug.WriteLine($"[VelopackUpdate] network diagnostics request failed: {ex.Message}");
             return false;
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[VelopackUpdate] 网络诊断异常: {ex.Message}");
+            Debug.WriteLine($"[VelopackUpdate] network diagnostics error: {ex.Message}");
             return false;
         }
     }

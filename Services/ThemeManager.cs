@@ -91,7 +91,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[ThemeManager] 扫描主题目录失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[ThemeManager] failed to scan themes directory: {ex.Message}");
             }
             return list.OrderBy(t => t.Name, StringComparer.OrdinalIgnoreCase).ToList();
         }
@@ -117,7 +117,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[ThemeManager] 解析主题失败 {Path.GetFileName(file)}: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[ThemeManager] failed to parse theme {Path.GetFileName(file)}: {ex.Message}");
                 return null;
             }
         }

@@ -236,7 +236,7 @@ public partial class TeamLibraryWindow : Window
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[TeamLibrary] 还原模块数据失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[TeamLibrary] failed to restore module data: {ex.Message}");
             }
         }
 
@@ -312,12 +312,12 @@ public partial class TeamLibraryWindow : Window
                         panel.FileItems = Newtonsoft.Json.JsonConvert.DeserializeObject<System.Collections.Generic.List<FileAreaItem>>(listJson) ?? new();
                         break;
                 }
-                System.Diagnostics.Debug.WriteLine($"[TeamLibrary] 已拉取模块行数据: {panel.Type}, {rowsArr.Count} 行");
+                System.Diagnostics.Debug.WriteLine($"[TeamLibrary] module row data pulled: {panel.Type}, {rowsArr.Count} rows");
             });
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[TeamLibrary] 拉取行数据失败: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"[TeamLibrary] failed to pull row data: {ex.Message}");
         }
     }
 

@@ -151,7 +151,7 @@ namespace SideDesk.Services
                 if (!string.IsNullOrEmpty(AgentId)) url += $"&agentid={AgentId}";
 
                 string token = GetToken();
-                System.Diagnostics.Debug.WriteLine($"[CloudDrive] STS请求: POST {url}");
+                System.Diagnostics.Debug.WriteLine($"[CloudDrive] STS request: POST {url}");
                 System.Diagnostics.Debug.WriteLine($"[CloudDrive] STS Token: Bearer {token[..Math.Min(token.Length, 30)]}...");
 
                 using var req = CreateRequest(HttpMethod.Post, url);
@@ -163,7 +163,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[CloudDrive] 获取STS凭证失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[CloudDrive] failed to get STS credentials: {ex.Message}");
                 return null;
             }
         }
@@ -198,7 +198,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[CloudDrive] 文件入库失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[CloudDrive] failed to upload file: {ex.Message}");
                 return null;
             }
         }
@@ -230,7 +230,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[CloudDrive] 新建目录失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[CloudDrive] failed to create directory: {ex.Message}");
                 return null;
             }
         }
@@ -250,14 +250,14 @@ namespace SideDesk.Services
 
                 using var resp = await HttpLog.SendAsync(_http, req).ConfigureAwait(false);
                 string json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                System.Diagnostics.Debug.WriteLine($"[CloudDrive] 删除响应: {json}");
+                System.Diagnostics.Debug.WriteLine($"[CloudDrive] delete response: {json}");
                 if (!resp.IsSuccessStatusCode) return false;
                 var root = JObject.Parse(json);
                 return root["code"]?.Value<int>() == 200;
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[CloudDrive] 删除失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[CloudDrive] delete failed: {ex.Message}");
                 return false;
             }
         }
@@ -281,7 +281,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[CloudDrive] 获取文件列表失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[CloudDrive] failed to get file list: {ex.Message}");
                 return null;
             }
         }
@@ -373,7 +373,7 @@ namespace SideDesk.Services
                 if (!resp.IsSuccessStatusCode)
                 {
                     string errBody = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                    System.Diagnostics.Debug.WriteLine($"[CloudDrive] OSS上传失败: HTTP {(int)resp.StatusCode} - {errBody}");
+                    System.Diagnostics.Debug.WriteLine($"[CloudDrive] OSS upload failed: HTTP {(int)resp.StatusCode} - {errBody}");
                     return false;
                 }
 
@@ -383,7 +383,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[CloudDrive] OSS上传异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[CloudDrive] OSS upload error: {ex.Message}");
                 return false;
             }
         }

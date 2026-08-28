@@ -38,7 +38,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[VirtualDesktop] 初始化失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[VirtualDesktop] init failed: {ex.Message}");
                 IsAvailable = false;
             }
         }
@@ -53,7 +53,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[VirtualDesktop] GetCurrentDesktopId 失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[VirtualDesktop] GetCurrentDesktopId failed: {ex.Message}");
                 return Guid.Empty;
             }
         }
@@ -70,7 +70,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[VirtualDesktop] GetAllDesktopIds 失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[VirtualDesktop] GetAllDesktopIds failed: {ex.Message}");
             }
             return result;
         }
@@ -113,7 +113,7 @@ namespace SideDesk.Services
                 var newId = e.NewDesktop?.Id ?? Guid.Empty;
                 if (newId != Guid.Empty)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[VirtualDesktop] 桌面切换: {e.OldDesktop?.Id} -> {newId}");
+                    System.Diagnostics.Debug.WriteLine($"[VirtualDesktop] desktop switched: {e.OldDesktop?.Id} -> {newId}");
                     DesktopSwitched?.Invoke(newId);
                 }
             }

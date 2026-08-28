@@ -50,7 +50,7 @@ namespace SideDesk.Controls
         public void InitializeWebView()
         {
             webViewPanel.Initialize();
-            Debug.WriteLine("[SidebarPanel] WebView2 面板已初始化");
+            Debug.WriteLine("[SidebarPanel] WebView2 panel initialized");
         }
 
         /// <summary>
@@ -59,7 +59,7 @@ namespace SideDesk.Controls
         public void InitializeNativeContent()
         {
             nativePanel.Initialize();
-            Debug.WriteLine("[SidebarPanel] 本地 UI 面板已初始化");
+            Debug.WriteLine("[SidebarPanel] native UI panel initialized");
         }
 
         /// <summary>
@@ -74,7 +74,7 @@ namespace SideDesk.Controls
             // 确保 WebView2 已初始化
             InitializeWebView();
             
-            Debug.WriteLine("[SidebarPanel] 切换到 WebView2 模式");
+            Debug.WriteLine("[SidebarPanel] switched to WebView2 mode");
         }
 
         /// <summary>
@@ -89,7 +89,7 @@ namespace SideDesk.Controls
             // 初始化本地 UI 内容
             InitializeNativeContent();
             
-            Debug.WriteLine("[SidebarPanel] 切换到本地 UI 模式");
+            Debug.WriteLine("[SidebarPanel] switched to native UI mode");
         }
 
         /// <summary>

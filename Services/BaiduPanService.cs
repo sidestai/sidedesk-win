@@ -171,7 +171,7 @@ namespace SideDesk.Services
 
                 using var resp = await _http.GetAsync(url).ConfigureAwait(false);
                 string json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                Debug.WriteLine($"[BaiduPan] 刷新Token响应: {json}");
+                Debug.WriteLine($"[BaiduPan] refresh token response: {json}");
 
                 var token = JsonConvert.DeserializeObject<BaiduTokenResponse>(json);
                 if (token == null || !string.IsNullOrEmpty(token.Error) || string.IsNullOrEmpty(token.AccessToken))
@@ -182,7 +182,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[BaiduPan] 刷新Token失败: {ex.Message}");
+                Debug.WriteLine($"[BaiduPan] refresh token failed: {ex.Message}");
                 return false;
             }
         }
@@ -238,7 +238,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[BaiduPan] 启动本地监听失败: {ex.Message}");
+                Debug.WriteLine($"[BaiduPan] failed to start local listener: {ex.Message}");
                 return null;
             }
 
@@ -290,7 +290,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[BaiduPan] 等待授权回调异常: {ex.Message}");
+                Debug.WriteLine($"[BaiduPan] auth callback wait error: {ex.Message}");
             }
             finally
             {
@@ -314,12 +314,12 @@ namespace SideDesk.Services
 
                 using var resp = await _http.GetAsync(url).ConfigureAwait(false);
                 string json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                Debug.WriteLine($"[BaiduPan] 换取Token响应: {json}");
+                Debug.WriteLine($"[BaiduPan] token exchange response: {json}");
 
                 var token = JsonConvert.DeserializeObject<BaiduTokenResponse>(json);
                 if (token == null || !string.IsNullOrEmpty(token.Error) || string.IsNullOrEmpty(token.AccessToken))
                 {
-                    Debug.WriteLine($"[BaiduPan] 换取Token失败: {token?.Error} - {token?.ErrorDescription}");
+                    Debug.WriteLine($"[BaiduPan] token exchange failed: {token?.Error} - {token?.ErrorDescription}");
                     return false;
                 }
 
@@ -328,7 +328,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[BaiduPan] 换取Token异常: {ex.Message}");
+                Debug.WriteLine($"[BaiduPan] token exchange error: {ex.Message}");
                 return false;
             }
         }
@@ -353,12 +353,12 @@ namespace SideDesk.Services
 
                 using var resp = await _http.GetAsync(url).ConfigureAwait(false);
                 string json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                Debug.WriteLine($"[BaiduPan] 文件列表响应({dir}): {(json.Length > 500 ? json[..500] + "..." : json)}");
+                Debug.WriteLine($"[BaiduPan] file list response ({dir}): {(json.Length > 500 ? json[..500] + "..." : json)}");
 
                 var obj = JObject.Parse(json);
                 if (obj["errno"]?.Value<int>() != 0)
                 {
-                    Debug.WriteLine($"[BaiduPan] 文件列表错误: errno={obj["errno"]}");
+                    Debug.WriteLine($"[BaiduPan] file list error: errno={obj["errno"]}");
                     return null;
                 }
 
@@ -367,7 +367,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[BaiduPan] 获取文件列表失败: {ex.Message}");
+                Debug.WriteLine($"[BaiduPan] failed to get file list: {ex.Message}");
                 return null;
             }
         }
@@ -390,7 +390,7 @@ namespace SideDesk.Services
 
                 using var resp = await _http.PostAsync(url, content).ConfigureAwait(false);
                 string json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                Debug.WriteLine($"[BaiduPan] 创建目录响应: {json}");
+                Debug.WriteLine($"[BaiduPan] mkdir response: {json}");
 
                 var obj = JObject.Parse(json);
                 if (obj["errno"]?.Value<int>() != 0) return null;
@@ -399,7 +399,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[BaiduPan] 创建目录失败: {ex.Message}");
+                Debug.WriteLine($"[BaiduPan] mkdir failed: {ex.Message}");
                 return null;
             }
         }
@@ -421,14 +421,14 @@ namespace SideDesk.Services
 
                 using var resp = await _http.PostAsync(url, content).ConfigureAwait(false);
                 string json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                Debug.WriteLine($"[BaiduPan] 删除响应: {json}");
+                Debug.WriteLine($"[BaiduPan] delete response: {json}");
 
                 var obj = JObject.Parse(json);
                 return obj["errno"]?.Value<int>() == 0;
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[BaiduPan] 删除失败: {ex.Message}");
+                Debug.WriteLine($"[BaiduPan] delete failed: {ex.Message}");
                 return false;
             }
         }
@@ -449,7 +449,7 @@ namespace SideDesk.Services
 
                 using var resp = await _http.GetAsync(url).ConfigureAwait(false);
                 string json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                Debug.WriteLine($"[BaiduPan] 下载链接响应: {(json.Length > 300 ? json[..300] + "..." : json)}");
+                Debug.WriteLine($"[BaiduPan] download link response: {(json.Length > 300 ? json[..300] + "..." : json)}");
 
                 var obj = JObject.Parse(json);
                 if (obj["errno"]?.Value<int>() != 0) return null;
@@ -461,7 +461,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[BaiduPan] 获取下载链接失败: {ex.Message}");
+                Debug.WriteLine($"[BaiduPan] failed to get download link: {ex.Message}");
                 return null;
             }
         }
@@ -484,7 +484,7 @@ namespace SideDesk.Services
                 using var resp = await _uploadHttp.SendAsync(req, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
                 if (!resp.IsSuccessStatusCode)
                 {
-                    Debug.WriteLine($"[BaiduPan] 下载失败: HTTP {(int)resp.StatusCode}");
+                    Debug.WriteLine($"[BaiduPan] download failed: HTTP {(int)resp.StatusCode}");
                     return false;
                 }
 
@@ -516,7 +516,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[BaiduPan] 下载文件异常: {ex.Message}");
+                Debug.WriteLine($"[BaiduPan] file download error: {ex.Message}");
                 return false;
             }
         }
@@ -540,7 +540,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[BaiduPan] 获取容量失败: {ex.Message}");
+                Debug.WriteLine($"[BaiduPan] failed to get quota: {ex.Message}");
                 return null;
             }
         }
@@ -586,7 +586,7 @@ namespace SideDesk.Services
                 progress?.Invoke(50);
                 using var resp = await _uploadHttp.PostAsync(url, form).ConfigureAwait(false);
                 string json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                Debug.WriteLine($"[BaiduPan] 简单上传响应: {json}");
+                Debug.WriteLine($"[BaiduPan] simple upload response: {json}");
 
                 var obj = JObject.Parse(json);
                 bool ok = obj["errno"]?.Value<int>() == 0;
@@ -595,7 +595,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[BaiduPan] 简单上传失败: {ex.Message}");
+                Debug.WriteLine($"[BaiduPan] simple upload failed: {ex.Message}");
                 return false;
             }
         }
@@ -652,7 +652,7 @@ namespace SideDesk.Services
 
                 using var preResp = await _http.PostAsync(precreateUrl, precreateBody).ConfigureAwait(false);
                 string preJson = await preResp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                Debug.WriteLine($"[BaiduPan] precreate响应: {preJson}");
+                Debug.WriteLine($"[BaiduPan] precreate response: {preJson}");
 
                 var preObj = JObject.Parse(preJson);
                 if (preObj["errno"]?.Value<int>() != 0) return false;
@@ -693,7 +693,7 @@ namespace SideDesk.Services
                     var sliceObj = JObject.Parse(sliceJson);
                     if (sliceObj["error_code"] != null && sliceObj["error_code"].Value<int>() != 0)
                     {
-                        Debug.WriteLine($"[BaiduPan] 分片{i}上传失败: {sliceJson}");
+                        Debug.WriteLine($"[BaiduPan] slice {i} upload failed: {sliceJson}");
                         return false;
                     }
 
@@ -714,7 +714,7 @@ namespace SideDesk.Services
 
                 using var createResp = await _http.PostAsync(createUrl, createBody).ConfigureAwait(false);
                 string createJson = await createResp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                Debug.WriteLine($"[BaiduPan] create响应: {createJson}");
+                Debug.WriteLine($"[BaiduPan] create response: {createJson}");
 
                 var createObj = JObject.Parse(createJson);
                 bool ok = createObj["errno"]?.Value<int>() == 0;
@@ -723,7 +723,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[BaiduPan] 分片上传失败: {ex.Message}");
+                Debug.WriteLine($"[BaiduPan] slice upload failed: {ex.Message}");
                 return false;
             }
         }

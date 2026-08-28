@@ -39,7 +39,7 @@ public static class DataTemplateMarketBridge
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[DataTemplateMarket] 协议处理异常: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"[DataTemplateMarket] scheme handling error: {ex.Message}");
             return (500, $"{{\"ok\":false,\"message\":{JsonConvert.SerializeObject(ex.Message)}}}");
         }
     }
@@ -66,7 +66,7 @@ public static class DataTemplateMarketBridge
             var tpl = await TeamService.Instance.GetMarketTemplateAsync(tid);
             if (tpl == null)
             {
-                System.Diagnostics.Debug.WriteLine("[DataTemplateMarket] 模板详情获取失败或已下架");
+                System.Diagnostics.Debug.WriteLine("[DataTemplateMarket] failed to fetch template details or it has been removed");
                 return;
             }
             Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
@@ -77,7 +77,7 @@ public static class DataTemplateMarketBridge
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[DataTemplateMarket] 唤起配置对话框失败: {ex.Message}");
+                    System.Diagnostics.Debug.WriteLine($"[DataTemplateMarket] failed to open config dialog: {ex.Message}");
                 }
             }));
         });
@@ -118,7 +118,7 @@ public static class DataTemplateMarketBridge
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[DataTemplateMarket] 添加模块失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[DataTemplateMarket] failed to add module: {ex.Message}");
             }
         }));
         return (200, "{\"ok\":true}");

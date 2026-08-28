@@ -121,7 +121,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[DailyActivity] 获取类型列表失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[DailyActivity] failed to get type list: {ex.Message}");
                 return null;
             }
         }
@@ -153,7 +153,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[DailyActivity] 获取数值失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[DailyActivity] failed to get value: {ex.Message}");
                 return null;
             }
         }
@@ -193,7 +193,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[DailyActivity] 累加失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[DailyActivity] increment failed: {ex.Message}");
                 return false;
             }
         }

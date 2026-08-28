@@ -63,13 +63,13 @@ public class DeskClockPlugin : ISideDeskPlugin
 
     public void OnLoaded()
     {
-        System.Diagnostics.Debug.WriteLine("[DeskClock] 插件已加载");
+        System.Diagnostics.Debug.WriteLine("[DeskClock] plugin loaded");
     }
 
     public void OnUnloaded()
     {
         _timer?.Stop();
         _timer = null;
-        System.Diagnostics.Debug.WriteLine("[DeskClock] 插件已卸载");
+        System.Diagnostics.Debug.WriteLine("[DeskClock] plugin unloaded");
     }
 }

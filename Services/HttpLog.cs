@@ -57,7 +57,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                Log($"<-- !! {req.Method} {req.RequestUri} 请求异常: {ex.Message}");
+                Log($"<-- !! {req.Method} {req.RequestUri} request error: {ex.Message}");
                 throw;
             }
 
@@ -86,9 +86,9 @@ namespace SideDesk.Services
 
         private static string Truncate(string? s)
         {
-            if (string.IsNullOrEmpty(s)) return Framework.Lang.T("system.noContent");
+            if (string.IsNullOrEmpty(s)) return "(empty)";
             if (s!.Length <= MaxBodyLen) return s;
-            return s.Substring(0, MaxBodyLen) + $"\n...[已截断，总长 {s.Length}]";
+            return s.Substring(0, MaxBodyLen) + $"\n...[truncated, total length {s.Length}]";
         }
 
         private static void Log(string message)

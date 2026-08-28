@@ -137,21 +137,21 @@ namespace SideDesk
                 // 1. 检查是否启用了微信识别
                 if (!_config.Enabled)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] 识别未启用 (Enabled=false)");
+                    System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] recognition disabled (Enabled=false)");
                     return null;
                 }
 
-                System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] 开始识别 hwnd={hwnd}, 区域=({_config.RegionX},{_config.RegionY},{_config.RegionW},{_config.RegionH})");
+                System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] recognition started hwnd={hwnd}, region=({_config.RegionX},{_config.RegionY},{_config.RegionW},{_config.RegionH})");
 
                 // 2. 获取窗口区域截图
                 Bitmap regionBmp = CaptureWindowRegion(hwnd, _config.RegionX, _config.RegionY, _config.RegionW, _config.RegionH);
                 if (regionBmp == null)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] 截图失败");
+                    System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] screenshot failed");
                     return null;
                 }
 
-                System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] 截图成功 {regionBmp.Width}x{regionBmp.Height}");
+                System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] screenshot ok {regionBmp.Width}x{regionBmp.Height}");
 
                 try
                 {
@@ -159,27 +159,27 @@ namespace SideDesk
                     string featureHash = ComputeBinaryFeatureHash(regionBmp, out int blackPixelDensity);
                     if (string.IsNullOrEmpty(featureHash))
                     {
-                        System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] 特征串计算失败");
+                        System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] feature hash computation failed");
                         return null;
                     }
 
                     // 3.1 检查黑像素密度，过低说明截图区域无文字内容
                     if (blackPixelDensity < 5) // 黑像素占比 < 5%
                     {
-                        System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] 黑像素密度过低 ({blackPixelDensity}%)，跳过识别");
+                        System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] black pixel density too low ({blackPixelDensity}%), skipping recognition");
                         return null;
                     }
 
-                    System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] 特征串长度={featureHash.Length}, 黑像素密度={blackPixelDensity}%, 前 40 位={featureHash.Substring(0, Math.Min(40, featureHash.Length))}");
+                    System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] featureHashLength={featureHash.Length}, blackPixelDensity={blackPixelDensity}%, first40={featureHash.Substring(0, Math.Min(40, featureHash.Length))}");
 
                     // 4. 查 mapping 缓存
                     if (_config.FeatureMapping.TryGetValue(featureHash, out string cachedName))
                     {
-                        System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] 缓存命中: {cachedName}");
+                        System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] cache hit: {cachedName}");
                         return cachedName;
                     }
 
-                    System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] 缓存未命中，弹出输入框");
+                    System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] cache miss, prompting input dialog");
 
                     // 5. 缓存未命中 → 弹窗让用户输入名称（带截图预览）
                     if (Application.Current != null && Application.Current.Dispatcher != null)
@@ -282,17 +282,17 @@ namespace SideDesk
                         {
                             _config.FeatureMapping[featureHash] = userInput.Trim();
                             Save();
-                            System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] 用户输入: {userInput.Trim()}");
+                            System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] user input: {userInput.Trim()}");
                             return userInput.Trim();
                         }
                         else
                         {
-                            System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] 用户跳过输入");
+                            System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] user skipped input");
                         }
                     }
                     else
                     {
-                        System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] Application.Current 为 null，无法弹窗");
+                        System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] Application.Current is null, cannot show dialog");
                     }
 
                     // 清理过期特征串（保留最近 200 条）
@@ -326,7 +326,7 @@ namespace SideDesk
                 // 获取窗口在屏幕上的位置
                 if (!GetWindowRect(hwnd, out RECT rect))
                 {
-                    System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] GetWindowRect 失败");
+                    System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] GetWindowRect failed");
                     return null;
                 }
 
@@ -334,7 +334,7 @@ namespace SideDesk
                 int screenX = rect.Left + x;
                 int screenY = rect.Top + y;
 
-                System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] 窗口 rect=({rect.Left},{rect.Top},{rect.Right},{rect.Bottom}), 截图区域=({screenX},{screenY},{w},{h})");
+                System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] window rect=({rect.Left},{rect.Top},{rect.Right},{rect.Bottom}), capture region=({screenX},{screenY},{w},{h})");
 
                 // 截图
                 screenDC = CreateDC("DISPLAY", null, IntPtr.Zero, IntPtr.Zero);
@@ -350,7 +350,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] 截图异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] screenshot error: {ex.Message}");
                 return null;
             }
             finally
@@ -376,7 +376,7 @@ namespace SideDesk
             if (bitmap == null || bitmap.Width <= 0 || bitmap.Height <= 0)
                 return string.Empty;
 
-            System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] 位图实际尺寸: {bitmap.Width}x{bitmap.Height}");
+            System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] bitmap actual size: {bitmap.Width}x{bitmap.Height}");
 
             var sb = new StringBuilder();
             int step = 4; // 每 4x4 像素取 1bit
@@ -411,7 +411,7 @@ namespace SideDesk
 
             // 计算黑像素密度（百分比）
             blackPixelDensity = totalBlocks > 0 ? (blackBlocks * 100 / totalBlocks) : 0;
-            System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] 区块数={totalBlocks}, 黑区块数={blackBlocks}, 密度={blackPixelDensity}%");
+            System.Diagnostics.Debug.WriteLine($"[WeChatRecognizer] blocks={totalBlocks}, blackBlocks={blackBlocks}, density={blackPixelDensity}%");
 
             return sb.ToString();
         }

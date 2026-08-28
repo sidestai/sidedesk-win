@@ -65,7 +65,7 @@ namespace SideDesk.Framework
             catch (Exception ex)
             {
                 // 词典文件缺失或损坏时回落为空词典（最终回落键本身）
-                System.Diagnostics.Debug.WriteLine($"[Lang] 词典加载失败 {lang}.json：{ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Lang] failed to load dictionary {lang}.json: {ex.Message}");
             }
             return new Dictionary<string, string>();
         }

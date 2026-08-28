@@ -86,13 +86,13 @@ namespace SideDesk.Services
                         {
                             _listenerHwnd = mainWindowHandle;
                             _isRunning = true;
-                            System.Diagnostics.Debug.WriteLine("[ClipboardService] 剪贴板监控已启动（主窗口 WndProc）");
+                            System.Diagnostics.Debug.WriteLine("[ClipboardService] clipboard monitor started (main window WndProc)");
                             return;
                         }
                         // 失败时清理 hook
                         _mainWindowHwndSource.RemoveHook(MessageWndProc);
                         _mainWindowHwndSource = null;
-                        System.Diagnostics.Debug.WriteLine($"[ClipboardService] 主窗口 AddClipboardFormatListener 失败, 错误码: {Marshal.GetLastWin32Error()}");
+                        System.Diagnostics.Debug.WriteLine($"[ClipboardService] main window AddClipboardFormatListener failed, error: {Marshal.GetLastWin32Error()}");
                     }
                 }
 
@@ -115,7 +115,7 @@ namespace SideDesk.Services
                 bool success2 = NativeMethods.AddClipboardFormatListener(hwnd);
                 if (!success2)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[ClipboardService] Fallback AddClipboardFormatListener 失败, 错误码: {Marshal.GetLastWin32Error()}");
+                    System.Diagnostics.Debug.WriteLine($"[ClipboardService] fallback AddClipboardFormatListener failed, error: {Marshal.GetLastWin32Error()}");
                     _messageWindowSource.Dispose();
                     _messageWindowSource = null;
                     return;
@@ -123,11 +123,11 @@ namespace SideDesk.Services
 
                 _listenerHwnd = hwnd;
                 _isRunning = true;
-                System.Diagnostics.Debug.WriteLine("[ClipboardService] 剪贴板监控已启动（独立消息窗口 fallback）");
+                System.Diagnostics.Debug.WriteLine("[ClipboardService] clipboard monitor started (standalone message window fallback)");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[ClipboardService] Start 异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[ClipboardService] Start error: {ex.Message}");
             }
         }
 

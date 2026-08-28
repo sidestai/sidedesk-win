@@ -71,7 +71,7 @@ namespace SideDesk.Services
             // silent 模式：仅进入通知中心，不弹出
             if (payload.DisplayMode == NotificationDisplayMode.Silent)
             {
-                Debug.WriteLine($"[Notification] silent 通知已存入通知中心: {payload.Title}");
+                Debug.WriteLine($"[Notification] silent notification stored in notification center: {payload.Title}");
                 return;
             }
 
@@ -91,7 +91,7 @@ namespace SideDesk.Services
                         var existingIndex = _queue.FindIndex(q => q.GroupId == payload.GroupId);
                         if (existingIndex >= 0)
                         {
-                            Debug.WriteLine($"[Notification] 队列中同组通知已替换: group={payload.GroupId}");
+                            Debug.WriteLine($"[Notification] same-group notification replaced in queue: group={payload.GroupId}");
                             _queue[existingIndex] = payload;
                             SortQueue();
                             return;
@@ -101,14 +101,14 @@ namespace SideDesk.Services
                     // 按优先级插入队列
                     _queue.Add(payload);
                     SortQueue();
-                    Debug.WriteLine($"[Notification] 入队: {payload.Title} (priority={payload.Priority}, 队列长度={_queue.Count})");
+                    Debug.WriteLine($"[Notification] enqueued: {payload.Title} (priority={payload.Priority}, queueLength={_queue.Count})");
                 }
             }
 
             // 事件在锁外触发，避免与 UI 线程死锁
             if (isGroupUpdate)
             {
-                Debug.WriteLine($"[Notification] 同组通知正在显示，原地更新: group={payload.GroupId}");
+                Debug.WriteLine($"[Notification] same-group notification is showing, updating in place: group={payload.GroupId}");
                 NotificationUpdated?.Invoke(payload);
                 return;
             }
@@ -165,7 +165,7 @@ namespace SideDesk.Services
                 if (!string.IsNullOrEmpty(payload.GroupId))
                     _activeGroupIds.Remove(payload.GroupId);
             }
-            Debug.WriteLine($"[Notification] 通知已消失: {payload.Title}");
+            Debug.WriteLine($"[Notification] notification dismissed: {payload.Title}");
             ProcessQueue();
         }
 
@@ -177,7 +177,7 @@ namespace SideDesk.Services
         public void Snooze(NotificationPayload payload, double minutes = 5)
         {
             if (minutes <= 0) minutes = 5;
-            Debug.WriteLine($"[Notification] 稍后提醒: {payload.Title}, {minutes} 分钟后");
+            Debug.WriteLine($"[Notification] snoozed: {payload.Title}, in {minutes} minutes");
 
             Timer? timer = null;
             timer = new Timer(_ =>
@@ -249,9 +249,9 @@ namespace SideDesk.Services
                     try { SystemSounds.Asterisk.Play(); } catch { }
                 }
 
-                Debug.WriteLine($"[Notification] 显示通知: {payload.Title} (mode={payload.DisplayMode})");
+                Debug.WriteLine($"[Notification] showing notification: {payload.Title} (mode={payload.DisplayMode})");
                 try { NotificationReady?.Invoke(payload); }
-                catch (Exception ex) { Debug.WriteLine($"[Notification] NotificationReady 处理异常: {ex.Message}"); }
+                catch (Exception ex) { Debug.WriteLine($"[Notification] NotificationReady handling error: {ex.Message}"); }
             }
         }
 

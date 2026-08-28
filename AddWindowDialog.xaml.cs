@@ -111,7 +111,7 @@ public partial class AddWindowDialog : Window
 
             using var resp = await _http.SendAsync(req).ConfigureAwait(false);
             string json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-            Debug.WriteLine($"[AddWindow] 创建 Web Bar {(int)resp.StatusCode}: {json}");
+            Debug.WriteLine($"[AddWindow] create web bar {(int)resp.StatusCode}: {json}");
 
             var root = JObject.Parse(json);
             if (root["code"]?.Value<int>() != 200) return null;
@@ -119,7 +119,7 @@ public partial class AddWindowDialog : Window
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[AddWindow] 创建 Web Bar 失败: {ex.Message}");
+            Debug.WriteLine($"[AddWindow] failed to create web bar: {ex.Message}");
             return null;
         }
     }

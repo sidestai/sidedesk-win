@@ -72,13 +72,13 @@ namespace SideDesk.Services
                         break;
 
                     default:
-                        Debug.WriteLine($"[NotificationAction] 未知动作类型: {action.Type}");
+                        Debug.WriteLine($"[NotificationAction] unknown action type: {action.Type}");
                         break;
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[NotificationAction] 执行动作 {action.Type} 异常: {ex.Message}");
+                Debug.WriteLine($"[NotificationAction] action {action.Type} error: {ex.Message}");
             }
         }
 
@@ -270,12 +270,12 @@ namespace SideDesk.Services
                     if (process != null)
                     {
                         await process.WaitForExitAsync();
-                        Debug.WriteLine($"[NotificationAction] 命令执行完毕 (exit={process.ExitCode}): {command}");
+                        Debug.WriteLine($"[NotificationAction] command finished (exit={process.ExitCode}): {command}");
                     }
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"[NotificationAction] 命令执行失败: {ex.Message}");
+                    Debug.WriteLine($"[NotificationAction] command execution failed: {ex.Message}");
                 }
             });
         }

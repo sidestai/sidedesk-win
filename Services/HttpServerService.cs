@@ -55,13 +55,13 @@ namespace SideDesk.Services
                 _cts = new CancellationTokenSource();
                 CurrentPort = port;
                 _running = true;
-                Debug.WriteLine($"[HttpServer] 已启动，监听 http://{Host}:{port}/");
+                Debug.WriteLine($"[HttpServer] started, listening on http://{Host}:{port}/");
                 _ = AcceptLoopAsync(_cts.Token);
             }
             catch (Exception ex)
             {
                 _running = false;
-                Debug.WriteLine($"[HttpServer] 启动失败: {ex.Message}");
+                Debug.WriteLine($"[HttpServer] start failed: {ex.Message}");
             }
         }
 
@@ -78,7 +78,7 @@ namespace SideDesk.Services
             try { _cts?.Dispose(); } catch { }
             _cts = null;
 
-            Debug.WriteLine("[HttpServer] 已停止");
+            Debug.WriteLine("[HttpServer] stopped");
         }
 
         /// <summary>接受连接循环</summary>
@@ -98,7 +98,7 @@ namespace SideDesk.Services
                 catch (Exception ex)
                 {
                     if (!_running) break;
-                    Debug.WriteLine($"[HttpServer] 接受连接异常: {ex.Message}");
+                    Debug.WriteLine($"[HttpServer] accept connection error: {ex.Message}");
                     continue;
                 }
 
@@ -196,7 +196,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[HttpServer] 处理请求异常: {ex.Message}");
+                Debug.WriteLine($"[HttpServer] request handling error: {ex.Message}");
                 try { context.Response.StatusCode = 500; context.Response.Close(); } catch { }
             }
         }
@@ -341,7 +341,7 @@ namespace SideDesk.Services
             catch { /* 非法 JSON 原样转发，由上游报错 */ }
 
             var url = modelInfo.ApiBaseUrl.TrimEnd('/') + "/v1/chat/completions";
-            Debug.WriteLine($"[HttpServer] AI Chat 转发: POST {url}");
+            Debug.WriteLine($"[HttpServer] AI Chat forward: POST {url}");
 
             HttpResponseMessage upResp;
             try
@@ -373,7 +373,7 @@ namespace SideDesk.Services
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"[HttpServer] AI Chat 转发中断: {ex.Message}");
+                    Debug.WriteLine($"[HttpServer] AI Chat forward aborted: {ex.Message}");
                 }
                 finally
                 {
@@ -498,7 +498,7 @@ namespace SideDesk.Services
                     result["forwarded"] = fwdOk;
                     if (!fwdOk) result["forwardError"] = fwdMsg;
                     results.Add(result);
-                    Debug.WriteLine($"[HttpServer] 设置变量 {key} = {value}（found={found}, corpId={corpId ?? "-"}, forwarded={fwdOk}）");
+                    Debug.WriteLine($"[HttpServer] set variable {key} = {value} (found={found}, corpId={corpId ?? "-"}, forwarded={fwdOk})");
                 }
                 WriteJson(resp, 200, new JObject { ["ok"] = true, ["count"] = results.Count, ["results"] = results }.ToString());
                 return;
@@ -561,14 +561,14 @@ namespace SideDesk.Services
                 req.Content = new StringContent(body.ToString(Newtonsoft.Json.Formatting.None), Encoding.UTF8, "application/json");
                 using var resp = await _proxyHttp.SendAsync(req).ConfigureAwait(false);
                 var text = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                Debug.WriteLine($"[HttpServer] 变量转发后端 {(int)resp.StatusCode}: {text}");
+                Debug.WriteLine($"[HttpServer] variable forward to backend {(int)resp.StatusCode}: {text}");
                 var root = JObject.Parse(text);
                 if ((root["code"]?.Value<int>() ?? 0) == 200) return (true, "");
                 return (false, root["msg"]?.ToString() ?? "转发失败");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[HttpServer] 变量转发后端异常: {ex.Message}");
+                Debug.WriteLine($"[HttpServer] variable forward to backend error: {ex.Message}");
                 return (false, ex.Message);
             }
         }

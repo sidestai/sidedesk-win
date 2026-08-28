@@ -170,7 +170,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Login] 拦截 token 失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Login] failed to intercept token: {ex.Message}");
             }
         }
 

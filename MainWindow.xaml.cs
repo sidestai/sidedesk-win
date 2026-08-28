@@ -801,7 +801,7 @@ namespace SideDesk
                     var parts = input.Split("/s/");
                     if (parts.Length > 1) code = parts[1].Trim().TrimEnd('/');
                 }
-                Debug.WriteLine($"[ImportShare] 用户输入: '{input}' → 短码: '{code}'");
+                Debug.WriteLine($"[ImportShare] user input: '{input}' -> code: '{code}'");
 
                 lookupBtn.IsEnabled = false;
                 lookupBtn.Content = Framework.Lang.T("nativePanel.querying");
@@ -812,18 +812,18 @@ namespace SideDesk
                     var token = app.AppSettings.AccountToken;
                     using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
                     string previewUrl = $"{Constants.URLs.ServerBaseUrl}/api/sidebar/share/{Uri.EscapeDataString(code)}";
-                    Debug.WriteLine($"[ImportShare] 预览请求: GET {previewUrl}");
+                    Debug.WriteLine($"[ImportShare] preview request: GET {previewUrl}");
                     using var req = new HttpRequestMessage(HttpMethod.Get, previewUrl);
                     req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
                     using var resp = await Services.HttpLog.SendAsync(http, req);
                     string json = await resp.Content.ReadAsStringAsync();
-                    Debug.WriteLine($"[ImportShare] 预览响应 HTTP {(int)resp.StatusCode}: {json}");
+                    Debug.WriteLine($"[ImportShare] preview response HTTP {(int)resp.StatusCode}: {json}");
                     var root2 = Newtonsoft.Json.Linq.JObject.Parse(json);
 
                     if (root2["code"]?.ToObject<int>() != 200)
                     {
                         string errMsg = root2["msg"]?.ToString() ?? Framework.Lang.T("nativePanel.shareExpiredOrMissing");
-                        Debug.WriteLine($"[ImportShare] 预览失败: {errMsg}");
+                        Debug.WriteLine($"[ImportShare] preview failed: {errMsg}");
                         ThemedMessageBox.Show(dialog, errMsg, Framework.Lang.T(Framework.Lang.T("screenTime.queryFailed")));
                         return;
                     }
@@ -840,7 +840,7 @@ namespace SideDesk
                     string displayName = !string.IsNullOrEmpty(itemTitle) ? itemTitle
                                        : !string.IsNullOrEmpty(itemType)  ? itemType
                                        : barTitle;
-                    Debug.WriteLine($"[ImportShare] 预览成功: shareLevel={shareLevel}, shareMode={shareMode}, barTitle={barTitle}, itemTitle={itemTitle}, itemType={itemType}");
+                    Debug.WriteLine($"[ImportShare] preview ok: shareLevel={shareLevel}, shareMode={shareMode}, barTitle={barTitle}, itemTitle={itemTitle}, itemType={itemType}");
 
                     // 填充预览区
                     previewTitle.Text = shareLevel == "item" ? displayName : barTitle;
@@ -859,7 +859,7 @@ namespace SideDesk
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"[ImportShare] 预览异常: {ex.Message}");
+                    Debug.WriteLine($"[ImportShare] preview error: {ex.Message}");
                     ThemedMessageBox.Show(dialog, Framework.Lang.TF("nativePanel.queryFailed", ex.Message), Framework.Lang.T("common.error"));
                 }
                 finally
@@ -897,7 +897,7 @@ namespace SideDesk
             var app = (App)Application.Current;
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
             var token = app.AppSettings.AccountToken;
-            Debug.WriteLine($"[ImportShare] 开始导入, code={code}, shareLevel={shareLevel}, 有token={!string.IsNullOrEmpty(token)}");
+            Debug.WriteLine($"[ImportShare] starting import, code={code}, shareLevel={shareLevel}, hasToken={!string.IsNullOrEmpty(token)}");
         
             // 构建导入请求（item 级将当前小屏的 ServerId 传入）
             string? targetBarServerId = null;
@@ -907,7 +907,7 @@ namespace SideDesk
                     ? _dockState.WindowIds[_dockState.ActiveIndex]
                     : _dockState.WindowIds[0];
                 targetBarServerId = _configManager.GetById(activeId)?.ServerId;
-                Debug.WriteLine($"[ImportShare] item 级导入, 当前小屏 ServerId={targetBarServerId ?? "(null)"}");
+                Debug.WriteLine($"[ImportShare] item-level import, current bar ServerId={targetBarServerId ?? "(null)"}");
             }
         
             var importPayload = new System.Collections.Generic.Dictionary<string, object?> { ["shareCode"] = code };
@@ -916,22 +916,22 @@ namespace SideDesk
             // 预生成本地组件 GUID 随导入请求上报，服务器记录在 share_import.local_id
             string importLocalId = Guid.NewGuid().ToString();
             importPayload["localId"] = importLocalId;
-            Debug.WriteLine($"[ImportShare] 本地组件 GUID localId={importLocalId}");
+            Debug.WriteLine($"[ImportShare] local component GUID localId={importLocalId}");
         
             var importJson = Newtonsoft.Json.JsonConvert.SerializeObject(importPayload);
-            Debug.WriteLine($"[ImportShare] 导入请求 POST /sidebar/share/import, payload={importJson}");
+            Debug.WriteLine($"[ImportShare] import request POST /sidebar/share/import, payload={importJson}");
             using var importContent = new System.Net.Http.StringContent(importJson, System.Text.Encoding.UTF8, "application/json");
             using var importReq = new HttpRequestMessage(HttpMethod.Post, Constants.URLs.ServerBaseUrl + "/api/sidebar/share/import") { Content = importContent };
             importReq.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
             using var importResp = await Services.HttpLog.SendAsync(http, importReq);
             string importRespJson = await importResp.Content.ReadAsStringAsync();
-            Debug.WriteLine($"[ImportShare] 导入响应 HTTP {(int)importResp.StatusCode}: {importRespJson}");
+            Debug.WriteLine($"[ImportShare] import response HTTP {(int)importResp.StatusCode}: {importRespJson}");
             var importResult = Newtonsoft.Json.Linq.JObject.Parse(importRespJson);
         
             if (importResult["code"]?.ToObject<int>() != 200)
             {
                 string errMsg = importResult["msg"]?.ToString() ?? Framework.Lang.T("settings.importFailed");
-                Debug.WriteLine($"[ImportShare] 导入失败: {errMsg}");
+                Debug.WriteLine($"[ImportShare] import failed: {errMsg}");
                 ThemedMessageBox.Show(this, errMsg, Framework.Lang.T(Framework.Lang.T("settings.importFailed")));
                 return;
             }
@@ -949,13 +949,13 @@ namespace SideDesk
             string  resultItemTitle  = data["itemTitle"]?.ToString() ?? "";
             string  resultItemType   = data["itemType"]?.ToString() ?? "";
             string  resultItemData   = data["itemData"]?.ToString() ?? "";
-            Debug.WriteLine($"[ImportShare] 导入成功: shareLevel={shareLevel}, barServerId={resultBarServerId}, shareMode={resultShareMode}");
+            Debug.WriteLine($"[ImportShare] import ok: shareLevel={shareLevel}, barServerId={resultBarServerId}, shareMode={resultShareMode}");
 
             if (shareLevel == "item")
             {
                 // === Item 级导入：在当前窗口创建本地 PanelItem ===
                 string itemServerId = data["itemServerId"]?.ToString() ?? "";
-                Debug.WriteLine($"[ImportShare] item 级: itemServerId={itemServerId}, itemType={resultItemType}");
+                Debug.WriteLine($"[ImportShare] item-level: itemServerId={itemServerId}, itemType={resultItemType}");
 
                 if (!string.IsNullOrEmpty(itemServerId) && _configManager != null && _dockState != null)
                 {
@@ -991,7 +991,7 @@ namespace SideDesk
                         }
                         catch (Exception ex)
                         {
-                            Debug.WriteLine($"[ImportShare] 解析 itemData 失败: {ex.Message}");
+                            Debug.WriteLine($"[ImportShare] failed to parse itemData: {ex.Message}");
                         }
                     }
 
@@ -1019,12 +1019,12 @@ namespace SideDesk
                         if (resultShareMode == "reference" || resultShareMode == "copy")
                         {
                             bool pulled = await CloudSyncService.Instance.PullItemFullAsync(newPanel);
-                            Debug.WriteLine($"[ImportShare] {resultShareMode} 全量拉取 {(pulled ? "成功" : "无数据/失败")}");
+                            Debug.WriteLine($"[ImportShare] {resultShareMode} full pull {(pulled ? "ok" : "no data/failed")}");
                             if (pulled) _configManager.Save();
                         }
 
                         RefreshNativePanels();
-                        Debug.WriteLine($"[ImportShare] 已创建本地 PanelItem (Type={panelType}, ServerId={itemServerId}, Mode={resultShareMode})，面板已刷新");
+                        Debug.WriteLine($"[ImportShare] local PanelItem created (Type={panelType}, ServerId={itemServerId}, Mode={resultShareMode}), panel refreshed");
                     }
                 }
 
@@ -1038,7 +1038,7 @@ namespace SideDesk
             {
                 // === Bar 级导入：新建小屏并切换 ===
                 dialog.Close();
-                Debug.WriteLine($"[ImportShare] bar 级导入完成，新建小屏");
+                Debug.WriteLine($"[ImportShare] bar-level import completed, new bar created");
                 string barTitleResult = data["barTitle"]?.ToString() ?? Framework.Lang.T("common.importWindow");
                 var newWin = new WindowConfig
                 {
@@ -1136,7 +1136,7 @@ namespace SideDesk
                 string[] files = (string[])e.Data.GetData(DataFormats.FileDrop)!;
                 foreach (var file in files)
                 {
-                    Debug.WriteLine($"[Drop] 文件: {file}");
+                    Debug.WriteLine($"[Drop] file: {file}");
                 }
                 // 无目标接收处理（如文件区），弹出窗口让用户选择
                 // 注意：不能在 Drop 处理器内同步 ShowDialog，否则会阻塞 OLE 拖放的返回，
@@ -1150,7 +1150,7 @@ namespace SideDesk
             else if (e.Data.GetDataPresent(DataFormats.Text))
             {
                 string text = (string)e.Data.GetData(DataFormats.Text)!;
-                Debug.WriteLine($"[Drop] 文本: {text}");
+                Debug.WriteLine($"[Drop] text: {text}");
             }
             e.Handled = true;
         }
@@ -1978,7 +1978,7 @@ namespace SideDesk
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"[Notification] 图片加载失败: {ex.Message}");
+                        Debug.WriteLine($"[Notification] failed to load image: {ex.Message}");
                     }
                 });
             }
@@ -1996,7 +1996,7 @@ namespace SideDesk
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"[Notification] 本地图片加载失败: {ex.Message}");
+                    Debug.WriteLine($"[Notification] failed to load local image: {ex.Message}");
                 }
             }
         }

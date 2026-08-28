@@ -39,7 +39,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[AutoStart] 设置开机自启失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[AutoStart] failed to set auto-start: {ex.Message}");
             }
         }
     }

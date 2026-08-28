@@ -30,20 +30,20 @@ namespace SideDesk.Controls
             {
                 await webView.EnsureCoreWebView2Async();
                 _isInitialized = true;
-                Debug.WriteLine("[WebViewModePanel] WebView2 初始化成功");
+                Debug.WriteLine("[WebViewModePanel] WebView2 init succeeded");
 
                 // 初始化完成后，执行待处理的导航
                 if (!string.IsNullOrEmpty(_pendingUrl))
                 {
                     var pendingUrl = _pendingUrl;
                     _pendingUrl = null;
-                    Debug.WriteLine($"[WebViewModePanel] 执行待处理导航: {pendingUrl}");
+                    Debug.WriteLine($"[WebViewModePanel] executing pending navigation: {pendingUrl}");
                     webView.CoreWebView2.Navigate(pendingUrl);
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[WebViewModePanel] WebView2 初始化失败: {ex.Message}");
+                Debug.WriteLine($"[WebViewModePanel] WebView2 init failed: {ex.Message}");
             }
         }
 
@@ -66,7 +66,7 @@ namespace SideDesk.Controls
                     && !current.Equals("about:blank", StringComparison.OrdinalIgnoreCase)
                     && string.Equals(current, target, StringComparison.OrdinalIgnoreCase))
                 {
-                    Debug.WriteLine($"[WebViewModePanel] URL相同，跳过Navigate: {url}");
+                    Debug.WriteLine($"[WebViewModePanel] same URL, skipping Navigate: {url}");
                     return;
                 }
 
@@ -76,14 +76,14 @@ namespace SideDesk.Controls
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"[WebViewModePanel] Navigate 失败（URL无效）: {url} - {ex.Message}");
+                    Debug.WriteLine($"[WebViewModePanel] Navigate failed (invalid URL): {url} - {ex.Message}");
                 }
             }
             else
             {
                 // WebView2 尚未初始化完成，保存待处理URL
                 _pendingUrl = url;
-                Debug.WriteLine($"[WebViewModePanel] WebView2未就绪，URL已暂存: {url}");
+                Debug.WriteLine($"[WebViewModePanel] WebView2 not ready, URL stashed: {url}");
             }
         }
 

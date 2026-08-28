@@ -193,7 +193,7 @@ namespace SideDesk.Controls
             _todoReminderTimer.Tick += TodoReminderTick;
             _todoReminderTimer.Start();
 
-            Debug.WriteLine("[NativeModePanel] 全局服务已初始化");
+            Debug.WriteLine("[NativeModePanel] global services initialized");
         }
 
         private void NativeModePanel_Loaded(object sender, RoutedEventArgs e)
@@ -242,7 +242,7 @@ namespace SideDesk.Controls
             foreach (var wv in _panelWebViews)
             {
                 try { wv.Dispose(); }
-                catch (Exception ex) { Debug.WriteLine($"[NativeModePanel] 释放内嵌网页组件失败: {ex.Message}"); }
+                catch (Exception ex) { Debug.WriteLine($"[NativeModePanel] failed to dispose embedded web component: {ex.Message}"); }
             }
             _panelWebViews.Clear();
         }
@@ -808,7 +808,7 @@ namespace SideDesk.Controls
             }
             catch (System.Exception ex)
             {
-                Debug.WriteLine($"[NativeModePanel] 通知服务端删除模块失败: {ex.Message}");
+                Debug.WriteLine($"[NativeModePanel] failed to notify server to delete module: {ex.Message}");
             }
         }
 
@@ -965,7 +965,7 @@ namespace SideDesk.Controls
             if (!stillReferenced)
             {
                 Services.Plugins.PluginLoaderService.Instance.UnloadPlugin(pluginId);
-                Debug.WriteLine($"[NativeModePanel] 插件 {pluginId} 无剩余引用，已卸载 DLL");
+                Debug.WriteLine($"[NativeModePanel] plugin {pluginId} has no remaining references, DLL unloaded");
 
                 // AssemblyLoadContext.Unload() 是异步的，实际需要 Gen2 GC 才能回收 ALC 及其程序集。
                 // 延迟执行避免阻塞 UI；必须 Gen2 + WaitForPendingFinalizers + 二次 Collect。
@@ -984,7 +984,7 @@ namespace SideDesk.Controls
                     }
                     catch { /* ignore */ }
 
-                    Debug.WriteLine($"[NativeModePanel] 插件 {pluginId} ALC 回收完成");
+                    Debug.WriteLine($"[NativeModePanel] plugin {pluginId} ALC reclaim completed");
                 });
             }
         }
@@ -1929,7 +1929,7 @@ namespace SideDesk.Controls
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"[WebBaidu] WebView2 初始化失败: {ex.Message}");
+                    Debug.WriteLine($"[WebBaidu] WebView2 init failed: {ex.Message}");
                 }
             };
 
@@ -8338,7 +8338,7 @@ namespace SideDesk.Controls
                                 : Services.DataPollingService.Instance.FindItemByVarKey(capturedDash.RefVarKey) ?? capturedDash;
                             await Services.DataPollingService.Instance.RefreshItemAsync(target);
                         }
-                        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[DataDashboard] 手动刷新失败 {capturedDash.Label}: {ex.Message}"); }
+                        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[DataDashboard] manual refresh failed {capturedDash.Label}: {ex.Message}"); }
                     };
                     dashItemMenu.Items.Add(refreshItem);
 
@@ -10275,7 +10275,7 @@ namespace SideDesk.Controls
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[VoiceHotkey] 启动失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[VoiceHotkey] start failed: {ex.Message}");
                 _voiceSession = false;
                 return false;
             }
@@ -10311,7 +10311,7 @@ namespace SideDesk.Controls
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[VoiceButton] 启动失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[VoiceButton] start failed: {ex.Message}");
                 _voiceSession = false;
             }
         }
@@ -10548,7 +10548,7 @@ namespace SideDesk.Controls
                 // 7. 更新UI显示
                 UpdateTeleportWidget();
 
-                Debug.WriteLine($"已将窗口瞬移到左侧Dock区域: {windowInfo.Title}");
+                Debug.WriteLine($"window teleported to left dock area: {windowInfo.Title}");
             }
             catch (Exception ex)
             {
@@ -10615,7 +10615,7 @@ namespace SideDesk.Controls
                 NativeMethods.SetWindowPos(hwnd, IntPtr.Zero,
                     work.Left, work.Top, work.Right - work.Left, work.Bottom - work.Top,
                     SetWindowPosFlags.SWP_NOZORDER | SetWindowPosFlags.SWP_NOACTIVATE | SetWindowPosFlags.SWP_FRAMECHANGED);
-                Debug.WriteLine($"瞬移窗口最大化已收敛到工作区: {hwnd}");
+                Debug.WriteLine($"teleported window maximize clamped to work area: {hwnd}");
             }
 
             if (listChanged) UpdateTeleportWidget();
@@ -10641,11 +10641,11 @@ namespace SideDesk.Controls
                     SetWindowPosFlags.SWP_NOMOVE | SetWindowPosFlags.SWP_NOSIZE | SetWindowPosFlags.SWP_NOZORDER |
                     SetWindowPosFlags.SWP_NOACTIVATE | SetWindowPosFlags.SWP_FRAMECHANGED);
 
-                Debug.WriteLine($"已从任务栏隐藏窗口: {hwnd}");
+                Debug.WriteLine($"window hidden from taskbar: {hwnd}");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"隐藏任务栏图标失败：{ex.Message}");
+                Debug.WriteLine($"failed to hide taskbar icon: {ex.Message}");
             }
         }
 
@@ -10839,7 +10839,7 @@ namespace SideDesk.Controls
                 // 更新UI
                 UpdateTeleportWidget();
 
-                Debug.WriteLine($"已还原窗口到任务栏: {hwnd}");
+                Debug.WriteLine($"window restored to taskbar: {hwnd}");
             }
             catch (Exception ex)
             {
@@ -10868,11 +10868,11 @@ namespace SideDesk.Controls
                 // 确保窗口显示
                 NativeMethods.ShowWindow(hwnd, NativeMethods.SW_SHOW);
                 
-                Debug.WriteLine($"已将窗口带到前台: {hwnd}");
+                Debug.WriteLine($"window brought to foreground: {hwnd}");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"带窗口到前台失败：{ex.Message}");
+                Debug.WriteLine($"failed to bring window to foreground: {ex.Message}");
             }
         }
 

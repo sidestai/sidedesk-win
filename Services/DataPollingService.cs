@@ -149,7 +149,7 @@ public class DataPollingService : IDisposable
             var varValue = (string?)data?["value"] ?? (string?)data?["varValue"];
             if (varValue == null) ClearVariableValue(varKey);
             else SetVariableValue(varKey, varValue);
-            Debug.WriteLine($"[DataPolling] 已应用后端推送变量值: {varKey} = {varValue ?? "(解除手动值)"}");
+            Debug.WriteLine($"[DataPolling] applied backend-pushed variable value: {varKey} = {varValue ?? "(manual value cleared)"}");
         }
         catch { /* 非 JSON 或其它消息：忽略 */ }
     }
@@ -181,7 +181,7 @@ public class DataPollingService : IDisposable
                 catch (Exception ex)
                 {
                     adopted = null;
-                    Debug.WriteLine($"[DataPolling] 晋升未归属数据失败: {ex.Message}");
+                    Debug.WriteLine($"[DataPolling] failed to promote orphaned data: {ex.Message}");
                 }
             }
 
@@ -211,7 +211,7 @@ public class DataPollingService : IDisposable
                     }
                 }
             }
-            catch (Exception ex) { Debug.WriteLine($"[DataPolling] 加载手动变量值失败: {ex.Message}"); }
+            catch (Exception ex) { Debug.WriteLine($"[DataPolling] failed to load manual variable values: {ex.Message}"); }
         }
 
         // 晋升的数据补传服务器（重放离线期间的写入；个人/团队作用域按随行 corpId 区分），fire-and-forget
@@ -230,10 +230,10 @@ public class DataPollingService : IDisposable
             try
             {
                 var (ok, msg) = await HttpServerService.ForwardVariableToBackendAsync(k, v, c).ConfigureAwait(false);
-                if (ok) Debug.WriteLine($"[DataPolling] 已补传晋升变量: {k}");
-                else Debug.WriteLine($"[DataPolling] 晋升变量补传失败 {k}: {msg}");
+                if (ok) Debug.WriteLine($"[DataPolling] promoted variable backfilled: {k}");
+                else Debug.WriteLine($"[DataPolling] promoted variable backfill failed {k}: {msg}");
             }
-            catch (Exception ex) { Debug.WriteLine($"[DataPolling] 晋升变量补传异常 {k}: {ex.Message}"); }
+            catch (Exception ex) { Debug.WriteLine($"[DataPolling] promoted variable backfill error {k}: {ex.Message}"); }
         }
     }
 
@@ -247,7 +247,7 @@ public class DataPollingService : IDisposable
         {
             // 布局与内容类数据（窗口/组件/便签/待办/剪贴板收藏等）同步晋升：未归属 local 数据归入当前登录者
             try { LocalDbService.AdoptScope("local", scope); }
-            catch (Exception ex) { Debug.WriteLine($"[DataPolling] 本地库作用域晋升失败: {ex.Message}"); }
+            catch (Exception ex) { Debug.WriteLine($"[DataPolling] local-db scoped promotion failed: {ex.Message}"); }
         }
         EnsureManualLoaded(scope);
         if (scope == "local") return;
@@ -274,7 +274,7 @@ public class DataPollingService : IDisposable
         EnsureManualLoaded(scope);
         lock (_manualLock) _manualValues[varKey] = value;
         try { LocalDbService.UpsertDataVariable(scope, varKey, value, string.IsNullOrWhiteSpace(corpId) ? null : corpId); }
-        catch (Exception ex) { Debug.WriteLine($"[DataPolling] 保存手动变量值失败: {ex.Message}"); }
+        catch (Exception ex) { Debug.WriteLine($"[DataPolling] failed to save manual variable values: {ex.Message}"); }
 
         var item = FindItemByVarKey(varKey);
         if (item == null) return false;
@@ -292,7 +292,7 @@ public class DataPollingService : IDisposable
         lock (_manualLock) removed = _manualValues.Remove(varKey.Trim());
         if (!removed) return false;
         try { LocalDbService.DeleteDataVariable(scope, varKey.Trim()); }
-        catch (Exception ex) { Debug.WriteLine($"[DataPolling] 删除手动变量值失败: {ex.Message}"); }
+        catch (Exception ex) { Debug.WriteLine($"[DataPolling] failed to delete manual variable values: {ex.Message}"); }
         return true;
     }
 
@@ -392,7 +392,7 @@ public class DataPollingService : IDisposable
         }
 
         RebuildTimers();
-        Debug.WriteLine($"[DataPolling] SyncFromConfigs: 共 {totalBefore} 个数据项，去重后 {_items.Count} 个轮询实例");
+        Debug.WriteLine($"[DataPolling] SyncFromConfigs: {totalBefore} data items in total, {_items.Count} polling instances after dedup");
     }
 
     /// <summary>获取当前所有数据项（只读副本引用）</summary>
@@ -470,7 +470,7 @@ public class DataPollingService : IDisposable
         }
 
         SetConnectionState(key, ConnectionState.Disconnected);
-        Debug.WriteLine($"[DataPolling] 已断开连接: {key}");
+        Debug.WriteLine($"[DataPolling] disconnected: {key}");
     }
 
     /// <summary>立即刷新指定数据项（手动触发：允许再试一次自动启动浏览器）</summary>
@@ -514,7 +514,7 @@ public class DataPollingService : IDisposable
                     {
                         await PollItemAsync(capturedItem);
                     }
-                    catch (Exception ex) { Debug.WriteLine($"[DataPolling] 定时轮询失败 {capturedItem.Label}: {ex.Message}"); }
+                    catch (Exception ex) { Debug.WriteLine($"[DataPolling] scheduled poll failed {capturedItem.Label}: {ex.Message}"); }
                     finally { _pollingItems.TryRemove(capturedItem.Id, out _); }
                 };
                 timer.Start();
@@ -572,7 +572,7 @@ public class DataPollingService : IDisposable
             var lParam = (IntPtr)((180 << 16) | (350 & 0xFFFF));
             NativeMethods.SendMessage(surfaceHwnd, NativeMethods.WM_LBUTTONDOWN, (IntPtr)NativeMethods.MK_LBUTTON, lParam);
             NativeMethods.SendMessage(surfaceHwnd, NativeMethods.WM_LBUTTONUP, IntPtr.Zero, lParam);
-            Debug.WriteLine($"[DataPolling] ✓ 已自动允许远程调试（弹窗 hwnd=0x{dialogHwnd.ToInt64():X}，点击 350,180）");
+            Debug.WriteLine($"[DataPolling] ✓ remote debugging auto-allowed (dialog hwnd=0x{dialogHwnd.ToInt64():X}, clicked 350,180)");
 
             // 主窗口气泡通知（15 秒内只提一次，避免弹窗未消失时反复提醒）
             var now = DateTime.Now;
@@ -594,7 +594,7 @@ public class DataPollingService : IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[DataPolling] 远程调试弹窗扫描异常: {ex.Message}");
+            Debug.WriteLine($"[DataPolling] remote debugging dialog scan error: {ex.Message}");
         }
     }
 
@@ -607,7 +607,7 @@ public class DataPollingService : IDisposable
         // 手动值覆盖：外部已设置值时跳过轮询（含 API 模式），保持手动值直到解除
         if (!string.IsNullOrEmpty(item.VarKey) && GetManualValue(item.VarKey!) != null)
         {
-            Debug.WriteLine($"[DataPolling] ↷ \"{item.Label}\" 存在手动值，跳过轮询");
+            Debug.WriteLine($"[DataPolling] ↷ \"{item.Label}\" has manual value, skipping poll");
             return;
         }
 
@@ -621,7 +621,7 @@ public class DataPollingService : IDisposable
         var appSettings = ((App)Application.Current).AppSettings;
         var key = GetConnectionKey(item);
 
-        Debug.WriteLine($"[DataPolling] === 轮询 \"{item.Label}\" === key={key}, url={item.TargetUrl}");
+        Debug.WriteLine($"[DataPolling] === polling \"{item.Label}\" === key={key}, url={item.TargetUrl}");
 
         try
         {
@@ -629,7 +629,7 @@ public class DataPollingService : IDisposable
             var conn = await GetOrCreateConnectionAsync(item, appSettings, forceLaunch);
             if (conn?.Client == null)
             {
-                Debug.WriteLine($"[DataPolling] ✗ 无法建立连接: {key}");
+                Debug.WriteLine($"[DataPolling] ✗ cannot establish connection: {key}");
                 UpdateItemValue(item, "--");
                 return;
             }
@@ -659,7 +659,7 @@ public class DataPollingService : IDisposable
                     var allowOpen = forceLaunch || attempts < MaxAutoOpenAttempts;
                     if (!allowOpen)
                     {
-                        Debug.WriteLine($"[DataPolling] ↷ 目标页面 {item.TargetUrl} 已自动尝试打开 {MaxAutoOpenAttempts} 次仍未取到数据，不再重复打开（可右键「立即更新数据」重试）");
+                        Debug.WriteLine($"[DataPolling] ↷ target page {item.TargetUrl} auto-opened {MaxAutoOpenAttempts} times with no data, no more auto-opens (right-click 'Refresh Data Now' to retry)");
                         UpdateItemValue(item, "--");
                         return;
                     }
@@ -682,7 +682,7 @@ public class DataPollingService : IDisposable
                     }
                     else
                     {
-                        Debug.WriteLine($"[DataPolling] ↷ 目标页面 {item.TargetUrl} 已有启动流程在执行，跳过");
+                        Debug.WriteLine($"[DataPolling] ↷ target page {item.TargetUrl} already has a launch in progress, skipping");
                         UpdateItemValue(item, "--");
                         return;
                     }
@@ -691,7 +691,7 @@ public class DataPollingService : IDisposable
 
             if (targetId == null)
             {
-                Debug.WriteLine($"[DataPolling] ✗ 未找到匹配 Tab: {item.TargetUrl}");
+                Debug.WriteLine($"[DataPolling] ✗ no matching tab found: {item.TargetUrl}");
                 UpdateItemValue(item, "--");
                 return;
             }
@@ -704,7 +704,7 @@ public class DataPollingService : IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[DataPolling] ✗ 轮询异常 \"{item.Label}\": {ex.GetType().Name}: {ex.Message}");
+            Debug.WriteLine($"[DataPolling] ✗ poll error \"{item.Label}\": {ex.GetType().Name}: {ex.Message}");
             // 连接可能已断开，清除以便下次重连
             InvalidateConnection(key);
             UpdateItemValue(item, "--");
@@ -727,7 +727,7 @@ public class DataPollingService : IDisposable
             using (var resp = await _httpClient.SendAsync(req))
             {
                 if (!resp.IsSuccessStatusCode)
-                    Debug.WriteLine($"[DataPolling] ✗ API 请求失败 \"{item.Label}\": HTTP {(int)resp.StatusCode}");
+                    Debug.WriteLine($"[DataPolling] ✗ API request failed \"{item.Label}\": HTTP {(int)resp.StatusCode}");
                 body = await resp.Content.ReadAsStringAsync();
             }
 
@@ -737,7 +737,7 @@ public class DataPollingService : IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[DataPolling] ✗ API 请求异常 \"{item.Label}\": {ex.GetType().Name}: {ex.Message}");
+            Debug.WriteLine($"[DataPolling] ✗ API request error \"{item.Label}\": {ex.GetType().Name}: {ex.Message}");
             UpdateItemValue(item, "--");
         }
     }
@@ -758,7 +758,7 @@ public class DataPollingService : IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[DataPolling] 响应提取失败（{extract}）: {ex.Message}");
+            Debug.WriteLine($"[DataPolling] response extraction failed ({extract}): {ex.Message}");
             return string.IsNullOrWhiteSpace(body) ? "--" : body.Trim();
         }
     }
@@ -825,7 +825,7 @@ public class DataPollingService : IDisposable
                 var conn = new BrowserConnection { Key = key, Client = client, Port = port, State = ConnectionState.Connected };
                 lock (_connections) { _connections[key] = conn; }
                 SetConnectionState(key, ConnectionState.Connected);
-                Debug.WriteLine($"[DataPolling] ✓ 已连接浏览器: {key}, port={port}");
+                Debug.WriteLine($"[DataPolling] ✓ browser connected: {key}, port={port}");
                 return conn;
             }
 
@@ -842,7 +842,7 @@ public class DataPollingService : IDisposable
             if (!allowLaunch)
             {
                 SetConnectionState(key, ConnectionState.Error);
-                Debug.WriteLine($"[DataPolling] ↷ 隐藏浏览器 {key} 已自动启动过一次，失败后不再重复启动");
+                Debug.WriteLine($"[DataPolling] ↷ hidden browser {key} already auto-launched once, no relaunch after failure");
                 return null;
             }
 
@@ -941,7 +941,7 @@ public class DataPollingService : IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[DataPolling] 读取默认浏览器失败: {ex.Message}");
+            Debug.WriteLine($"[DataPolling] failed to read default browser: {ex.Message}");
         }
 
         // 兜底：Edge 优先（Windows 自带）
@@ -992,7 +992,7 @@ public class DataPollingService : IDisposable
                 WindowStyle = mode == "headless" ? ProcessWindowStyle.Hidden : ProcessWindowStyle.Minimized
             };
 
-            Debug.WriteLine($"[DataPolling] 启动隐藏浏览器: {exePath} {args}");
+            Debug.WriteLine($"[DataPolling] launching hidden browser: {exePath} {args}");
             var process = Process.Start(psi);
             if (process == null) return null;
             _launchedProcesses.Add(process);
@@ -1002,7 +1002,7 @@ public class DataPollingService : IDisposable
             var client = await ConnectWhenReadyAsync(port, TimeSpan.FromSeconds(15));
             if (client == null)
             {
-                Debug.WriteLine($"[DataPolling] ✗ CDP 就绪超时, port={port}");
+                Debug.WriteLine($"[DataPolling] ✗ CDP ready timeout, port={port}");
                 try { process.Kill(); } catch { }
                 return null;
             }
@@ -1016,12 +1016,12 @@ public class DataPollingService : IDisposable
                 State = ConnectionState.Connected
             };
             lock (_connections) { _connections[key] = conn; }
-            Debug.WriteLine($"[DataPolling] ✓ 隐藏浏览器已启动: {key}, port={port}, mode={mode}");
+            Debug.WriteLine($"[DataPolling] ✓ hidden browser launched: {key}, port={port}, mode={mode}");
             return conn;
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[DataPolling] ✗ 启动隐藏浏览器失败: {ex.Message}");
+            Debug.WriteLine($"[DataPolling] ✗ failed to launch hidden browser: {ex.Message}");
             return null;
         }
     }
@@ -1045,7 +1045,7 @@ public class DataPollingService : IDisposable
                     using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
                     await client.ConnectAsync(cts.Token);
                     var n = Interlocked.Increment(ref _totalConnections);
-                    Debug.WriteLine($"[DataPolling] ★ 建立 CDP 连接 #{n}（隐藏浏览器就绪）: {wsUri}");
+                    Debug.WriteLine($"[DataPolling] ★ CDP connection #{n} established (hidden browser ready): {wsUri}");
                     return client; // 连接成功，直接复用，不 Dispose
                 }
                 catch
@@ -1070,12 +1070,12 @@ public class DataPollingService : IDisposable
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
                 await client.ConnectAsync(cts.Token);
                 var n = Interlocked.Increment(ref _totalConnections);
-                Debug.WriteLine($"[DataPolling] ★ 建立 CDP 连接 #{n}（连接已运行浏览器）: {wsUri}");
+                Debug.WriteLine($"[DataPolling] ★ CDP connection #{n} established (attaching to running browser): {wsUri}");
                 return client;
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[DataPolling] 连接 {wsUri} 失败: {ex.Message}");
+                Debug.WriteLine($"[DataPolling] connection to {wsUri} failed: {ex.Message}");
                 client.Dispose();
             }
         }
@@ -1172,13 +1172,13 @@ public class DataPollingService : IDisposable
         try
         {
             var result = await client.SendCommandAsync(Target.CreateTarget(url));
-            Debug.WriteLine($"[DataPolling] 新建 Tab: {url} -> {result.TargetId}");
+            Debug.WriteLine($"[DataPolling] new tab: {url} -> {result.TargetId}");
             await Task.Delay(2000); // 等待页面加载
             return result.TargetId;
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[DataPolling] ✗ 新建 Tab 失败: {ex.Message}");
+            Debug.WriteLine($"[DataPolling] ✗ failed to create tab: {ex.Message}");
             return null;
         }
     }
@@ -1205,19 +1205,19 @@ public class DataPollingService : IDisposable
                     try
                     {
                         await client.SendCommandAsync(Target.CloseTarget(extra.TargetId));
-                        Debug.WriteLine($"[DataPolling] 🧹 关闭重复的 app 模式窗口: {extra.TargetId}（{extra.Url}）");
+                        Debug.WriteLine($"[DataPolling] 🧹 closing duplicate app-mode window: {extra.TargetId} ({extra.Url})");
                     }
-                    catch (Exception ex) { Debug.WriteLine($"[DataPolling] 关闭重复窗口失败: {ex.Message}"); }
+                    catch (Exception ex) { Debug.WriteLine($"[DataPolling] failed to close duplicate window: {ex.Message}"); }
                 }
                 var existing = matches[0];
                 lock (_openedAppTargetsLock) { _openedAppTargets.Add((client, existing.TargetId, url)); }
-                Debug.WriteLine($"[DataPolling] ✓ 复用已存在的 app 模式页面: {url} -> {existing.TargetId}（实际 URL: {existing.Url}）");
+                Debug.WriteLine($"[DataPolling] ✓ reusing existing app-mode page: {url} -> {existing.TargetId} (actual URL: {existing.Url})");
                 // 仅当页面位于单标签窗口（我们打开的 app 窗口）才最小化；
                 // 多标签窗口说明可能是用户自己在主浏览器开的页，不能把用户整个浏览器最小化
                 if (await IsSingleTabWindowAsync(client, existing.TargetId))
                     await MinimizeTargetWindowAsync(client, existing.TargetId);
                 else
-                    Debug.WriteLine("[DataPolling] 复用页面位于多标签窗口（非 app 窗口），跳过隐藏避免影响用户浏览器");
+                    Debug.WriteLine("[DataPolling] reused page is in a multi-tab window (not an app window), skipping hide to avoid affecting the user's browser");
                 return existing.TargetId;
             }
 
@@ -1243,7 +1243,7 @@ public class DataPollingService : IDisposable
                 {
                     // 记录本次打开的页面，关闭软件时经 CDP 关闭该窗口；点击数据项时也用它直接显示已打开的窗口
                     lock (_openedAppTargetsLock) { _openedAppTargets.Add((client, found.TargetId, url)); }
-                    Debug.WriteLine($"[DataPolling] ✓ app 模式页面已就绪: {url} -> {found.TargetId}（实际 URL: {found.Url}）");
+                    Debug.WriteLine($"[DataPolling] ✓ app-mode page ready: {url} -> {found.TargetId} (actual URL: {found.Url})");
                     // 稍候委托完成（启动进程退出）再判断是否需要 CDP 兜底：
                     // 进程自持 → HideAppWindowWhenReadyAsync 已用 SW_HIDE 处理；已委托 → 监视器已 SW_HIDE，最小化仅作兜底
                     for (int w = 0; w < 8; w++)
@@ -1263,12 +1263,12 @@ public class DataPollingService : IDisposable
             //   被委托给拥有默认用户数据目录的实例，而 SideDesk 连接的不是它）；
             // - 列表中有目标页但 URL 不同 → 页面重定向改写了地址
             var visible = lastUrls == null || lastUrls.Count == 0 ? "（无页面）" : string.Join(" | ", lastUrls);
-            Debug.WriteLine($"[DataPolling] ✗ app 模式页面等待超时: {url}；当前连接可见页面: {visible}");
+            Debug.WriteLine($"[DataPolling] ✗ app-mode page wait timeout: {url}; visible pages on current connection: {visible}");
             return null;
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[DataPolling] ✗ app 模式等待页面异常: {ex.Message}");
+            Debug.WriteLine($"[DataPolling] ✗ app-mode page wait error: {ex.Message}");
             return null;
         }
     }
@@ -1319,12 +1319,12 @@ public class DataPollingService : IDisposable
                     _ = Task.Run(() => ExcludeNewAppWindowFromTaskbarAsync(browserName, whitelist!));
                 }
             }
-            Debug.WriteLine($"[DataPolling] 以 app 模式启动: {exePath} {args}");
+            Debug.WriteLine($"[DataPolling] launching in app mode: {exePath} {args}");
             return proc;
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[DataPolling] ✗ app 模式启动失败: {ex.Message}");
+            Debug.WriteLine($"[DataPolling] ✗ app-mode launch failed: {ex.Message}");
             return null;
         }
     }
@@ -1344,7 +1344,7 @@ public class DataPollingService : IDisposable
                 if (hwnd != IntPtr.Zero)
                 {
                     NativeMethods.ShowWindow(hwnd, NativeMethods.SW_HIDE);
-                    Debug.WriteLine("[DataPolling] 🙈 已隐藏 app 模式窗口（数据模块后台窗口，点击数据项可再显示）");
+                    Debug.WriteLine("[DataPolling] 🙈 app-mode window hidden (background window of data module; click the data item to show again)");
                     return;
                 }
                 await Task.Delay(200);
@@ -1352,7 +1352,7 @@ public class DataPollingService : IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[DataPolling] 隐藏 app 窗口失败: {ex.Message}");
+            Debug.WriteLine($"[DataPolling] failed to hide app window: {ex.Message}");
         }
     }
 
@@ -1403,7 +1403,7 @@ public class DataPollingService : IDisposable
                         if (!IsBrowserTopWindow(hwnd, browserName)) return true;
                         NativeMethods.ShowWindow(hwnd, NativeMethods.SW_HIDE);
                         lock (_appModeHiddenHwnds) { _appModeHiddenHwnds[hwnd] = url; }
-                        Debug.WriteLine($"[DataPolling] 🙈 已隐藏新开的 app 模式窗口 (hwnd=0x{hwnd.ToInt64():X})（点击数据项可再显示）");
+                        Debug.WriteLine($"[DataPolling] 🙈 newly opened app-mode window hidden (hwnd=0x{hwnd.ToInt64():X}); click the data item to show again");
                     }
                     catch { }
                     return true;
@@ -1413,7 +1413,7 @@ public class DataPollingService : IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[DataPolling] app 窗口监视器异常: {ex.Message}");
+            Debug.WriteLine($"[DataPolling] app window watcher error: {ex.Message}");
         }
     }
 
@@ -1453,7 +1453,7 @@ public class DataPollingService : IDisposable
                 if (styledAny)
                 {
                     if (++styledPasses == 1)
-                        Debug.WriteLine("[DataPolling] 🙈 已将点击打开的 app 模式窗口移出任务栏（仍由点击数据项管理显隐）");
+                        Debug.WriteLine("[DataPolling] 🙈 removed clicked app-mode window from taskbar (show/hide still managed by clicking the data item)");
                     if (styledPasses >= 10) break; // 连续重套约 2 秒后停止
                 }
                 await Task.Delay(200);
@@ -1461,7 +1461,7 @@ public class DataPollingService : IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[DataPolling] app 窗口去任务栏监视器异常: {ex.Message}");
+            Debug.WriteLine($"[DataPolling] app window taskbar-removal watcher error: {ex.Message}");
         }
     }
 
@@ -1517,7 +1517,7 @@ public class DataPollingService : IDisposable
             }
             catch { }
         }
-        if (shown) Debug.WriteLine($"[DataPolling] ✓ 已显示被隐藏的 app 模式窗口: {url}");
+        if (shown) Debug.WriteLine($"[DataPolling] ✓ hidden app-mode window shown: {url}");
         return shown;
     }
 
@@ -1553,11 +1553,11 @@ public class DataPollingService : IDisposable
             await client.SendCommandAsync(Browser.SetWindowBounds(win.WindowId,
                 new Browser.BoundsType(null, null, null, null, new Browser.WindowStateType("minimized"))));
             _cdpHiddenTargets[targetId] = 0;
-            Debug.WriteLine("[DataPolling] 🙈 窗口委托给已运行浏览器，经 CDP 隐藏（最小化，点击数据项可显示）");
+            Debug.WriteLine("[DataPolling] 🙈 window delegated to running browser, hidden via CDP (minimized; click the data item to show)");
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[DataPolling] CDP 隐藏窗口失败: {ex.Message}");
+            Debug.WriteLine($"[DataPolling] failed to hide window via CDP: {ex.Message}");
         }
     }
 
@@ -1599,7 +1599,7 @@ public class DataPollingService : IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[DataPolling] CDP 窗口去任务栏失败: {ex.Message}");
+            Debug.WriteLine($"[DataPolling] failed to remove CDP window from taskbar: {ex.Message}");
         }
     }
 
@@ -1615,7 +1615,7 @@ public class DataPollingService : IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[DataPolling] 恢复窗口失败: {ex.Message}");
+            Debug.WriteLine($"[DataPolling] failed to restore window: {ex.Message}");
         }
     }
 
@@ -1682,11 +1682,11 @@ public class DataPollingService : IDisposable
                     NativeMethods.SetForegroundWindow(hwnd);
                     HideWindowFromTaskbar(hwnd); // 数据模块窗口重套去任务栏样式（防浏览器重置）
                     lock (_appModeHiddenHwnds) { _appModeHiddenHwnds.Remove(hwnd); }
-                    Debug.WriteLine($"[DataPolling] ✓ 已把打开过的 app 窗口激活显示: {url}");
+                    Debug.WriteLine($"[DataPolling] ✓ previously opened app window activated and shown: {url}");
                     return true;
                 }
             }
-            catch (Exception ex) { Debug.WriteLine($"[DataPolling] 激活 app 窗口失败: {ex.Message}"); }
+            catch (Exception ex) { Debug.WriteLine($"[DataPolling] failed to activate app window: {ex.Message}"); }
         }
 
         // 2. 委托给已运行浏览器的窗口被新窗口监视器 SW_HIDE 隐藏过 → 按句柄直接恢复显示
@@ -1746,12 +1746,12 @@ public class DataPollingService : IDisposable
             if (!result.TargetInfos.Any(t => t.TargetId == targetId)) return false;
             var attachResult = await client.SendCommandAsync(Target.AttachToTarget(targetId, Flatten: true));
             await client.SendCommandAsync(Page.BringToFront(), sessionId: attachResult.SessionId.Value);
-            Debug.WriteLine($"[DataPolling] ✓ 已把打开过的 app 窗口切到前台: {targetId}");
+            Debug.WriteLine($"[DataPolling] ✓ previously opened app window brought to front: {targetId}");
             return true;
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[DataPolling] 显示已打开窗口失败: {ex.Message}");
+            Debug.WriteLine($"[DataPolling] failed to show opened window: {ex.Message}");
             return false;
         }
     }
@@ -1779,14 +1779,14 @@ public class DataPollingService : IDisposable
                 if (targetId != null)
                 {
                     lock (_openedAppTargetsLock) { _openedAppTargets.Add((conn.Client, targetId, item.TargetUrl)); }
-                    Debug.WriteLine($"[DataPolling] ✓ 已记录点击打开的 app 窗口: {item.TargetUrl}");
+                    Debug.WriteLine($"[DataPolling] ✓ recorded clicked app window: {item.TargetUrl}");
                     return;
                 }
             }
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[DataPolling] 记录 app 窗口失败: {ex.Message}");
+            Debug.WriteLine($"[DataPolling] failed to record app window: {ex.Message}");
         }
     }
 
@@ -1824,7 +1824,7 @@ public class DataPollingService : IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[DataPolling] ✗ 导航失败: {ex.Message}");
+            Debug.WriteLine($"[DataPolling] ✗ navigation failed: {ex.Message}");
             return null;
         }
     }
@@ -1841,7 +1841,7 @@ public class DataPollingService : IDisposable
             sessionId: sessionId);
 
         if (evalResult.ExceptionDetails != null)
-            Debug.WriteLine($"[DataPolling] ✗ JS 异常: {evalResult.ExceptionDetails.Text}");
+            Debug.WriteLine($"[DataPolling] ✗ JS exception: {evalResult.ExceptionDetails.Text}");
 
         var value = evalResult.Result?.Value?.ToString();
         return string.IsNullOrWhiteSpace(value) ? "--" : value;

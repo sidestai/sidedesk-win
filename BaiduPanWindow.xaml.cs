@@ -237,7 +237,7 @@ namespace SideDesk
 
                 if (ok) successCount++;
                 else
-                    System.Diagnostics.Debug.WriteLine($"[BaiduPan] 上传失败: {fileName}");
+                    System.Diagnostics.Debug.WriteLine($"[BaiduPan] upload failed: {fileName}");
             }
 
             _uploading = false;

@@ -20,11 +20,11 @@ public class SystemCleanerPlugin : ISideDeskPlugin
 
     public void OnLoaded()
     {
-        System.Diagnostics.Debug.WriteLine("[SystemCleaner] 插件已加载");
+        System.Diagnostics.Debug.WriteLine("[SystemCleaner] plugin loaded");
     }
 
     public void OnUnloaded()
     {
-        System.Diagnostics.Debug.WriteLine("[SystemCleaner] 插件已卸载");
+        System.Diagnostics.Debug.WriteLine("[SystemCleaner] plugin unloaded");
     }
 }

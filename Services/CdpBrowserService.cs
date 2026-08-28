@@ -110,35 +110,35 @@ public class CdpBrowserService : IDisposable
     /// <param name="selector">CSS Selector 或 XPath（以 // 开头）</param>
     public async Task<string> FetchFromRunningBrowserAsync(int port, string url, string selector)
     {
-        Debug.WriteLine($"[CDP] === FetchFromRunningBrowser 开始 === port={port}, url={url}, selector={selector}");
+        Debug.WriteLine($"[CDP] === FetchFromRunningBrowser start === port={port}, url={url}, selector={selector}");
         try
         {
             // 复用缓存的 WebSocket CDP 连接（避免重复新建连接触发浏览器弹窗）
             var client = await GetOrConnectBrowserAsync(port);
             if (client == null)
             {
-                Debug.WriteLine($"[CDP] ✗ 无法通过 WebSocket 连接到 127.0.0.1:{port}");
+                Debug.WriteLine($"[CDP] ✗ cannot connect via WebSocket to 127.0.0.1:{port}");
                 return "--";
             }
-            Debug.WriteLine($"[CDP] ✓ 已获取 CDP 连接 (cached={_cachedClient != null})");
+            Debug.WriteLine($"[CDP] ✓ CDP connection acquired (cached={_cachedClient != null})");
 
             // 查找匹配 URL 的 Tab
             var targetId = await FindTabByUrlAsync(client, url);
             if (targetId == null)
             {
-                Debug.WriteLine($"[CDP] ✗ 未找到匹配 URL 的标签页: {url}");
+                Debug.WriteLine($"[CDP] ✗ no tab matching URL: {url}");
                 return "--";
             }
-            Debug.WriteLine($"[CDP] ✓ 找到目标 Tab: targetId={targetId}");
+            Debug.WriteLine($"[CDP] ✓ target tab found: targetId={targetId}");
 
             // Attach 到目标 Tab 并执行 JS
             var result = await EvaluateOnTargetAsync(client, targetId, selector);
-            Debug.WriteLine($"[CDP] ✓ 抓取结果: \"{result}\"");
+            Debug.WriteLine($"[CDP] ✓ fetch result: \"{result}\"");
             return result;
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[CDP] ✗ FetchFromRunningBrowser 异常: {ex.GetType().Name}: {ex.Message}");
+            Debug.WriteLine($"[CDP] ✗ FetchFromRunningBrowser error: {ex.GetType().Name}: {ex.Message}");
             Debug.WriteLine($"[CDP]   StackTrace: {ex.StackTrace}");
             // 连接可能已断开，清除缓存以便下次重连
             InvalidateCachedClient();
@@ -209,12 +209,12 @@ public class CdpBrowserService : IDisposable
                 // 太短会在用户确认前超时重试、叠加弹窗；连接被拒绝时仍会快速失败。
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
                 await client.ConnectAsync(cts.Token);
-                Debug.WriteLine($"[CDP] WebSocket 连接成功: {wsUri}");
+                Debug.WriteLine($"[CDP] WebSocket connected: {wsUri}");
                 return client;
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[CDP] 连接 {wsUri} 失败: {ex.Message}");
+                Debug.WriteLine($"[CDP] connection to {wsUri} failed: {ex.Message}");
                 client.Dispose();
             }
         }
@@ -258,7 +258,7 @@ public class CdpBrowserService : IDisposable
     {
         var result = await client.SendCommandAsync(Target.GetTargets());
         var pages = result.TargetInfos.Where(t => t.Type == "page").ToList();
-        Debug.WriteLine($"[CDP] GetTargets: 共 {result.TargetInfos.Count} 个 target, 其中 {pages.Count} 个 page");
+        Debug.WriteLine($"[CDP] GetTargets: {result.TargetInfos.Count} targets in total, {pages.Count} pages");
         foreach (var p in pages)
             Debug.WriteLine($"[CDP]   page: \"{p.Title}\" -> {p.Url}");
 
@@ -268,7 +268,7 @@ public class CdpBrowserService : IDisposable
             var tabUrl = tab.Url ?? "";
             if (tabUrl.StartsWith(url, StringComparison.OrdinalIgnoreCase) || url.StartsWith(tabUrl, StringComparison.OrdinalIgnoreCase))
             {
-                Debug.WriteLine($"[CDP] URL 匹配成功: \"{tabUrl}\" ~ \"{url}\"");
+                Debug.WriteLine($"[CDP] URL matched: \"{tabUrl}\" ~ \"{url}\"");
                 return tab.TargetId;
             }
         }
@@ -276,11 +276,11 @@ public class CdpBrowserService : IDisposable
         // 如果只有一个页面 Tab，直接使用它
         if (pages.Count == 1)
         {
-            Debug.WriteLine($"[CDP] 仅 1 个 page，直接使用: {pages[0].Url}");
+            Debug.WriteLine($"[CDP] only 1 page, using it directly: {pages[0].Url}");
             return pages[0].TargetId;
         }
 
-        Debug.WriteLine($"[CDP] ✗ 无匹配 URL 且有 {pages.Count} 个 page，返回 null");
+        Debug.WriteLine($"[CDP] ✗ no URL match with {pages.Count} pages, returning null");
         return null;
     }
 
@@ -292,20 +292,20 @@ public class CdpBrowserService : IDisposable
         // Attach 到目标 Tab，获取 sessionId
         var attachResult = await client.SendCommandAsync(Target.AttachToTarget(targetId, Flatten: true));
         var sessionId = attachResult.SessionId.Value;
-        Debug.WriteLine($"[CDP] AttachToTarget 成功, sessionId={sessionId}");
+        Debug.WriteLine($"[CDP] AttachToTarget ok, sessionId={sessionId}");
 
         // 构建 JS 表达式：支持 CSS Selector 和 XPath
         var jsExpression = BuildElementTextJs(selector);
-        Debug.WriteLine($"[CDP] 执行 JS: {jsExpression}");
+        Debug.WriteLine($"[CDP] executing JS: {jsExpression}");
 
         // 通过 session 执行 Runtime.evaluate
         var evalResult = await client.SendCommandAsync(
             Runtime.Evaluate(jsExpression, ReturnByValue: true),
             sessionId: sessionId);
 
-        Debug.WriteLine($"[CDP] Evaluate 返回: type={evalResult.Result?.Type}, value={evalResult.Result?.Value}, subtype={evalResult.Result?.Subtype}");
+        Debug.WriteLine($"[CDP] Evaluate returned: type={evalResult.Result?.Type}, value={evalResult.Result?.Value}, subtype={evalResult.Result?.Subtype}");
         if (evalResult.ExceptionDetails != null)
-            Debug.WriteLine($"[CDP] ✗ JS 异常: {evalResult.ExceptionDetails.Text} (line {evalResult.ExceptionDetails.LineNumber})");
+            Debug.WriteLine($"[CDP] ✗ JS exception: {evalResult.ExceptionDetails.Text} (line {evalResult.ExceptionDetails.LineNumber})");
 
         var value = evalResult.Result?.Value?.ToString();
         return string.IsNullOrWhiteSpace(value) ? "--" : value;
@@ -349,7 +349,7 @@ public class CdpBrowserService : IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[CDP] FetchElementValue 失败: {ex.Message}");
+            Debug.WriteLine($"[CDP] FetchElementValue failed: {ex.Message}");
             return "--";
         }
     }
@@ -360,7 +360,7 @@ public class CdpBrowserService : IDisposable
     private async Task<CdpBrowserInstance?> GetOrCreateInstanceAsync(string browserExePath, string profileDir, string instanceKey)
     {
         // 【已禁用】CDP浏览器服务 - 2026-06-09 禁用，解决重复启动问题
-        Debug.WriteLine("[CDP] 服务已禁用，跳过浏览器启动");
+        Debug.WriteLine("[CDP] service disabled, skipping browser launch");
         return null;
         
         /*
@@ -419,12 +419,12 @@ public class CdpBrowserService : IDisposable
                 _instances[instanceKey] = instance;
             }
 
-            Debug.WriteLine($"[CDP] 浏览器实例已启动: {instanceKey}, port={port}");
+            Debug.WriteLine($"[CDP] browser instance launched: {instanceKey}, port={port}");
             return instance;
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[CDP] 启动浏览器失败: {ex.Message}");
+            Debug.WriteLine($"[CDP] failed to launch browser: {ex.Message}");
             return null;
         }
         */
@@ -505,7 +505,7 @@ public class CdpBrowserService : IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[CDP] Tab 管理失败: {ex.Message}");
+            Debug.WriteLine($"[CDP] tab management failed: {ex.Message}");
         }
 
         return null;
@@ -587,24 +587,24 @@ public class CdpBrowserService : IDisposable
                 UseShellExecute = false
             };
 
-            Debug.WriteLine($"[CDP] 启动可见浏览器: {browserExePath} {args}");
+            Debug.WriteLine($"[CDP] launching visible browser: {browserExePath} {args}");
             var process = Process.Start(psi);
             if (process == null) return (port, null);
 
             var ready = await WaitForCdpReadyAsync(port, TimeSpan.FromSeconds(30));
             if (!ready)
             {
-                Debug.WriteLine($"[CDP] CDP 就绪检查超时, port={port}");
+                Debug.WriteLine($"[CDP] CDP ready check timed out, port={port}");
                 try { process.Kill(); } catch { }
                 return (port, null);
             }
 
-            Debug.WriteLine($"[CDP] 可见浏览器已启动: port={port}, url={url}");
+            Debug.WriteLine($"[CDP] visible browser launched: port={port}, url={url}");
             return (port, process);
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[CDP] 启动可见浏览器失败: {ex.Message}");
+            Debug.WriteLine($"[CDP] failed to launch visible browser: {ex.Message}");
             return (port, null);
         }
     }
@@ -641,7 +641,7 @@ public class CdpBrowserService : IDisposable
         var browserClient = await ConnectBrowserAsync(port);
         if (browserClient == null)
         {
-            Debug.WriteLine($"[CDP] 获取 Tab 列表失败：无法连接浏览器 CDP (port={port})");
+            Debug.WriteLine($"[CDP] failed to get tab list: cannot connect to browser CDP (port={port})");
             return null;
         }
 
@@ -677,7 +677,7 @@ public class CdpBrowserService : IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[CDP] 获取 Tab 列表失败: {ex.Message}");
+            Debug.WriteLine($"[CDP] failed to get tab list: {ex.Message}");
         }
         finally
         {
@@ -753,7 +753,7 @@ public class CdpBrowserService : IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[CDP] PickElementSelector 失败: {ex.Message}");
+            Debug.WriteLine($"[CDP] PickElementSelector failed: {ex.Message}");
         }
 
         return null;
@@ -874,7 +874,7 @@ public class CdpBrowserService : IDisposable
                     if (!kvp.Value.BrowserProcess.HasExited)
                     {
                         kvp.Value.BrowserProcess.Kill();
-                        Debug.WriteLine($"[CDP] 已关闭浏览器实例: {kvp.Key}");
+                        Debug.WriteLine($"[CDP] browser instance closed: {kvp.Key}");
                     }
                 }
                 catch { }

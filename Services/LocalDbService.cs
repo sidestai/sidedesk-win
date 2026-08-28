@@ -526,7 +526,7 @@ WHERE row_uid = $uid;";
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[LocalDb] 回写服务端行 ID 失败: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"[LocalDb] failed to write back server row ID: {ex.Message}");
         }
     }
 
@@ -558,7 +558,7 @@ WHERE row_uid = $uid;";
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[LocalDb] 查询服务端行 ID 失败: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"[LocalDb] failed to query server row ID: {ex.Message}");
         }
         return result;
     }
@@ -1299,7 +1299,7 @@ ON CONFLICT(date) DO NOTHING;";
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[LocalDb] 导入 windows.json 失败: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"[LocalDb] failed to import windows.json: {ex.Message}");
             return false;
         }
     }

@@ -91,7 +91,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[DataVariable] 唯一性校验失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[DataVariable] uniqueness check failed: {ex.Message}");
                 return true; // 后端不可达时不阻断
             }
         }
@@ -115,7 +115,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[DataVariable] 获取变量列表失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[DataVariable] failed to get variable list: {ex.Message}");
                 return null;
             }
         }
@@ -139,7 +139,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[DataVariable] 获取变量集列表失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[DataVariable] failed to get variable set list: {ex.Message}");
                 return null;
             }
         }
@@ -171,7 +171,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[DataVariable] 删除服务端变量集失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[DataVariable] failed to delete server variable set: {ex.Message}");
                 return false;
             }
         }

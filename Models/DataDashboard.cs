@@ -138,7 +138,7 @@ public class DataTemplateManager
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[DataTemplate] 加载模板文件失败 {file}: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[DataTemplate] failed to load template file {file}: {ex.Message}");
             }
         }
 

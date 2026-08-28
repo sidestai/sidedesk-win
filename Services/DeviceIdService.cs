@@ -32,7 +32,7 @@ namespace SideDesk.Services
 
             var hash = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
             var id = Convert.ToHexString(hash).ToLowerInvariant();
-            Debug.WriteLine($"[DeviceId] 设备唯一 ID: {id} (cpu={cpu}, mac={mac})");
+            Debug.WriteLine($"[DeviceId] device unique ID: {id} (cpu={cpu}, mac={mac})");
             return id;
         }
 
@@ -50,7 +50,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[DeviceId] 读取 CPU ID 失败: {ex.Message}");
+                Debug.WriteLine($"[DeviceId] failed to read CPU ID: {ex.Message}");
             }
             return "";
         }
@@ -70,7 +70,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[DeviceId] 读取 MAC 地址失败: {ex.Message}");
+                Debug.WriteLine($"[DeviceId] failed to read MAC address: {ex.Message}");
             }
             return "";
         }

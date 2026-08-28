@@ -36,7 +36,7 @@ namespace SideDesk.Services
                 _ = Task.Run(() =>
                 {
                     try { Restart(); }
-                    catch (Exception ex) { Debug.WriteLine($"[McpServer] 注册表重建异常: {ex.Message}"); }
+                    catch (Exception ex) { Debug.WriteLine($"[McpServer] registry rebuild error: {ex.Message}"); }
                 });
             };
         }
@@ -62,17 +62,17 @@ namespace SideDesk.Services
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"[McpServer] 运行异常: {ex.Message}");
+                        Debug.WriteLine($"[McpServer] run error: {ex.Message}");
                         _running = false;
                     }
                 });
 
-                Debug.WriteLine($"[McpServer] 已启动，监听 http://127.0.0.1:{Port}");
+                Debug.WriteLine($"[McpServer] started, listening on http://127.0.0.1:{Port}");
             }
             catch (Exception ex)
             {
                 _running = false;
-                Debug.WriteLine($"[McpServer] 启动失败: {ex.Message}");
+                Debug.WriteLine($"[McpServer] start failed: {ex.Message}");
             }
         }
 
@@ -89,7 +89,7 @@ namespace SideDesk.Services
             _cts = null;
             _mcpApp = null;
 
-            Debug.WriteLine("[McpServer] 已停止");
+            Debug.WriteLine("[McpServer] stopped");
         }
 
         /// <summary>重启 MCP Server（工具注册表变化时重建，SSE 客户端会自动重连拿到新工具列表）</summary>
@@ -116,7 +116,7 @@ namespace SideDesk.Services
                         RegisterDynamicTool(mcp, t);
 
                     RegisterResources(mcp);
-                    Debug.WriteLine($"[McpServer] 已按服务端注册表注册 {tools.Count} 个工具");
+                    Debug.WriteLine($"[McpServer] registered {tools.Count} tools from server registry");
                     return mcp;
                 }
             }

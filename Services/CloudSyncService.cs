@@ -157,7 +157,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 对账失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] reconcile failed: {ex.Message}");
                 StatusChanged?.Invoke(CloudSyncState.Failed, Framework.Lang.T("cloudDrive.syncFailed") + ex.Message);
                 return false;
             }
@@ -203,7 +203,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 同步失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] sync failed: {ex.Message}");
                 StatusChanged?.Invoke(CloudSyncState.Failed, Framework.Lang.T("cloudDrive.syncFailed") + ex.Message);
                 return false;
             }
@@ -219,7 +219,7 @@ namespace SideDesk.Services
             // 结构化载荷：使用内存中的实时窗口配置（bars/items）
             string bundle = BuildSyncPayloadJson(mgr);
             // 打印上传载荷到调试日志（缩进格式，便于复制给接口实现方；Release 构建自动移除）
-            System.Diagnostics.Debug.WriteLine("[CloudSync] 上传载荷 POST " + SyncEndpoint + ":\n" + BuildSyncPayloadJson(mgr, indented: true));
+            System.Diagnostics.Debug.WriteLine("[CloudSync] upload payload POST " + SyncEndpoint + ":\n" + BuildSyncPayloadJson(mgr, indented: true));
             using var content = new StringContent(bundle, Encoding.UTF8, "application/json");
             using var req = new HttpRequestMessage(HttpMethod.Post, SyncEndpoint) { Content = content };
             req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + settings.AccountToken);
@@ -227,14 +227,14 @@ namespace SideDesk.Services
             using var resp = await HttpLog.SendAsync(_http, req).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode)
             {
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 结构上传失败 HTTP {(int)resp.StatusCode}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] structure upload failed HTTP {(int)resp.StatusCode}");
                 return false;
             }
 
             // 读取服务器响应，保存 localId -> serverId 映射到本地
             string responseJson = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
             // 打印服务器响应到调试日志（Release 构建自动移除）
-            System.Diagnostics.Debug.WriteLine("[CloudSync] 服务器响应: " + responseJson);
+            System.Diagnostics.Debug.WriteLine("[CloudSync] server response: " + responseJson);
             ApplyServerIdMappings(responseJson, settings, mgr);
 
             // 窗口同步成功后，追加设置项同步
@@ -257,7 +257,7 @@ namespace SideDesk.Services
             try
             {
                 string payload = NJson.JsonConvert.SerializeObject(new { type, serverId });
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 删除请求 POST {DeleteEndpoint}: {payload}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] delete request POST {DeleteEndpoint}: {payload}");
 
                 using var content = new StringContent(payload, Encoding.UTF8, "application/json");
                 using var req = new HttpRequestMessage(HttpMethod.Post, DeleteEndpoint) { Content = content };
@@ -265,12 +265,12 @@ namespace SideDesk.Services
 
                 using var resp = await HttpLog.SendAsync(_http, req).ConfigureAwait(false);
                 string responseJson = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 删除响应: {responseJson}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] delete response: {responseJson}");
                 return resp.IsSuccessStatusCode;
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 删除失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] delete failed: {ex.Message}");
                 return false;
             }
         }
@@ -301,7 +301,7 @@ namespace SideDesk.Services
                     bar = BuildSyncBar(win)
                 };
                 string json = NJson.JsonConvert.SerializeObject(payload, NJson.Formatting.None, _syncPayloadSettings);
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 新增窗口请求 POST {CreateBarEndpoint}: {json}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] create window request POST {CreateBarEndpoint}: {json}");
 
                 using var content = new StringContent(json, Encoding.UTF8, "application/json");
                 using var req = new HttpRequestMessage(HttpMethod.Post, CreateBarEndpoint) { Content = content };
@@ -309,7 +309,7 @@ namespace SideDesk.Services
 
                 using var resp = await HttpLog.SendAsync(_http, req).ConfigureAwait(false);
                 string responseJson = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 新增窗口响应: {responseJson}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] create window response: {responseJson}");
                 if (!resp.IsSuccessStatusCode) return false;
 
                 // 响应格式与全量同步一致，复用映射回写逻辑
@@ -318,7 +318,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 新增窗口提交失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] create window submit failed: {ex.Message}");
                 return false;
             }
         }
@@ -370,7 +370,7 @@ namespace SideDesk.Services
 
                 var payload = new { serverId = item.ServerId, corpId };
                 string json = NJson.JsonConvert.SerializeObject(payload);
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 模块归属变更 POST {ItemOwnerEndpoint}: {json}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] module owner change POST {ItemOwnerEndpoint}: {json}");
 
                 using var content = new StringContent(json, Encoding.UTF8, "application/json");
                 using var req = new HttpRequestMessage(HttpMethod.Post, ItemOwnerEndpoint) { Content = content };
@@ -378,7 +378,7 @@ namespace SideDesk.Services
 
                 using var resp = await HttpLog.SendAsync(_http, req).ConfigureAwait(false);
                 string responseJson = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 模块归属变更响应: {responseJson}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] module owner change response: {responseJson}");
                 if (!resp.IsSuccessStatusCode)
                 {
                     LastOwnershipError = Framework.Lang.TF("cloudDrive.serverRejected", (int)resp.StatusCode);
@@ -402,7 +402,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 模块归属变更失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] module owner change failed: {ex.Message}");
                 LastOwnershipError = ex.Message;
                 return false;
             }
@@ -459,12 +459,12 @@ namespace SideDesk.Services
                 if (changed)
                 {
                     System.Windows.Application.Current?.Dispatcher?.Invoke(() => mgr.Save());
-                    System.Diagnostics.Debug.WriteLine("[CloudSync] 团队模块数据已更新为服务端最新版本");
+                    System.Diagnostics.Debug.WriteLine("[CloudSync] team module data updated to latest server version");
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 拉取团队模块数据失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] failed to pull team module data: {ex.Message}");
             }
         }
 
@@ -584,7 +584,7 @@ namespace SideDesk.Services
                             {
                                 w.ServerId = barServerId;
                                 localWin = w;
-                                System.Diagnostics.Debug.WriteLine($"[CloudSync] 认领本地未同步窗口: {w.Name} -> {barServerId}");
+                                System.Diagnostics.Debug.WriteLine($"[CloudSync] claimed local unsynced window: {w.Name} -> {barServerId}");
                                 break;
                             }
                         }
@@ -603,7 +603,7 @@ namespace SideDesk.Services
                                 // 云端补齐的窗口同步进入两侧 dock，所有窗口顶部标签可见
                                 mgr.AddToAllDocks(win);
                                 changed = true;
-                                System.Diagnostics.Debug.WriteLine($"[CloudSync] 从云端补齐缺失窗口: {win.Name} ({items.Count} 个模块)");
+                                System.Diagnostics.Debug.WriteLine($"[CloudSync] restored missing window from cloud: {win.Name} ({items.Count} modules)");
                             }
                             continue;
                         }
@@ -617,14 +617,14 @@ namespace SideDesk.Services
                     if (MergeServerItemsIntoWindow(localWin, items, newPanelsOut))
                     {
                         changed = true;
-                        System.Diagnostics.Debug.WriteLine($"[CloudSync] 为窗口 {localWin.Name} 补齐云端新增模块");
+                        System.Diagnostics.Debug.WriteLine($"[CloudSync] backfilled new cloud modules for window {localWin.Name}");
                     }
                 }
                 return changed;
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 结构拉取失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] structure pull failed: {ex.Message}");
                 return false;
             }
         }
@@ -775,7 +775,7 @@ namespace SideDesk.Services
                         mgr.Windows.RemoveAt(i);
                         removedWindowIds.Add(w.Id);
                         changed = true;
-                        System.Diagnostics.Debug.WriteLine($"[CloudSync] 分享已失效，移除导入窗口: {w.Name}");
+                        System.Diagnostics.Debug.WriteLine($"[CloudSync] share expired, removing imported window: {w.Name}");
                     }
                 }
 
@@ -786,7 +786,7 @@ namespace SideDesk.Services
                     if (RemoveRevokedSharedPanels(w.Panels, structureItemIds, validItemServerIds, validImportLocalIds))
                     {
                         changed = true;
-                        System.Diagnostics.Debug.WriteLine($"[CloudSync] 分享已失效，已清理窗口 {w.Name} 内的残留共享组件");
+                        System.Diagnostics.Debug.WriteLine($"[CloudSync] share expired, cleaned leftover shared components in window {w.Name}");
                     }
                 }
 
@@ -803,7 +803,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 失效共享清理失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] expired share cleanup failed: {ex.Message}");
                 return false;
             }
         }
@@ -875,7 +875,7 @@ namespace SideDesk.Services
                         }
                         if (needStructure)
                         {
-                            System.Diagnostics.Debug.WriteLine("[CloudSync] 存在未同步模块，先上传结构获取 ServerId");
+                            System.Diagnostics.Debug.WriteLine("[CloudSync] unsynced modules exist, uploading structure first to obtain ServerId");
                             await UploadStructureAsync(settings, app.WindowConfigs).ConfigureAwait(false);
                         }
 
@@ -883,7 +883,7 @@ namespace SideDesk.Services
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"[CloudSync] 即时行推送失败: {ex.Message}");
+                        System.Diagnostics.Debug.WriteLine($"[CloudSync] instant row push failed: {ex.Message}");
                     }
                 };
             }
@@ -1000,7 +1000,7 @@ namespace SideDesk.Services
             if (!RowChangeTracker.IsRowSyncable(p.Type)) return;
             if (string.IsNullOrEmpty(p.ServerId))
             {
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 行推送跳过 ({p.Type}): ServerId 为空（模块尚未同步到服务端）");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] row push skipped ({p.Type}): ServerId is empty (module not yet synced to server)");
                 return;
             }
 
@@ -1012,7 +1012,7 @@ namespace SideDesk.Services
                 return;
             }
 
-            System.Diagnostics.Debug.WriteLine($"[CloudSync] 行推送检查 ({p.Type}) ServerId={p.ServerId}, 数据长度={currentJson.Length}");
+            System.Diagnostics.Debug.WriteLine($"[CloudSync] row push check ({p.Type}) ServerId={p.ServerId}, dataLength={currentJson.Length}");
 
             // 计算差异
             var oldRows = _rowSnapshots.TryGetValue(p.Id, out var snap) ? ParseRowsFromJson(snap) : new Dictionary<string, JObject>();
@@ -1089,8 +1089,8 @@ namespace SideDesk.Services
             {
                 var payload = new { itemServerId = serverId, rows = changedRows, deletedRowIds, deletedRowServerIds };
                 string json = NJson.JsonConvert.SerializeObject(payload);
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 行级推送 POST {RowPushEndpoint}: {changedRows.Count} 行变更, {deletedRowServerIds.Count} 行主键删除, {deletedRowIds.Count} 行 GUID 兜底删除");
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 行级推送载荷: {json.Substring(0, Math.Min(json.Length, 500))}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] row push POST {RowPushEndpoint}: {changedRows.Count} row changes, {deletedRowServerIds.Count} pk deletes, {deletedRowIds.Count} GUID fallback deletes");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] row push payload: {json.Substring(0, Math.Min(json.Length, 500))}");
 
                 using var content = new StringContent(json, Encoding.UTF8, "application/json");
                 using var req = new HttpRequestMessage(HttpMethod.Post, RowPushEndpoint) { Content = content };
@@ -1098,7 +1098,7 @@ namespace SideDesk.Services
 
                 using var resp = await HttpLog.SendAsync(_http, req).ConfigureAwait(false);
                 string respBody = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 行级推送响应 HTTP {(int)resp.StatusCode}: {respBody.Substring(0, Math.Min(respBody.Length, 300))}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] row push response HTTP {(int)resp.StatusCode}: {respBody.Substring(0, Math.Min(respBody.Length, 300))}");
                 if (!resp.IsSuccessStatusCode) return false;
 
                 // 业务层失败（HTTP 200 但 code≠200，如“无权操作此模块”）也视为推送失败：
@@ -1109,7 +1109,7 @@ namespace SideDesk.Services
                     int bizCode = root["code"]?.ToObject<int>() ?? 200;
                     if (bizCode != 200)
                     {
-                        System.Diagnostics.Debug.WriteLine($"[CloudSync] 行级推送被业务层拒绝: code={bizCode}, msg={root["msg"]}");
+                        System.Diagnostics.Debug.WriteLine($"[CloudSync] row push rejected by business layer: code={bizCode}, msg={root["msg"]}");
                         // 「模块不存在」：服务端模块被对账软删而本地仍存在（多窗口/多设备上报竞态）。
                         // 触发一次全量结构同步，服务端 processItems 会复活该模块；行数据不丢，后续推送重试即可成功。
                         // 60 秒节流，避免多个面板同时被拒时连环触发全量同步
@@ -1142,7 +1142,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 行级推送失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] row push failed: {ex.Message}");
                 return false;
             }
         }
@@ -1267,7 +1267,7 @@ namespace SideDesk.Services
                 ApplyListDataToPanel(p, JArray.Parse(json));
                 _rowSnapshots[p.Id] = json;
             }
-            System.Diagnostics.Debug.WriteLine($"[CloudSync] 已对齐同模块 {group.Count} 个视图，共 {mergedRows.Count} 行");
+            System.Diagnostics.Debug.WriteLine($"[CloudSync] aligned {group.Count} views of the same module, {mergedRows.Count} rows in total");
             System.Windows.Application.Current?.Dispatcher?.Invoke(() =>
             {
                 var app = (SideDesk.App)System.Windows.Application.Current;
@@ -1300,7 +1300,7 @@ namespace SideDesk.Services
             if (anyChanged)
             {
                 System.Windows.Application.Current?.Dispatcher?.Invoke(() => mgr.Save());
-                System.Diagnostics.Debug.WriteLine("[CloudSync] 行级拉取完成，本地数据已更新");
+                System.Diagnostics.Debug.WriteLine("[CloudSync] row pull completed, local data updated");
             }
         }
 
@@ -1360,7 +1360,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 行级拉取失败 ({p.Type}): {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] row pull failed ({p.Type}): {ex.Message}");
                 return false;
             }
         }
@@ -1579,13 +1579,13 @@ namespace SideDesk.Services
                 }
                 if (mirrored)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[CloudSync] 已镜像行数据到同模块其他视图 ({p.Type})");
+                    System.Diagnostics.Debug.WriteLine($"[CloudSync] mirrored row data to other views of the same module ({p.Type})");
                     app.RefreshAllMainWindows();
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 兄弟视图同步失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] sibling view sync failed: {ex.Message}");
             }
         }
 
@@ -1942,7 +1942,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 解析服务器 ID 映射失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] failed to parse server ID mapping: {ex.Message}");
             }
         }
 
@@ -2067,7 +2067,7 @@ namespace SideDesk.Services
 
                 var payload = new { settings = items };
                 string json = NJson.JsonConvert.SerializeObject(payload);
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 设置同步 POST {SettingSyncEndpoint}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] settings sync POST {SettingSyncEndpoint}");
 
                 using var content = new StringContent(json, Encoding.UTF8, "application/json");
                 using var req = new HttpRequestMessage(HttpMethod.Post, SettingSyncEndpoint) { Content = content };
@@ -2078,16 +2078,16 @@ namespace SideDesk.Services
                 {
                     settings.LastSettingsSyncTime = DateTime.Now;
                     settings.Save();
-                    System.Diagnostics.Debug.WriteLine("[CloudSync] 设置同步成功");
+                    System.Diagnostics.Debug.WriteLine("[CloudSync] settings sync succeeded");
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine($"[CloudSync] 设置同步失败: HTTP {(int)resp.StatusCode}");
+                    System.Diagnostics.Debug.WriteLine($"[CloudSync] settings sync failed: HTTP {(int)resp.StatusCode}");
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 设置同步异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] settings sync error: {ex.Message}");
             }
         }
 
@@ -2142,7 +2142,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 恢复设置失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] failed to restore settings: {ex.Message}");
                 return -1;
             }
         }
@@ -2174,7 +2174,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Backup] 备份失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Backup] backup failed: {ex.Message}");
                 return false;
             }
         }
@@ -2189,7 +2189,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Backup] 恢复失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Backup] restore failed: {ex.Message}");
                 return -1;
             }
         }
@@ -2216,7 +2216,7 @@ namespace SideDesk.Services
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[Backup] 写回 {prop.Name} 失败: {ex.Message}");
+                    System.Diagnostics.Debug.WriteLine($"[Backup] failed to write back {prop.Name}: {ex.Message}");
                 }
             }
 
@@ -2232,7 +2232,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Backup] 重新导入 windows.json 到 SQLite 失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Backup] failed to re-import windows.json into SQLite: {ex.Message}");
             }
             return count;
         }
@@ -2341,7 +2341,7 @@ namespace SideDesk.Services
 
                 var payload = new { resourceType, items, corpId };
                 string json = NJson.JsonConvert.SerializeObject(payload);
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 排序推送 POST {ResourcePosEndpoint}: type={resourceType}, count={items.Count}, corpId={corpId}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] sort push POST {ResourcePosEndpoint}: type={resourceType}, count={items.Count}, corpId={corpId}");
 
                 using var content = new StringContent(json, Encoding.UTF8, "application/json");
                 using var req = new HttpRequestMessage(HttpMethod.Post, ResourcePosEndpoint) { Content = content };
@@ -2349,11 +2349,11 @@ namespace SideDesk.Services
 
                 using var resp = await HttpLog.SendAsync(_http, req).ConfigureAwait(false);
                 string respBody = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 排序推送响应 HTTP {(int)resp.StatusCode}: {respBody.Substring(0, Math.Min(respBody.Length, 200))}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] sort push response HTTP {(int)resp.StatusCode}: {respBody.Substring(0, Math.Min(respBody.Length, 200))}");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 排序推送失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] sort push failed: {ex.Message}");
             }
         }
 
@@ -2391,7 +2391,7 @@ namespace SideDesk.Services
                     }
                 };
                 string json = NJson.JsonConvert.SerializeObject(payload);
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 创建模块 POST {CreateItemEndpoint}: localId={item.Id}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] create module POST {CreateItemEndpoint}: localId={item.Id}");
 
                 using var content = new StringContent(json, Encoding.UTF8, "application/json");
                 using var req = new HttpRequestMessage(HttpMethod.Post, CreateItemEndpoint) { Content = content };
@@ -2399,7 +2399,7 @@ namespace SideDesk.Services
 
                 using var resp = await HttpLog.SendAsync(_http, req).ConfigureAwait(false);
                 string respBody = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 创建模块响应: {respBody}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] create module response: {respBody}");
 
                 var root = JObject.Parse(respBody);
                 if (root["code"]?.ToObject<int>() == 200)
@@ -2415,7 +2415,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 创建模块失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] create module failed: {ex.Message}");
                 return null;
             }
         }

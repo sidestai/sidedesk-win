@@ -197,7 +197,7 @@ public class PluginBuildService
 
             result.Success = true;
             result.OutputPath = dllPath;
-            Debug.WriteLine($"[PluginBuild] 编译成功: {dllPath}");
+            Debug.WriteLine($"[PluginBuild] build succeeded: {dllPath}");
         }
         catch (Exception ex)
         {
@@ -302,7 +302,7 @@ public class PluginBuildService
             }
             catch (IOException) when (i < maxRetries - 1)
             {
-                Debug.WriteLine($"[PluginBuild] 文件被占用，重试 ({i + 1}/{maxRetries}): {path}");
+                Debug.WriteLine($"[PluginBuild] file in use, retry ({i + 1}/{maxRetries}): {path}");
                 GC.Collect();
                 GC.WaitForPendingFinalizers();
                 Thread.Sleep(300);

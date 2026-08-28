@@ -88,7 +88,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[FloatingContext] 问AI 失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[FloatingContext] Ask AI failed: {ex.Message}");
             }
         }
 

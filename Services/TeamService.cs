@@ -190,7 +190,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Team] 获取团队列表失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Team] failed to get team list: {ex.Message}");
                 return null;
             }
         }
@@ -217,7 +217,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Team] 创建团队失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Team] failed to create team: {ex.Message}");
                 return null;
             }
         }
@@ -240,7 +240,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Team] 申请加入团队失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Team] failed to apply to join team: {ex.Message}");
                 return (false, Framework.Lang.T("common.networkError"));
             }
         }
@@ -258,7 +258,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Team] 获取加入申请失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Team] failed to get join requests: {ex.Message}");
                 return null;
             }
         }
@@ -277,7 +277,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Team] 处理加入申请失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Team] failed to handle join request: {ex.Message}");
                 return (false, Framework.Lang.T("common.networkError"));
             }
         }
@@ -296,7 +296,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Team] 邀请成员失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Team] failed to invite member: {ex.Message}");
                 return (false, Framework.Lang.T("common.networkError"));
             }
         }
@@ -314,7 +314,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Team] 获取团队邀请失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Team] failed to get team invitations: {ex.Message}");
                 return null;
             }
         }
@@ -333,7 +333,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Team] 处理团队邀请失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Team] failed to handle team invitation: {ex.Message}");
                 return (false, Framework.Lang.T("common.networkError"));
             }
         }
@@ -356,7 +356,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Team] 获取团队组件库失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Team] failed to get team library: {ex.Message}");
                 return null;
             }
         }
@@ -381,7 +381,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Team] 查询模块创建者失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Team] failed to query module creator: {ex.Message}");
                 return null;
             }
         }
@@ -415,7 +415,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Team] 发布团队模板失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Team] failed to publish team template: {ex.Message}");
                 return (false, Framework.Lang.T("common.networkError"));
             }
         }
@@ -434,7 +434,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Team] 删除团队模板失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Team] failed to delete team template: {ex.Message}");
                 return (false, Framework.Lang.T("common.networkError"));
             }
         }
@@ -464,7 +464,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Team] 获取市场模板详情失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Team] failed to get market template details: {ex.Message}");
                 return null;
             }
         }
@@ -482,7 +482,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Team] 拉取团队模板列表失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Team] failed to pull team template list: {ex.Message}");
                 return null;
             }
         }

@@ -35,7 +35,7 @@ public partial class SystemCleanerControl : UserControl
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[SystemCleaner] CPU 计数器初始化失败: {ex.Message}");
+            Debug.WriteLine($"[SystemCleaner] CPU counter init failed: {ex.Message}");
         }
 
         txtCpuCores.Text = Environment.ProcessorCount.ToString();
@@ -110,7 +110,7 @@ public partial class SystemCleanerControl : UserControl
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[SystemCleaner] 刷新系统信息失败: {ex.Message}");
+            Debug.WriteLine($"[SystemCleaner] failed to refresh system info: {ex.Message}");
         }
     }
 
@@ -163,7 +163,7 @@ public partial class SystemCleanerControl : UserControl
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[SystemCleaner] CPU 读取失败: {ex.Message}");
+            Debug.WriteLine($"[SystemCleaner] CPU read failed: {ex.Message}");
         }
     }
 
@@ -198,7 +198,7 @@ public partial class SystemCleanerControl : UserControl
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[SystemCleaner] 清理异常: {ex.Message}");
+                Debug.WriteLine($"[SystemCleaner] cleanup error: {ex.Message}");
             }
         }).ContinueWith(_ =>
         {

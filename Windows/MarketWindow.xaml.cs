@@ -89,7 +89,7 @@ public partial class MarketWindow : Window
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[MarketWindow] WebView2 初始化失败: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"[MarketWindow] WebView2 init failed: {ex.Message}");
             MessageBox.Show(Framework.Lang.TF("common.webview2InitializationFailed", ex.Message), Title, MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }

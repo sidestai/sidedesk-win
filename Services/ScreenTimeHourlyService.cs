@@ -365,7 +365,7 @@ FROM local_screen_time_hourly";
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[ScreenTime] 推送云端失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[ScreenTime] cloud push failed: {ex.Message}");
                 return false;
             }
         }
@@ -401,7 +401,7 @@ FROM local_screen_time_hourly";
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[ScreenTime] 云端查询失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[ScreenTime] cloud query failed: {ex.Message}");
                 return null;
             }
         }

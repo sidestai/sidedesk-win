@@ -57,7 +57,7 @@ namespace SideDesk
                 var r = MessageBox.Show(message, Framework.Lang.T("login.switchAccount"), MessageBoxButton.OKCancel, MessageBoxImage.Question);
                 if (r != MessageBoxResult.OK) return;
                 try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = true }); }
-                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[App] 拉起新实例失败: {ex.Message}"); }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[App] failed to launch new instance: {ex.Message}"); }
                 Current.Shutdown();
             }
             var dispatcher = Current?.Dispatcher;
@@ -142,7 +142,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[PluginLoader] 启动加载异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[PluginLoader] startup loading error: {ex.Message}");
             }
 
             // 应用主题
@@ -167,7 +167,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[VirtualDesktop] 初始化异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[VirtualDesktop] init error: {ex.Message}");
             }
 
             ApplyLayout(save: false);
@@ -184,7 +184,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[WebSocketServer] 启动异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[WebSocketServer] start error: {ex.Message}");
             }
 
             // 订阅后端 WebSocket 消息（好友请求等通知），无论哪条登录路径都生效
@@ -195,7 +195,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[BackendWS] 订阅消息异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[BackendWS] message subscription error: {ex.Message}");
             }
 
             // 订阅通知服务事件：队列就绪的通知转发到所有已加载的主窗口渲染
@@ -208,7 +208,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Notification] 订阅通知服务异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Notification] notification service subscription error: {ex.Message}");
             }
 
             // 启动 MCP Server (127.0.0.1:19192)，仅在开启时
@@ -219,7 +219,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[McpServer] 启动异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[McpServer] start error: {ex.Message}");
             }
 
             // 同步服务端 MCP 工具注册表（登录态生效；未登录自动回退内置工具）
@@ -234,7 +234,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[HttpServer] 启动异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[HttpServer] start error: {ex.Message}");
             }
 
             // 启动全局热键钩子（窗口切换热键 / 语音输入热键，任一开启即安装）
@@ -244,7 +244,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[GlobalHotkey] 启动异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[GlobalHotkey] start error: {ex.Message}");
             }
 
             // 启动窗口使用时长采集（仅在开启“使用时长分析”时）
@@ -255,7 +255,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[WindowUsage] 启动异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[WindowUsage] start error: {ex.Message}");
             }
 
             // 启动时恢复上次保存的标题锁定规则（仅在功能开启时）
@@ -264,12 +264,12 @@ namespace SideDesk
                 if (AppSettings.EnableTitleLock)
                 {
                     int restored = TaskbarOverlayManager.RestoreLocksFromRules();
-                    System.Diagnostics.Debug.WriteLine($"[TitleLock] 启动恢复锁定规则，命中 {restored} 个窗口");
+                    System.Diagnostics.Debug.WriteLine($"[TitleLock] restored lock rules on startup, matched {restored} windows");
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[TitleLock] 启动恢复锁定规则失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[TitleLock] failed to restore lock rules on startup: {ex.Message}");
             }
 
             // 启动云同步（仅在已登录且已开启时；未开启时不做任何行级/结构同步）
@@ -280,7 +280,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[CloudSync] 启动异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] start error: {ex.Message}");
             }
 
             // 启动时验证 Token 有效性（延迟 2 秒，避免阻塞启动流程）
@@ -327,7 +327,7 @@ namespace SideDesk
 
                     // 未登录 → 以访客（设备）身份建立后端 WebSocket 连接，使本设备可接收“按设备/未登录用户”维度的通知
                     try { Services.BackendWebSocketService.Instance.Start(null); }
-                    catch (Exception wsEx) { System.Diagnostics.Debug.WriteLine($"[BackendWS] 访客启动异常: {wsEx.Message}"); }
+                    catch (Exception wsEx) { System.Diagnostics.Debug.WriteLine($"[BackendWS] guest start error: {wsEx.Message}"); }
                     return;
                 }
 
@@ -338,7 +338,7 @@ namespace SideDesk
 
                 using var resp = await Services.HttpLog.SendAsync(http, req);
                 string body = await resp.Content.ReadAsStringAsync();
-                System.Diagnostics.Debug.WriteLine($"[Auth] Token 验证响应 ({(int)resp.StatusCode}): {body}");
+                System.Diagnostics.Debug.WriteLine($"[Auth] token verification response ({(int)resp.StatusCode}): {body}");
 
                 // HTTP 层失败（502/504/证书错误等）→ 视为离线，不清 Token
                 if (!resp.IsSuccessStatusCode)
@@ -371,7 +371,7 @@ namespace SideDesk
 
                     // Token 有效 → 启动后端 WebSocket 长连接（消息订阅已在 OnStartup 统一建立）
                     try { Services.BackendWebSocketService.Instance.Start(token); }
-                    catch (Exception wsEx) { System.Diagnostics.Debug.WriteLine($"[BackendWS] 启动异常: {wsEx.Message}"); }
+                    catch (Exception wsEx) { System.Diagnostics.Debug.WriteLine($"[BackendWS] start error: {wsEx.Message}"); }
 
                     // 登录态有效 → 同步服务端 MCP 工具注册表
                     try { _ = Services.McpToolRegistryService.Instance.SyncAsync(); } catch { }
@@ -381,7 +381,7 @@ namespace SideDesk
                 // code=401/403 表示 Token 明确无效（过期/被踢）
                 if (bizCode == 401 || bizCode == 403)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[Auth] Token 验证失败 (code={bizCode})，清除本地登录状态");
+                    System.Diagnostics.Debug.WriteLine($"[Auth] token verification failed (code={bizCode}), clearing local login state");
                     AccountTokenExpiredMessage = Framework.Lang.T("settings.loginExpired");
 
                     // 作用域即将从 u:A 回退到未归属 local：先记录是否曾登录（首次启动就失效时无需提示重启）
@@ -422,7 +422,7 @@ namespace SideDesk
             catch (Exception ex)
             {
                 // 网络不可达等异常：视为离线，账户页显示未登录 + 离线通知
-                System.Diagnostics.Debug.WriteLine($"[Auth] 启动时 Token 验证跳过: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Auth] token verification skipped on startup: {ex.Message}");
                 if (!string.IsNullOrEmpty(AppSettings.AccountToken))
                     MarkAccountOffline(true);
             }
@@ -515,7 +515,7 @@ namespace SideDesk
                         }
                         catch (Exception avatarEx)
                         {
-                            System.Diagnostics.Debug.WriteLine($"[Auth] 头像下载失败: {avatarEx.Message}");
+                            System.Diagnostics.Debug.WriteLine($"[Auth] avatar download failed: {avatarEx.Message}");
                         }
                     }
                     else
@@ -534,7 +534,7 @@ namespace SideDesk
                     _ = Task.Run(() =>
                     {
                         try { Services.DataPollingService.Instance.AdoptPendingLocalData(); }
-                        catch (Exception adoptEx) { System.Diagnostics.Debug.WriteLine($"[Auth] 晋升未归属数据异常: {adoptEx.Message}"); }
+                        catch (Exception adoptEx) { System.Diagnostics.Debug.WriteLine($"[Auth] orphaned data promotion error: {adoptEx.Message}"); }
                     });
                 }
 
@@ -544,7 +544,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Auth] 获取用户详情失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Auth] failed to get user details: {ex.Message}");
             }
         }
 
@@ -628,7 +628,7 @@ namespace SideDesk
 
             Dispatcher.Invoke(() =>
             {
-                System.Diagnostics.Debug.WriteLine($"[App] 虚拟桌面切换，重新应用布局: {newDesktopId}");
+                System.Diagnostics.Debug.WriteLine($"[App] virtual desktop switched, reapplying layout: {newDesktopId}");
                 ApplyLayout(save: false);
             });
         }
@@ -669,7 +669,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[App] 释放 WebView2 异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[App] WebView2 dispose error: {ex.Message}");
             }
         }
 
@@ -782,7 +782,7 @@ namespace SideDesk
         /// </summary>
         private void OnWebSocketMessageReceived(Guid clientId, string message)
         {
-            System.Diagnostics.Debug.WriteLine($"[App] ★★★ 收到WS消息[{clientId}]: {message}");
+            System.Diagnostics.Debug.WriteLine($"[App] ★★★ WS message received [{clientId}]: {message}");
             Dispatcher.Invoke(() =>
             {
                 try
@@ -804,11 +804,11 @@ namespace SideDesk
                         // 回调给注册的 UI 组件（更新数据看板值）
                         if (!string.IsNullOrEmpty(requestId) && _fetchCallbacks.TryRemove(requestId, out var cb))
                         {
-                            try { cb(success, value, error); } catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[App] fetchCallback异常: {ex.Message}"); }
+                            try { cb(success, value, error); } catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[App] fetchCallback error: {ex.Message}"); }
                         }
                         else
                         {
-                            System.Diagnostics.Debug.WriteLine($"[App] 未找到requestId对应的回调: {requestId}");
+                            System.Diagnostics.Debug.WriteLine($"[App] no callback found for requestId: {requestId}");
                         }
 
                         return; // fetchResult 不弹窗，由回调更新UI
@@ -867,7 +867,7 @@ namespace SideDesk
                         return;
                     }
                 }
-                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[App] WS消息解析异常: {ex.Message}"); }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[App] WS message parse error: {ex.Message}"); }
 
                 // 非 fetchResult/register 消息弹窗提示
                 MessageBox.Show(message, Framework.Lang.T("nativePanel.extensionMessageReceived"), MessageBoxButton.OK, MessageBoxImage.Information);
@@ -879,7 +879,7 @@ namespace SideDesk
         /// </summary>
         private void OnBackendWsMessage(string message)
         {
-            System.Diagnostics.Debug.WriteLine($"[App] 后端WS消息: {message}");
+            System.Diagnostics.Debug.WriteLine($"[App] backend WS message: {message}");
             try
             {
                 var obj = Newtonsoft.Json.Linq.JObject.Parse(message);
@@ -905,7 +905,7 @@ namespace SideDesk
                             }
                             catch (Exception ex)
                             {
-                                System.Diagnostics.Debug.WriteLine($"[BackendWS] 主窗口显示好友请求通知失败: {ex}");
+                                System.Diagnostics.Debug.WriteLine($"[BackendWS] failed to show friend request notification on main window: {ex}");
                                 // 降级为简单气泡通知（不走富通知卡的模板/ToolTip 构建路径）
                                 try { mw.ShowBubbleNotification(Framework.Lang.TF("nativePanel.friendRequestEmoji", fromName)); anyShown = true; } catch { }
                             }
@@ -920,10 +920,10 @@ namespace SideDesk
                             }
                             catch (Exception ex)
                             {
-                                System.Diagnostics.Debug.WriteLine($"[BackendWS] 设置窗口刷新好友请求失败: {ex}");
+                                System.Diagnostics.Debug.WriteLine($"[BackendWS] failed to refresh friend requests on settings window: {ex}");
                             }
                         }
-                        System.Diagnostics.Debug.WriteLine($"[BackendWS] friend_request 通知处理完成 anyShown={anyShown}");
+                        System.Diagnostics.Debug.WriteLine($"[BackendWS] friend_request notification handled, anyShown={anyShown}");
                     });
                 }
                 else if (evt == "friend_online" && data != null)
@@ -950,7 +950,7 @@ namespace SideDesk
                             }
                             catch (Exception ex)
                             {
-                                System.Diagnostics.Debug.WriteLine($"[BackendWS] 设置窗口刷新好友在线状态失败: {ex}");
+                                System.Diagnostics.Debug.WriteLine($"[BackendWS] failed to refresh friend online status on settings window: {ex}");
                             }
                         }
                     });
@@ -977,7 +977,7 @@ namespace SideDesk
                             }
                             catch (Exception ex)
                             {
-                                System.Diagnostics.Debug.WriteLine($"[BackendWS] 设置窗口刷新好友在线状态失败: {ex}");
+                                System.Diagnostics.Debug.WriteLine($"[BackendWS] failed to refresh friend online status on settings window: {ex}");
                             }
                         }
                     });
@@ -1102,7 +1102,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[App] 后端WS消息解析异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[App] backend WS message parse error: {ex.Message}");
             }
         }
 
@@ -1118,7 +1118,7 @@ namespace SideDesk
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[BackendWS] 设置窗口刷新团队页失败: {ex}");
+                    System.Diagnostics.Debug.WriteLine($"[BackendWS] failed to refresh team page on settings window: {ex}");
                 }
             }
         }
@@ -1156,7 +1156,7 @@ namespace SideDesk
                 if (forceFull)
                 {
                     bool changed = await Services.CloudSyncService.Instance.PullItemFullAsync(target);
-                    System.Diagnostics.Debug.WriteLine($"[App] 强制全量刷新 {(changed ? "有变更" : "无变更")}: {target.Type}");
+                    System.Diagnostics.Debug.WriteLine($"[App] forced full refresh {(changed ? "changed" : "no change")}: {target.Type}");
                     await Dispatcher.InvokeAsync(() =>
                     {
                         foreach (var mw in _windows)
@@ -1171,7 +1171,7 @@ namespace SideDesk
                 // 合并语义全量拉取：只增改、通过墓碑删除，不会整体删除未返回的本地行；
                 // 绑定同一 ServerId 的其他视图由 CloudSyncService 内部镜像同步
                 bool mergeChanged = await Services.CloudSyncService.Instance.PullItemMergeFullAsync(target);
-                System.Diagnostics.Debug.WriteLine($"[App] 团队行更新已应用: {target.Type}, {(mergeChanged ? "有变更" : "无变更")}");
+                System.Diagnostics.Debug.WriteLine($"[App] team row update applied: {target.Type}, {(mergeChanged ? "changed" : "no change")}");
                 if (mergeChanged)
                 {
                     await Dispatcher.InvokeAsync(() =>
@@ -1186,7 +1186,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[App] 处理团队行更新失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[App] failed to handle team row update: {ex.Message}");
             }
         }
 
@@ -1260,7 +1260,7 @@ namespace SideDesk
                         WindowConfigs.Save();
                         foreach (var mw in _windows)
                             if (mw.IsLoaded) mw.RemoveSharedWindowById(win.Id);
-                        System.Diagnostics.Debug.WriteLine($"[App] 分享已取消: 移除导入窗口 localId={win.Id}");
+                        System.Diagnostics.Debug.WriteLine($"[App] share cancelled: removing imported window localId={win.Id}");
                     }
                     else
                     {
@@ -1271,13 +1271,13 @@ namespace SideDesk
                         WindowConfigs.Save();
                         foreach (var mw in _windows)
                             if (mw.IsLoaded) mw.RefreshNativePanels();
-                        System.Diagnostics.Debug.WriteLine($"[App] 分享已取消: 移除导入组件 localId={localId}, ServerId={itemServerId}");
+                        System.Diagnostics.Debug.WriteLine($"[App] share cancelled: removing imported component localId={localId}, ServerId={itemServerId}");
                     }
                 }));
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[App] 处理分享取消通知失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[App] failed to handle share-cancel notification: {ex.Message}");
             }
         }
 
@@ -1714,7 +1714,7 @@ namespace SideDesk
 
                 if (staleProcesses.Count > 0)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[AppBar] 检测到 {staleProcesses.Count} 个残留 SideDesk 进程，正在清理...");
+                    System.Diagnostics.Debug.WriteLine($"[AppBar] found {staleProcesses.Count} stale SideDesk processes, cleaning up...");
                     foreach (var p in staleProcesses)
                     {
                         try { p.Kill(); p.WaitForExit(3000); }
@@ -1731,7 +1731,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[AppBar] 清理残留失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[AppBar] failed to clean stale processes: {ex.Message}");
             }
         }
 
@@ -1744,7 +1744,7 @@ namespace SideDesk
         {
             var task = System.Threading.Tasks.Task.Run(ResetWorkAreaCore);
             if (!task.Wait(TimeSpan.FromMilliseconds(maxWaitMs)))
-                System.Diagnostics.Debug.WriteLine("[AppBar] 重置工作区超时，放弃等待（后台继续执行）");
+                System.Diagnostics.Debug.WriteLine("[AppBar] workspace reset timed out, giving up waiting (continuing in background)");
         }
 
         private static void ResetWorkAreaCore()
@@ -1813,7 +1813,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[AppBar] 重置工作区失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[AppBar] workspace reset failed: {ex.Message}");
             }
         }
 
@@ -2257,7 +2257,7 @@ namespace SideDesk
             if (useSoftware)
                 System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
 
-            System.Diagnostics.Debug.WriteLine($"[Render] 渲染模式: {(useSoftware ? "软件渲染" : "默认（硬件加速）")}（强制={AppSettings.ForceSoftwareRendering} 自动={autoSoftware} 主显示={primaryAdapter ?? "未知"}）");
+            System.Diagnostics.Debug.WriteLine($"[Render] render mode: {(useSoftware ? "software" : "default (hardware acceleration)")} (forced={AppSettings.ForceSoftwareRendering} auto={autoSoftware} primaryAdapter={primaryAdapter ?? "unknown"})");
 
             // 异步诊断（WMI 查显卡驱动较慢），完成后写日志并按需弹窗提示
             Dispatcher.BeginInvoke(new Action(() => DiagnoseRendering(AppSettings.ForceSoftwareRendering, autoSoftware, primaryAdapter)));
@@ -2356,7 +2356,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Render] 诊断失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Render] diagnostics failed: {ex.Message}");
             }
         }
 
@@ -2387,7 +2387,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Render] 提示弹窗失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Render] failed to show prompt dialog: {ex.Message}");
             }
         }
         
@@ -2474,7 +2474,7 @@ namespace SideDesk
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[NotifyIcon] 初始化失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[NotifyIcon] init failed: {ex.Message}");
             }
         }
 

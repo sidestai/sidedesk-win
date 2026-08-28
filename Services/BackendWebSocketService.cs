@@ -85,12 +85,12 @@ namespace SideDesk.Services
             // 身份变更（访客↔已登录，或切换账号）→ 先停止旧连接再重新连接
             if (_running && _token != token)
             {
-                Debug.WriteLine("[BackendWS] 连接身份已变更，重新建立连接");
+                Debug.WriteLine("[BackendWS] connection identity changed, reconnecting");
                 StopInternal();
             }
             else if (_running)
             {
-                Debug.WriteLine("[BackendWS] 已在运行中，跳过重复启动");
+                Debug.WriteLine("[BackendWS] already running, skipping duplicate start");
                 return;
             }
 
@@ -108,9 +108,9 @@ namespace SideDesk.Services
         public void Stop()
         {
             if (!_running) return;
-            Debug.WriteLine("[BackendWS] 正在停止...");
+            Debug.WriteLine("[BackendWS] stopping...");
             StopInternal();
-            Debug.WriteLine("[BackendWS] 已停止");
+            Debug.WriteLine("[BackendWS] stopped");
         }
 
         private void StopInternal()
@@ -175,7 +175,7 @@ namespace SideDesk.Services
                         ? $"?deviceId={Uri.EscapeDataString(deviceId)}"
                         : $"?token={Uri.EscapeDataString(_token)}&deviceId={Uri.EscapeDataString(deviceId)}";
                     var uri = new Uri($"{wsBase}{query}");
-                    Debug.WriteLine($"[BackendWS] 正在连接 {wsBase.Host}:{probePort} ({(string.IsNullOrEmpty(_token) ? "访客" : "已登录")}) ...");
+                    Debug.WriteLine($"[BackendWS] connecting to {wsBase.Host}:{probePort} ({(string.IsNullOrEmpty(_token) ? "guest" : "logged in")}) ...");
 
                     using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(token);
                     connectCts.CancelAfter(TimeSpan.FromSeconds(10)); // 连接超时 10 秒
@@ -185,7 +185,7 @@ namespace SideDesk.Services
                     // 连接成功
                     _connected = true;
                     _reconnectAttempts = 0;
-                    Debug.WriteLine("[BackendWS] 连接成功");
+                    Debug.WriteLine("[BackendWS] connected");
                     Connected?.Invoke();
                     StartHeartbeat(token);
 
@@ -198,7 +198,7 @@ namespace SideDesk.Services
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"[BackendWS] 连接异常: {ex.Message}");
+                    Debug.WriteLine($"[BackendWS] connection error: {ex.Message}");
                 }
 
                 // 连接断开
@@ -215,13 +215,13 @@ namespace SideDesk.Services
                     _reconnectAttempts++;
                     if (_reconnectAttempts > MaxReconnectAttempts)
                     {
-                        Debug.WriteLine($"[BackendWS] 已达最大重连次数({MaxReconnectAttempts})，停止重连");
+                        Debug.WriteLine($"[BackendWS] max reconnect attempts ({MaxReconnectAttempts}) reached, giving up");
                         _running = false;
                         break;
                     }
 
                     int delay = Math.Min(BaseReconnectDelayMs * (1 << Math.Min(_reconnectAttempts - 1, 5)), 60_000);
-                    Debug.WriteLine($"[BackendWS] {delay / 1000}秒后尝试第{_reconnectAttempts}次重连...");
+                    Debug.WriteLine($"[BackendWS] retry #{_reconnectAttempts} in {delay / 1000}s...");
                     try { await Task.Delay(delay, token).ConfigureAwait(false); }
                     catch (OperationCanceledException) { break; }
                 }
@@ -243,7 +243,7 @@ namespace SideDesk.Services
                     result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), token).ConfigureAwait(false);
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
-                        Debug.WriteLine($"[BackendWS] 服务端关闭连接: {result.CloseStatusDescription}");
+                        Debug.WriteLine($"[BackendWS] server closed connection: {result.CloseStatusDescription}");
                         try
                         {
                             await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "closing",
@@ -259,9 +259,9 @@ namespace SideDesk.Services
                 if (ms.Length > 0 && result.MessageType == WebSocketMessageType.Text)
                 {
                     var text = Encoding.UTF8.GetString(ms.ToArray());
-                    Debug.WriteLine($"[BackendWS] 收到消息: {text}");
+                    Debug.WriteLine($"[BackendWS] message received: {text}");
                     try { MessageReceived?.Invoke(text); }
-                    catch (Exception ex) { Debug.WriteLine($"[BackendWS] 消息分发异常（已吞掉，不影响接收循环）: {ex}"); }
+                    catch (Exception ex) { Debug.WriteLine($"[BackendWS] message dispatch error (swallowed, receive loop unaffected): {ex}"); }
                 }
             }
         }
@@ -285,7 +285,7 @@ namespace SideDesk.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[BackendWS] 发送失败: {ex.Message}");
+                Debug.WriteLine($"[BackendWS] send failed: {ex.Message}");
             }
             finally
             {

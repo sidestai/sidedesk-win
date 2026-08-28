@@ -72,7 +72,7 @@ public sealed class DigitalEmployeeApiService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[DigitalEmployee] 获取我的员工列表失败: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"[DigitalEmployee] failed to get my digital employee list: {ex.Message}");
             return null;
         }
     }
@@ -100,7 +100,7 @@ public sealed class DigitalEmployeeApiService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[DigitalEmployee] 更新员工设置失败: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"[DigitalEmployee] failed to update employee settings: {ex.Message}");
             return (false, ex.Message);
         }
     }
