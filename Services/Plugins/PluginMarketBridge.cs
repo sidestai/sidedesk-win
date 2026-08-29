@@ -186,6 +186,17 @@ public static class PluginMarketBridge
                 return;
             }
 
+            // HTML 组件模式：强制校验 moduleHtml 文件存在，避免安装后加载失败
+            if (string.Equals(cfg.Mode, "html", StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrEmpty(cfg.ModuleHtml)
+                    || !System.IO.File.Exists(System.IO.Path.Combine(pluginRoot, cfg.ModuleHtml)))
+                {
+                    Notify(false, Framework.Lang.T("market.pluginHtmlLoadFailed"), notifyTitle);
+                    return;
+                }
+            }
+
             // 3. 目标目录：plugins/<插件ID>；已装同 ID 插件先卸载并清理旧目录
             var folderName = SanitizeDirName(cfg.Id);
             var targetDir = System.IO.Path.Combine(PluginLoaderService.Instance.PluginsDirectory, folderName);
@@ -290,12 +301,20 @@ public static class PluginMarketBridge
             ThemedMessageBox.Show(Application.Current?.MainWindow, text, title));
     }
 
-    /// <summary>安全解压 zip：拒绝越界条目（zip slip 防护）</summary>
+    /// <summary>安全解压 zip：拒绝越界条目（zip slip 防护），并限制条目数与累计字节（防 zip bomb）</summary>
+    private const int MaxZipEntries = 5000;
+    private const long MaxZipTotalBytes = 200L * 1024 * 1024; // 200MB
+
     private static void SafeExtractZip(string zipPath, string destDir)
     {
         System.IO.Directory.CreateDirectory(destDir);
         var destFull = System.IO.Path.GetFullPath(destDir);
         using var zip = System.IO.Compression.ZipFile.OpenRead(zipPath);
+
+        if (zip.Entries.Count > MaxZipEntries)
+            throw new System.IO.IOException($"插件包条目数超限（>{MaxZipEntries}）");
+
+        long totalBytes = 0;
         foreach (var entry in zip.Entries)
         {
             var destPath = System.IO.Path.GetFullPath(System.IO.Path.Combine(destDir, entry.FullName));
@@ -308,10 +327,26 @@ public static class PluginMarketBridge
                 System.IO.Directory.CreateDirectory(destPath);
                 continue;
             }
+
+            // 累计字节上限：先按声明长度快速拦截，写入时同步累计实际字节兼容伪造长度
+            totalBytes += entry.Length;
+            if (totalBytes > MaxZipTotalBytes)
+                throw new System.IO.IOException($"插件包解压体积超限（>{MaxZipTotalBytes / 1024 / 1024}MB）");
+
             System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(destPath)!);
             using (var entryStream = entry.Open())
             using (var fileStream = System.IO.File.Create(destPath))
-                entryStream.CopyTo(fileStream);
+            {
+                var buffer = new byte[81920];
+                int read;
+                while ((read = entryStream.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    fileStream.Write(buffer, 0, read);
+                    totalBytes += read; // 实际写入字节同步累计，兼容声明长度被伪造的恶意包
+                    if (totalBytes > MaxZipTotalBytes)
+                        throw new System.IO.IOException($"插件包解压体积超限（>{MaxZipTotalBytes / 1024 / 1024}MB）");
+                }
+            }
         }
     }
 

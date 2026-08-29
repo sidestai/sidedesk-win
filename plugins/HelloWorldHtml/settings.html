@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hello World（HTML 模式）· 设置</title>
+<style>
+  :root, [data-theme="dark"] {
+    --bg: #16181d;
+    --panel: #1e2128;
+    --ink: #e8e4d8;
+    --muted: #8a8fa0;
+    --accent: #e8b04b;
+    --accent-ink: #16181d;
+    --line: rgba(232, 228, 216, 0.14);
+    --input: #121418;
+  }
+  [data-theme="light"] {
+    --bg: #f4f1e8;
+    --panel: #fffdf6;
+    --ink: #23252b;
+    --muted: #84806f;
+    --accent: #b96a2a;
+    --accent-ink: #fffdf6;
+    --line: rgba(35, 37, 43, 0.14);
+    --input: #f4f1e8;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: Georgia, "Palatino Linotype", "Songti SC", "SimSun", serif;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .35s ease, color .35s ease;
+  }
+
+  .card {
+    width: min(440px, calc(100% - 48px));
+    background: var(--panel);
+    border: 1px dashed var(--line);
+    border-radius: 14px;
+    padding: 28px 30px 24px;
+    transition: background .35s ease, border-color .35s ease;
+  }
+
+  .kicker {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 10px; letter-spacing: .32em; text-transform: uppercase;
+    color: var(--muted);
+  }
+  h1 { font-size: 20px; margin: 10px 0 4px; }
+  .hint { font-size: 12px; color: var(--muted); line-height: 1.6; margin-bottom: 18px; }
+
+  label {
+    display: block;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 10px; letter-spacing: .24em; text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  input[type="text"] {
+    width: 100%;
+    font-family: inherit; font-size: 15px;
+    color: var(--ink);
+    background: var(--input);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 11px 14px;
+    outline: none;
+    transition: border-color .2s ease, background .35s ease;
+  }
+  input[type="text"]:focus { border-color: var(--accent); }
+
+  .row { display: flex; align-items: center; gap: 14px; margin-top: 18px; }
+  button.save {
+    font-family: inherit; font-size: 14px;
+    background: var(--accent); color: var(--accent-ink);
+    border: none; border-radius: 10px;
+    padding: 10px 22px;
+    cursor: pointer;
+    box-shadow: 0 3px 0 rgba(0,0,0,.22);
+    transition: transform .12s ease, box-shadow .12s ease, background .35s ease;
+  }
+  button.save:hover { transform: translateY(-1px); box-shadow: 0 4px 0 rgba(0,0,0,.26); }
+  button.save:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(0,0,0,.22); }
+  button.save:disabled { opacity: .55; cursor: default; transform: none; }
+
+  .status { font-size: 12px; color: var(--muted); min-height: 16px; }
+  .status.ok { color: var(--accent); }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="kicker">SideDesk · Html Plugin · Settings</div>
+    <h1>Hello World 设置</h1>
+    <p class="hint">配置经 window.sideDesk.setConfig 保存到插件私有存储，模块页下次创建时生效。</p>
+
+    <label for="userName">你的称呼</label>
+    <input type="text" id="userName" maxlength="24" placeholder="朋友" autocomplete="off">
+
+    <div class="row">
+      <button class="save" id="saveBtn">保存</button>
+      <span class="status" id="status"></span>
+    </div>
+  </div>
+
+<script>
+(function () {
+  var input = document.getElementById('userName');
+  var saveBtn = document.getElementById('saveBtn');
+  var status = document.getElementById('status');
+  var cfg = {};
+  var statusTimer = 0;
+
+  var theme = new URLSearchParams(location.search).get('theme') || 'dark';
+  applyTheme(theme);
+  window.sideDesk.onEvent(function (data, event) {
+    if (event === 'themeChanged' && data && data.theme) applyTheme(data.theme);
+  });
+
+  function applyTheme(t) {
+    document.documentElement.setAttribute('data-theme', t === 'light' ? 'light' : 'dark');
+  }
+
+  function flash(text, ok) {
+    status.textContent = text;
+    status.className = 'status' + (ok ? ' ok' : '');
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(function () { status.textContent = ''; }, 2500);
+  }
+
+  saveBtn.addEventListener('click', async function () {
+    cfg.userName = input.value.trim();
+    saveBtn.disabled = true;
+    try {
+      await window.sideDesk.setConfig(cfg);
+      flash('已保存 ✓', true);
+    } catch (err) {
+      flash('保存失败：' + ((err && err.message) || '未知错误'), false);
+    }
+    saveBtn.disabled = false;
+  });
+
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') saveBtn.click();
+  });
+
+  window.sideDesk.getConfig()
+    .then(function (data) {
+      if (data) { cfg = data; input.value = data.userName || ''; }
+    })
+    .catch(function () { flash('读取配置失败', false); });
+})();
+</script>
+</body>
+</html>

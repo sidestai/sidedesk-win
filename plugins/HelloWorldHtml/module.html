@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hello World（HTML 模式）</title>
+<style>
+  /* 主题令牌：宿主经 ?theme= 与 themeChanged 事件下发，页面据此切换深浅色 */
+  :root, [data-theme="dark"] {
+    --bg: #16181d;
+    --panel: #1e2128;
+    --ink: #e8e4d8;
+    --muted: #8a8fa0;
+    --accent: #e8b04b;
+    --accent-ink: #16181d;
+    --line: rgba(232, 228, 216, 0.14);
+  }
+  [data-theme="light"] {
+    --bg: #f4f1e8;
+    --panel: #fffdf6;
+    --ink: #23252b;
+    --muted: #84806f;
+    --accent: #b96a2a;
+    --accent-ink: #fffdf6;
+    --line: rgba(35, 37, 43, 0.14);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: Georgia, "Palatino Linotype", "Songti SC", "SimSun", serif;
+    display: flex; align-items: stretch; justify-content: stretch;
+    overflow: hidden;
+    transition: background .35s ease, color .35s ease;
+  }
+
+  .ticket {
+    flex: 1;
+    display: flex; flex-direction: column; justify-content: space-between;
+    background: var(--panel);
+    border: 1px dashed var(--line);
+    border-radius: 14px;
+    padding: 18px 20px;
+    margin: 8px;
+    transition: background .35s ease, border-color .35s ease;
+  }
+
+  .kicker {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 10px; letter-spacing: .32em; text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .greeting {
+    font-size: 21px; line-height: 1.45; font-weight: 600;
+    margin-top: 8px;
+  }
+  .greeting em { font-style: normal; color: var(--accent); }
+
+  .counter-row {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    gap: 12px;
+    border-top: 1px solid var(--line);
+    padding-top: 12px;
+  }
+  .count-label {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 10px; letter-spacing: .24em; color: var(--muted);
+    text-transform: uppercase; margin-bottom: 2px;
+  }
+  .count {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 34px; font-weight: 700; line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .count.bump { animation: bump .28s ease; }
+  @keyframes bump { 40% { transform: scale(1.14); color: var(--accent); } }
+
+  button.punch {
+    font-family: inherit; font-size: 14px;
+    background: var(--accent); color: var(--accent-ink);
+    border: none; border-radius: 10px;
+    padding: 10px 18px;
+    cursor: pointer;
+    box-shadow: 0 3px 0 rgba(0,0,0,.22);
+    transition: transform .12s ease, box-shadow .12s ease, background .35s ease;
+  }
+  button.punch:hover { transform: translateY(-1px); box-shadow: 0 4px 0 rgba(0,0,0,.26); }
+  button.punch:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(0,0,0,.22); }
+
+  .stub {
+    display: flex; justify-content: space-between;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 9px; letter-spacing: .18em; color: var(--muted);
+    margin-top: 10px;
+  }
+</style>
+</head>
+<body>
+  <div class="ticket">
+    <div>
+      <div class="kicker">SideDesk · Html Plugin</div>
+      <div class="greeting" id="greeting">你好，朋友。</div>
+    </div>
+    <div>
+      <div class="counter-row">
+        <div>
+          <div class="count-label">Punch Count</div>
+          <div class="count" id="count">0</div>
+        </div>
+        <button class="punch" id="addBtn">+1</button>
+      </div>
+      <div class="stub">
+        <span>HELLO-WORLD-HTML</span>
+        <span id="stamp">API v1</span>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  var countEl = document.getElementById('count');
+  var greetingEl = document.getElementById('greeting');
+  var cfg = { count: 0, userName: '' };
+  var saving = false;
+
+  // 主题：初始取 URL 上的 ?theme=，之后跟随宿主 themeChanged 事件
+  var theme = new URLSearchParams(location.search).get('theme') || 'dark';
+  applyTheme(theme);
+  window.sideDesk.onEvent(function (data, event) {
+    if (event === 'themeChanged' && data && data.theme) applyTheme(data.theme);
+  });
+
+  function applyTheme(t) {
+    document.documentElement.setAttribute('data-theme', t === 'light' ? 'light' : 'dark');
+  }
+
+  function render() {
+    var name = (cfg.userName || '').trim() || '朋友';
+    greetingEl.innerHTML = '';
+    greetingEl.appendChild(document.createTextNode('你好，'));
+    var em = document.createElement('em');
+    em.textContent = name;
+    greetingEl.appendChild(em);
+    greetingEl.appendChild(document.createTextNode('。'));
+    countEl.textContent = String(cfg.count | 0);
+  }
+
+  async function persist() {
+    if (saving) return;
+    saving = true;
+    try { await window.sideDesk.setConfig(cfg); } catch (e) { /* 宿主返回结构化错误 */ }
+    saving = false;
+  }
+
+  document.getElementById('addBtn').addEventListener('click', function () {
+    cfg.count = (cfg.count | 0) + 1;
+    render();
+    countEl.classList.remove('bump');
+    void countEl.offsetWidth; // 重启动画
+    countEl.classList.add('bump');
+    persist();
+  });
+
+  // 初始读取插件私有配置（在「设置」页修改用户名后，下次创建模块即生效）
+  window.sideDesk.getConfig()
+    .then(function (data) { if (data) { cfg = Object.assign(cfg, data); } render(); })
+    .catch(render);
+})();
+</script>
+</body>
+</html>

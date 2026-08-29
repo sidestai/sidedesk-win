@@ -93,8 +93,8 @@ namespace SideDesk
         /// <summary>启动语音识别的全局热键（格式如 "Ctrl+B"，可在 设置-快捷键 中修改）</summary>
         public string VoiceStartHotkey { get; set; } = "Ctrl+B";
 
-        /// <summary>停止语音识别的全局热键（格式如 "Ctrl+Alt+B"，可在 设置-快捷键 中修改）</summary>
-        public string VoiceStopHotkey { get; set; } = "Ctrl+Alt+B";
+        /// <summary>停止语音识别的全局热键（格式如 "Ctrl+B"，默认与启动键相同表示同一键切换开始/结束，可在 设置-快捷键 中修改）</summary>
+        public string VoiceStopHotkey { get; set; } = "Ctrl+B";
 
         /// <summary>是否开启 MCP Server（HTTP/SSE，端口 19192）</summary>
         public bool EnableMcpServer { get; set; } = false;

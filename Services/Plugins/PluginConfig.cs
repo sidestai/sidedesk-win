@@ -51,6 +51,26 @@ public class PluginConfig
     [JsonProperty("enabled")]
     public bool Enabled { get; set; } = true;
 
+    /// <summary>加载模式："native"（默认，DLL 插件）或 "html"（HTML 组件模式，经 WebView2 沙箱加载）</summary>
+    [JsonProperty("mode")]
+    public string Mode { get; set; } = "native";
+
+    /// <summary>HTML 模式的模块页文件（相对于插件目录）</summary>
+    [JsonProperty("moduleHtml")]
+    public string? ModuleHtml { get; set; }
+
+    /// <summary>HTML 模式的设置页文件（可选，相对于插件目录；提供后设置页出现「设置」入口）</summary>
+    [JsonProperty("settingsHtml")]
+    public string? SettingsHtml { get; set; }
+
+    /// <summary>声明式权限列表（预留字段，当前版本不做强制网关）</summary>
+    [JsonProperty("permissions")]
+    public List<string> Permissions { get; set; } = new();
+
+    /// <summary>插件依赖的宿主 API 版本（当前宿主支持 1；未知版本拒绝加载）</summary>
+    [JsonProperty("apiVersion")]
+    public int ApiVersion { get; set; } = 1;
+
     /// <summary>插件所在目录（扫描时填充，不参与序列化）</summary>
     [JsonIgnore]
     public string? SourceDirectory { get; set; }

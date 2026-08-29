@@ -172,6 +172,9 @@ namespace SideDesk
 
             ApplyLayout(save: false);
 
+            // 监听系统显示设置变化（分辨率/缩放/显示器增删），防抖后重新布局 AppBar
+            Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
+
             // 初始化系统托盘图标
             InitNotifyIcon();
 
@@ -593,6 +596,7 @@ namespace SideDesk
 
             int monitorCount = MonitorEnumerator.GetMonitorsPrimaryFirst().Count;
             if (monitorCount <= 0) monitorCount = 1;
+            _lastMonitorCount = monitorCount;
 
             for (int i = 0; i < monitorCount; i++)
             {
@@ -616,6 +620,56 @@ namespace SideDesk
             }
 
             if (save) SaveState();
+        }
+
+        /// <summary>
+        /// 记录上一次布局对应的显示器数量，用于显示设置变化时判断显示器拓扑是否改变。
+        /// </summary>
+        private int _lastMonitorCount;
+        private System.Windows.Threading.DispatcherTimer? _displayChangeDebounceTimer;
+
+        /// <summary>
+        /// 系统显示设置变化回调（分辨率、缩放、显示器增删等）。
+        /// 事件可能在非 UI 线程触发，且分辨率切换过程中可能连续触发多次，
+        /// 统一调度到 Dispatcher 并用定时器防抖后再刷新布局。
+        /// </summary>
+        private void OnDisplaySettingsChanged(object? sender, EventArgs e)
+        {
+            Dispatcher.InvokeAsync(() =>
+            {
+                if (_displayChangeDebounceTimer == null)
+                {
+                    _displayChangeDebounceTimer = new System.Windows.Threading.DispatcherTimer
+                    {
+                        Interval = TimeSpan.FromMilliseconds(500)
+                    };
+                    _displayChangeDebounceTimer.Tick += (_, _) =>
+                    {
+                        _displayChangeDebounceTimer.Stop();
+                        RefreshAppBarLayoutOnDisplayChange();
+                    };
+                }
+                _displayChangeDebounceTimer.Stop();
+                _displayChangeDebounceTimer.Start();
+            });
+        }
+
+        /// <summary>
+        /// 显示设置变化后重新布局 AppBar：
+        /// 显示器数量变化（插拔屏幕）→ 按新拓扑重建停靠窗口；
+        /// 仅分辨率/缩放变化 → 现有窗口各自重读显示器信息并重新定位。
+        /// </summary>
+        private void RefreshAppBarLayoutOnDisplayChange()
+        {
+            int monitorCount = MonitorEnumerator.GetMonitorsPrimaryFirst().Count;
+            if (monitorCount <= 0) monitorCount = 1;
+
+            System.Diagnostics.Debug.WriteLine($"[App] display settings changed, monitors={monitorCount} (last={_lastMonitorCount})");
+
+            if (monitorCount != _lastMonitorCount)
+                ApplyLayout(save: false);
+            else
+                ApplyPanelWidths();
         }
 
         /// <summary>
@@ -692,6 +746,7 @@ namespace SideDesk
             // 兜底：确保所有 AppBar 窗口注销（正常路径 CloseAll 已处理，此处防御非正常退出路径）
             try
             {
+                Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
                 foreach (var w in _windows.ToList())
                     w.UnregisterAppBar();
                 _windows.Clear();

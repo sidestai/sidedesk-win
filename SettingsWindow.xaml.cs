@@ -129,7 +129,7 @@ namespace SideDesk
             windowSwitchHotkeySwitch.IsChecked = _app.AppSettings.EnableWindowSwitchHotkey;
             voiceInputHotkeySwitch.IsChecked = _app.AppSettings.EnableVoiceInputHotkey;
             voiceStartHotkeyBox.Text = string.IsNullOrWhiteSpace(_app.AppSettings.VoiceStartHotkey) ? "Ctrl+B" : _app.AppSettings.VoiceStartHotkey;
-            voiceStopHotkeyBox.Text = string.IsNullOrWhiteSpace(_app.AppSettings.VoiceStopHotkey) ? "Ctrl+Alt+B" : _app.AppSettings.VoiceStopHotkey;
+            voiceStopHotkeyBox.Text = string.IsNullOrWhiteSpace(_app.AppSettings.VoiceStopHotkey) ? "Ctrl+B" : _app.AppSettings.VoiceStopHotkey;
             UpdateVoiceHotkeyUIEnabled();
             mcpServerSwitch.IsChecked = _app.AppSettings.EnableMcpServer;
             var aiMode = _app.AppSettings.AIChatMode ?? "web";
@@ -3416,6 +3416,14 @@ namespace SideDesk
                 DockPanel.SetDock(delBtn, Dock.Right);
                 dock.Children.Add(delBtn);
 
+                // 右侧「设置」按钮（HTML 模式插件提供 settingsHtml 时，见分部类 SettingsWindow.HtmlPlugins.cs）
+                var settingsBtn = CreatePluginSettingsButton(cfg);
+                if (settingsBtn != null)
+                {
+                    DockPanel.SetDock(settingsBtn, Dock.Right);
+                    dock.Children.Add(settingsBtn);
+                }
+
                 // 左侧信息
                 var info = new StackPanel { Margin = new Thickness(0, 0, 12, 0) };
                 info.Children.Add(new Emoji.Wpf.TextBlock
@@ -3592,7 +3600,7 @@ namespace SideDesk
             if (sender is not TextBox box) return;
             box.Text = box == voiceStartHotkeyBox
                 ? (_app.AppSettings.VoiceStartHotkey ?? "Ctrl+B")
-                : (_app.AppSettings.VoiceStopHotkey ?? "Ctrl+Alt+B");
+                : (_app.AppSettings.VoiceStopHotkey ?? "Ctrl+B");
         }
 
         /// <summary>录制组合键：按下非修饰键时与当前修饰键组合作为新热键（必须含 Ctrl/Alt，避免误录普通字母）</summary>
@@ -3626,16 +3634,6 @@ namespace SideDesk
             if (modifiers.HasFlag(System.Windows.Input.ModifierKeys.Shift)) sb.Append("Shift+");
             sb.Append(key.ToString());
             string combo = sb.ToString();
-
-            // 启动/停止组合不能相同，否则无法停止识别
-            string other = box == voiceStartHotkeyBox
-                ? (_app.AppSettings.VoiceStopHotkey ?? "Ctrl+Alt+B")
-                : (_app.AppSettings.VoiceStartHotkey ?? "Ctrl+B");
-            if (string.Equals(combo, other, StringComparison.OrdinalIgnoreCase))
-            {
-                box.Text = Framework.Lang.T("settings.voiceHotkeyDuplicate");
-                return;
-            }
 
             if (box == voiceStartHotkeyBox)
             {

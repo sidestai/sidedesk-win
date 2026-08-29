@@ -1,0 +1,15 @@
+{
+  "id": "hello-world-html",
+  "name": "Hello World（HTML 模式）",
+  "version": "0.1.0",
+  "description": "HTML 组件模式示例插件：问候语 + 经 window.sideDesk 桥读写配置的计数器，支持深浅主题",
+  "author": "SideDesk 社区",
+  "mode": "html",
+  "moduleHtml": "module.html",
+  "settingsHtml": "settings.html",
+  "permissions": [],
+  "apiVersion": 1,
+  "icon": "🌐",
+  "minHostVersion": "1.0.0",
+  "enabled": true
+}

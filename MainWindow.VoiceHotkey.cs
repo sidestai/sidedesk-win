@@ -9,6 +9,9 @@ namespace SideDesk
     /// </summary>
     public partial class MainWindow
     {
+        /// <summary>最近一次由停止热键结束录音的时刻（静态，跨窗口共享）：同键切换时压制紧随的启动事件，避免停止后立即重新开始</summary>
+        private static DateTime _lastVoiceStopAt = DateTime.MinValue;
+
         /// <summary>初始化语音热键订阅（窗口加载时调用，幂等由 _fcInited 同级时机保证只调一次）</summary>
         private void InitVoiceHotkey()
         {
@@ -44,6 +47,9 @@ namespace SideDesk
         {
             try
             {
+                // 同键切换：本次按键已由停止事件结束录音，跳过紧随的启动事件实现「再按一次停止」
+                if ((DateTime.UtcNow - _lastVoiceStopAt).TotalMilliseconds < 500) return;
+
                 var panel = VoiceHotkeyPanel;
                 if (panel == null) return;
                 // 已有主窗口在录音则不重复启动
@@ -86,7 +92,12 @@ namespace SideDesk
             {
                 var panel = VoiceHotkeyPanel;
                 if (panel == null) return;
+                // 未在录音：停止事件无事可做（同键切换时由后续启动事件开始录音）
+                if (!panel.IsVoiceRecording) return;
+
                 string text = panel.StopVoiceFromHotkey();
+                // 本次按键已完成停止：同键切换时压制各窗口紧随的启动事件，实现「再按一次停止」
+                _lastVoiceStopAt = DateTime.UtcNow;
                 if (string.IsNullOrWhiteSpace(text)) return;
 
                 // 浮动窗保留最终文本，方便继续查看或点「问AI」

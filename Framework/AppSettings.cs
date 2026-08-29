@@ -594,7 +594,8 @@ namespace SideDesk.Framework
 
         #region 浮动上下文窗口
 
-        private bool _floatingContextEnabled { get; set; } = true;
+        // 默认关闭，需用户在设置中主动开启才显示 AI推荐 浮动窗（已保存过设置的老用户保留其持久化值）
+        private bool _floatingContextEnabled { get; set; } = false;
 
         /// <summary>浮动上下文窗口开关（输入框焦点/剪贴板复制时在主窗口内显示内容）</summary>
         [JsonProperty]

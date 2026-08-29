@@ -60,11 +60,11 @@
     </UserControl.ContextMenu>
     <DockPanel x:Name="nativeContent" LastChildFill="True">
         
-        <!-- 底部工具栏（工具按钮区域，按钮靠左对齐，避免在全宽栏内居中显得偏右） -->
-        <Border x:Name="toolsBar" DockPanel.Dock="Bottom" Margin="5,2" Padding="5,3" CornerRadius="3"
+        <!-- 底部工具栏（工具按钮区域，按钮居中对齐） -->
+        <Border x:Name="toolsBar" DockPanel.Dock="Bottom" Margin="2,2" Padding="2,3" CornerRadius="3"
                 Background="{Binding GroupBGColor, Source={x:Static framework:AppSettings.Instance}, Converter={StaticResource StringToSolidColorBrushConverter}}"
                 Visibility="Collapsed">
-            <StackPanel x:Name="toolsBarContent" Orientation="Vertical" HorizontalAlignment="Left"/>
+            <StackPanel x:Name="toolsBarContent" Orientation="Vertical" HorizontalAlignment="Stretch"/>
         </Border>
         
         <!-- 底部状态栏 -->

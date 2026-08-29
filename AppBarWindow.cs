@@ -198,6 +198,10 @@ namespace SideDesk
                 this.Width = newWidth;
                 this.Height = newHeight;
                 LockPosition();
+
+                // 位置重算后宽度已恢复为 AppBarWidth，同步重置悬停展开标记，
+                // 避免分辨率变化等场景下标记与真实宽度不一致导致后续收回失效
+                _isHoverExpanded = false;
             }
             finally
             {

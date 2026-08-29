@@ -129,6 +129,9 @@ namespace SideDesk
             // 初始化全局语音输入热键（启动键开始识别并实时显示在浮动窗，停止键粘贴到焦点位置）
             InitVoiceHotkey();
 
+            // 初始化手机扫码远程语音（手机按住说话经后端 WS 中继，流式转写后粘贴到焦点位置）
+            InitMobileVoice();
+
             // 如果已设置窗口配置，切换到当前活动窗口（WebView2 仅在切换到 WebView 窗口时才懒初始化）
             if (_dockState != null && _dockState.WindowIds.Count > 0)
             {
@@ -452,16 +455,14 @@ namespace SideDesk
             if (_configManager == null || _dockState == null) return;
             windowTabsPanel.Children.Clear();
 
-            // 只有一个窗口时不显示标签和加号，显示标题
+            // 只有一个窗口时不显示标签和加号（产品名始终显示）
             if (_dockState.WindowIds.Count <= 1)
             {
-                singleWindowTitle.Visibility = Visibility.Visible;
                 windowTabsPanel.Visibility = Visibility.Collapsed;
                 addWindowBtn.Visibility = Visibility.Collapsed;
                 return;
             }
 
-            singleWindowTitle.Visibility = Visibility.Collapsed;
             windowTabsPanel.Visibility = Visibility.Visible;
             addWindowBtn.Visibility = Visibility.Visible;
 

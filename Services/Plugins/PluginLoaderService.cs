@@ -164,6 +164,31 @@ public class PluginLoaderService
         if (_pluginMap.ContainsKey(config.Id))
             return null;
 
+        // HTML 组件模式：无 DLL，由 HtmlPluginAdapter 包装 HtmlPluginHost（WebView2 沙箱）加载；
+        // mode 缺省为 "native"，老插件不受影响。未知 apiVersion 拒绝加载
+        if (string.Equals(config.Mode, "html", StringComparison.OrdinalIgnoreCase))
+        {
+            if (config.ApiVersion > 1)
+            {
+                Debug.WriteLine($"[PluginLoader] html plugin requires unsupported apiVersion {config.ApiVersion}: {config.Id}");
+                return null;
+            }
+            var moduleHtml = config.ModuleHtml ?? "";
+            if (string.IsNullOrEmpty(moduleHtml) || !File.Exists(Path.Combine(dir, moduleHtml)))
+            {
+                Debug.WriteLine($"[PluginLoader] html plugin moduleHtml missing: {dir}/{moduleHtml}");
+                return null;
+            }
+            config.SourceDirectory = dir;
+            return new LoadedPlugin
+            {
+                Config = config,
+                Instance = new HtmlPluginAdapter(config, dir),
+                PluginDirectory = dir,
+                LoadContext = null
+            };
+        }
+
         ISideDeskPlugin? instance = null;
 
         // 方式1：通过 DLL 入口加载

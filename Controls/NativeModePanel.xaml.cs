@@ -203,6 +203,12 @@ namespace SideDesk.Controls
 
         private void NativeModePanel_Unloaded(object sender, RoutedEventArgs e)
         {
+            // 退订远程语音浮层状态事件（EnsureVoiceQrPopup 中订阅；单例服务常驻，不退订会泄漏面板）
+            var mobileVoice = MobileVoiceService.Instance;
+            mobileVoice.SessionStarted -= VoiceQrPopup_OnSessionStarted;
+            mobileVoice.SessionStopRequested -= VoiceQrPopup_OnSessionStop;
+            mobileVoice.SessionAborted -= VoiceQrPopup_OnSessionAborted;
+
             StopServices();
         }
 
@@ -6588,9 +6594,9 @@ namespace SideDesk.Controls
             return weekHeader;
         }
 
-        /// <summary>构建日历网格：日期卡片（数字 + 当年第 Dxx 天），今天高亮描边</summary>
+        /// <summary>构建日历网格：日期卡片（数字），今天高亮描边</summary>
         private void BuildCalendarGrid(UniformGrid grid, DateTime month, DateTime today,
-            double dayFontSize, double subFontSize, double radius, double pad, bool interactive)
+            double dayFontSize, double radius, double pad, bool interactive)
         {
             var first = new DateTime(month.Year, month.Month, 1);
             int daysInMonth = DateTime.DaysInMonth(month.Year, month.Month);
@@ -6599,7 +6605,6 @@ namespace SideDesk.Controls
             var cellBG = (Brush)FindResource("BrushInputBG");
             var accent = (Brush)FindResource("BrushAccent");
             var textMain = (Brush)FindResource("BrushTextMain");
-            var textMuted = (Brush)FindResource("BrushTextMuted");
 
             for (int i = 0; i < leading; i++)
                 grid.Children.Add(new Border { Margin = new Thickness(1.5) });
@@ -6630,13 +6635,6 @@ namespace SideDesk.Controls
                     FontSize = dayFontSize,
                     FontWeight = isToday ? FontWeights.Bold : FontWeights.Normal,
                     Foreground = textMain,
-                    HorizontalAlignment = HorizontalAlignment.Center
-                });
-                stack.Children.Add(new TextBlock
-                {
-                    Text = $"D{date.DayOfYear}",
-                    FontSize = subFontSize,
-                    Foreground = textMuted,
                     HorizontalAlignment = HorizontalAlignment.Center
                 });
                 cell.Child = stack;
@@ -6690,7 +6688,7 @@ namespace SideDesk.Controls
 
             // 大尺寸日期网格
             var bigGrid = new UniformGrid { Columns = 7 };
-            BuildCalendarGrid(bigGrid, month, today, dayFontSize: 15, subFontSize: 9.5, radius: 6, pad: 4, interactive: true);
+            BuildCalendarGrid(bigGrid, month, today, dayFontSize: 15, radius: 6, pad: 4, interactive: true);
             stack.Children.Add(bigGrid);
 
             popupRoot.Child = stack;
@@ -8168,7 +8166,7 @@ namespace SideDesk.Controls
         #region 右键菜单事件处理
 
         /// <summary>
-        /// "显示设置"菜单展开时动态填充可切换的显示选项（工具栏显示开关 + 全局显示开关）
+        /// "显示设置"菜单展开时动态填充可切换的显示选项（工具栏显示开关）
         /// </summary>
         private void DisplaySettingsMenu_SubmenuOpened(object sender, RoutedEventArgs e)
         {
@@ -8200,33 +8198,7 @@ namespace SideDesk.Controls
                     mi.Click += (s, ev) => ToggleTool(k, mi.IsChecked, act);
                     menu.Items.Add(mi);
                 }
-                menu.Items.Add(new Separator());
             }
-
-            // 使用时长分析：全局设置，实际控制后台统计服务的启停
-            var settings = AppSettings.Instance;
-            var usageMi = new MenuItem
-            {
-                Header = Framework.Lang.T("common.usageAnalysis"),
-                IsCheckable = true,
-                IsChecked = settings.ShowUsageStats,
-                Tag = "ShowUsageStats"
-            };
-            usageMi.Click += (s, ev) => ToggleDisplaySetting("ShowUsageStats", usageMi.IsChecked);
-            menu.Items.Add(usageMi);
-        }
-
-        private void ToggleDisplaySetting(string key, bool value)
-        {
-            var settings = AppSettings.Instance;
-            switch (key)
-            {
-                case "ShowUsageStats":
-                    settings.ShowUsageStats = value;
-                    SideDesk.Services.WindowUsageService.Instance.ApplyEnabled(value);
-                    break;
-            }
-            settings.Save();
         }
 
         private void ToggleHideModuleFrame_Click(object sender, RoutedEventArgs e)
@@ -9903,24 +9875,12 @@ namespace SideDesk.Controls
                 }
                 first = false;
 
-                // 根据工具类型创建对应的按钮
-                Button? toolButton = null;
-                switch (toolKey)
+                // 根据工具类型创建对应元素：语音输入为内联三行容器（按住录音/快捷键提示/手机扫码），
+                // 其它为普通按钮；WindowTeleport/TitleLock 为直接使用的工具不在底部展示（返回 null）
+                UIElement? toolElement = CreateToolElement(toolKey);
+                if (toolElement != null)
                 {
-                    case "ClipboardHistory":
-                    case "AIChat":
-                    case "VoiceInput":
-                        toolButton = CreateToolButton(toolKey);
-                        break;
-                    case "WindowTeleport":
-                    case "TitleLock":
-                        // 这些是直接使用的工具，不需要在底部显示按钮
-                        break;
-                }
-
-                if (toolButton != null)
-                {
-                    toolsBarContent.Children.Add(toolButton);
+                    toolsBarContent.Children.Add(toolElement);
                 }
             }
 
@@ -9983,7 +9943,9 @@ namespace SideDesk.Controls
                     BorderThickness = new Thickness(0),
                     Cursor = Cursors.Hand,
                     Tag = toolKey,
-                    VerticalAlignment = VerticalAlignment.Center
+                    VerticalAlignment = VerticalAlignment.Center,
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Left
                 },
                 
                 "AIChat" => new Button
@@ -9996,7 +9958,9 @@ namespace SideDesk.Controls
                     BorderThickness = new Thickness(0),
                     Cursor = Cursors.Hand,
                     Tag = toolKey,
-                    VerticalAlignment = VerticalAlignment.Center
+                    VerticalAlignment = VerticalAlignment.Center,
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Left
                 },
                 
                 "VoiceInput" => new Button
@@ -10009,7 +9973,9 @@ namespace SideDesk.Controls
                     BorderThickness = new Thickness(0),
                     Cursor = Cursors.Hand,
                     Tag = toolKey,
-                    VerticalAlignment = VerticalAlignment.Center
+                    VerticalAlignment = VerticalAlignment.Center,
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Left
                 },
                 
                 // 窗口瞬移不需要在底部显示按钮，它是直接使用的工具
@@ -10077,9 +10043,19 @@ namespace SideDesk.Controls
         private bool _voiceSession = false;
         private bool _voiceSessionByHotkey = false;
         private string _voiceSessionText = "";
+        // 暂时隐藏手机扫码入口，需要时改回 true
+        private const bool ShowPhoneScanEntry = false;
+
         private Button? _voiceBtnRef;
         private TextBlock? _voiceStatusRef;
         private Border? _voiceBtnBorderRef;
+        private TextBlock? _voiceHoldTextRef;   // 按钮第一行“按住录音”文本（聆听状态指示复用）
+        private Border? _voiceScanRowRef;       // “手机扫码”行（悬停打开二维码浮层）
+        private bool _voiceSessionByRemote = false; // 手机扫码远程会话标志（与热键/按钮路径互斥，避免误停）
+        private bool _pendingRestoreMic = false;    // 远程会话结束后恢复麦克风输入（本地按住录音仍可用）
+        private Popup? _voiceQrPopup;
+        private Image? _voiceQrImageRef;
+        private TextBlock? _voiceQrStatusRef;
 
         /// <summary>语音识别文本变化（本轮会话累计值；空串表示会话开始，热键与按钮长按模式均触发）</summary>
         public event Action<string>? VoiceTextChanged;
@@ -10096,65 +10072,134 @@ namespace SideDesk.Controls
         {
             var container = new StackPanel
             {
-                Orientation = Orientation.Horizontal,
-                Margin = new Thickness(5, 0, 0, 0),
-                VerticalAlignment = VerticalAlignment.Center
+                Orientation = Orientation.Vertical,
+                Margin = new Thickness(0, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Stretch
             };
 
-            // 语音输入按钮
+            // 语音输入按钮（加高：纵向展示三种语音转文字方式）
+            // ① 按住录音（仅此行为按住说话热区，保留原 PreviewMouse 逻辑）
+            var holdRow = new Border
+            {
+                Background = Brushes.Transparent,
+                Padding = new Thickness(12, 4, 12, 2),
+                Cursor = Cursors.Hand
+            };
+            var holdText = new TextBlock
+            {
+                Text = Framework.Lang.T("nativePanel.voiceHoldToTalk"),
+                FontWeight = FontWeights.Bold,
+                FontSize = 12,
+                TextAlignment = TextAlignment.Center
+            };
+            holdRow.Child = holdText;
+
+            // ② 快捷键提示（显示设置里的预置启动热键；修改见 设置-快捷键）
+            var hotkeyText = new TextBlock
+            {
+                Text = Framework.Lang.TF("nativePanel.voiceHotkeyLine", VoiceStartHotkeyDisplay),
+                FontSize = 10,
+                Opacity = 0.75,
+                TextAlignment = TextAlignment.Center,
+                Margin = new Thickness(12, 0, 12, 0)
+            };
+
+            // ③ 手机扫码（悬停浮动显示二维码，经后端 WS 中继远程语音）——由 ShowPhoneScanEntry 控制显隐，隐藏时不构建该行及悬停订阅（二维码浮层为懒构建，不会触发）
+            Border? scanRow = null;
+            if (ShowPhoneScanEntry)
+            {
+                scanRow = new Border
+                {
+                    Background = Brushes.Transparent,
+                    Padding = new Thickness(12, 2, 12, 4),
+                    Cursor = Cursors.Hand
+                };
+                var scanText = new TextBlock
+                {
+                    Text = Framework.Lang.T("nativePanel.voiceScanWithPhone"),
+                    FontSize = 10,
+                    Opacity = 0.85,
+                    TextAlignment = TextAlignment.Center
+                };
+                scanRow.Child = scanText;
+            }
+
+            // 状态文本（放入按钮内部，不再作为按钮右侧的独立元素）
+            var statusText = new Emoji.Wpf.TextBlock
+            {
+                Text = Framework.Lang.T("common.ready"),
+                FontSize = 10,
+                Opacity = 0.85,
+                TextAlignment = TextAlignment.Center,
+                Foreground = (Brush)FindResource("BrushAccentText"),
+                Name = "VoiceInputStatus"
+            };
+
+            var voiceRows = new StackPanel { Orientation = Orientation.Vertical };
+            voiceRows.Children.Add(holdRow);
+            voiceRows.Children.Add(hotkeyText);
+            voiceRows.Children.Add(statusText);
+            if (scanRow != null) voiceRows.Children.Add(scanRow);
+
+            var voiceBtn = new Button
+            {
+                Content = voiceRows,
+                Padding = new Thickness(0, 3, 0, 3),
+                Foreground = (Brush)FindResource("BrushAccentText"),
+                BorderThickness = new Thickness(0),
+                Background = Brushes.Transparent,
+                Cursor = Cursors.Hand,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                VerticalContentAlignment = VerticalAlignment.Center,
+                Name = "VoiceInputButton"
+            };
+
             var voiceBtnBorder = new Border
             {
                 Background = (Brush)FindResource("BrushAccent"),
                 CornerRadius = new CornerRadius(4),
-                MinHeight = 28,
+                MinHeight = ShowPhoneScanEntry ? 82 : 62,
                 VerticalAlignment = VerticalAlignment.Center,
-                Child = new Button
-                {
-                    Content = Framework.Lang.T("nativePanel.clickToStart"),
-                    Padding = new Thickness(12, 5, 12, 5),
-                    Foreground = (Brush)FindResource("BrushAccentText"),
-                    FontWeight = FontWeights.Bold,
-                    BorderThickness = new Thickness(0),
-                    Background = Brushes.Transparent,
-                    Cursor = Cursors.Hand,
-                    Name = "VoiceInputButton"
-                }
-            };
-
-            // 状态文本
-            var statusText = new Emoji.Wpf.TextBlock
-            {
-                Text = Framework.Lang.T("common.ready"),
-                Margin = new Thickness(10, 0, 0, 0),
-                VerticalAlignment = VerticalAlignment.Center,
-                Foreground = (Brush)FindResource("BrushTextMuted"),
-                FontSize = 12,
-                Name = "VoiceInputStatus"
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Child = voiceBtn
             };
 
             container.Children.Add(voiceBtnBorder);
-            container.Children.Add(statusText);
 
             // 保存控件引用：供全局热键路径同步按钮状态（工具栏未启用语音工具时容器仍会被创建）
             _voiceBtnRef = voiceBtnBorder.Child as Button;
             _voiceStatusRef = statusText;
             _voiceBtnBorderRef = voiceBtnBorder;
+            _voiceHoldTextRef = holdText;
+            _voiceScanRowRef = scanRow;
 
-            // 初始化语音识别
-            var voiceBtn = voiceBtnBorder.Child as Button;
-            if (voiceBtn != null)
+            // 手机扫码行：悬停打开二维码浮层（鼠标移出后延迟关闭）——仅在入口可见时订阅，隐藏时浮层不会创建与打开
+            if (scanRow != null)
             {
-                InitializeSpeechRecognition(voiceBtn, statusText);
+                var sr = scanRow;
+                scanRow.MouseEnter += (s, e) => OpenVoiceQrPopup(sr);
+                scanRow.MouseLeave += (s, e) => CloseVoiceQrPopupIfOutside();
             }
+
+            // 初始化语音识别（按住说话热区仅第一行，避免悬停扫码行误触发录音）
+            InitializeSpeechRecognition(voiceBtn, statusText, voiceBtnBorder, holdRow, holdText);
 
             return container;
         }
 
-        private void InitializeSpeechRecognition(Button voiceBtn, TextBlock statusText)
+        /// <summary>设置里的语音启动热键展示值（空时回落默认 Ctrl+B）</summary>
+        private static string VoiceStartHotkeyDisplay
         {
-            // 需要获取voiceBtnBorder，从父级获取
-            var voiceBtnBorder = voiceBtn.Parent as Border;
-            
+            get
+            {
+                var hk = (Application.Current as App)?.AppSettings?.VoiceStartHotkey;
+                return string.IsNullOrWhiteSpace(hk) ? "Ctrl+B" : hk;
+            }
+        }
+
+        private void InitializeSpeechRecognition(Button voiceBtn, TextBlock statusText, Border voiceBtnBorder, Border holdRow, TextBlock holdText)
+        {
             try
             {
                 _speechEngine = new System.Speech.Recognition.SpeechRecognitionEngine(
@@ -10184,17 +10229,28 @@ namespace SideDesk.Controls
                     });
                 };
 
-                // 识别结束事件
+                // 识别结束事件：复位按钮状态（三行布局保持不变，仅复位第一行文案与配色）
                 _speechEngine.RecognizeCompleted += (s, e) =>
                 {
                     Dispatcher.Invoke(() =>
                     {
-                        voiceBtn.Content = Framework.Lang.T("nativePanel.clickToStart");
+                        holdText.Text = Framework.Lang.T("nativePanel.voiceHoldToTalk");
                         voiceBtn.Background = Brushes.Transparent;
                         voiceBtnBorder.Background = (Brush)FindResource("BrushAccent");
                         statusText.Text = Framework.Lang.T("common.ready");
                         _isVoiceRecording = false;
                         _voiceSession = false;
+                        _voiceSessionByRemote = false; // 一并复位远程会话标志，避免残留影响下一轮会话的路径判定
+                        // 远程会话结束后恢复麦克风输入，确保本地按住录音之后仍可用
+                        if (_pendingRestoreMic)
+                        {
+                            _pendingRestoreMic = false;
+                            try { _speechEngine?.SetInputToDefaultAudioDevice(); }
+                            catch (Exception exMic)
+                            {
+                                statusText.Text = Framework.Lang.TF("nativePanel.voiceInitializationFailed", exMic.Message);
+                            }
+                        }
                     });
                 };
 
@@ -10202,17 +10258,21 @@ namespace SideDesk.Controls
                 _speechEngine.SetInputToDefaultAudioDevice();
 
                 // 按住说话：按下开始录音，松开停止（捕获鼠标后在按钮外松开也会停止）
-                voiceBtn.PreviewMouseLeftButtonDown += (s, e) =>
+                // 热区仅“按住录音”行：手机扫码行悬停有独立事件，不会误触发按下录音；
+                // Preview 阶段 Handled 防止 Button 自身的点击行为介入（捕获/释放鼠标由本行完成）
+                holdRow.PreviewMouseLeftButtonDown += (s, e) =>
                 {
                     StartVoiceFromButton();
-                    voiceBtn.CaptureMouse();
+                    holdRow.CaptureMouse();
+                    e.Handled = true;
                 };
-                voiceBtn.PreviewMouseLeftButtonUp += (s, e) =>
+                holdRow.PreviewMouseLeftButtonUp += (s, e) =>
                 {
-                    if (voiceBtn.IsMouseCaptured) voiceBtn.ReleaseMouseCapture();
+                    if (holdRow.IsMouseCaptured) holdRow.ReleaseMouseCapture();
                     string text = StopVoiceFromButton();
                     if (!string.IsNullOrWhiteSpace(text))
                         VoiceButtonSessionCompleted?.Invoke(text);
+                    e.Handled = true;
                 };
             }
             catch (Exception ex)
@@ -10226,7 +10286,8 @@ namespace SideDesk.Controls
             try
             {
                 _isVoiceRecording = true;
-                voiceBtn.Content = Framework.Lang.T("nativePanel.listeningEmoji");
+                // 按钮为三行纵向布局：聆听状态只改第一行文案，不替换整个 Content（否则会破坏布局）
+                if (_voiceHoldTextRef != null) _voiceHoldTextRef.Text = Framework.Lang.T("nativePanel.listeningEmoji");
                 voiceBtnBorder.Background = Brushes.Red;
                 statusText.Text = Framework.Lang.T("nativePanel.listening");
                 _speechEngine?.RecognizeAsync(System.Speech.Recognition.RecognizeMode.Multiple);
@@ -10316,16 +10377,228 @@ namespace SideDesk.Controls
             }
         }
 
-        /// <summary>按钮按住说话：松开停止录音，返回本轮累计文本</summary>
+        /// <summary>按钮按住说话：松开停止录音，返回本轮累计文本（远程会话进行中时忽略，避免误停远程识别）</summary>
         private string StopVoiceFromButton()
         {
-            if (!_voiceSession || _voiceSessionByHotkey) return "";
+            if (!_voiceSession || _voiceSessionByHotkey || _voiceSessionByRemote) return "";
             _voiceSession = false;
             if (_voiceBtnRef != null && _voiceStatusRef != null && _voiceBtnBorderRef != null)
                 StopVoiceRecognition(_voiceBtnRef, _voiceStatusRef, _voiceBtnBorderRef);
             string text = _voiceSessionText;
             _voiceSessionText = "";
             return text;
+        }
+
+        // ==================== 手机扫码远程语音会话 ====================
+
+        /// <summary>
+        /// 手机扫码远程会话启动：把手机经后端 WS 中继的音频流喂给识别引擎（流式转写）。
+        /// 与本地会话互斥：本地正在录音或会话进行中时返回 false；引擎不可用等启动失败也返回 false。
+        /// </summary>
+        public bool StartVoiceFromRemote(System.IO.Stream audioStream)
+        {
+            try
+            {
+                if (_isVoiceRecording || _voiceSession) return false;
+                if (_voiceInputContainer == null) _voiceInputContainer = CreateVoiceInputContainer();
+                if (_voiceBtnRef == null || _voiceStatusRef == null || _voiceBtnBorderRef == null || _speechEngine == null) return false;
+
+                _voiceSession = true;
+                _voiceSessionByHotkey = false;
+                _voiceSessionByRemote = true;
+                _voiceSessionText = "";
+                VoiceTextChanged?.Invoke(""); // 浮动窗先展示“正在聆听”占位（复用现有订阅链路）
+                // 切到远程流喂入时即置位麦克风恢复兜底：无论会话以何种路径结束（正常停止/异常中止/
+                // 缓冲流被 Complete 后引擎读到流尾），RecognizeCompleted 都会触发并恢复麦克风，
+                // 保证本地按住录音/热键在远程会话结束后始终可用
+                _pendingRestoreMic = true;
+                // 音频格式为冻结协议：16kHz/16bit/单声道裸 PCM（经阻塞缓冲流喂入）
+                _speechEngine.SetInputToAudioStream(audioStream,
+                    new System.Speech.AudioFormat.SpeechAudioFormatInfo(16000,
+                        System.Speech.AudioFormat.AudioBitsPerSample.Sixteen,
+                        System.Speech.AudioFormat.AudioChannel.Mono));
+                StartVoiceRecognition(_voiceBtnRef, _voiceStatusRef, _voiceBtnBorderRef);
+                if (_voiceStatusRef != null) _voiceStatusRef.Text = Framework.Lang.T("nativePanel.voiceRemoteListening");
+                return _isVoiceRecording;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[MobileVoice] remote start failed: {ex.Message}");
+                _voiceSession = false;
+                _voiceSessionByRemote = false;
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 手机扫码远程会话停止：返回本轮累计文本（识别收尾由引擎完成，按钮状态由 RecognizeCompleted 复位）。
+        /// 结束后在 RecognizeCompleted 中恢复麦克风输入，确保本地按住录音之后仍可用；
+        /// 异常中止（手机断连/超时）同样走此路径，是否粘贴由编排层定夺。
+        /// </summary>
+        public string StopVoiceFromRemote()
+        {
+            if (!_voiceSession || !_voiceSessionByRemote) return "";
+            _voiceSession = false;
+            _voiceSessionByRemote = false;
+            _pendingRestoreMic = true; // RecognizeCompleted 时恢复 SetInputToDefaultAudioDevice
+            if (_voiceBtnRef != null && _voiceStatusRef != null && _voiceBtnBorderRef != null)
+                StopVoiceRecognition(_voiceBtnRef, _voiceStatusRef, _voiceBtnBorderRef);
+            string text = _voiceSessionText;
+            _voiceSessionText = "";
+            return text;
+        }
+
+        // ==================== 手机扫码二维码浮层 ====================
+
+        /// <summary>构建手机扫码二维码浮层（懒构建；二维码图 + 扫码提示 + 状态文本）</summary>
+        private void EnsureVoiceQrPopup(Border scanRow)
+        {
+            if (_voiceQrPopup != null) return;
+
+            var qrImage = new Image { Width = 160, Height = 160, Margin = new Thickness(0, 0, 0, 8) };
+            var hint = new TextBlock
+            {
+                Text = Framework.Lang.T("nativePanel.voiceQrHint"),
+                FontSize = 11,
+                TextAlignment = TextAlignment.Center,
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                Margin = new Thickness(0, 0, 0, 4)
+            };
+            var status = new TextBlock
+            {
+                Text = Framework.Lang.T("nativePanel.voiceWaitingPhone"),
+                FontSize = 11,
+                TextAlignment = TextAlignment.Center,
+                Foreground = (Brush)FindResource("BrushTextSec")
+            };
+            var box = new StackPanel { Orientation = Orientation.Vertical };
+            box.Children.Add(qrImage);
+            box.Children.Add(hint);
+            box.Children.Add(status);
+
+            var popupBorder = new Border
+            {
+                Background = (Brush)FindResource("BrushBG"),
+                BorderBrush = (Brush)FindResource("BrushBorder"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(12),
+                Child = box
+            };
+            popupBorder.MouseLeave += (s, e) => CloseVoiceQrPopupIfOutside();
+
+            _voiceQrPopup = new Popup
+            {
+                Child = popupBorder,
+                PlacementTarget = _voiceBtnBorderRef ?? scanRow,
+                Placement = PlacementMode.Top,
+                // StaysOpen=true：手动按悬停区域关闭（StaysOpen=false 会捕获鼠标，干扰工具栏悬停态）
+                StaysOpen = true,
+                AllowsTransparency = true
+            };
+            _voiceQrImageRef = qrImage;
+            _voiceQrStatusRef = status;
+
+            // 远程会话状态同步到浮层（事件在 WS 线程触发，处理器内切 UI 线程）；
+            // 提为命名处理器并在面板 Unloaded 退订，避免单例服务订阅闭包造成面板泄漏
+            MobileVoiceService.Instance.SessionStarted += VoiceQrPopup_OnSessionStarted;
+            MobileVoiceService.Instance.SessionStopRequested += VoiceQrPopup_OnSessionStop;
+            MobileVoiceService.Instance.SessionAborted += VoiceQrPopup_OnSessionAborted;
+        }
+
+        /// <summary>浮层状态同步：手机已连接（命名处理器，Unloaded 时退订）</summary>
+        private void VoiceQrPopup_OnSessionStarted(string code)
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (_voiceQrStatusRef != null) _voiceQrStatusRef.Text = Framework.Lang.T("nativePanel.voicePhoneConnected");
+                if (_voiceStatusRef != null && !_isVoiceRecording) _voiceStatusRef.Text = Framework.Lang.T("nativePanel.voicePhoneConnected");
+            }));
+        }
+
+        /// <summary>浮层状态同步：手机松手会话结束 → 复位为等待连接（命名处理器，Unloaded 时退订）</summary>
+        private void VoiceQrPopup_OnSessionStop()
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (_voiceQrStatusRef != null) _voiceQrStatusRef.Text = Framework.Lang.T("nativePanel.voiceWaitingPhone");
+            }));
+        }
+
+        /// <summary>浮层状态同步：会话异常中止（手机断连/超时/后端断连）→ 复位为等待连接（命名处理器，Unloaded 时退订）</summary>
+        private void VoiceQrPopup_OnSessionAborted()
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (_voiceQrStatusRef != null) _voiceQrStatusRef.Text = Framework.Lang.T("nativePanel.voiceWaitingPhone");
+            }));
+        }
+
+        /// <summary>悬停“手机扫码”行：打开二维码浮层并获取配对码（活动会话期间复用当前码，不轮换）</summary>
+        private async void OpenVoiceQrPopup(Border scanRow)
+        {
+            try
+            {
+                EnsureVoiceQrPopup(scanRow);
+                if (_voiceQrPopup == null || _voiceQrStatusRef == null || _voiceQrImageRef == null) return;
+                _voiceQrPopup.IsOpen = true;
+
+                // 后端 WS 未连接时无法声明配对码：不渲染二维码，仅提示（浮层保持打开展示文案）
+                if (!BackendWebSocketService.Instance.IsConnected)
+                {
+                    _voiceQrImageRef.Source = null;
+                    _voiceQrStatusRef.Text = Framework.Lang.T("nativePanel.voiceBackendNotConnected");
+                    return;
+                }
+
+                _voiceQrStatusRef.Text = Framework.Lang.T("nativePanel.voiceWaitingPhone");
+
+                var code = await MobileVoiceService.Instance.ClaimNewCodeAsync();
+                if (_voiceQrPopup?.IsOpen != true) return; // 悬停已结束，丢弃本次二维码
+                var url = Constants.URLs.FrontendBaseUrl + "/#/voice?code=" + code;
+                _voiceQrImageRef.Source = QrPngToBitmapImage(GenerateQrPng(url));
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[MobileVoice] open QR popup failed: {ex.Message}");
+                if (_voiceQrStatusRef != null)
+                    _voiceQrStatusRef.Text = Framework.Lang.TF("nativePanel.voiceInitializationFailed", ex.Message);
+            }
+        }
+
+        /// <summary>鼠标离开行/浮层时延迟判定关闭：仅当两者都不再悬停时才关（避免行→浮层过渡途中闪关）</summary>
+        private void CloseVoiceQrPopupIfOutside()
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (_voiceQrPopup == null || !_voiceQrPopup.IsOpen) return;
+                bool overPopup = _voiceQrPopup.Child is FrameworkElement pc && pc.IsMouseOver;
+                bool overScanRow = _voiceScanRowRef is Border sr && sr.IsMouseOver;
+                if (!overPopup && !overScanRow) _voiceQrPopup.IsOpen = false;
+            }), DispatcherPriority.Background);
+        }
+
+        /// <summary>生成二维码 PNG 字节（QRCoder 纯托管，不依赖 System.Drawing；冻结协议：内容 = 前端基址 + /#/voice?code=配对码）</summary>
+        private static byte[] GenerateQrPng(string content)
+        {
+            using var generator = new QRCoder.QRCodeGenerator();
+            var qrData = generator.CreateQrCode(content, QRCoder.QRCodeGenerator.ECCLevel.M);
+            using var pngQr = new QRCoder.PngByteQRCode(qrData);
+            return pngQr.GetGraphic(8); // 8px/模块，缩放展示约 160px
+        }
+
+        private static BitmapImage QrPngToBitmapImage(byte[] png)
+        {
+            var bi = new BitmapImage();
+            using (var ms = new System.IO.MemoryStream(png))
+            {
+                bi.BeginInit();
+                bi.CacheOption = BitmapCacheOption.OnLoad;
+                bi.StreamSource = ms;
+                bi.EndInit();
+            }
+            bi.Freeze();
+            return bi;
         }
 
         private void HandleVoiceInput(string recognizedText)

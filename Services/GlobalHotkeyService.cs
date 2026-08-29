@@ -8,7 +8,7 @@ namespace SideDesk.Services
     /// <summary>
     /// 全局快捷键服务：低级键盘钩子实现两类全局热键。
     /// 1) Ctrl+1~9 切换窗口标签（命中会吞掉按键，可能与浏览器等应用冲突，默认关闭）；
-    /// 2) 语音输入热键（默认 Ctrl+B 启动 / Ctrl+Alt+B 停止，组合键可在设置中修改）。
+    /// 2) 语音输入热键（默认启动/停止均为 Ctrl+B，同一键切换开始/结束，组合键可在设置中修改）。
     /// </summary>
     public sealed class GlobalHotkeyService
     {
@@ -94,21 +94,23 @@ namespace SideDesk.Services
                 var data = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
                 var settings = (Application.Current as App)?.AppSettings;
 
-                // 语音输入热键：停止组合更具体，优先匹配；修饰键必须完全一致（避免 Ctrl+Alt+B 同时命中 Ctrl+B）
+                // 语音输入热键：停止组合更具体，优先匹配；修饰键必须完全一致（避免 Ctrl+Alt+B 同时命中 Ctrl+B）。
+                // 启动/停止组合相同时视为切换键：先通知停止再通知启动，由订阅方按录音状态决定行为。
                 if (settings is { EnableVoiceInputHotkey: true })
                 {
                     bool ctrlDown = (NativeMethods.GetKeyState(VK_CONTROL) & 0x8000) != 0;
                     bool altDown = (NativeMethods.GetKeyState(VK_MENU) & 0x8000) != 0;
                     bool shiftDown = (NativeMethods.GetKeyState(VK_SHIFT) & 0x8000) != 0;
 
-                    if (TryMatchHotkey(settings.VoiceStopHotkey, data.vkCode, ctrlDown, altDown, shiftDown))
+                    bool sameCombo = string.Equals(settings.VoiceStartHotkey, settings.VoiceStopHotkey, StringComparison.OrdinalIgnoreCase);
+                    bool stopHit = TryMatchHotkey(settings.VoiceStopHotkey, data.vkCode, ctrlDown, altDown, shiftDown);
+                    bool startHit = stopHit && sameCombo
+                        || TryMatchHotkey(settings.VoiceStartHotkey, data.vkCode, ctrlDown, altDown, shiftDown);
+
+                    if (stopHit || startHit)
                     {
-                        FireOnUI(() => VoiceStopRequested?.Invoke());
-                        return (IntPtr)1;
-                    }
-                    if (TryMatchHotkey(settings.VoiceStartHotkey, data.vkCode, ctrlDown, altDown, shiftDown))
-                    {
-                        FireOnUI(() => VoiceStartRequested?.Invoke());
+                        if (stopHit) FireOnUI(() => VoiceStopRequested?.Invoke());
+                        if (startHit) FireOnUI(() => VoiceStartRequested?.Invoke());
                         return (IntPtr)1;
                     }
                 }
