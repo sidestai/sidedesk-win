@@ -70,16 +70,22 @@ namespace SideDesk
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     }
 
-    /// <summary>云盘文件树形多选浏览器：勾选文件/目录后返回选中项</summary>
+    /// <summary>云盘文件树形多选浏览器：勾选文件/目录后返回选中项（支持任意存储后端）</summary>
     public partial class CloudDrivePickerWindow : Window
     {
         private readonly ObservableCollection<PickerTreeNode> _roots = new();
+        /// <summary>当前存储后端（默认内置元桌云盘）</summary>
+        private readonly IDriveBackend _backend;
 
         /// <summary>确认选择的结果（未确认为 null）</summary>
         public List<CloudDriveFile>? SelectedFiles { get; private set; }
 
-        public CloudDrivePickerWindow()
+        public CloudDrivePickerWindow() : this(new MetadeskDriveBackend()) { }
+
+        /// <summary>以指定存储后端浏览选择（S3 / WebDAV 等）</summary>
+        public CloudDrivePickerWindow(IDriveBackend backend)
         {
+            _backend = backend;
             InitializeComponent();
             SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(this);
             treeView.ItemsSource = _roots;
@@ -90,7 +96,7 @@ namespace SideDesk
         private async System.Threading.Tasks.Task LoadRootAsync()
         {
             ShowState(loadingText);
-            var files = await CloudDriveService.Instance.ListFilesAsync("0");
+            var files = await _backend.ListFilesAsync(_backend.RootId);
             if (files == null)
             {
                 ShowState(errorText);
@@ -118,7 +124,7 @@ namespace SideDesk
         {
             if (!node.HasDummyChild) return; // 已加载过
 
-            var files = await CloudDriveService.Instance.ListFilesAsync(node.File.Id);
+            var files = await _backend.ListFilesAsync(node.File.Id);
             node.Children.Clear();
             if (files == null)
             {

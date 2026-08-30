@@ -1,0 +1,204 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Net.Http;
+using System.Threading.Tasks;
+using SideDesk.Models;
+
+namespace SideDesk.Services
+{
+    /// <summary>
+    /// 云盘驱动后端抽象：元桌云盘（服务端）与 S3 存储源共用同一套文件管理语义，
+    /// 使云盘窗口可在不同存储源之间无差别切换。
+    /// 文件夹/文件统一用 CloudDriveFile 表示，Id 语义由后端自定义（元桌=服务端记录 ID，S3=对象 key/前缀）。
+    /// </summary>
+    public interface IDriveBackend
+    {
+        /// <summary>根目录 ID（元桌为 "0"，S3 为配置的根前缀）</summary>
+        string RootId { get; }
+        /// <summary>是否要求元桌账号登录（S3 直连不需要）</summary>
+        bool RequiresLogin { get; }
+        Task<List<CloudDriveFile>?> ListFilesAsync(string parentId);
+        Task<bool> UploadFileAsync(string localPath, string parentId, Action<double>? progress);
+        Task<CloudDriveFile?> MkdirAsync(string parentId, string name);
+        Task<bool> DeleteAsync(CloudDriveFile file);
+        Task<long> GetTotalUsedBytesAsync();
+        /// <summary>可直接用浏览器打开的下载地址（无则返回 null，走本地保存流程）</summary>
+        string? BuildOpenUrl(CloudDriveFile file);
+        /// <summary>下载文件到本地路径（进度回调）</summary>
+        Task<bool> DownloadToFileAsync(CloudDriveFile file, string savePath, Action<double>? progress);
+    }
+
+    /// <summary>元桌云盘后端：包装现有 CloudDriveService（STS + OSS 直传 + 服务端入库）</summary>
+    public sealed class MetadeskDriveBackend : IDriveBackend
+    {
+        private static readonly HttpClient _downloadHttp = new() { Timeout = TimeSpan.FromMinutes(30) };
+
+        public string RootId => "0";
+        public bool RequiresLogin => true;
+
+        public Task<List<CloudDriveFile>?> ListFilesAsync(string parentId)
+            => CloudDriveService.Instance.ListFilesAsync(parentId);
+
+        public Task<bool> UploadFileAsync(string localPath, string parentId, Action<double>? progress)
+            => CloudDriveService.Instance.UploadFileAsync(localPath, parentId, progress);
+
+        public Task<CloudDriveFile?> MkdirAsync(string parentId, string name)
+            => CloudDriveService.Instance.MkdirAsync(parentId, name);
+
+        public Task<bool> DeleteAsync(CloudDriveFile file)
+            => CloudDriveService.Instance.DeleteAsync(file.Id);
+
+        public Task<long> GetTotalUsedBytesAsync()
+            => CloudDriveService.Instance.GetTotalUsedBytesAsync();
+
+        public string? BuildOpenUrl(CloudDriveFile file)
+            => CloudDriveService.Instance.BuildDownloadUrl(file);
+
+        public async Task<bool> DownloadToFileAsync(CloudDriveFile file, string savePath, Action<double>? progress)
+        {
+            string? url = BuildOpenUrl(file);
+            if (string.IsNullOrEmpty(url)) return false;
+            try
+            {
+                using var resp = await _downloadHttp.GetAsync(url, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+                if (!resp.IsSuccessStatusCode) return false;
+                long total = resp.Content.Headers.ContentLength ?? -1;
+                long received = 0;
+                int lastPct = -1;
+                await using var src = await resp.Content.ReadAsStreamAsync().ConfigureAwait(false);
+                await using var dst = new FileStream(savePath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true);
+                byte[] buffer = new byte[81920];
+                int read;
+                while ((read = await src.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false)) > 0)
+                {
+                    await dst.WriteAsync(buffer, 0, read).ConfigureAwait(false);
+                    received += read;
+                    if (total > 0)
+                    {
+                        int pct = (int)(received * 100 / total);
+                        if (pct != lastPct) { lastPct = pct; progress?.Invoke(pct); }
+                    }
+                }
+                progress?.Invoke(100);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+    }
+
+    /// <summary>S3 存储源后端：客户端直连用户自己的 S3 桶（无需元桌登录）</summary>
+    public sealed class S3DriveBackend : IDriveBackend
+    {
+        private readonly S3StorageService _s3;
+
+        public S3Source Source { get; }
+
+        public S3DriveBackend(S3Source source)
+        {
+            Source = source;
+            _s3 = new S3StorageService(source);
+        }
+
+        public string RootId => Source.NormalizedPrefix;
+        public bool RequiresLogin => false;
+
+        public Task<List<CloudDriveFile>?> ListFilesAsync(string parentId)
+            => _s3.ListDirectoryAsync(parentId);
+
+        public Task<bool> UploadFileAsync(string localPath, string parentId, Action<double>? progress)
+            => _s3.UploadFileAsync(localPath, parentId, progress);
+
+        public async Task<CloudDriveFile?> MkdirAsync(string parentId, string name)
+        {
+            string trimmed = name.Trim();
+            if (string.IsNullOrEmpty(trimmed)) return null;
+            bool ok = await _s3.CreateFolderAsync(parentId, trimmed).ConfigureAwait(false);
+            if (!ok) return null;
+            return new CloudDriveFile { Id = parentId + trimmed.TrimEnd('/') + "/", Name = trimmed, IsFolder = true };
+        }
+
+        public Task<bool> DeleteAsync(CloudDriveFile file)
+            => file.IsFolder ? _s3.DeletePrefixAsync(file.Id) : _s3.DeleteObjectAsync(file.Id);
+
+        public Task<long> GetTotalUsedBytesAsync()
+            => _s3.GetTotalUsedBytesAsync(Source.NormalizedPrefix);
+
+        /// <summary>S3 桶为私有访问，一律走客户端认证下载，不提供公开直链</summary>
+        public string? BuildOpenUrl(CloudDriveFile file) => null;
+
+        public Task<bool> DownloadToFileAsync(CloudDriveFile file, string savePath, Action<double>? progress)
+            => _s3.DownloadToFileAsync(file.Id, savePath, progress);
+    }
+
+    /// <summary>WebDAV 存储源后端：客户端直连标准 WebDAV 服务器（无需元桌登录）</summary>
+    public sealed class WebDavDriveBackend : IDriveBackend
+    {
+        private readonly WebDavStorageService _dav;
+
+        public WebDavSource Source { get; }
+
+        public WebDavDriveBackend(WebDavSource source)
+        {
+            Source = source;
+            _dav = new WebDavStorageService(source);
+        }
+
+        public string RootId => "";
+        public bool RequiresLogin => false;
+
+        public Task<List<CloudDriveFile>?> ListFilesAsync(string parentId)
+            => _dav.ListDirectoryAsync(parentId);
+
+        public Task<bool> UploadFileAsync(string localPath, string parentId, Action<double>? progress)
+            => _dav.UploadFileAsync(localPath, parentId, progress);
+
+        public async Task<CloudDriveFile?> MkdirAsync(string parentId, string name)
+        {
+            string trimmed = name.Trim();
+            if (string.IsNullOrEmpty(trimmed)) return null;
+            bool ok = await _dav.CreateFolderAsync(parentId, trimmed).ConfigureAwait(false);
+            if (!ok) return null;
+            return new CloudDriveFile { Id = parentId + trimmed.TrimEnd('/') + "/", Name = trimmed, IsFolder = true };
+        }
+
+        /// <summary>WebDAV 的 DELETE 集合即递归删除，文件/文件夹同一接口</summary>
+        public Task<bool> DeleteAsync(CloudDriveFile file)
+            => _dav.DeleteAsync(file.Id);
+
+        public Task<long> GetTotalUsedBytesAsync()
+            => _dav.GetTotalUsedBytesAsync();
+
+        /// <summary>需认证的 WebDAV 资源一律走客户端认证下载，不提供公开直链</summary>
+        public string? BuildOpenUrl(CloudDriveFile file) => null;
+
+        public Task<bool> DownloadToFileAsync(CloudDriveFile file, string savePath, Action<double>? progress)
+            => _dav.DownloadToFileAsync(file.Id, savePath, progress);
+    }
+
+    /// <summary>存储后端解析器：按云空间配置查找外部存储后端（S3 / WebDAV）；
+    /// 返回 null 表示非外部存储源（内置元桌云盘或无法解析）</summary>
+    public static class DriveBackends
+    {
+        public static IDriveBackend? Resolve(CloudSpace? space)
+        {
+            if (space == null || string.IsNullOrEmpty(space.RefId)) return null;
+            if (space.RefType == "webdav")
+            {
+                var dav = WebDavSourceManager.Find(space.RefId);
+                return dav == null ? null : new WebDavDriveBackend(dav);
+            }
+            var s3 = S3SourceManager.Find(space.RefId);
+            return s3 == null ? null : new S3DriveBackend(s3);
+        }
+
+        public static IDriveBackend? ResolveBySpaceId(string? spaceId)
+        {
+            if (string.IsNullOrEmpty(spaceId)) return null;
+            return Resolve(CloudSpaceManager.GetAll().Find(sp => sp.Id == spaceId));
+        }
+    }
+}

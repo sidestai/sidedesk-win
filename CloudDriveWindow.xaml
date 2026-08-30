@@ -6,7 +6,10 @@
         Title="{l:T cloudDrive.metadeskDrive}" Height="560" Width="780"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource BrushBG}"
-        Foreground="{DynamicResource BrushTextMain}">
+        Foreground="{DynamicResource BrushTextMain}"
+        AllowDrop="True"
+        DragEnter="RootGrid_DragEnter" DragLeave="RootGrid_DragLeave"
+        DragOver="RootGrid_DragOver" Drop="RootGrid_Drop">
     <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -17,12 +20,16 @@
 
         <!-- 标题栏 -->
         <DockPanel Grid.Row="0" Margin="0,0,0,10" LastChildFill="True">
-            <Button x:Name="uploadBtn" Content="{l:T cloudDrive.uploadFile}" DockPanel.Dock="Right"
+            <Button x:Name="uploadBtn" DockPanel.Dock="Right"
                     Style="{StaticResource PrimaryButtonStyle}" Padding="12,6"
-                    Click="Upload_Click" Margin="8,0,0,0"/>
-            <Button Content="{l:T cloudDrive.newFolderEmoji}" DockPanel.Dock="Right"
+                    Click="Upload_Click" Margin="8,0,0,0">
+                <emoji:TextBlock Text="{l:T cloudDrive.uploadFile}"/>
+            </Button>
+            <Button DockPanel.Dock="Right"
                     Style="{StaticResource GhostButtonStyle}" Padding="12,6"
-                    Click="NewFolder_Click" Margin="8,0,0,0"/>
+                    Click="NewFolder_Click" Margin="8,0,0,0">
+                <emoji:TextBlock Text="{l:T cloudDrive.newFolderEmoji}"/>
+            </Button>
             <Button x:Name="refreshBtn" Content="🔄" DockPanel.Dock="Right"
                     Style="{StaticResource GhostButtonStyle}" Padding="6,4" FontSize="13"
                     Click="Refresh_Click" Margin="8,0,0,0" ToolTip="{l:T common.refresh}"/>
@@ -143,6 +150,19 @@
                 </DataTemplate>
             </ListView.ItemTemplate>
         </ListView>
+
+        <!-- 拖拽上传遮罩 -->
+        <Border x:Name="dragOverlay" Grid.Row="0" Grid.RowSpan="4"
+                Background="#4000BFFF" CornerRadius="8"
+                Visibility="Collapsed" IsHitTestVisible="False"
+                Panel.ZIndex="100">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                <emoji:TextBlock Text="&#x2B07;&#xFE0F;" FontSize="48" HorizontalAlignment="Center" Margin="0,0,0,12"/>
+                <TextBlock Text="{l:T cloudDrive.dropFilesToUpload}"
+                           FontSize="16" FontWeight="SemiBold"
+                           Foreground="White" HorizontalAlignment="Center"/>
+            </StackPanel>
+        </Border>
 
         <!-- 底部状态栏 -->
         <Border Grid.Row="3" Margin="0,10,0,0">

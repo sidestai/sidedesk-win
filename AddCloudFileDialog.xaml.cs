@@ -31,7 +31,7 @@ public partial class AddCloudFileDialog : Window
         {
             cloudSpaceCombo.Items.Add(new ComboBoxItem
             {
-                Content = $"{space.Icon} {space.Name}",
+                Content = $"{space.Icon} {CloudSpaceManager.GetDisplayName(space)}",
                 Tag = space
             });
             // 默认选中内置云空间（元桌云盘）
@@ -68,6 +68,20 @@ public partial class AddCloudFileDialog : Window
             return;
         }
 
+        // 外部存储源（S3 / WebDAV）：用通用选择器浏览多选，客户端直连无需登录
+        var externalBackend = DriveBackends.Resolve(space);
+        if (externalBackend != null)
+        {
+            var extPicker = new CloudDrivePickerWindow(externalBackend) { Owner = this };
+            if (extPicker.ShowDialog() != true || extPicker.SelectedFiles is not { Count: > 0 } extSelected)
+                return;
+
+            Results = extSelected.Select(f => BuildFromDriveFile(space, f, external: true)).ToList();
+            DialogResult = true;
+            Close();
+            return;
+        }
+
         if (!space.IsBuiltin)
         {
             MessageBox.Show(Framework.Lang.T("cloudDrive.browseOnlyBuiltIn"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Information);
@@ -84,14 +98,14 @@ public partial class AddCloudFileDialog : Window
         Close();
     }
 
-    /// <summary>云盘选中项 → FileAreaItem</summary>
-    private static FileAreaItem BuildFromDriveFile(CloudSpace space, CloudDriveFile file)
+    /// <summary>云盘选中项 → FileAreaItem（external=true 表示外部存储源：无公开直链，打开时走认证下载）</summary>
+    private static FileAreaItem BuildFromDriveFile(CloudSpace space, CloudDriveFile file, bool external = false)
     {
-        string? downloadUrl = CloudDriveService.Instance.BuildDownloadUrl(file);
+        string? downloadUrl = external ? null : CloudDriveService.Instance.BuildDownloadUrl(file);
         return new FileAreaItem
         {
             Name = file.Name,
-            Path = downloadUrl ?? file.OssKey ?? "",
+            Path = external ? "" : (downloadUrl ?? file.OssKey ?? ""),
             IsFolder = file.IsFolder,
             IsCloudFile = true,
             CloudSpaceId = space.Id,

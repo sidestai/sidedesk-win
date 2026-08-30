@@ -17,6 +17,10 @@ namespace SideDesk.Models
         public string Icon { get; set; } = "☁️";
         /// <summary>备注说明</summary>
         public string? Note { get; set; }
+        /// <summary>关联的存储源 ID（如 S3Source.Id）；非空时该项为可直连存储源，打开方式由源类型决定</summary>
+        public string? RefId { get; set; }
+        /// <summary>关联存储源类型（"s3" / "webdav"）；RefId 非空且本字段为空时按 s3 兼容旧数据</summary>
+        public string? RefType { get; set; }
         /// <summary>是否为系统内置预设</summary>
         public bool IsBuiltin { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.Now;
@@ -151,6 +155,14 @@ namespace SideDesk.Models
             lock (_lock)
                 return new List<CloudSpace>(_spaces);
         }
+
+        /// <summary>云空间显示名称（内置项按当前语言翻译，用户项用原名；存储的 Name 保持不变仅作标识）</summary>
+        public static string GetDisplayName(CloudSpace space)
+            => space.IsBuiltin ? Framework.Lang.T("cloudDrive.builtinSpaceName") : space.Name;
+
+        /// <summary>云空间描述行（内置项显示翻译后的说明，用户项显示地址）</summary>
+        public static string GetDisplayUrl(CloudSpace space)
+            => space.IsBuiltin ? Framework.Lang.T("cloudDrive.builtinNote") : space.Url;
 
         public static void Add(CloudSpace space)
         {
