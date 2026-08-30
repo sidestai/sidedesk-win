@@ -29,8 +29,8 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- 标题栏 -->
-        <Border Grid.Row="0" Grid.Column="0" Background="{DynamicResource BrushInputBG}">
+        <!-- 标题栏（跨两列确保更多按钮始终在右上角） -->
+        <Border Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Background="{DynamicResource BrushInputBG}">
             <Border.ContextMenu>
                 <ContextMenu>
                     <MenuItem Header="{l:T common.logIn}" Click="Login_Click"/>
@@ -42,17 +42,14 @@
                     <MenuItem Header="{l:T common.exit}" Click="Exit_Click"/>
                 </ContextMenu>
             </Border.ContextMenu>
-            <Grid>
+            <Grid x:Name="titleBarGrid">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <!-- 产品名：居右显示在省略号按钮左侧，优先级低，窗口标签变多时被标签面板遮盖自动隐藏 -->
-                <TextBlock x:Name="singleWindowTitle" Grid.Column="0" Text="{l:T common.metadeskScreen}"
-                           VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,6,0"
-                           Foreground="{DynamicResource BrushTextMuted}" FontSize="12"/>
-                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" ClipToBounds="True"
-                            Panel.ZIndex="1" Background="{DynamicResource BrushInputBG}">
+                <!-- 窗口标签 -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" ClipToBounds="True">
                     <StackPanel x:Name="windowTabsPanel" Orientation="Horizontal" Margin="3,0"/>
                     <Button x:Name="addWindowBtn" Content="+" Click="AddWindow_Click"
                             Width="22" Height="22"
@@ -64,7 +61,11 @@
                             ToolTip="{l:T window.addWindow}"
                             Margin="2,0"/>
                 </StackPanel>
-                <Button x:Name="moreButton" Grid.Column="1" Content="⋯" Click="MoreButton_Click"
+                <!-- 产品名：显示在标签右侧、省略号按钮左侧 -->
+                <TextBlock x:Name="singleWindowTitle" Grid.Column="1" Text="{l:T common.metadeskScreen}"
+                           VerticalAlignment="Center" HorizontalAlignment="Right" Margin="2,0,6,0"
+                           Foreground="{DynamicResource BrushTextMain}" FontSize="12"/>
+                <Button x:Name="moreButton" Grid.Column="2" Content="⋯" Click="MoreButton_Click"
                         VerticalAlignment="Center"
                         Width="30" Height="30"
                         FontSize="16" FontWeight="Bold" Padding="5,2"
@@ -119,7 +120,7 @@
         </Canvas>
 
         <!-- 通知条（窗口最右侧约 5px 宽的竖条，展示各种颜色的通知提醒；占据独立布局列，显示时左侧内容区收缩；各通知段可悬停提示、点击处理） -->
-        <Border x:Name="notificationStrip" Grid.Column="1" Grid.Row="0" Grid.RowSpan="2"
+        <Border x:Name="notificationStrip" Grid.Column="1" Grid.Row="1"
                 Width="5"
                 Background="{DynamicResource BrushBorder}"
                 Visibility="Visible">

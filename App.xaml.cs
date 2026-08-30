@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using System.Windows;
 using SideDesk.Models;
 using SideDesk.Services;
-using Velopack;
 
 namespace SideDesk
 {
@@ -85,14 +84,10 @@ namespace SideDesk
 
         protected override void OnStartup(StartupEventArgs e)
         {
-            // 注册全局异常处理
+            // 注册全局异常处理（Velopack 钩子已在 Program.Main 第一行拦截，不会走到这里）
             AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
             DispatcherUnhandledException += App_DispatcherUnhandledException;
             TaskScheduler.UnobservedTaskException += TaskScheduler_UnobservedTaskException;
-            
-            // Velopack 必须最先执行，拦截安装/更新/卸载命令行钩子
-            try { System.IO.Directory.SetCurrentDirectory(System.IO.Path.GetTempPath()); } catch { }
-            VelopackApp.Build().Run();
 
             base.OnStartup(e);
 

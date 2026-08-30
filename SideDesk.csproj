@@ -2,11 +2,19 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <!-- 自定义入口 Program.Main：Velopack 要求 VelopackApp.Run() 位于 Main 第一行（覆盖 App.xaml 生成的 Main） -->
+    <StartupObject>SideDesk.Program</StartupObject>
     <TargetFramework>net10.0-windows10.0.19041</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <ApplicationIcon>main.ico</ApplicationIcon>
+	<Version>1.0.0</Version>
+	<AssemblyVersion>1.0.*</AssemblyVersion>
+	<FileVersion>1.0.0.0</FileVersion>
+	<Deterministic>False</Deterministic>
+	<!-- 项目已使用 JSON 做 i18n，排除 NuGet 包卫星资源 DLL（Roslyn 等包的本地化消息） -->
+	<SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
 
   <ItemGroup>

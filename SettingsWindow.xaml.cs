@@ -183,6 +183,7 @@ namespace SideDesk
             pageTools.Visibility = Visibility.Collapsed;
             pageModules.Visibility = Visibility.Collapsed;
             pageMyData.Visibility = Visibility.Collapsed;
+            pageLlmKeys.Visibility = Visibility.Collapsed;
             pageWindows.Visibility = Visibility.Collapsed;
             pageShortcuts.Visibility = Visibility.Collapsed;
             pageAbout.Visibility = Visibility.Collapsed;
@@ -203,9 +204,10 @@ namespace SideDesk
                 case 9: pageTools.Visibility = Visibility.Visible; break;
                 case 10: pageModules.Visibility = Visibility.Visible; RefreshModulesPage(); break;
                 case 11: pageMyData.Visibility = Visibility.Visible; RefreshMyDataPage(); break;
-                case 12: pageShortcuts.Visibility = Visibility.Visible; break;
-                case 13: pageAbout.Visibility = Visibility.Visible; break;
-                case 14: pageDeveloper.Visibility = Visibility.Visible; RefreshApiKeyPage(); break;
+                case 12: pageLlmKeys.Visibility = Visibility.Visible; RefreshLlmKeysPage(); break;
+                case 13: pageShortcuts.Visibility = Visibility.Visible; break;
+                case 14: pageAbout.Visibility = Visibility.Visible; break;
+                case 15: pageDeveloper.Visibility = Visibility.Visible; RefreshApiKeyPage(); break;
             }
         }
 
@@ -1125,7 +1127,7 @@ namespace SideDesk
                 var nameRow = new StackPanel { Orientation = Orientation.Horizontal };
                 nameRow.Children.Add(new Emoji.Wpf.TextBlock
                 {
-                    Text = space.Name,
+                    Text = CloudSpaceManager.GetDisplayName(space),
                     FontWeight = FontWeights.SemiBold,
                     Foreground = (Brush)FindResource("BrushTextMain"),
                     FontSize = (double)FindResource("FontSizeNormal")
@@ -1143,7 +1145,7 @@ namespace SideDesk
                 info.Children.Add(nameRow);
                 info.Children.Add(new TextBlock
                 {
-                    Text = space.Url,
+                    Text = CloudSpaceManager.GetDisplayUrl(space),
                     Foreground = (Brush)FindResource("BrushTextMuted"),
                     FontSize = (double)FindResource("FontSizeTiny"),
                     TextTrimming = TextTrimming.CharacterEllipsis
@@ -1151,7 +1153,15 @@ namespace SideDesk
                 Grid.SetColumn(info, 1);
                 row.Children.Add(info);
 
-                // 操作按钮
+                // 操作按钮（先判定是否为关联存储源，如 S3 / WebDAV）
+                S3Source? linkedS3 = null;
+                WebDavSource? linkedDav = null;
+                if (!space.IsBuiltin && !string.IsNullOrEmpty(space.RefId))
+                {
+                    if (space.RefType == "webdav") linkedDav = WebDavSourceManager.Find(space.RefId);
+                    else linkedS3 = S3SourceManager.Find(space.RefId);
+                }
+
                 var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
                 var openBtn = new Button
                 {
@@ -1166,6 +1176,76 @@ namespace SideDesk
                     else
                         openBtn.Click += (s, e) => { new CloudDriveWindow().Show(); };
                     btnPanel.Children.Add(openBtn);
+                }
+                else if (linkedS3 != null)
+                {
+                    // S3 存储源：打开云盘窗口直连使用，可编辑/删除源配置
+                    var openSource = linkedS3;
+                    openBtn.Click += (s, e) => { new CloudDriveWindow(openSource).Show(); };
+                    btnPanel.Children.Add(openBtn);
+
+                    var editBtn = new Button
+                    {
+                        Content = Framework.Lang.T("common.edit"), Style = (Style)FindResource("GhostButtonStyle"),
+                        Padding = new Thickness(8, 2, 8, 2), FontSize = 11, Margin = new Thickness(0, 0, 6, 0)
+                    };
+                    var editSource = linkedS3;
+                    editBtn.Click += (s, e) => ShowS3SourceEditDialog(editSource);
+                    btnPanel.Children.Add(editBtn);
+
+                    var delBtn = new Button
+                    {
+                        Content = "✕", Style = (Style)FindResource("GhostButtonStyle"),
+                        Padding = new Thickness(6, 2, 6, 2), FontSize = 11
+                    };
+                    var delSourceId = linkedS3.Id;
+                    var delSpaceId = space.Id;
+                    var delName = space.Name;
+                    delBtn.Click += (s, e) =>
+                    {
+                        if (MessageBox.Show(Framework.Lang.TF("settings.deleteCloudSpace", delName), Framework.Lang.T("cloudDrive.confirmDeletion"), MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK)
+                        {
+                            S3SourceManager.Delete(delSourceId);
+                            CloudSpaceManager.Delete(delSpaceId);
+                            RefreshCloudSpaceList();
+                        }
+                    };
+                    btnPanel.Children.Add(delBtn);
+                }
+                else if (linkedDav != null)
+                {
+                    // WebDAV 存储源：打开云盘窗口直连使用，可编辑/删除源配置
+                    var openSource = linkedDav;
+                    openBtn.Click += (s, e) => { new CloudDriveWindow(openSource).Show(); };
+                    btnPanel.Children.Add(openBtn);
+
+                    var editBtn = new Button
+                    {
+                        Content = Framework.Lang.T("common.edit"), Style = (Style)FindResource("GhostButtonStyle"),
+                        Padding = new Thickness(8, 2, 8, 2), FontSize = 11, Margin = new Thickness(0, 0, 6, 0)
+                    };
+                    var editTarget = space;
+                    editBtn.Click += (s, e) => ShowCloudSpaceEditDialog(editTarget);
+                    btnPanel.Children.Add(editBtn);
+
+                    var delBtn = new Button
+                    {
+                        Content = "✕", Style = (Style)FindResource("GhostButtonStyle"),
+                        Padding = new Thickness(6, 2, 6, 2), FontSize = 11
+                    };
+                    var delSourceId = linkedDav.Id;
+                    var delSpaceId = space.Id;
+                    var delName = space.Name;
+                    delBtn.Click += (s, e) =>
+                    {
+                        if (MessageBox.Show(Framework.Lang.TF("settings.deleteCloudSpace", delName), Framework.Lang.T("cloudDrive.confirmDeletion"), MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK)
+                        {
+                            WebDavSourceManager.Delete(delSourceId);
+                            CloudSpaceManager.Delete(delSpaceId);
+                            RefreshCloudSpaceList();
+                        }
+                    };
+                    btnPanel.Children.Add(delBtn);
                 }
                 else
                 {
@@ -1209,18 +1289,21 @@ namespace SideDesk
 
         private void AddCloudSpace_Click(object sender, RoutedEventArgs e)
         {
-            // 提供预设选项：百度网盘 / 自定义
+            // 提供预设选项：Amazon S3 / WebDAV
             var menu = new System.Windows.Controls.ContextMenu();
-            var baiduItem = new System.Windows.Controls.MenuItem { Header = Framework.Lang.T("settings.baiduPan") };
-            baiduItem.Click += (_, _) =>
-            {
-                // 打开百度网盘窗口进行 OAuth 绑定，授权成功后自动添加到云空间列表
-                new BaiduPanWindow().Show();
-            };
-            var customItem = new System.Windows.Controls.MenuItem { Header = Framework.Lang.T("settings.addCustomCloudSpace") };
-            customItem.Click += (_, _) => ShowCloudSpaceEditDialog(null);
-            menu.Items.Add(baiduItem);
-            menu.Items.Add(customItem);
+            // 百度网盘入口暂时下线（保留代码以便后续恢复）
+            // var baiduItem = new System.Windows.Controls.MenuItem { Header = Framework.Lang.T("settings.baiduPan") };
+            // baiduItem.Click += (_, _) =>
+            // {
+            //     // 打开百度网盘窗口进行 OAuth 绑定，授权成功后自动添加到云空间列表
+            //     new BaiduPanWindow().Show();
+            // };
+            var s3Item = new System.Windows.Controls.MenuItem { Header = Framework.Lang.T("settings.amazonS3") };
+            s3Item.Click += (_, _) => ShowS3SourceEditDialog(null);
+            var davItem = new System.Windows.Controls.MenuItem { Header = Framework.Lang.T("settings.spaceTypeWebDav") };
+            davItem.Click += (_, _) => ShowCloudSpaceEditDialog(null);
+            menu.Items.Add(s3Item);
+            menu.Items.Add(davItem);
             menu.PlacementTarget = (UIElement)sender;
             menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
             menu.IsOpen = true;
@@ -1232,54 +1315,111 @@ namespace SideDesk
             RefreshCloudSpaceList();
         }
 
-        /// <summary>云空间编辑对话框（space=null 表示新建）</summary>
+        /// <summary>WebDAV 存储源配置对话框（space=null 表示新建）。
+        /// 保存后自动同步一条关联的云空间条目，可在列表中打开直连使用</summary>
         private void ShowCloudSpaceEditDialog(CloudSpace? space)
         {
             bool isNew = space == null;
             var editing = space ?? new CloudSpace();
 
+            // 编辑对象若为 WebDAV 存储源，加载其源配置回填表单；
+            // 旧版网址快捷方式条目编辑时以名称/地址预填，保存后转为 WebDAV 存储源
+            WebDavSource? davSource = null;
+            if (!isNew && editing.RefType == "webdav" && !string.IsNullOrEmpty(editing.RefId))
+                davSource = WebDavSourceManager.Find(editing.RefId);
+
             var dialog = new Window
             {
                 Title = isNew ? Framework.Lang.T("cloudDrive.addCloudSpace") : Framework.Lang.T("settings.editCloudSpace"),
-                Width = 380, Height = 310,
+                Width = 400, Height = 430,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Owner = this, ResizeMode = ResizeMode.NoResize,
                 Background = (Brush)FindResource("BrushBG")
             };
+            dialog.SourceInitialized += (s, ev) => App.UpdateWindowDwmTheme(dialog);
 
             var root = new StackPanel { Margin = new Thickness(16) };
 
-            root.Children.Add(new TextBlock { Text = Framework.Lang.T("settings.iconEmoji"), Foreground = (Brush)FindResource("BrushTextMain"), FontSize = 12, Margin = new Thickness(0, 0, 0, 4) });
-            var iconBox = new TextBox { Text = editing.Icon, Width = 60, HorizontalAlignment = HorizontalAlignment.Left, Style = (Style)FindResource("GlobalTextBoxStyle") };
-            root.Children.Add(iconBox);
+            TextBlock MakeLabel(string key, double topMargin = 10)
+            {
+                return new TextBlock { Text = Framework.Lang.T(key), Foreground = (Brush)FindResource("BrushTextMain"), FontSize = 12, Margin = new Thickness(0, topMargin, 0, 4) };
+            }
 
-            root.Children.Add(new TextBlock { Text = Framework.Lang.T("common.name"), Foreground = (Brush)FindResource("BrushTextMain"), FontSize = 12, Margin = new Thickness(0, 10, 0, 4) });
-            var nameBox = new TextBox { Text = editing.Name, Style = (Style)FindResource("GlobalTextBoxStyle") };
-            root.Children.Add(nameBox);
+            root.Children.Add(MakeLabel("common.name", 0));
+            var davNameBox = new TextBox { Text = davSource?.Name ?? editing.Name, Style = (Style)FindResource("GlobalTextBoxStyle") };
+            root.Children.Add(davNameBox);
 
-            root.Children.Add(new TextBlock { Text = Framework.Lang.T("common.url"), Foreground = (Brush)FindResource("BrushTextMain"), FontSize = 12, Margin = new Thickness(0, 10, 0, 4) });
-            var urlBox = new TextBox { Text = editing.Url, Style = (Style)FindResource("GlobalTextBoxStyle") };
-            root.Children.Add(urlBox);
+            root.Children.Add(MakeLabel("settings.webdavUrl"));
+            var davUrlBox = new TextBox { Text = davSource?.Url ?? editing.Url, Style = (Style)FindResource("GlobalTextBoxStyle") };
+            root.Children.Add(davUrlBox);
 
-            root.Children.Add(new TextBlock { Text = Framework.Lang.T("settings.noteOptional"), Foreground = (Brush)FindResource("BrushTextMain"), FontSize = 12, Margin = new Thickness(0, 10, 0, 4) });
-            var noteBox = new TextBox { Text = editing.Note ?? "", Style = (Style)FindResource("GlobalTextBoxStyle") };
-            root.Children.Add(noteBox);
+            root.Children.Add(MakeLabel("settings.webdavUser"));
+            var davUserBox = new TextBox { Text = davSource?.Username ?? "", Style = (Style)FindResource("GlobalTextBoxStyle") };
+            root.Children.Add(davUserBox);
+
+            root.Children.Add(MakeLabel("settings.webdavPassword"));
+            var davPasswordBox = new PasswordBox { Password = davSource?.Password ?? "", Style = (Style)FindResource("GlobalPasswordBoxStyle") };
+            root.Children.Add(davPasswordBox);
+
+            var davTestBtn = new Button
+            {
+                Content = Framework.Lang.T("settings.s3TestConnection"), Style = (Style)FindResource("StandardButtonStyle"),
+                Padding = new Thickness(10, 4, 10, 4), FontSize = 12, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 12, 0, 0)
+            };
+            root.Children.Add(davTestBtn);
+
+            /// <summary>从 WebDAV 表单构建源对象；必填校验失败返回 null</summary>
+            WebDavSource? BuildDavFromForm()
+            {
+                string name = davNameBox.Text.Trim();
+                string url = davUrlBox.Text.Trim();
+                if (string.IsNullOrEmpty(name)) { MessageBox.Show(Framework.Lang.T("settings.pleaseEnterAName")); return null; }
+                if (string.IsNullOrEmpty(url)) { MessageBox.Show(Framework.Lang.T("settings.webdavFillRequired")); return null; }
+                if (!url.StartsWith("http://") && !url.StartsWith("https://")) url = "https://" + url;
+
+                var src = davSource ?? new WebDavSource();
+                src.Name = name;
+                src.Url = url;
+                src.Username = davUserBox.Text.Trim();
+                string pwd = davPasswordBox.Password;
+                if (!string.IsNullOrEmpty(pwd)) src.PasswordEncrypted = WebDavSourceManager.Encrypt(pwd);
+                // 编辑时密码留空 = 保持原密码不变（新建时为空即匿名）
+                return src;
+            }
+
+            davTestBtn.Click += async (s, e) =>
+            {
+                var built = BuildDavFromForm();
+                if (built == null) return;
+                davTestBtn.IsEnabled = false;
+                davTestBtn.Content = Framework.Lang.T("settings.s3Testing");
+                var (ok, err) = await Task.Run(() => new WebDavStorageService(built).TestConnectionAsync());
+                davTestBtn.IsEnabled = true;
+                davTestBtn.Content = Framework.Lang.T("settings.s3TestConnection");
+                if (ok)
+                    MessageBox.Show(Framework.Lang.T("settings.s3ConnectionOk"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Information);
+                else
+                    MessageBox.Show(Framework.Lang.TF("settings.s3ConnectionFailed", err), Framework.Lang.T("common.operationFailed"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            };
 
             var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
             var okBtn = new Button { Content = Framework.Lang.T("common.ok"), Width = 70, IsDefault = true, Style = (Style)FindResource("PrimaryButtonStyle"), Margin = new Thickness(0, 0, 8, 0) };
             var cancelBtn = new Button { Content = Framework.Lang.T("common.cancel"), Width = 70, IsCancel = true, Style = (Style)FindResource("StandardButtonStyle") };
             okBtn.Click += (s, e) =>
             {
-                string name = nameBox.Text.Trim();
-                string url = urlBox.Text.Trim();
-                if (string.IsNullOrEmpty(name)) { MessageBox.Show(Framework.Lang.T("settings.pleaseEnterAName")); return; }
-                if (string.IsNullOrEmpty(url)) { MessageBox.Show(Framework.Lang.T("settings.enterUrl")); return; }
-                if (!url.StartsWith("http://") && !url.StartsWith("https://")) url = "https://" + url;
+                // WebDAV 存储源：保存源配置并关联云空间条目（列表中可打开直连使用）
+                var built = BuildDavFromForm();
+                if (built == null) return;
 
-                editing.Name = name;
-                editing.Url = url;
-                editing.Icon = string.IsNullOrWhiteSpace(iconBox.Text) ? "☁️" : iconBox.Text.Trim();
-                editing.Note = string.IsNullOrWhiteSpace(noteBox.Text) ? null : noteBox.Text.Trim();
+                if (davSource == null) WebDavSourceManager.Add(built);
+                else WebDavSourceManager.Update(built);
+
+                editing.RefType = "webdav";
+                editing.RefId = built.Id;
+                editing.Name = built.Name;
+                editing.Url = built.Url;
+                editing.Icon = "🌐";
+                editing.Note = "WebDAV";
 
                 if (isNew) CloudSpaceManager.Add(editing);
                 else CloudSpaceManager.Update(editing);
@@ -1291,7 +1431,193 @@ namespace SideDesk
             btnPanel.Children.Add(cancelBtn);
             root.Children.Add(btnPanel);
 
-            dialog.Content = root;
+            // 小分辨率/高缩放下内容可能超出窗口高度，加滚动条保护避免底部按钮被裁切
+            dialog.Content = new ScrollViewer
+            {
+                Content = root,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+            };
+            dialog.ShowDialog();
+        }
+
+        /// <summary>S3 存储源配置对话框（source=null 表示新建）。支持直接输入 AK/SK，也提供 web 引导页获取密钥；
+        /// 保存后自动同步一条关联的云空间条目，可在列表中打开直连使用</summary>
+        private void ShowS3SourceEditDialog(S3Source? source)
+        {
+            bool isNew = source == null;
+            var editing = source ?? new S3Source();
+
+            var dialog = new Window
+            {
+                Title = isNew ? Framework.Lang.T("settings.amazonS3") : Framework.Lang.T("settings.s3Edit"),
+                Width = 440, Height = 680,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this, ResizeMode = ResizeMode.NoResize,
+                Background = (Brush)FindResource("BrushBG")
+            };
+            dialog.SourceInitialized += (s, ev) => App.UpdateWindowDwmTheme(dialog);
+
+            var root = new StackPanel { Margin = new Thickness(16) };
+
+            TextBlock MakeLabel(string key, double topMargin = 10)
+            {
+                return new TextBlock { Text = Framework.Lang.T(key), Foreground = (Brush)FindResource("BrushTextMain"), FontSize = 12, Margin = new Thickness(0, topMargin, 0, 4) };
+            }
+
+            root.Children.Add(MakeLabel("common.name", 0));
+            var nameBox = new TextBox { Text = editing.Name, Style = (Style)FindResource("GlobalTextBoxStyle") };
+            root.Children.Add(nameBox);
+
+            root.Children.Add(MakeLabel("settings.s3Bucket"));
+            var bucketBox = new TextBox { Text = editing.Bucket, Style = (Style)FindResource("GlobalTextBoxStyle") };
+            root.Children.Add(bucketBox);
+
+            root.Children.Add(MakeLabel("settings.s3Region"));
+            var regionBox = new TextBox { Text = editing.Region, Style = (Style)FindResource("GlobalTextBoxStyle") };
+            root.Children.Add(regionBox);
+
+            root.Children.Add(MakeLabel("settings.s3Endpoint"));
+            var endpointBox = new TextBox { Text = editing.Endpoint, Style = (Style)FindResource("GlobalTextBoxStyle") };
+            root.Children.Add(endpointBox);
+            root.Children.Add(new TextBlock
+            {
+                Text = Framework.Lang.T("settings.s3EndpointHint"),
+                Foreground = (Brush)FindResource("BrushTextMuted"), FontSize = 11, Margin = new Thickness(0, 3, 0, 0)
+            });
+
+            root.Children.Add(MakeLabel("settings.s3AccessKeyId"));
+            var akBox = new TextBox { Text = editing.AccessKeyId, Style = (Style)FindResource("GlobalTextBoxStyle") };
+            root.Children.Add(akBox);
+
+            root.Children.Add(MakeLabel("settings.s3SecretKey"));
+            var skBox = new PasswordBox { Password = editing.SecretAccessKey, Style = (Style)FindResource("GlobalPasswordBoxStyle") };
+            root.Children.Add(skBox);
+
+            root.Children.Add(MakeLabel("settings.s3SessionToken"));
+            var tokenBox = new PasswordBox { Password = editing.SessionToken ?? "", Style = (Style)FindResource("GlobalPasswordBoxStyle") };
+            root.Children.Add(tokenBox);
+
+            root.Children.Add(MakeLabel("settings.s3Prefix"));
+            var prefixBox = new TextBox { Text = editing.Prefix, Style = (Style)FindResource("GlobalTextBoxStyle") };
+            root.Children.Add(prefixBox);
+
+            var pathStyleCheck = new CheckBox
+            {
+                Content = Framework.Lang.T("settings.s3PathStyle"),
+                IsChecked = editing.UsePathStyle,
+                Foreground = (Brush)FindResource("BrushTextMain"),
+                FontSize = 12, Margin = new Thickness(0, 10, 0, 0)
+            };
+            root.Children.Add(pathStyleCheck);
+
+            // 测试连接 + web 引导按钮行
+            var toolRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 14, 0, 0) };
+            var testBtn = new Button { Content = Framework.Lang.T("settings.s3TestConnection"), Style = (Style)FindResource("StandardButtonStyle"), Padding = new Thickness(10, 4, 10, 4), FontSize = 12 };
+            var guideBtn = new Button { Content = Framework.Lang.T("settings.s3WebGuide"), Style = (Style)FindResource("GhostButtonStyle"), Padding = new Thickness(10, 4, 10, 4), FontSize = 12, Margin = new Thickness(8, 0, 0, 0) };
+            toolRow.Children.Add(testBtn);
+            toolRow.Children.Add(guideBtn);
+            root.Children.Add(toolRow);
+
+            /// <summary>从当前表单构建源对象（不含保存）；必填校验失败返回 null</summary>
+            S3Source? BuildFromForm()
+            {
+                string bucket = bucketBox.Text.Trim();
+                string region = regionBox.Text.Trim();
+                string ak = akBox.Text.Trim();
+                string sk = skBox.Password;
+                if (string.IsNullOrEmpty(bucket) || string.IsNullOrEmpty(region) || string.IsNullOrEmpty(ak) || string.IsNullOrEmpty(sk))
+                {
+                    MessageBox.Show(Framework.Lang.T("settings.s3FillRequired"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Information);
+                    return null;
+                }
+                editing.Name = nameBox.Text.Trim();
+                if (string.IsNullOrEmpty(editing.Name)) editing.Name = $"S3 · {bucket}";
+                editing.Bucket = bucket;
+                editing.Region = region;
+                editing.Endpoint = endpointBox.Text.Trim();
+                editing.AccessKeyId = ak;
+                editing.SecretKeyEncrypted = S3SourceManager.Encrypt(sk);
+                string sessionToken = tokenBox.Password;
+                editing.SessionTokenEncrypted = string.IsNullOrEmpty(sessionToken) ? null : S3SourceManager.Encrypt(sessionToken);
+                editing.Prefix = prefixBox.Text.Trim();
+                editing.UsePathStyle = pathStyleCheck.IsChecked == true;
+                return editing;
+            }
+
+            testBtn.Click += async (s, e) =>
+            {
+                var built = BuildFromForm();
+                if (built == null) return;
+                testBtn.IsEnabled = false;
+                testBtn.Content = Framework.Lang.T("settings.s3Testing");
+                var (ok, err) = await Task.Run(() => new S3StorageService(built).TestConnectionAsync());
+                testBtn.IsEnabled = true;
+                testBtn.Content = Framework.Lang.T("settings.s3TestConnection");
+                if (ok)
+                    MessageBox.Show(Framework.Lang.T("settings.s3ConnectionOk"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Information);
+                else
+                    MessageBox.Show(Framework.Lang.TF("settings.s3ConnectionFailed", err), Framework.Lang.T("common.operationFailed"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            };
+
+            guideBtn.Click += (s, e) =>
+            {
+                MessageBox.Show(Framework.Lang.T("settings.s3WebGuideMsg"), Framework.Lang.T("settings.s3WebGuide"), MessageBoxButton.OK, MessageBoxImage.Information);
+                try
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://console.aws.amazon.com/iam/home#/security_credentials") { UseShellExecute = true });
+                }
+                catch { }
+            };
+
+            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
+            var okBtn = new Button { Content = Framework.Lang.T("common.ok"), Width = 70, IsDefault = true, Style = (Style)FindResource("PrimaryButtonStyle"), Margin = new Thickness(0, 0, 8, 0) };
+            var cancelBtn = new Button { Content = Framework.Lang.T("common.cancel"), Width = 70, IsCancel = true, Style = (Style)FindResource("StandardButtonStyle") };
+            okBtn.Click += (s, e) =>
+            {
+                var built = BuildFromForm();
+                if (built == null) return;
+
+                if (isNew) S3SourceManager.Add(built);
+                else S3SourceManager.Update(built);
+
+                // 同步维护关联的云空间条目（列表中可打开使用）
+                string displayUrl = $"S3://{built.Bucket} · {built.Region}";
+                var existingSpace = CloudSpaceManager.GetAll().Find(sp => sp.RefId == built.Id);
+                if (existingSpace != null)
+                {
+                    existingSpace.Name = built.Name;
+                    existingSpace.Url = displayUrl;
+                    existingSpace.Icon = "🪣";
+                    CloudSpaceManager.Update(existingSpace);
+                }
+                else
+                {
+                    CloudSpaceManager.Add(new CloudSpace
+                    {
+                        Name = built.Name,
+                        Url = displayUrl,
+                        Icon = "🪣",
+                        RefId = built.Id,
+                        RefType = "s3",
+                        Note = "Amazon S3"
+                    });
+                }
+
+                RefreshCloudSpaceList();
+                dialog.Close();
+            };
+            btnPanel.Children.Add(okBtn);
+            btnPanel.Children.Add(cancelBtn);
+            root.Children.Add(btnPanel);
+
+            // 小分辨率/高缩放下内容可能超出窗口高度，加滚动条保护避免底部按钮被裁切
+            dialog.Content = new ScrollViewer
+            {
+                Content = root,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+            };
             dialog.ShowDialog();
         }
 

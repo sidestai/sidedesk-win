@@ -53,6 +53,7 @@
                     <ListBoxItem Content="{l:T common.tools}"/>
                     <ListBoxItem Content="{l:T common.module}"/>
                     <ListBoxItem Content="{l:T common.myData}"/>
+                    <ListBoxItem Content="{l:T settings.llm.models}"/>
                     <ListBoxItem Content="{l:T common.hotkeys}"/>
                     <ListBoxItem Content="{l:T settings.about}"/>
                     <ListBoxItem Content="{l:T common.developer}"/>
@@ -1451,6 +1452,9 @@
                     <!-- 隐藏测试面板宿主：连按 10 次 F12 后填充并显示 -->
                     <StackPanel x:Name="devTestHost" Visibility="Collapsed"/>
                 </StackPanel>
+
+                <!-- 大模型页面（内容由代码动态构建，见 SettingsWindow.LlmKeys.cs） -->
+                <StackPanel x:Name="pageLlmKeys" Visibility="Collapsed" Margin="0,0,0,20"/>
             </Grid>
         </ScrollViewer>
     </Grid>

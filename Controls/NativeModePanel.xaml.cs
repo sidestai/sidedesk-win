@@ -4140,6 +4140,22 @@ namespace SideDesk.Controls
                 return;
             }
 
+            // 外部存储源（S3/WebDAV）：文件夹定位到云盘窗口打开，文件走认证下载后打开（无需元桌登录）
+            var externalBackend = DriveBackends.ResolveBySpaceId(fileItem.CloudSpaceId);
+            if (externalBackend != null)
+            {
+                if (fileItem.IsFolder || string.IsNullOrEmpty(fileItem.CloudFileId))
+                {
+                    if (externalBackend is S3DriveBackend s3Backend)
+                        new CloudDriveWindow(s3Backend.Source, fileItem.CloudFileId, fileItem.Name).Show();
+                    else if (externalBackend is WebDavDriveBackend davBackend)
+                        new CloudDriveWindow(davBackend.Source, fileItem.CloudFileId, fileItem.Name).Show();
+                    return;
+                }
+                _ = DownloadAndOpenExternalFileAsync(externalBackend, fileItem);
+                return;
+            }
+
             // 云目录：直接打开云盘查看器并定位到该目录
             if (fileItem.IsFolder && !string.IsNullOrEmpty(fileItem.CloudFileId))
             {
@@ -4162,6 +4178,34 @@ namespace SideDesk.Controls
                 }
             }
             catch { }
+        }
+
+        /// <summary>外部存储源（S3/WebDAV）文件：认证下载到临时目录后打开（已有临时文件则复用）</summary>
+        private async System.Threading.Tasks.Task DownloadAndOpenExternalFileAsync(IDriveBackend backend, FileAreaItem fileItem)
+        {
+            try
+            {
+                string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "SideDesk", "cloud-open");
+                System.IO.Directory.CreateDirectory(dir);
+                string safeName = string.Join("_", (fileItem.Name ?? "file").Split(System.IO.Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries));
+                if (string.IsNullOrWhiteSpace(safeName)) safeName = "file";
+                string savePath = System.IO.Path.Combine(dir, $"{fileItem.Id.Replace("-", "")[..Math.Min(8, fileItem.Id.Length)]}_{safeName}");
+
+                if (!System.IO.File.Exists(savePath))
+                {
+                    bool ok = await backend.DownloadToFileAsync(new CloudDriveFile { Id = fileItem.CloudFileId ?? "", Name = fileItem.Name }, savePath, null);
+                    if (!ok)
+                    {
+                        MessageBox.Show(Framework.Lang.T("cloudDrive.downloadFailedPleaseTry"), Framework.Lang.T("common.operationFailed"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                        return;
+                    }
+                }
+                Process.Start(new ProcessStartInfo(savePath) { UseShellExecute = true });
+            }
+            catch
+            {
+                MessageBox.Show(Framework.Lang.T("cloudDrive.downloadFailedPleaseTry"), Framework.Lang.T("common.operationFailed"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
         }
 
         /// <summary>云文件右键菜单：打开 / 复制链接 / 复制文件ID / 删除</summary>
@@ -4349,15 +4393,16 @@ namespace SideDesk.Controls
         /// <summary>处理文件拖拽到文件夹（本地目录执行复制；云目录则上传到对应云盘目录）</summary>
         private void HandleDropOnFolder(object sender, DragEventArgs e, FileAreaItem folderItem, PanelItem panelItem, Grid? cloudIconGrid = null)
         {
-            // 云目录：上传到对应云盘目录（需要登录）
+            // 云目录：上传到对应云盘目录（外部存储源直连无需登录；内置元桌云盘需登录）
             if (folderItem.IsCloudFile)
             {
-                if (!EnsureLoggedInForCloud())
+                var folderBackend = DriveBackends.ResolveBySpaceId(folderItem.CloudSpaceId);
+                if (folderBackend == null && !EnsureLoggedInForCloud())
                 {
                     e.Handled = true; // 截止冒泡，避免落到外层被当成“添加到文件区”
                     return;
                 }
-                HandleDropOnCloudFolder(e, folderItem, cloudIconGrid);
+                HandleDropOnCloudFolder(e, folderItem, cloudIconGrid, folderBackend);
                 return;
             }
 
@@ -4650,8 +4695,8 @@ namespace SideDesk.Controls
                 }
                 else
                 {
-                    // 文件行：拖到云文件同样需要登录；本地文件则把拖入的文件添加到本文件区
-                    if (fileItem.IsCloudFile && !EnsureLoggedInForCloud()) return;
+                    // 文件行：拖到内置云盘文件需要登录；外部存储源直连免登录；本地文件则把拖入的文件添加到本文件区
+                    if (fileItem.IsCloudFile && DriveBackends.ResolveBySpaceId(fileItem.CloudSpaceId) == null && !EnsureLoggedInForCloud()) return;
                     AddDroppedFilesToArea(e, panelItem);
                 }
             };
@@ -4703,8 +4748,8 @@ namespace SideDesk.Controls
             return s.Substring(i).Trim();
         }
 
-        /// <summary>拖拽文件到云目录：上传到对应云盘目录，并在目录图标上显示环形进度条</summary>
-        private async void HandleDropOnCloudFolder(DragEventArgs e, FileAreaItem folderItem, Grid? iconGrid)
+        /// <summary>拖拽文件到云目录：上传到对应云盘目录，并在目录图标上显示环形进度条（backend 非空时上传到外部存储源）</summary>
+        private async void HandleDropOnCloudFolder(DragEventArgs e, FileAreaItem folderItem, Grid? iconGrid, IDriveBackend? backend = null)
         {
             if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
             e.Handled = true;
@@ -4713,7 +4758,11 @@ namespace SideDesk.Controls
             var localFiles = files.Where(System.IO.File.Exists).ToList();
             if (localFiles.Count == 0) return;
             string parentId = folderItem.CloudFileId ?? "";
-            if (string.IsNullOrEmpty(parentId)) return;
+            if (string.IsNullOrEmpty(parentId))
+            {
+                if (backend == null) return;
+                parentId = backend.RootId;
+            }
 
             // 在云目录图标上挂载环形进度条
             RingProgress? ring = null;
@@ -4730,11 +4779,14 @@ namespace SideDesk.Controls
             {
                 var ringRef = ring;
                 int doneRef = done;
-                bool success = await Task.Run(() => CloudDriveService.Instance.UploadFileAsync(path, parentId, pct =>
+                Action<double> onProgress = pct =>
                 {
                     double frac = (doneRef + pct / 100.0) / total;
                     Dispatcher.BeginInvoke(new Action(() => ringRef?.SetProgress(frac)));
-                }));
+                };
+                bool success = backend != null
+                    ? await backend.UploadFileAsync(path, parentId, onProgress)
+                    : await Task.Run(() => CloudDriveService.Instance.UploadFileAsync(path, parentId, onProgress));
                 if (success) done++;
                 ring?.SetProgress((double)done / total);
             }
@@ -8901,10 +8953,10 @@ namespace SideDesk.Controls
 
             // ===== 顶部页签：新建（无模板自定义） / 数据模板 / 数据模板市场 / 我的数据看板 =====
             var tabRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
-            var tabNew = new Button { Content = Framework.Lang.T("nativePanel.new"), Style = primaryBtnStyle, Padding = new Thickness(14, 6, 14, 6), Margin = new Thickness(0, 0, 8, 0), Cursor = Cursors.Hand };
-            var tabTpl = new Button { Content = Framework.Lang.T("nativePanel.dataTemplates"), Style = standardBtnStyle, Padding = new Thickness(14, 6, 14, 6), Margin = new Thickness(0, 0, 8, 0), Cursor = Cursors.Hand };
-            var tabMkt = new Button { Content = Framework.Lang.T("market.dataTemplateMarket"), Style = standardBtnStyle, Padding = new Thickness(14, 6, 14, 6), Margin = new Thickness(0, 0, 8, 0), Cursor = Cursors.Hand };
-            var tabPick = new Button { Content = Framework.Lang.T("nativePanel.myDataDashboard"), Style = standardBtnStyle, Padding = new Thickness(14, 6, 14, 6), Cursor = Cursors.Hand };
+            var tabNew = new Button { Content = new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("nativePanel.new") }, Style = primaryBtnStyle, Padding = new Thickness(14, 6, 14, 6), Margin = new Thickness(0, 0, 8, 0), Cursor = Cursors.Hand };
+            var tabTpl = new Button { Content = new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("nativePanel.dataTemplates") }, Style = standardBtnStyle, Padding = new Thickness(14, 6, 14, 6), Margin = new Thickness(0, 0, 8, 0), Cursor = Cursors.Hand };
+            var tabMkt = new Button { Content = new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("market.dataTemplateMarket") }, Style = standardBtnStyle, Padding = new Thickness(14, 6, 14, 6), Margin = new Thickness(0, 0, 8, 0), Cursor = Cursors.Hand };
+            var tabPick = new Button { Content = new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("nativePanel.myDataDashboard") }, Style = standardBtnStyle, Padding = new Thickness(14, 6, 14, 6), Cursor = Cursors.Hand };
             tabRow.Children.Add(tabNew);
             tabRow.Children.Add(tabTpl);
             tabRow.Children.Add(tabMkt);
@@ -8922,7 +8974,7 @@ namespace SideDesk.Controls
             });
             var templateCombo = new ComboBox { Style = comboStyle, Margin = new Thickness(0, 0, 0, 12), IsEditable = false };
             foreach (var t in templates)
-                templateCombo.Items.Add(new ComboBoxItem { Content = string.IsNullOrEmpty(t.Category) ? t.Name : $"{t.Name}  [{t.Category}]", Tag = t.Id, ToolTip = t.Description });
+                templateCombo.Items.Add(new ComboBoxItem { Content = new Emoji.Wpf.TextBlock { Text = string.IsNullOrEmpty(t.Category) ? t.Name : $"{t.Name}  [{t.Category}]" }, Tag = t.Id, ToolTip = t.Description });
             if (templates.Count > 0)
             {
                 templateCombo.SelectedIndex = 0;
@@ -8972,7 +9024,7 @@ namespace SideDesk.Controls
             var mktCombo = new ComboBox { Style = comboStyle, Margin = new Thickness(0, 0, 0, 12), IsEditable = false };
             if (mktTpl != null)
             {
-                mktCombo.Items.Add(new ComboBoxItem { Content = string.IsNullOrEmpty(mktTpl.Category) ? mktTpl.Name : $"{mktTpl.Name}  [{mktTpl.Category}]", Tag = mktTpl.Id, ToolTip = mktTpl.Description });
+                mktCombo.Items.Add(new ComboBoxItem { Content = new Emoji.Wpf.TextBlock { Text = string.IsNullOrEmpty(mktTpl.Category) ? mktTpl.Name : $"{mktTpl.Name}  [{mktTpl.Category}]" }, Tag = mktTpl.Id, ToolTip = mktTpl.Description });
                 mktCombo.SelectedIndex = 0;
             }
             else
@@ -8999,7 +9051,7 @@ namespace SideDesk.Controls
                     Margin = new Thickness(0, 0, 0, 12)
                 };
                 mktPanel.Children.Add(mktHintText);
-                openMarketBtn = new Button { Content = Framework.Lang.T("market.dataTemplateMarket"), Style = standardBtnStyle, Padding = new Thickness(14, 6, 14, 6), Cursor = Cursors.Hand, HorizontalAlignment = HorizontalAlignment.Left };
+                openMarketBtn = new Button { Content = new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("market.dataTemplateMarket") }, Style = standardBtnStyle, Padding = new Thickness(14, 6, 14, 6), Cursor = Cursors.Hand, HorizontalAlignment = HorizontalAlignment.Left };
                 openMarketBtn.Click += (s, e) => Windows.MarketWindow.Open("/data-template-market", Framework.Lang.T("market.dataTemplateMarket"));
                 mktPanel.Children.Add(openMarketBtn);
             }
@@ -9290,7 +9342,7 @@ namespace SideDesk.Controls
             else
             {
                 foreach (var d in bgSources)
-                    bgCombo.Items.Add(new ComboBoxItem { Content = $"{d.Label}（{d.VarKey}）", Tag = d });
+                    bgCombo.Items.Add(new ComboBoxItem { Content = new Emoji.Wpf.TextBlock { Text = $"{d.Label}（{d.VarKey}）" }, Tag = d });
             }
             refPanel.Children.Add(bgCombo);
 
@@ -9381,7 +9433,7 @@ namespace SideDesk.Controls
                             TeamId = editItem.TeamId
                         };
                         mktCombo.Items.Clear();
-                        mktCombo.Items.Add(new ComboBoxItem { Content = mktTpl.Name, Tag = mktTpl.Id });
+                        mktCombo.Items.Add(new ComboBoxItem { Content = new Emoji.Wpf.TextBlock { Text = mktTpl.Name }, Tag = mktTpl.Id });
                         mktCombo.SelectedIndex = 0;
                         if (mktHintText != null) mktHintText.Visibility = Visibility.Collapsed;
                         if (openMarketBtn != null) openMarketBtn.Visibility = Visibility.Collapsed;

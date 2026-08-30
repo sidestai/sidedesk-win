@@ -47,6 +47,28 @@ public static class LocalDbService
     /// <summary>需要按作用域隔离的应用级状态 key 列表（晋升时随行迁移）</summary>
     private static readonly string[] _scopedStateKeys = { "left_dock", "right_dock", "background_dashboard_items", "variable_sets" };
 
+    /// <summary>读取当前作用域的一次性初始化标记（如“默认 bar 已建”，读取失败返回 false 不影响业务）</summary>
+    public static bool GetStateFlag(string key)
+    {
+        try
+        {
+            using var conn = Open();
+            return GetState(conn, ScopedKey(key, CurrentScope())) == "1";
+        }
+        catch { return false; }
+    }
+
+    /// <summary>置位当前作用域的一次性初始化标记（置位后永不回退）</summary>
+    public static void SetStateFlag(string key)
+    {
+        try
+        {
+            using var conn = Open();
+            UpsertState(conn, ScopedKey(key, CurrentScope()), "1");
+        }
+        catch { }
+    }
+
     /// <summary>打开连接并初始化 PRAGMA / 建表。</summary>
     public static SqliteConnection Open()
     {

@@ -14,8 +14,7 @@ public sealed class VelopackUpdateService
     private static readonly Lazy<VelopackUpdateService> _instance = new(() => new VelopackUpdateService());
     public static VelopackUpdateService Instance => _instance.Value;
 
-    private readonly string _repoUrl = "https://github.com/nicenightcc/SideDesk";
-    private readonly string _proxyUrlPrefix = "https://ghfast.top/";
+    private readonly string _sourceUrl = Constants.URLs.VelopackUpdateUrl;
     private UpdateManager? _updateManager;
     private bool _isDownloading;
     private string _resolvedUpdateUrl = "";
@@ -35,14 +34,14 @@ public sealed class VelopackUpdateService
     }
 
     /// <summary>
-    /// 初始化更新管理器，配置代理加速的 GitHub Release 源
+    /// 初始化更新管理器：自建更新服务器（SimpleWebSource，存放 vpk pack 产出的 RELEASES / packages）
     /// </summary>
     public void InitializeManager()
     {
         try
         {
-            _resolvedUpdateUrl = _proxyUrlPrefix + _repoUrl;
-            var source = new GithubSource(_resolvedUpdateUrl, null, false);
+            _resolvedUpdateUrl = _sourceUrl;
+            var source = new SimpleWebSource(_resolvedUpdateUrl);
             _updateManager = new UpdateManager(source);
             Debug.WriteLine($"[VelopackUpdate] update manager initialized, source: {_resolvedUpdateUrl}");
         }
@@ -254,7 +253,7 @@ public sealed class VelopackUpdateService
     }
 
     /// <summary>
-    /// 网络连通性诊断：尝试 HTTP GET 访问 GitHub Release 文件
+    /// 网络连通性诊断：尝试 HTTP GET 访问更新源的 RELEASES 清单文件
     /// </summary>
     public async Task<bool> DiagnoseNetworkAsync()
     {
@@ -263,7 +262,7 @@ public sealed class VelopackUpdateService
             using var httpClient = new HttpClient();
             httpClient.Timeout = TimeSpan.FromSeconds(10);
 
-            var testUrl = $"{_resolvedUpdateUrl}/releases/latest";
+            var testUrl = $"{_resolvedUpdateUrl}/RELEASES";
             Debug.WriteLine($"[VelopackUpdate] network diagnostics: GET {testUrl}");
 
             var response = await httpClient.GetAsync(testUrl, HttpCompletionOption.ResponseHeadersRead);

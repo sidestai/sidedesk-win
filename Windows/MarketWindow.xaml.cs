@@ -42,17 +42,29 @@ public partial class MarketWindow : Window
         {
             // 注册 desktxp:// 自定义 scheme：未注册的 scheme 上 fetch 会被 Chromium 网络栈直接拒绝（ERR_UNKNOWN_URL_SCHEME），
             // 不会触发 WebResourceRequested；注册后才能拦截请求并伪造响应（插件市场本地桥）
+            // origin 白名单从本页实际加载的 URL 反推（与 FrontendBaseUrl 同源派生），
+            // 生产（https 域名）与本地联调（http://localhost:3007）自动匹配，不依赖独立维护的常量；
+            // 格式要求 scheme://host[:port]，无尾斜杠（GetLeftPart(Authority) 恰好满足）
+            var pageOrigin = new Uri(FrontendBaseUrl).GetLeftPart(UriPartial.Authority);
             var schemeReg = new CoreWebView2CustomSchemeRegistration("desktxp")
             {
                 HasAuthorityComponent = true, // desktxp://sidedesk/... 含 host 段
-                TreatAsSecure = false,
-                AllowedOrigins = new System.Collections.Generic.List<string> { Constants.URLs.ServerBaseOrigin }
+                // 生产环境页面为 https，fetch 非安全 scheme 会被混合内容策略拦截；
+                // 置 true 后两种环境均可达（安全 scheme 从 http 页面请求不受限）
+                TreatAsSecure = true,
+                AllowedOrigins = new System.Collections.Generic.List<string> { pageOrigin }
             };
             // SDK 1.0.4129.50：CustomSchemeRegistrations 只读且默认 null，必须经构造函数传入
             var options = new CoreWebView2EnvironmentOptions(
                 null, null, null, false,
                 new System.Collections.Generic.List<CoreWebView2CustomSchemeRegistration> { schemeReg });
-            var env = await CoreWebView2Environment.CreateAsync(null, null, options);
+            // 必须使用独立用户数据目录：登录窗 / AI 对话 / 数据模块等其他 WebView2 均以默认 Environment
+            //（无自定义 scheme）先行启动共享浏览器进程，而浏览器进程启动后 Environment 选项即锁定，
+            // 再复用默认目录时本 scheme 注册会被静默忽略（表现为页面正常加载但桥探测失败、显示"未连接客户端"）
+            var marketUserDataFolder = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "SideDesk", "WebView2.Market");
+            var env = await CoreWebView2Environment.CreateAsync(null, marketUserDataFolder, options);
             await webView.EnsureCoreWebView2Async(env);
             var core = webView.CoreWebView2;
             core.Settings.AreDefaultContextMenusEnabled = true;

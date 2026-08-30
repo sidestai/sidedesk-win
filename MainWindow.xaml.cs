@@ -455,13 +455,19 @@ namespace SideDesk
             if (_configManager == null || _dockState == null) return;
             windowTabsPanel.Children.Clear();
 
-            // 只有一个窗口时不显示标签和加号（产品名始终显示）
+            // 只有一个窗口时产品名放在星号列左对齐；多窗口时放在标签列右侧右对齐，
+            // 星号列始终保持占位，确保更多按钮始终顶到右上角
             if (_dockState.WindowIds.Count <= 1)
             {
+                Grid.SetColumn(singleWindowTitle, 0);
+                singleWindowTitle.HorizontalAlignment = HorizontalAlignment.Left;
                 windowTabsPanel.Visibility = Visibility.Collapsed;
                 addWindowBtn.Visibility = Visibility.Collapsed;
                 return;
             }
+
+            Grid.SetColumn(singleWindowTitle, 1);
+            singleWindowTitle.HorizontalAlignment = HorizontalAlignment.Right;
 
             windowTabsPanel.Visibility = Visibility.Visible;
             addWindowBtn.Visibility = Visibility.Visible;

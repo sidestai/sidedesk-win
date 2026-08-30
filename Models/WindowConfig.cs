@@ -676,13 +676,24 @@ public class WindowConfigManager
         Save();
     }
 
+    /// <summary>样例数据初始化的一次性标记 key（按账号作用域隔离，存 local_app_state）</summary>
+    private const string DefaultBarSeededFlag = "default_bar_seeded";
+
+    /// <summary>
+    /// 样例数据初始化：仅新安装（当前作用域未置标）且没有任何 bar 时，自动创建默认 bar 并填充示例面板；
+    /// 置标后即使用户删光所有 bar 也不再自动填充。旧版升级首次启动若已有 bar 则只置标不建数据；
+    /// 若 bar 为空视为用户已主动清空，同样不再补建。
+    /// </summary>
     public void EnsureDefault()
     {
+        if (Services.LocalDbService.GetStateFlag(DefaultBarSeededFlag)) return; // 已初始化过，永不再填充
+        Services.LocalDbService.SetStateFlag(DefaultBarSeededFlag);
+
         if (Windows.Count == 0)
         {
             var defaultWin = new WindowConfig
             {
-                Name = "主页",
+                Name = Framework.Lang.T("common.home"),
                 Type = WindowType.Native,
                 Panels = new List<PanelItem>
                 {
