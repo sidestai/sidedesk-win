@@ -13,10 +13,28 @@ namespace SideDesk
             public const string IPIFY = "https://api.ipify.org";
 
             /// <summary>
+            /// 产品主页（根域名）基址：域名由构建参数选择（见 SideDesk.csproj 的 ApiRegion）：
+            /// dotnet build -p:ApiRegion=zh → bigjing（默认）；-p:ApiRegion=en → desktxp。
+            /// 其它根域名用途默认从本地址派生，勿另维护硬编码域名
+            /// （例外：中文版更新源改用独立 CDN，见下方 VelopackUpdateUrl）。
+            /// </summary>
+#if API_REGION_EN
+            public const string HomePageBaseUrl = "https://sidedesk.desktxp.com";
+#else
+            public const string HomePageBaseUrl = "https://sidedesk.bigjing.com";
+#endif
+
+            /// <summary>
             /// Velopack 自动更新源（自建静态文件服务器，存放 vpk pack 产出的 RELEASES / packages）。
             /// 发布命令：vpk pack --packId SideDesk --outputDir ...，将产物上传至此地址。
+            /// 中文版使用独立 CDN 域名（cdn.bigjing.com/updates/sidedesk-cn），不再从 HomePageBaseUrl 派生；
+            /// 国际版仍从 HomePageBaseUrl 派生（sidedesk.desktxp.com/updates）。
             /// </summary>
-            public const string VelopackUpdateUrl = "https://sidedesk.desktxp.com/updates";
+#if API_REGION_EN
+            public const string VelopackUpdateUrl = HomePageBaseUrl + "/updates";
+#else
+            public const string VelopackUpdateUrl = "https://cdn.bigjing.com/updates/sidedesk-cn";
+#endif
 
             /// <summary>
             /// 后端 API + 管理前端统一基址（发布时只需改这一处）。
@@ -24,9 +42,14 @@ namespace SideDesk
             /// 生产环境前后端均部署在 /console 子路径下。
             /// origin 匹配场景（scheme 注册/CORS）需要 scheme://host[:port] 时，
             /// 用 new Uri(ServerBaseUrl).GetLeftPart(UriPartial.Authority) 从本地址派生，勿另维护硬编码常量。
+            /// 域名由构建参数选择（见 SideDesk.csproj 的 ApiRegion）：
+            /// dotnet build -p:ApiRegion=zh → bigjing（默认）；-p:ApiRegion=en → desktxp。
             /// </summary>
-            // 当前指向：线上生产环境（前后端均部署在 /console 子路径下）；本地联调可改为 http://localhost:3007
+#if API_REGION_EN
+            public const string ServerBaseUrl = "https://api.sidedesk.desktxp.com/console";
+#else
             public const string ServerBaseUrl = "https://api.sidedesk.bigjing.com/console";
+#endif
 
             /// <summary>
             /// 前端站点基址（登录/分享/市场/编辑器等前端路由，不含 "#"）。
@@ -38,6 +61,12 @@ namespace SideDesk
             public static bool IsDev =>
                 ServerBaseUrl.Contains("localhost", System.StringComparison.OrdinalIgnoreCase) ||
                 ServerBaseUrl.Contains("127.0.0.1");
+
+            /// <summary>
+            /// OAuth2「系统浏览器登录」的客户端 ID（授权码 + PKCE 流程）。
+            /// 须与后端 oauth.clientIds 白名单一致（见 sidedesk-admin-backend 的 config/dev.yml、config/prod.yml）。
+            /// </summary>
+            public const string OAuthClientId = "sidedesk-desktop";
         }
     }
 }

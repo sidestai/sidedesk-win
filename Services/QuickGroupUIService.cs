@@ -85,6 +85,12 @@ namespace SideDesk.Services
         /// <summary>分组被删除时触发，参数为 groupId；用于 1:1 面板绑定模式下通知上层移除 PanelItem</summary>
         public Action<string>? OnGroupDeleted { get; set; }
 
+        /// <summary>
+        /// 面板可调高包装注入点（由 NativeModePanel 设置）：接管分组卡片内的内容区（contentPanel），
+        /// 返回实际放入卡片的内容（限高滚动宿主 + 编辑模式手柄），使手柄位于卡片内底部、背景连贯。
+        /// </summary>
+        public Func<UIElement, UIElement>? ContentResizer { get; set; }
+
         public QuickGroupUIService(StackPanel container)
         {
             _container = container;
@@ -409,6 +415,11 @@ namespace SideDesk.Services
             addWinItem.Click += (s, ev) => ShowPickWindowDialog(null);
             menu.Items.Add(addWinItem);
 
+            // 暂时隐藏「添加高级」入口（需要时取消注释恢复）
+            // var addAdvItem = new MenuItem { Header = Framework.Lang.T("advanced.addAdvancedItem") };
+            // addAdvItem.Click += (s, ev) => AddItemToDefaultGroup("advanced");
+            // menu.Items.Add(addAdvItem);
+
             menu.PlacementTarget = target;
             menu.Placement = PlacementMode.Bottom;
             menu.IsOpen = true;
@@ -431,6 +442,11 @@ namespace SideDesk.Services
             addWinItem.Click += (s, ev) => ShowPickWindowDialog(null);
             menu.Items.Add(addWinItem);
 
+            // 暂时隐藏「添加高级」入口（需要时取消注释恢复）
+            // var addAdvItem = new MenuItem { Header = Framework.Lang.T("advanced.advancedItem") };
+            // addAdvItem.Click += (s, ev) => AddItemToDefaultGroup("advanced");
+            // menu.Items.Add(addAdvItem);
+
             menu.PlacementTarget = target;
             menu.Placement = PlacementMode.MousePoint;
             menu.IsOpen = true;
@@ -452,6 +468,11 @@ namespace SideDesk.Services
             var addWinItem = new MenuItem { Header = Framework.Lang.T("common.window") };
             addWinItem.Click += (s, ev) => ShowPickWindowDialog(groupId);
             menu.Items.Add(addWinItem);
+
+            // 暂时隐藏「添加高级」入口（需要时取消注释恢复）
+            // var addAdvItem = new MenuItem { Header = Framework.Lang.T("advanced.advancedItem") };
+            // addAdvItem.Click += (s, ev) => ShowAddItemDialog(groupId, null, "advanced");
+            // menu.Items.Add(addAdvItem);
 
             menu.PlacementTarget = target;
             menu.Placement = PlacementMode.MousePoint;
@@ -722,10 +743,10 @@ namespace SideDesk.Services
 
 
 
-            // 分组名
+            // 分组名（后缀显示包含的项数）
             var titleText = new Emoji.Wpf.TextBlock
             {
-                Text = group.Name, Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), FontSize = 12,
+                Text = $"{group.Name} ({group.Items.Count})", Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), FontSize = 12,
                 FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(3, 0, 0, 0), Cursor = Cursors.Hand
             };
@@ -736,13 +757,14 @@ namespace SideDesk.Services
             bool isList = group.DisplayMode == "list";
             bool isPopup = group.DisplayMode == "popup";
 
-            // 内容区（列表模式强制单列）
+            // 内容区（列表模式强制单列）；顶部对齐：限高宿主内不被均分行高拉伸，项与项紧凑排列
             var contentPanel = new UniformGrid
             {
                 Columns = isList ? 1 : group.Columns,
                 Visibility = group.IsExpanded ? Visibility.Visible : Visibility.Collapsed,
                 Tag = "content:" + group.Id,
-                AllowDrop = true
+                AllowDrop = true,
+                VerticalAlignment = VerticalAlignment.Top
             };
             
             // 处理项拖放到分组空白区域
@@ -758,42 +780,46 @@ namespace SideDesk.Services
             contentPanel.Drop += (s, ev) =>
             {
                 if (!ev.Data.GetDataPresent("QuickItemId")) return;
-                
+                ev.Handled = true;
+
                 string draggedItemId = (string)ev.Data.GetData("QuickItemId");
                 string sourceGroupId = (string)ev.Data.GetData("QuickItemGroupId");
-                
-                // 如果是同一个分组内的拖拽，不处理（由组内排序逻辑处理）
+
                 if (sourceGroupId == group.Id)
                 {
-                    ev.Handled = true;
+                    // 组内拖到空白区：移动到末尾并重新编号（落点在按钮上时由按钮自身处理插入位置）
+                    var items = QuickGroupManager.GetAll().FirstOrDefault(g => g.Id == group.Id)?.Items;
+                    var dragged = items?.FirstOrDefault(i => i.Id == draggedItemId);
+                    if (dragged != null && items != null)
+                    {
+                        items.Remove(dragged);
+                        items.Add(dragged);
+                        QuickGroupManager.ReindexItems(group.Id);
+                        QuickGroupManager.Save();
+                        LoadGroups();
+                    }
                     return;
                 }
-                
-                // 从源分组移除
-                QuickGroupManager.RemoveItem(sourceGroupId, draggedItemId);
-                
-                // 获取被拖拽的项
-                var allGroups = QuickGroupManager.GetAll();
-                var sourceGroup = allGroups.FirstOrDefault(g => g.Id == sourceGroupId);
+
+                // 跨分组：先取被拖项引用再移除（RemoveItem 后源列表已无该项，顺序颠倒会丢失项目）
+                var sourceGroup = QuickGroupManager.GetAll().FirstOrDefault(g => g.Id == sourceGroupId);
                 var draggedItem = sourceGroup?.Items.FirstOrDefault(i => i.Id == draggedItemId);
-                
-                if (draggedItem != null)
-                {
-                    // 添加到目标分组
-                    QuickGroupManager.AddItem(group.Id, draggedItem);
-                    QuickGroupManager.Save();
-                    
-                    // 刷新 UI
-                    LoadGroups();
-                }
-                
-                ev.Handled = true;
+                if (draggedItem == null) return;
+
+                QuickGroupManager.RemoveItem(sourceGroupId, draggedItemId);
+                QuickGroupManager.AddItem(group.Id, draggedItem);
+                QuickGroupManager.Save();
+                LoadGroups();
             };
+
+            // 内容区实际承载元素（可能被 ContentResizer 接管为限高宿主+手柄）；展开/收起隐藏整体，
+            // 避免收起后宿主（尤其固定高度时）与卡片背景仍占位留白
+            UIElement contentHost = contentPanel;
 
             titleText.MouseLeftButtonDown += (s, ev) =>
             {
                 group.IsExpanded = !group.IsExpanded;
-                contentPanel.Visibility = group.IsExpanded ? Visibility.Visible : Visibility.Collapsed;
+                contentHost.Visibility = group.IsExpanded ? Visibility.Visible : Visibility.Collapsed;
                 QuickGroupManager.UpdateGroup(group);
             };
 
@@ -825,7 +851,11 @@ namespace SideDesk.Services
                 }
             }
             
-            outerPanel.Children.Add(contentPanel);
+            // 面板可调高：若注入了包装器，内容区交给它处理（限高宿主 + 手柄均在卡片内，背景连贯）
+            if (ContentResizer != null) contentHost = ContentResizer(contentPanel);
+            // 收起状态：整个内容宿主（含限高宿主/手柄）一并隐藏，卡片只留标题栏，不留背景空块
+            if (!group.IsExpanded) contentHost.Visibility = Visibility.Collapsed;
+            outerPanel.Children.Add(contentHost);
             border.Child = outerPanel;
 
             // 隐藏外框后标题栏与 ▼ 菜单不可见，为容器挂右键菜单，确保右键内容区仍可恢复外框
@@ -854,6 +884,10 @@ namespace SideDesk.Services
                 var miWin = new MenuItem { Header = Framework.Lang.T("window.addWindow") };
                 miWin.Click += (s2, ev2) => ShowPickWindowDialog(group.Id);
                 addSubMenu.Items.Add(miWin);
+                // 暂时隐藏「添加高级」入口（需要时取消注释恢复）
+                // var miAdv = new MenuItem { Header = Framework.Lang.T("advanced.addAdvancedItem") };
+                // miAdv.Click += (s2, ev2) => ShowAddItemDialog(group.Id, contentPanel, "advanced");
+                // addSubMenu.Items.Add(miAdv);
                 popup.Items.Add(addSubMenu);
                 popup.Items.Add(new Separator());
 
@@ -861,7 +895,7 @@ namespace SideDesk.Services
                 expandItem.Click += (s2, ev2) =>
                 {
                     group.IsExpanded = !group.IsExpanded;
-                    contentPanel.Visibility = group.IsExpanded ? Visibility.Visible : Visibility.Collapsed;
+                    contentHost.Visibility = group.IsExpanded ? Visibility.Visible : Visibility.Collapsed;
                     QuickGroupManager.UpdateGroup(group);
                 };
                 popup.Items.Add(expandItem);
@@ -906,6 +940,19 @@ namespace SideDesk.Services
                 popup.Items.Add(hideFrameItem);
                 popup.Items.Add(new Separator());
 
+                // 分享模块（item 级分享）：已登录 + 窗口与模块均已同步 + 非引用导入或允许再分享时才显示
+                bool canShareGroup = !string.IsNullOrEmpty(group.Panel.ServerId)
+                    && !string.IsNullOrEmpty(OwnerWindowConfig?.ServerId)
+                    && !string.IsNullOrEmpty(((App)Application.Current).AppSettings.AccountToken)
+                    && (group.Panel.ShareMode != "reference" || group.Panel.AllowReShare);
+                if (canShareGroup)
+                {
+                    var shareGroupItem = new MenuItem { Header = Framework.Lang.T("nativePanel.shareModule") };
+                    shareGroupItem.Click += (s2, ev2) => ShareGroup_Click(group);
+                    popup.Items.Add(shareGroupItem);
+                    popup.Items.Add(new Separator());
+                }
+
                 var deleteItem = new MenuItem { Header = Framework.Lang.T("nativePanel.deleteShortcutGroup") };
                 deleteItem.Click += (s2, ev2) =>
                 {
@@ -945,20 +992,21 @@ namespace SideDesk.Services
         /// <remarks>WPF 默认 MenuItem 模板无法为每个菜单项干净地呈现自定义背景色，故改用 Popup + 真实按钮列表（类似菜单）。</remarks>
         private FrameworkElement BuildPopupTriggerButton(QuickGroup group)
         {
-            // 按钮内容：分组名 + 下拉箭头（提示可展开）
-            var triggerContent = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
-            triggerContent.Children.Add(new Emoji.Wpf.TextBlock { Text = group.Name, VerticalAlignment = VerticalAlignment.Center });
+            // 按钮内容：分组名（后缀显示包含的项数）+ 下拉箭头（提示可展开）
+            var triggerContent = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Left };
+            triggerContent.Children.Add(new Emoji.Wpf.TextBlock { Text = $"{group.Name} ({group.Items.Count})", VerticalAlignment = VerticalAlignment.Center });
             triggerContent.Children.Add(new Emoji.Wpf.TextBlock { Text = "▾", FontSize = 10, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 1, 0, 0), Opacity = 0.75 });
 
             var triggerBtn = new Button
             {
                 Content = triggerContent,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
-                HorizontalContentAlignment = HorizontalAlignment.Center,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
                 Margin = new Thickness(2),
                 Padding = new Thickness(8, 5, 8, 5),
                 FontSize = 12,
-                FontWeight = FontWeights.SemiBold,
+                // 弹出菜单模式的触发按钮用标准字重（不加粗）：它与列表项同属"快捷项"入口，加粗会与列表/弹出项的常规字重不一致
+                FontWeight = FontWeights.Normal,
                 Background = (Brush)Application.Current.FindResource("BrushAccent"),
                 Foreground = Brushes.White,
                 BorderThickness = new Thickness(0),
@@ -1020,16 +1068,73 @@ namespace SideDesk.Services
             else LoadGroups();
         }
 
+        /// <summary>增量增删项后刷新分组标题栏的项数计数（网格模式不重建视图，标题需手动更新）。</summary>
+        private void UpdateGroupTitleCount(string groupId)
+        {
+            var group = QuickGroupManager.GetAll().FirstOrDefault(g => g.Id == groupId);
+            if (group == null) return;
+            string title = $"{group.Name} ({group.Items.Count})";
+            foreach (var child in _container.Children)
+            {
+                if (child is Border border && border.Tag as string == groupId && border.Child is StackPanel outerPanel)
+                {
+                    foreach (var op in outerPanel.Children)
+                    {
+                        if (op is DockPanel titleBar && titleBar.Tag as string == groupId)
+                        {
+                            foreach (var tb in titleBar.Children)
+                            {
+                                if (tb is Emoji.Wpf.TextBlock titleText)
+                                {
+                                    titleText.Text = title;
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         /// <summary>将新增快捷项刷新到 UI：网格模式增量追加到 contentPanel，列表/弹出模式整体重建视图。</summary>
         private void AddNewItemToUI(QuickItem newItem, string groupId, UniformGrid? contentPanel)
         {
             var group = QuickGroupManager.GetAll().FirstOrDefault(g => g.Id == groupId);
             if ((group?.DisplayMode ?? "grid") == "grid" && contentPanel != null)
             {
-                contentPanel.Children.Add(BuildItemButton(newItem, groupId));
+                // 图标模式(grid)下新增项必须走大图标渲染，与全量渲染(largeIcon:!isList)保持一致；
+                // 否则无图标项只渲染名称、按钮变矮在 UniformGrid 里顶部对齐“塌下去”，重启全量渲染才恢复
+                contentPanel.Children.Add(BuildItemButton(newItem, groupId, listMode: false, largeIcon: true));
+                UpdateGroupTitleCount(groupId);
                 return;
             }
             RefreshGroupView();
+        }
+
+        /// <summary>分享快捷组模块（item 级分享）：确保模块已同步后弹出创建分享对话框。
+        /// 与 NativeModePanel.ShareModule_Click 逻辑一致，复用 ThemedMessageBox.ShowCreateShareDialog。</summary>
+        private async void ShareGroup_Click(QuickGroup group)
+        {
+            var panel = group.Panel;
+            var barServerId = OwnerWindowConfig?.ServerId;
+
+            // 模块还没有 ServerId：先确保窗口已同步，再创建模块 ServerId
+            if (string.IsNullOrEmpty(panel.ServerId))
+            {
+                if (string.IsNullOrEmpty(barServerId))
+                {
+                    MessageBox.Show(Framework.Lang.T("nativePanel.windowNotSynced"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                var newId = await CloudSyncService.Instance.EnsureItemServerIdAsync(panel, barServerId);
+                if (string.IsNullOrEmpty(newId))
+                {
+                    MessageBox.Show(Framework.Lang.T("nativePanel.moduleSyncFailedCannot"), Framework.Lang.T("common.error"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+            }
+
+            ThemedMessageBox.ShowCreateShareDialog(OwnerWindow, barServerId!, panel.ServerId, Framework.Lang.T("nativePanel.shareModule"));
         }
 
         #endregion
@@ -1513,25 +1618,66 @@ namespace SideDesk.Services
 
         private FrameworkElement BuildItemButton(QuickItem item, string groupId, bool listMode = false, bool largeIcon = false, Action? afterClick = null)
         {
-            var panel = new DockPanel { Margin = new Thickness(2), Tag = item.Id };
+            var panel = new DockPanel { Margin = new Thickness(2), Tag = item.Id, VerticalAlignment = VerticalAlignment.Top };
 
+            // 背景色：null/空 = 透明背景（文字改用主题主色保证可读；无效色值才回退 SteelBlue）
             Brush bgBrush;
-            try { bgBrush = (SolidColorBrush)new BrushConverter().ConvertFrom(item.BackgroundColor)!; }
-            catch { bgBrush = Brushes.SteelBlue; }
+            if (string.IsNullOrEmpty(item.BackgroundColor))
+            {
+                bgBrush = Brushes.Transparent;
+            }
+            else
+            {
+                try { bgBrush = (SolidColorBrush)new BrushConverter().ConvertFrom(item.BackgroundColor)!; }
+                catch { bgBrush = Brushes.SteelBlue; }
+            }
 
             var btn = new Button
             {
                 Padding = new Thickness(6, 4, 6, 4),
                 Background = bgBrush,
-                Foreground = (Brush)Application.Current.FindResource("BrushItemButtonText"),
+                Foreground = bgBrush == Brushes.Transparent
+                    ? (Brush)Application.Current.FindResource("BrushTextMain")
+                    : (Brush)Application.Current.FindResource("BrushItemButtonText"),
                 BorderThickness = new Thickness(2),
                 BorderBrush = Brushes.Transparent,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
+                // UniformGrid 会把剩余高度均分到各行，默认 Stretch 会把按钮纵向拉高、行间距变大；
+                // 顶部对齐保持按钮自然高度，项与项紧凑排列（水平方向仍铺满单元格）
+                VerticalAlignment = VerticalAlignment.Top,
                 FontSize = 11,
                 AllowDrop = true
             };
 
-            // 按钮内容：大图标模式 = 桌面快捷方式风格（纯大图标在上、名称在下、无按钮背景）；列表模式水平居中；默认横向图标+名称
+            // 程序项图标预检：并发提取风暴（选择弹窗对上百程序同时 Task.Run 提图标）下，
+            // 单次 ExtractAssociatedIcon 可能瞬时失败返回 null → 按钮只渲染文字无图标。
+            // 此处先探测能否解析；解析不到则稍后后台重试自愈，避免"刚添加图标空白、重启才恢复"。
+            string? programIconPath = null;
+            bool ScheduleProgramIconHeal = false;
+            if (item.Type == "program" && (string.IsNullOrEmpty(item.Icon) || FaviconService.IsPathIcon(item.Icon)))
+            {
+                programIconPath = (!string.IsNullOrEmpty(item.Icon) && FaviconService.IsPathIcon(item.Icon))
+                    ? item.Icon : item.Target;
+                if (!string.IsNullOrEmpty(programIconPath) && FaviconService.LoadFileIcon(programIconPath) == null)
+                    ScheduleProgramIconHeal = true;
+                else
+                    programIconPath = null; // 已能解析，无需自愈
+            }
+
+            // 网址项图标预检：快捷项图标存的是本地缓存的 favicon 文件路径，文件可能被清理
+            // （清缓存/换机/云端同步下来但文件不在本机）或添加时从未抓到 → 图标空白只剩文字。
+            // 此处探测能否加载；不能则后台按网址(Target)重新抓取 favicon 回填，避免“图标空白需重新添加”。
+            // 仅对 http(s) 网址、且图标为空或为路径图标时触发；用户自设 emoji 图标不重抓。
+            bool ScheduleUrlIconHeal = false;
+            if (item.Type == "url"
+                && (item.Target ?? "").StartsWith("http", StringComparison.OrdinalIgnoreCase)
+                && (string.IsNullOrEmpty(item.Icon) || FaviconService.IsPathIcon(item.Icon)))
+            {
+                if (string.IsNullOrEmpty(item.Icon) || FaviconService.LoadFileIcon(item.Icon) == null)
+                    ScheduleUrlIconHeal = true;
+            }
+
+            // 按钮内容：大图标模式 = 桌面快捷方式风格（纯大图标在上、名称在下、无按钮背景）；列表/弹出模式横向图标+名称且文字左对齐
             if (largeIcon)
             {
                 btn.Content = BuildLargeIconContent(item);
@@ -1543,10 +1689,11 @@ namespace SideDesk.Services
             }
             else
             {
-                btn.Content = BuildItemContent(item, HorizontalAlignment.Center);
+                btn.Content = BuildItemContent(item, HorizontalAlignment.Left);
                 if (listMode)
                 {
-                    btn.HorizontalContentAlignment = HorizontalAlignment.Center;
+                    // 列表模式/弹出菜单模式的项文字左对齐（而非居中），符合菜单/列表常规阅读习惯
+                    btn.HorizontalContentAlignment = HorizontalAlignment.Left;
                     btn.Padding = new Thickness(6, 3, 6, 3);
                 }
             }
@@ -1554,6 +1701,14 @@ namespace SideDesk.Services
             // 圆角样式（保留每项自定义背景色与拖拽高亮边框）
             var roundedStyle = Application.Current.TryFindResource("QuickItemButtonStyle") as Style;
             if (roundedStyle != null) btn.Style = roundedStyle;
+
+            // 程序图标缺失 → 后台重试提取，成功后回 UI 线程刷新按钮内容（不阻塞、无需重启）
+            if (ScheduleProgramIconHeal && programIconPath != null)
+                HealProgramIconAsync(btn, item, programIconPath, largeIcon);
+
+            // 网址图标缓存文件丢失/从未抓取 → 后台按网址重新抓取 favicon，成功后回填持久化并刷新按钮
+            if (ScheduleUrlIconHeal)
+                HealUrlIconAsync(btn, item, largeIcon);
             
             // 拖拽开始：检测鼠标移动距离后启动拖拽
             Point? dragStartPoint = null;
@@ -1614,42 +1769,54 @@ namespace SideDesk.Services
                 }
             };
             
-            // 放下：移动项到目标分组
+            // 放下：组内拖拽调序，跨分组移动项到目标分组末尾
             btn.Drop += (s, ev) =>
             {
+                btn.BorderBrush = Brushes.Transparent;
                 if (!ev.Data.GetDataPresent("QuickItemId")) return;
-                
+                ev.Handled = true;
+
                 string draggedItemId = (string)ev.Data.GetData("QuickItemId");
                 string sourceGroupId = (string)ev.Data.GetData("QuickItemGroupId");
-                
-                // 如果是同一个分组，不处理（组内排序由其他逻辑处理）
-                if (sourceGroupId == groupId && draggedItemId == item.Id)
+
+                if (sourceGroupId == groupId)
                 {
-                    btn.BorderBrush = Brushes.Transparent;
-                    ev.Handled = true;
+                    // 组内调序：先查目标位置再移除被拖项（同一列表移除会使索引偏移）
+                    var targetGroup = QuickGroupManager.GetAll().FirstOrDefault(g => g.Id == groupId);
+                    var items = targetGroup?.Items;
+                    if (items == null) return;
+                    var dragged = items.FirstOrDefault(i => i.Id == draggedItemId);
+                    if (dragged == null || dragged.Id == item.Id) return;
+
+                    int targetIdx = items.IndexOf(item);
+                    if (targetIdx < 0) return;
+                    // 单列按落点上下半区决定插前/插后；多列网格按左右半区（行优先流式布局）
+                    var pos = ev.GetPosition(btn);
+                    bool singleColumn = targetGroup!.Columns <= 1 || listMode;
+                    bool after = singleColumn ? pos.Y > btn.ActualHeight / 2 : pos.X > btn.ActualWidth / 2;
+
+                    items.Remove(dragged);
+                    int idx2 = items.IndexOf(item);
+                    if (idx2 >= 0)
+                        items.Insert(after ? idx2 + 1 : idx2, dragged);
+                    else
+                        items.Add(dragged);
+
+                    QuickGroupManager.ReindexItems(groupId);
+                    QuickGroupManager.Save();
+                    LoadGroups();
                     return;
                 }
-                
-                // 从源分组移除
-                QuickGroupManager.RemoveItem(sourceGroupId, draggedItemId);
-                
-                // 获取被拖拽的项
-                var allGroups = QuickGroupManager.GetAll();
-                var sourceGroup = allGroups.FirstOrDefault(g => g.Id == sourceGroupId);
+
+                // 跨分组：先取被拖项引用再移除（RemoveItem 后源列表已无该项，顺序颠倒会丢失项目）
+                var sourceGroup = QuickGroupManager.GetAll().FirstOrDefault(g => g.Id == sourceGroupId);
                 var draggedItem = sourceGroup?.Items.FirstOrDefault(i => i.Id == draggedItemId);
-                
-                if (draggedItem != null)
-                {
-                    // 添加到目标分组
-                    QuickGroupManager.AddItem(groupId, draggedItem);
-                    QuickGroupManager.Save();
-                    
-                    // 刷新 UI
-                    LoadGroups();
-                }
-                
-                btn.BorderBrush = Brushes.Transparent;
-                ev.Handled = true;
+                if (draggedItem == null) return;
+
+                QuickGroupManager.RemoveItem(sourceGroupId, draggedItemId);
+                QuickGroupManager.AddItem(groupId, draggedItem);
+                QuickGroupManager.Save();
+                LoadGroups();
             };
             
             btn.Click += (s, ev) => { OpenQuickItem(item); afterClick?.Invoke(); };
@@ -1698,6 +1865,7 @@ namespace SideDesk.Services
                 QuickGroupManager.Save();
                 _itemButtonRefs.RemoveAll(r => r.Item == item);
                 (panel.Parent as UniformGrid)?.Children.Remove(panel);
+                UpdateGroupTitleCount(groupId);
             };
             menu.Items.Add(delItem);
 
@@ -1720,6 +1888,12 @@ namespace SideDesk.Services
         {
             try
             {
+                if (item.Type == "advanced")
+                {
+                    _ = AdvancedActionService.ExecuteAsync(item);
+                    return;
+                }
+
                 if (TryActivateExistingWindow(item)) return;
 
                 if (item.Type == "program")
@@ -2342,6 +2516,20 @@ namespace SideDesk.Services
 
         private void ShowAddItemDialog(string groupId, UniformGrid? contentPanel, string? presetType)
         {
+            if (presetType == "advanced")
+            {
+                // 使用扩展编辑窗口（简单模式 + 高级 JSON）
+                var editor = new ExtensionEditorWindow(null, groupId);
+                editor.Owner = OwnerWindow;
+                if (editor.ShowDialog() == true && editor.Result != null)
+                {
+                    QuickGroupManager.AddItem(groupId, editor.Result);
+                    QuickGroupManager.Save();
+                    AddNewItemToUI(editor.Result, groupId, contentPanel);
+                }
+                return;
+            }
+
             if (presetType == "url")
             {
                 // 使用 AddShortcutDialog（支持批量模式）
@@ -2566,16 +2754,17 @@ namespace SideDesk.Services
             nameDock.Children.Add(nameBox);
             rootPanel.Children.Add(nameDock);
 
-            // 图标
+            // 图标（与编辑对话框一致：支持 emoji 字符或文件路径，如 exe 自动提取程序图标）
             var iconDock = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
             var iconLabel = new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("common.iconLabel"), Width = 60, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)Application.Current.FindResource("BrushTextMain") };
             DockPanel.SetDock(iconLabel, Dock.Left);
             iconDock.Children.Add(iconLabel);
-            var iconBox = new TextBox { Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle"), Width = 80, MaxLength = 4 };
+            var iconPreviewHost = new ContentControl { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0), Content = BuildIconPreview("") };
+            DockPanel.SetDock(iconPreviewHost, Dock.Right);
+            iconDock.Children.Add(iconPreviewHost);
+            var iconBox = new TextBox { Style = (Style)Application.Current.FindResource("GlobalTextBoxStyle"), ToolTip = Framework.Lang.T("common.iconLabel") };
+            iconBox.TextChanged += (s, ev2) => iconPreviewHost.Content = BuildIconPreview(iconBox.Text.Trim());
             iconDock.Children.Add(iconBox);
-            var iconPreview = new Emoji.Wpf.TextBlock { Text = "", FontSize = 16, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
-            iconBox.TextChanged += (s, ev2) => iconPreview.Text = iconBox.Text.Trim();
-            iconDock.Children.Add(iconPreview);
             rootPanel.Children.Add(iconDock);
 
             // 路径
@@ -2612,10 +2801,45 @@ namespace SideDesk.Services
                 "#F39C12", "#1ABC9C", "#E67E22", "#34495E",
                 "#2980B9", "#27AE60", "#C0392B", "#8E44AD"
             };
-            string selectedColor = "#3498DB";
+            // null = 默认透明背景（首个透明色块可选，也可手动点其它颜色）
+            string? selectedColor = null;
 
             var colorPanel = new WrapPanel { Margin = new Thickness(0, 0, 0, 10) };
             Border? selectedColorBorder = null;
+
+            // 透明选项（默认选中）：留空 BackgroundColor，按钮不填充背景色
+            var transparentSwatch = new Border
+            {
+                Width = 32, Height = 32,
+                Margin = new Thickness(0, 0, 8, 8),
+                CornerRadius = new CornerRadius(6),
+                Background = Brushes.Transparent,
+                BorderBrush = (Brush)Application.Current.FindResource("BrushAccent"),
+                BorderThickness = new Thickness(2),
+                Cursor = System.Windows.Input.Cursors.Hand,
+                Tag = null,
+                ToolTip = Framework.Lang.T("common.none")
+            };
+            // 斜线标识“无颜色”（透明背景在浅色面板上不可见）
+            transparentSwatch.Child = new System.Windows.Shapes.Path
+            {
+                Data = Geometry.Parse("M 3,29 L 29,3"),
+                Stroke = (Brush)Application.Current.FindResource("BrushTextMuted"),
+                StrokeThickness = 2,
+                Stretch = System.Windows.Media.Stretch.Fill
+            };
+            selectedColorBorder = transparentSwatch;
+            transparentSwatch.MouseLeftButtonUp += (s, ev2) =>
+            {
+                selectedColor = null;
+                foreach (UIElement child in colorPanel.Children)
+                {
+                    if (child is Border b) b.BorderBrush = Brushes.Transparent;
+                }
+                transparentSwatch.BorderBrush = (Brush)Application.Current.FindResource("BrushAccent");
+                selectedColorBorder = transparentSwatch;
+            };
+            colorPanel.Children.Add(transparentSwatch);
 
             foreach (var color in presetColors)
             {
@@ -2679,6 +2903,9 @@ namespace SideDesk.Services
                 if (dlg.ShowDialog() == true)
                 {
                     targetBox.Text = dlg.FileName;
+                    // exe 自带图标：选完程序后图标框为空时自动带入其路径（渲染时提取程序图标）
+                    if (string.IsNullOrWhiteSpace(iconBox.Text))
+                        iconBox.Text = dlg.FileName;
                     if (string.IsNullOrEmpty(nameBox.Text))
                         nameBox.Text = System.IO.Path.GetFileNameWithoutExtension(dlg.FileName);
                 }
@@ -2697,7 +2924,8 @@ namespace SideDesk.Services
                     Name = p.Name, Sub = p.ExePath, IconPath = p.ExePath, FillName = p.Name, FillPath = p.ExePath
                 }).ToList();
                 var sel = ShowProgramPickerDialog(Framework.Lang.T("settings.registeredPrograms"), entries);
-                if (sel != null) { nameBox.Text = sel.FillName ?? ""; targetBox.Text = sel.FillPath ?? ""; }
+                // exe 自带图标：选中程序后图标框为空时自动带入其路径（渲染时提取程序图标）
+                if (sel != null) { nameBox.Text = sel.FillName ?? ""; targetBox.Text = sel.FillPath ?? ""; if (string.IsNullOrWhiteSpace(iconBox.Text)) iconBox.Text = sel.FillPath ?? ""; }
             };
             pickInstalledBtn.Click += (s, ev2) =>
             {
@@ -2715,7 +2943,8 @@ namespace SideDesk.Services
                         .Where(e => e.FillPath != null)
                         .ToList();
                     var sel = ShowProgramPickerDialog(Framework.Lang.T("settings.installedApps"), entries);
-                    if (sel != null) { nameBox.Text = sel.FillName ?? ""; targetBox.Text = sel.FillPath ?? ""; }
+                    // exe 自带图标：选中程序后图标框为空时自动带入其路径（渲染时提取程序图标）
+                    if (sel != null) { nameBox.Text = sel.FillName ?? ""; targetBox.Text = sel.FillPath ?? ""; if (string.IsNullOrWhiteSpace(iconBox.Text)) iconBox.Text = sel.FillPath ?? ""; }
                 };
                 if (InstalledAppsService.GetCached().Count > 0) openPicker();
                 else InstalledAppsService.EnsureLoaded(_ => Application.Current.Dispatcher.BeginInvoke(openPicker));
@@ -2900,7 +3129,16 @@ namespace SideDesk.Services
                         });
                     dock.Children.Add(info);
                     row.Child = dock;
-                    row.MouseLeftButtonUp += (s, ev) => { selected = e; win.DialogResult = true; win.Close(); };
+                    row.MouseLeftButtonUp += (s, ev) =>
+                    {
+                        selected = e;
+                        // 选中即同步预热图标缓存：保证“弹窗里看得到的图标，关闭后主界面渲染新项必命中缓存”，
+                        // 杜绝“添加后主界面图标空白、重启才恢复”（单发提取，后台风暴已被限流消除，不会阻塞）
+                        var warmPath = e.FillPath ?? e.IconPath;
+                        if (!string.IsNullOrEmpty(warmPath)) FaviconService.LoadFileIcon(warmPath);
+                        win.DialogResult = true;
+                        win.Close();
+                    };
                     row.MouseEnter += (s, ev) => row.Background = (Brush)Application.Current.FindResource("BrushInputBG");
                     row.MouseLeave += (s, ev) => row.Background = Brushes.Transparent;
                     list.Children.Add(row);
@@ -2908,10 +3146,11 @@ namespace SideDesk.Services
                     var iconPath = e.IconPath;
                     if (!string.IsNullOrEmpty(iconPath))
                     {
-                        Task.Run(() =>
+                        // 节流加载：避免对上百程序无上限并发提图标（搜索重建会反复触发）引发 ExtractAssociatedIcon 瞬时失败风暴
+                        var box = iconBox;
+                        _ = FaviconService.LoadFileIconThrottledAsync(iconPath).ContinueWith(t =>
                         {
-                            var src = FaviconService.LoadFileIcon(iconPath);
-                            if (src != null) win.Dispatcher.BeginInvoke(() => iconBox.Source = src);
+                            if (t.Result != null) win.Dispatcher.BeginInvoke(() => box.Source = t.Result);
                         });
                     }
                 }
@@ -2925,6 +3164,19 @@ namespace SideDesk.Services
 
         private void ShowEditItemDialog(QuickItem item, string groupId, Button itemBtn)
         {
+            // 高级项：用扩展编辑窗口编辑（回填已有 JSON 配置）
+            if (item.Type == "advanced")
+            {
+                var editor = new ExtensionEditorWindow(item, groupId);
+                editor.Owner = OwnerWindow;
+                if (editor.ShowDialog() == true)
+                {
+                    QuickGroupManager.Save();
+                    RefreshGroupView();
+                }
+                return;
+            }
+
             var dialog = new Window
             {
                 Title = Framework.Lang.T("nativePanel.editItem"), Width = 440,
@@ -3011,7 +3263,8 @@ namespace SideDesk.Services
                 Margin = new Thickness(0, 14, 0, 6)
             });
             var colorPanel = new WrapPanel();
-            string selectedColor = item.BackgroundColor ?? "#3498DB";
+            // null = 透明背景（与添加对话框一致，项未设颜色时默认选中透明而非强制蓝色）
+            string? selectedColor = item.BackgroundColor;
             var accentBrush = (Brush)Application.Current.FindResource("BrushAccent");
             var presetColors = new[]
             {
@@ -3019,6 +3272,34 @@ namespace SideDesk.Services
                 "#F39C12", "#1ABC9C", "#E67E22", "#34495E",
                 "#2980B9", "#27AE60", "#C0392B", "#8E44AD"
             };
+            // 透明选项：清空 BackgroundColor，按钮不填充背景色
+            var transparentSwatch = new Border
+            {
+                Width = 28, Height = 28,
+                Margin = new Thickness(0, 0, 8, 8),
+                CornerRadius = new CornerRadius(6),
+                Background = Brushes.Transparent,
+                BorderBrush = selectedColor == null ? accentBrush : Brushes.Transparent,
+                BorderThickness = new Thickness(2),
+                Cursor = Cursors.Hand,
+                Tag = null,
+                ToolTip = Framework.Lang.T("common.none")
+            };
+            transparentSwatch.Child = new System.Windows.Shapes.Path
+            {
+                Data = Geometry.Parse("M 3,25 L 25,3"),
+                Stroke = (Brush)Application.Current.FindResource("BrushTextMuted"),
+                StrokeThickness = 2,
+                Stretch = System.Windows.Media.Stretch.Fill
+            };
+            transparentSwatch.MouseLeftButtonUp += (s, ev) =>
+            {
+                selectedColor = null;
+                foreach (UIElement child in colorPanel.Children)
+                    if (child is Border b) b.BorderBrush = Brushes.Transparent;
+                transparentSwatch.BorderBrush = accentBrush;
+            };
+            colorPanel.Children.Add(transparentSwatch);
             foreach (var color in presetColors)
             {
                 var swatch = new Border
@@ -3072,9 +3353,18 @@ namespace SideDesk.Services
                 item.BackgroundColor = selectedColor;
                 QuickGroupManager.UpdateGroup(QuickGroupManager.GetAll().FirstOrDefault(g => g.Id == groupId) ?? new QuickGroup());
                 QuickGroupManager.Save();
-                // 更新按钮背景色
-                try { itemBtn.Background = (SolidColorBrush)new BrushConverter().ConvertFrom(item.BackgroundColor)!; }
-                catch { itemBtn.Background = Brushes.SteelBlue; }
+                // 更新按钮背景色（null/空 = 透明，文字同步换主题主色）
+                Brush newBg;
+                if (string.IsNullOrEmpty(item.BackgroundColor)) newBg = Brushes.Transparent;
+                else
+                {
+                    try { newBg = (SolidColorBrush)new BrushConverter().ConvertFrom(item.BackgroundColor)!; }
+                    catch { newBg = Brushes.SteelBlue; }
+                }
+                itemBtn.Background = newBg;
+                itemBtn.Foreground = newBg == Brushes.Transparent
+                    ? (Brush)Application.Current.FindResource("BrushTextMain")
+                    : (Brush)Application.Current.FindResource("BrushItemButtonText");
                 // 更新按钮显示（图标 + 名称，支持 emoji/路径图标）
                 itemBtn.Content = BuildItemContent(item);
                 dialog.Close();
@@ -3216,7 +3506,26 @@ namespace SideDesk.Services
                 iconEl = rect;
             }
             else
-                iconEl = new Emoji.Wpf.TextBlock { Text = "🔗", FontSize = 34 };
+            {
+                // 无图标：放一个与真实图标同尺寸的空白占位框（同样 min(单元格宽-6,40) 正方形绑定），
+                // 既作“空的默认图标”占位，又保证按钮高度与相邻有图标项一致、不塌下去
+                var placeholder = new Border
+                {
+                    CornerRadius = new CornerRadius(6),
+                    BorderBrush = (Brush)Application.Current.FindResource("BrushBorder"),
+                    BorderThickness = new Thickness(1),
+                    Background = (Brush)Application.Current.FindResource("BrushInputBG"),
+                    HorizontalAlignment = HorizontalAlignment.Center
+                };
+                placeholder.Loaded += (s, e) =>
+                {
+                    placeholder.SetBinding(FrameworkElement.WidthProperty,
+                        new System.Windows.Data.Binding("ActualWidth") { Source = panel, Converter = new SubtractConverter(6) });
+                    placeholder.SetBinding(FrameworkElement.HeightProperty,
+                        new System.Windows.Data.Binding("ActualWidth") { Source = placeholder });
+                };
+                iconEl = placeholder;
+            }
             iconEl.HorizontalAlignment = HorizontalAlignment.Center;
             iconEl.Margin = new Thickness(0, 0, 0, 4);
             panel.Children.Add(iconEl);
@@ -3231,6 +3540,58 @@ namespace SideDesk.Services
             });
 
             return panel;
+        }
+
+        /// <summary>
+        /// 程序图标自愈：并发提取风暴下单次提取可能瞬时失败（返回 null）。
+        /// 后台延时重试提取（风暴过后即可成功），一旦拿到图标就回 UI 线程重建按钮内容，
+        /// 无需重启即可显示。LoadFileIcon 不缓存 null，每次重试都是全新提取。
+        /// </summary>
+        private void HealProgramIconAsync(Button btn, QuickItem item, string iconPath, bool largeIcon)
+        {
+            System.Threading.Tasks.Task.Run(async () =>
+            {
+                BitmapSource? src = null;
+                for (int attempt = 0; attempt < 6 && src == null; attempt++)
+                {
+                    await System.Threading.Tasks.Task.Delay(300);
+                    src = FaviconService.LoadFileIcon(iconPath);
+                }
+                if (src == null) return;
+                Application.Current?.Dispatcher.BeginInvoke(() =>
+                {
+                    btn.Content = largeIcon
+                        ? BuildLargeIconContent(item)
+                        : BuildItemContent(item, HorizontalAlignment.Left);
+                });
+            });
+        }
+
+        /// <summary>
+        /// 网址项图标自愈：缓存的 favicon 本地文件丢失（清缓存/换机/云端同步下来但文件不在本机）
+        /// 或添加时从未抓到时图标为空。后台按网址重新抓取 favicon（节流+失败负缓存），
+        /// 成功后回填 item.Icon 并持久化、预加载进内存缓存、刷新按钮内容，无需重启或重新添加。
+        /// </summary>
+        private void HealUrlIconAsync(Button btn, QuickItem item, bool largeIcon)
+        {
+            var url = item.Target;
+            System.Threading.Tasks.Task.Run(async () =>
+            {
+                string? path = null;
+                try { path = await FaviconService.FetchFaviconThrottledAsync(url); } catch { }
+                if (string.IsNullOrEmpty(path)) return;
+                // 预加载进内存缓存，确保回填后按钮重建必命中，不会再次空白
+                var src = FaviconService.LoadFileIcon(path);
+                if (src == null) return;
+                Application.Current?.Dispatcher.BeginInvoke(() =>
+                {
+                    item.Icon = path;         // 回填新的本地缓存路径
+                    QuickGroupManager.Save(); // 持久化，避免每次渲染都重抓
+                    btn.Content = largeIcon
+                        ? BuildLargeIconContent(item)
+                        : BuildItemContent(item, HorizontalAlignment.Left);
+                });
+            });
         }
 
         /// <summary>构建按钮内容（图标 + 名称）。图标优先级：emoji 字符 > 路径图标 > 程序项自动从 Target 提取。</summary>

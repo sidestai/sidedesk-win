@@ -63,6 +63,16 @@ public sealed class VelopackUpdateService
             return null;
         }
 
+        // 未经 Velopack 安装（直接从构建输出目录运行的开发版/便携版）时，
+        // CheckForUpdatesAsync 内部 EnsureInstalled() 会抛 NotInstalledException。
+        // 提前拦截：跳过网络诊断与检查，给出明确本地化提示，避免异常噪音（此类运行方式本就不支持自更新）。
+        if (!_updateManager.IsInstalled)
+        {
+            Debug.WriteLine("[VelopackUpdate] application is not installed (portable/dev run); update check unavailable");
+            UpdateStatusChanged?.Invoke(Framework.Lang.T("update.notInstalled"));
+            return null;
+        }
+
         try
         {
             UpdateStatusChanged?.Invoke(Framework.Lang.T("update.checkingForUpdates"));

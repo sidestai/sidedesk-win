@@ -9,13 +9,44 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <ApplicationIcon>main.ico</ApplicationIcon>
-	<Version>1.0.0</Version>
-	<AssemblyVersion>1.0.*</AssemblyVersion>
-	<FileVersion>1.0.0.0</FileVersion>
+    <!-- Per-Monitor DPI Aware V2（app.manifest）：异 DPI 多屏下 Win32 坐标 API 返回真实物理坐标，
+         AppBar 的 ABM_SETPOS 工作区注册依赖此；缺失时副屏坐标虚拟化导致与最大化窗口重叠 -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+	<!-- 自动版本号：每次 build 重新生成，无需手动维护 -->
+	<!-- 第三段 = 距 2025-01-01 的天数（单调递增且不超 16 位段上限 65535）；第四段 = 构建时刻 HHmm（每次构建唯一） -->
+	<_BuildDays>$([System.Math]::Floor($([System.DateTime]::Now.Subtract($([System.DateTime]::Parse("2025-01-01"))).TotalDays)))</_BuildDays>
+	<_BuildHHmm>$([System.DateTime]::Now.ToString("HHmm"))</_BuildHHmm>
+	<!-- SemVer 三段式（vpk pack 的 packVersion 用此值，粒度到天） -->
+	<Version>1.0.$(_BuildDays)</Version>
+	<!-- Win32 文件版本（exe 属性、Inno 安装包文件名读此值，粒度到分钟、每次 build 递增） -->
+	<FileVersion>1.0.$(_BuildDays).$(_BuildHHmm)</FileVersion>
+	<AssemblyVersion>1.0.$(_BuildDays).$(_BuildHHmm)</AssemblyVersion>
 	<Deterministic>False</Deterministic>
 	<!-- 项目已使用 JSON 做 i18n，排除 NuGet 包卫星资源 DLL（Roslyn 等包的本地化消息） -->
 	<SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
+
+  <!-- API 域名区域开关：构建时传 -p:ApiRegion=zh 或 -p:ApiRegion=en 选择后端域名；不传默认 zh（见 Constants.cs） -->
+  <PropertyGroup>
+    <ApiRegion Condition="'$(ApiRegion)' == ''">zh</ApiRegion>
+  </PropertyGroup>
+  <Choose>
+    <When Condition="'$(ApiRegion)' == 'zh'">
+      <PropertyGroup>
+        <DefineConstants>$(DefineConstants);API_REGION_ZH</DefineConstants>
+      </PropertyGroup>
+    </When>
+    <When Condition="'$(ApiRegion)' == 'en'">
+      <PropertyGroup>
+        <DefineConstants>$(DefineConstants);API_REGION_EN</DefineConstants>
+      </PropertyGroup>
+    </When>
+    <Otherwise>
+      <PropertyGroup>
+        <DefineConstants>$(DefineConstants);API_REGION_ZH</DefineConstants>
+      </PropertyGroup>
+    </Otherwise>
+  </Choose>
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.WindowsDesktop.App.WindowsForms" />

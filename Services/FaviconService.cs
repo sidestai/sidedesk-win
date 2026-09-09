@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Interop;
@@ -27,6 +28,19 @@ namespace SideDesk.Services
         private static readonly HttpClient _http = CreateHttp();
         private static readonly Dictionary<string, string> _index = LoadIndex();
         private static readonly Dictionary<string, BitmapSource?> _iconCache = new();
+
+        // 后台图标提取节流：选择弹窗会对上百个程序并发提取图标（且搜索每次按键都重建重提），
+        // System.Drawing.Icon.ExtractAssociatedIcon 在高并发下会瞬时失败返回 null（GDI 句柄压力），
+        // 形成“提取风暴”→ 刚添加的快捷项图标空白、需重启才恢复。限制后台并发数即可消除风暴。
+        // 仅用于后台异步加载；UI 线程的同步 LoadFileIcon（按钮渲染/预览）不走限流，避免阻塞界面。
+        private static readonly SemaphoreSlim _extractThrottle = new(4, 4);
+
+        // 网址 favicon 重抓节流 + 失败负缓存：分组内多个网址项缓存图标同时失效时，
+        // 避免并发发起大量 HTTP 抓取；对确实抓不到 favicon 的网址记录失败时刻，TTL 内不再重试，
+        // 防止每次渲染都对同一失败网址重复抓取（呼应“缓存图标丢失时重新获取一次”的语义）。
+        private static readonly SemaphoreSlim _fetchThrottle = new(3, 3);
+        private static readonly Dictionary<string, DateTime> _fetchFailed = new();
+        private static readonly TimeSpan _fetchRetryInterval = TimeSpan.FromMinutes(10);
 
         private static HttpClient CreateHttp()
         {
@@ -127,6 +141,39 @@ namespace SideDesk.Services
             return null;
         }
 
+        /// <summary>
+        /// 后台节流抓取网站 favicon：命中本地缓存立即返回（不占限流额度），否则排队等信号量后再抓取。
+        /// 供“分组内多个网址项缓存图标同时失效需批量重抓”的场景使用，避免并发 HTTP 风暴；
+        /// 对抓取失败的网址在 _fetchRetryInterval 内不再重试，避免对无图标网址每次渲染重复请求。
+        /// </summary>
+        public static async Task<string?> FetchFaviconThrottledAsync(string url)
+        {
+            var cached = TryGetCached(url);
+            if (cached != null) return cached;
+
+            var key = NormalizeKey(url);
+            if (key == null) return null;
+
+            // TTL 内已失败过则跳过，避免对无 favicon 网址的重复抓取风暴
+            lock (_fetchFailed)
+            {
+                if (_fetchFailed.TryGetValue(key, out var ts) && DateTime.UtcNow - ts < _fetchRetryInterval)
+                    return null;
+            }
+
+            await _fetchThrottle.WaitAsync().ConfigureAwait(false);
+            string? path;
+            try { path = await FetchFaviconAsync(url).ConfigureAwait(false); }
+            finally { _fetchThrottle.Release(); }
+
+            lock (_fetchFailed)
+            {
+                if (string.IsNullOrEmpty(path)) _fetchFailed[key] = DateTime.UtcNow;
+                else _fetchFailed.Remove(key);
+            }
+            return path;
+        }
+
         /// <summary>从页面 HTML 解析 &lt;link rel="icon"&gt; 的 href（支持相对路径/协议相对路径）。</summary>
         private static string? ParseFaviconLink(string html, string baseUrl)
         {
@@ -210,8 +257,27 @@ namespace SideDesk.Services
                 }
             }
             catch { }
-            lock (_iconCache) { _iconCache[path] = result; }
+            // 只缓存成功结果：提取失败（如选择弹窗并发风暴中的瞬时失败）若缓存 null 会永久毒化该路径，
+            // 导致刚添加的快捷项无图标、重启后才恢复；不缓存失败让下次调用可重试
+            if (result != null)
+            {
+                lock (_iconCache) { _iconCache[path] = result; }
+            }
             return result;
+        }
+
+        /// <summary>
+        /// 后台节流加载文件图标：命中缓存立即返回（不占限流额度），否则排队等信号量后在线程池提取。
+        /// 供选择弹窗等“对大量程序并发提图标”的场景使用，避免无上限并发引发 ExtractAssociatedIcon 瞬时失败风暴；
+        /// 缓存优先也让搜索重建列表时对已加载图标的重复请求瞬间返回，不再重复提取。
+        /// </summary>
+        public static async Task<BitmapSource?> LoadFileIconThrottledAsync(string? path)
+        {
+            if (string.IsNullOrEmpty(path)) return null;
+            lock (_iconCache) { if (_iconCache.TryGetValue(path, out var cached)) return cached; }
+            await _extractThrottle.WaitAsync().ConfigureAwait(false);
+            try { return await Task.Run(() => LoadFileIcon(path)).ConfigureAwait(false); }
+            finally { _extractThrottle.Release(); }
         }
 
         /// <summary>解码 png/jpg/ico 等图片文件，失败抛异常由调用方兜底。</summary>

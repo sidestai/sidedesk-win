@@ -82,9 +82,9 @@ namespace SideDesk
                     return;
                 }
 
-                // 内置模式支持程序化提交，固定走本地对话窗（位置与侧边栏 AI 助手一致：主窗口右侧）
+                // 内置模式支持程序化提交，固定走本地对话窗（贴着本侧边栏弹出：左停靠弹右侧、右停靠弹左侧）
                 _fcAiDialog.Show(this,
-                    Left + Width, Top, 400, Height, content);
+                    GetFlyoutLeft(500), Top, 400, Height, content);
             }
             catch (Exception ex)
             {

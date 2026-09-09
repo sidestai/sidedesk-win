@@ -736,7 +736,7 @@ namespace SideDesk
             _webModeReady = true;
             try
             {
-                await _webView.EnsureCoreWebView2Async();
+                await _webView.EnsureCoreWebView2Async(await SideDesk.Services.WebView2Shared.GetAsync());
                 _webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
                 _webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
 

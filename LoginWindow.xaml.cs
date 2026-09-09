@@ -1,6 +1,7 @@
 using System;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks;
 using System.Windows;
 using Microsoft.Web.WebView2.Core;
 
@@ -47,19 +48,34 @@ namespace SideDesk
         private string? _targetRequestId;
         private bool _tokenHandled;
 
-        /// <summary>用系统默认浏览器打开注册页（内嵌页跳转在部分环境不可用，改走外部浏览器）</summary>
-        private void OpenRegisterInBrowser_Click(object sender, RoutedEventArgs e)
+        /// <summary>「用浏览器打开」：改用系统默认浏览器走 OAuth2（授权码 + PKCE）登录</summary>
+        private async void OpenInBrowserLogin_Click(object sender, RoutedEventArgs e)
         {
-            try
+            await StartBrowserOAuthLoginAsync();
+        }
+
+        /// <summary>运行系统浏览器 OAuth2 登录：成功复用 LoginSucceeded 事件流；失败回传前端提示并保持内嵌登录</summary>
+        private async Task StartBrowserOAuthLoginAsync()
+        {
+            string? token = null;
+            try { token = await Services.OAuthLoginService.LoginAsync(); }
+            catch { token = null; }
+
+            if (string.IsNullOrEmpty(token))
             {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
-                    Constants.URLs.FrontendBaseUrl + "/#/auth/register") { UseShellExecute = true });
+                try { webView.CoreWebView2?.PostWebMessageAsJson("{\"type\":\"browserLoginFailed\"}"); }
+                catch { }
+                return;
             }
-            catch (Exception ex)
+
+            LastToken = token;
+            LastUserName = null;
+            Dispatcher.Invoke(() =>
             {
-                MessageBox.Show(Framework.Lang.TF("login.openRegisterPageFailed", ex.Message), Framework.Lang.T("common.error"),
-                    MessageBoxButton.OK, MessageBoxImage.Error);
-            }
+                try { LoginSucceeded?.Invoke(); } catch { }
+                try { DialogResult = true; } catch { }
+                Close();
+            });
         }
 
         public LoginWindow()
@@ -75,7 +91,7 @@ namespace SideDesk
             try
             {
                 // 初始化 WebView2
-                await webView.EnsureCoreWebView2Async(null);
+                await webView.EnsureCoreWebView2Async(await SideDesk.Services.WebView2Shared.GetAsync());
                 var core = webView.CoreWebView2;
 
                 // 启用 CDP Network 域，并在导航前挂好监听，确保能捕获登录接口

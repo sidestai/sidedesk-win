@@ -8,12 +8,11 @@
         Background="{DynamicResource BrushBG}"
         Foreground="{DynamicResource BrushTextMain}">
     <DockPanel LastChildFill="True">
-        <!-- 注册入口：内嵌页跳转在部分环境不可用，改为直接用系统默认浏览器打开注册页 -->
+        <!-- 用浏览器打开：改用系统默认浏览器走 OAuth2（授权码 + PKCE）登录 -->
         <Border DockPanel.Dock="Bottom" Padding="12,6">
             <TextBlock FontSize="12" Foreground="{DynamicResource BrushTextSec}">
-                <Run Text="{l:T login.noAccount}"/>
-                <Hyperlink Click="OpenRegisterInBrowser_Click" Foreground="{DynamicResource BrushAccent}" TextDecorations="None">
-                    <Run Text="{l:T login.registerOpensInBrowser}"/>
+                <Hyperlink Click="OpenInBrowserLogin_Click" Foreground="{DynamicResource BrushAccent}" TextDecorations="None">
+                    <Run Text="{l:T login.openInBrowser}"/>
                 </Hyperlink>
             </TextBlock>
         </Border>

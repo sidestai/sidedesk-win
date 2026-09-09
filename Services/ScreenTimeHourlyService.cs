@@ -30,6 +30,8 @@ namespace SideDesk.Services
 
         private const string MarkerKey = "screen_time_last_past_date";
         private const string CloudMarkerKey = "screen_time_cloud_synced_date";
+        /// <summary>原始窗口日志 windowlog_*.txt 的保留天数：仅保留最近 7 天，更早的在聚合入库后删除。</summary>
+        private const int WindowLogRetainDays = 7;
         private const string BaseUrl = Constants.URLs.ServerBaseUrl;
         private static readonly Regex LogFilePattern = new(@"^windowlog_(\d{8})\.txt$", RegexOptions.IgnoreCase);
         private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(15) };
@@ -82,6 +84,8 @@ namespace SideDesk.Services
                 if (PushDateToCloudAsync(DateTime.Today).GetAwaiter().GetResult())
                     _lastTodayPush = DateTime.Now;
             }
+            // 聚合入库后清理超过保留期（7 天）的原始窗口日志：数据已在 local_screen_time_hourly，原始文件冗余
+            PruneOldWindowLogs();
         }
 
         /// <summary>增量补录：窗口日志中存在但尚未入库（本地/云端）的历史日期</summary>
@@ -129,6 +133,36 @@ namespace SideDesk.Services
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// 清理超过保留期（<see cref="WindowLogRetainDays"/> 天）的原始窗口日志 windowlog_*.txt：
+        /// 这些日期的数据已由 <see cref="SyncPastDates"/> 聚合进 local_screen_time_hourly，云端推送也从数据库读取
+        /// （见 <see cref="ReadLocalDay"/>），故原始文件冗余可删。仅按文件名日期判断、不访问数据库，任意时机（含启动）均可调用。
+        /// </summary>
+        public static void PruneOldWindowLogs()
+        {
+            try
+            {
+                string logFolder = GetLogFolder();
+                if (!Directory.Exists(logFolder)) return;
+                // 保留最近 WindowLogRetainDays 天（今天及其前 WindowLogRetainDays-1 天），更早的删除
+                DateTime cutoff = DateTime.Today.AddDays(-(WindowLogRetainDays - 1));
+                foreach (var file in Directory.GetFiles(logFolder, "windowlog_*.txt"))
+                {
+                    var m = LogFilePattern.Match(Path.GetFileName(file));
+                    if (!m.Success) continue;
+                    if (!DateTime.TryParseExact(m.Groups[1].Value, "yyyyMMdd",
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            System.Globalization.DateTimeStyles.None, out var d))
+                        continue;
+                    if (d.Date < cutoff)
+                    {
+                        try { File.Delete(file); } catch { }
+                    }
+                }
+            }
+            catch { }
         }
 
         /// <summary>解析某日窗口日志，按（小时 × 应用）聚合后整日覆盖写入</summary>

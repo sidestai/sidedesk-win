@@ -33,6 +33,26 @@ namespace SideDesk.Windows
             "教育", "学习", "工作", "娱乐", "生活", "交友", "忽略"
         };
 
+        /// <summary>
+        /// 分类显示名：内部存储值保持中文键不变（已持久化到 program_categories.json），
+        /// 仅显示时按 i18n 本地化；未知分类原样返回。
+        /// </summary>
+        public static string GetDisplayName(string category)
+        {
+            return category switch
+            {
+                "教育" => Framework.Lang.T("category.education"),
+                "学习" => Framework.Lang.T("category.learning"),
+                "工作" => Framework.Lang.T("category.work"),
+                "娱乐" => Framework.Lang.T("common.entertainment"),
+                "生活" => Framework.Lang.T("common.life"),
+                "交友" => Framework.Lang.T("category.social"),
+                "忽略" => Framework.Lang.T("category.ignored"),
+                "未分类" => Framework.Lang.T("category.uncategorized"),
+                _ => category
+            };
+        }
+
         static ProgramCategoryManager()
         {
             string appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);

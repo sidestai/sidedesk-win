@@ -1296,7 +1296,11 @@
                                FontSize="20" FontWeight="Bold"
                                Foreground="{DynamicResource BrushTextMain}"
                                Margin="0,0,0,8"/>
-                    <TextBlock x:Name="versionText" Text="{l:T settings.versionSample}" 
+                    <TextBlock x:Name="versionText" 
+                               Foreground="{DynamicResource BrushTextSec}"
+                               FontSize="{DynamicResource FontSizeNormal}"
+                               Margin="0,0,0,4"/>
+                    <TextBlock x:Name="fileVersionText" 
                                Foreground="{DynamicResource BrushTextSec}"
                                FontSize="{DynamicResource FontSizeNormal}"
                                Margin="0,0,0,16"/>

@@ -21,7 +21,7 @@ namespace SideDesk
         public DockEdge DockSide { get; set; } = DockEdge.Left;
 
         /// <summary>
-        /// AppBar 宽度（像素，物理像素）
+        /// AppBar 宽度（逻辑像素 DIP，恒定不随 DPI 缩放；注册给系统的物理宽度 = DIP * 该屏缩放）
         /// </summary>
         public int AppBarWidth { get; set; } = 400;
 
@@ -31,7 +31,7 @@ namespace SideDesk
         public int ScreenIndex { get; set; } = 0;
 
         /// <summary>
-        /// 鼠标悬停时的展开宽度（物理像素）
+        /// 鼠标悬停时的展开宽度（逻辑像素 DIP，恒定；物理 = DIP * 该屏缩放）
         /// </summary>
         public int ExpandedWidth { get; set; } = 200;
 
@@ -47,6 +47,7 @@ namespace SideDesk
         private HwndSource? _hwndSource;
         private IntPtr _registeredHwnd = IntPtr.Zero; // 保存注册时的窗口句柄
         private bool _isHoverExpanded = false;
+        private bool _allowZOrderChange = false; // 自身主动发起 Z 序变更（全屏让位）时置 true，PreventMoveHook 据此放行
 
         #endregion
 
@@ -129,12 +130,19 @@ namespace SideDesk
                 _isPositioning = true;
 
                 var hwnd = new WindowInteropHelper(this).Handle;
-                var monitor = GetTargetMonitor();
+                var (monitorHandle, monitor) = GetTargetMonitorEx();
 
                 // 使用 rcMonitor（完整显示器区域）计算左右边界
                 // 使用 rcWork 的上下边界（避开任务栏）
                 var monitorRect = monitor.rcMonitor;
                 var workArea = monitor.rcWork;
+
+                // 先取目标屏 DPI：AppBarWidth 为逻辑像素(DIP)恒定，注册给系统的物理宽度 = DIP * 该屏缩放，
+                // 保证高 DPI 屏上逻辑宽度不缩小（否则 150% 屏内容/字体被挤压）
+                GetMonitorDpi(monitorHandle, out double dpiX, out double dpiY);
+                double scaleX = dpiX / 96.0;
+                double scaleY = dpiY / 96.0;
+                int appBarWidthPhysical = (int)Math.Round(AppBarWidth * scaleX);
 
                 System.Diagnostics.Debug.WriteLine($"[AppBar] Monitor: L={monitorRect.Left} T={monitorRect.Top} R={monitorRect.Right} B={monitorRect.Bottom}");
                 System.Diagnostics.Debug.WriteLine($"[AppBar] WorkArea: L={workArea.Left} T={workArea.Top} R={workArea.Right} B={workArea.Bottom}");
@@ -147,12 +155,12 @@ namespace SideDesk
                 {
                     data.rc.Left = monitorRect.Left;
                     data.rc.Top = workArea.Top;
-                    data.rc.Right = monitorRect.Left + AppBarWidth;
+                    data.rc.Right = monitorRect.Left + appBarWidthPhysical;
                     data.rc.Bottom = workArea.Bottom;
                 }
                 else
                 {
-                    data.rc.Left = monitorRect.Right - AppBarWidth;
+                    data.rc.Left = monitorRect.Right - appBarWidthPhysical;
                     data.rc.Top = workArea.Top;
                     data.rc.Right = monitorRect.Right;
                     data.rc.Bottom = workArea.Bottom;
@@ -177,12 +185,11 @@ namespace SideDesk
                     System.Diagnostics.Debug.WriteLine("[AppBar] SETPOS returned invalid rect, falling back to expected rect");
                     LogEvent($"PositionAppBar fallback - expected L={expectedRc.Left} T={expectedRc.Top} R={expectedRc.Right} B={expectedRc.Bottom}");
                     data.rc = expectedRc;
+                    // 回退矩形必须重新注册给系统，否则工作区不会为 AppBar 保留空间，
+                    // 最大化窗口将占满整屏并覆盖侧边栏（副屏坐标异常时易触发）
+                    NativeMethods.SHAppBarMessage(AppBarMessage.ABM_SETPOS, ref data);
                 }
 
-                // 获取 DPI 缩放
-                GetMonitorDpi(out double dpiX, out double dpiY);
-                double scaleX = dpiX / 96.0;
-                double scaleY = dpiY / 96.0;
                 System.Diagnostics.Debug.WriteLine($"[AppBar] DPI: {dpiX}x{dpiY}, Scale: {scaleX}x{scaleY}");
 
                 // 移动窗口到 AppBar 位置（转换为 WPF 逻辑像素）
@@ -217,14 +224,16 @@ namespace SideDesk
         {
             if (!IsAppBarRegistered || expanded == _isHoverExpanded) return;
 
-            GetMonitorDpi(out double dpiX, out _);
+            var (monitorHandle, monitor) = GetTargetMonitorEx();
+            GetMonitorDpi(monitorHandle, out double dpiX, out _);
             double scaleX = dpiX / 96.0;
 
-            var monitor = GetTargetMonitor();
             var monitorRect = monitor.rcMonitor;
 
-            int targetPhysical = expanded ? ExpandedWidth : AppBarWidth;
-            double targetWidthLogical = targetPhysical / scaleX;
+            // 逻辑像素(DIP)恒定，物理 = DIP * scale（与 PositionAppBar 一致）
+            int targetLogical = expanded ? ExpandedWidth : AppBarWidth;
+            int targetPhysical = (int)Math.Round(targetLogical * scaleX);
+            double targetWidthLogical = targetLogical;
 
             UnlockPosition();
 
@@ -238,6 +247,15 @@ namespace SideDesk
 
             _isHoverExpanded = expanded;
         }
+
+        /// <summary>
+        /// 计算“贴着本侧边栏弹出”的浮窗左边缘 X 坐标（DIP）：
+        /// 左停靠 → 浮窗在侧边栏右侧；右停靠 → 浮窗在侧边栏左侧（减去浮窗宽度）。
+        /// 保证浮窗始终落在被点击侧边栏所在的显示器，而不是弹到相邻显示器/屏幕外。
+        /// </summary>
+        /// <param name="flyoutWidth">浮窗自身宽度（DIP），右停靠时用于向左偏移</param>
+        public double GetFlyoutLeft(double flyoutWidth)
+            => DockSide == DockEdge.Left ? Left + Width : Left - flyoutWidth;
 
         #endregion
 
@@ -298,7 +316,7 @@ namespace SideDesk
                     "Logs");
                 System.IO.Directory.CreateDirectory(logDir);
                 
-                string logFile = System.IO.Path.Combine(logDir, $"window-{DateTime.Now:yyyy-MM-dd}.log");
+                string logFile = System.IO.Path.Combine(logDir, "window.log");
                 System.IO.File.AppendAllText(logFile, logLine + Environment.NewLine);
             }
             catch { }
@@ -318,6 +336,13 @@ namespace SideDesk
 
         private IntPtr AppBarWndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
+            // Win+D 显示桌面等场景可能发送 SC_MINIMIZE，AppBar 侧边栏不应被最小化，直接拦截
+            if (msg == WindowMessage.WM_SYSCOMMAND && wParam.ToInt32() == SysCommand.SC_MINIMIZE)
+            {
+                handled = true;
+                return IntPtr.Zero;
+            }
+
             if (msg == _callbackMessageId)
             {
                 int notify = wParam.ToInt32();
@@ -329,18 +354,26 @@ namespace SideDesk
                         break;
 
                     case AppBarNotify.ABN_FULLSCREENAPP:
-                        // 全屏应用进入/退出
-                        if (lParam.ToInt32() == 1)
+                        // 全屏让位的 Z 序调整是自身主动行为，需放行（PreventMoveHook 据 _allowZOrderChange 跳过 Z 序保护）
+                        _allowZOrderChange = true;
+                        try
                         {
-                            // 全屏进入，置底
-                            NativeMethods.SetWindowPos(hwnd, HwndConstants.HWND_BOTTOM, 0, 0, 0, 0,
-                                SetWindowPosFlags.SWP_NOMOVE | SetWindowPosFlags.SWP_NOSIZE | SetWindowPosFlags.SWP_NOACTIVATE);
+                            if (lParam.ToInt32() == 1)
+                            {
+                                // 全屏进入，置底
+                                NativeMethods.SetWindowPos(hwnd, HwndConstants.HWND_BOTTOM, 0, 0, 0, 0,
+                                    SetWindowPosFlags.SWP_NOMOVE | SetWindowPosFlags.SWP_NOSIZE | SetWindowPosFlags.SWP_NOACTIVATE);
+                            }
+                            else
+                            {
+                                // 全屏退出，恢复常驻置顶（与 MainWindow.xaml Topmost=True 保持一致）
+                                NativeMethods.SetWindowPos(hwnd, HwndConstants.HWND_TOPMOST, 0, 0, 0, 0,
+                                    SetWindowPosFlags.SWP_NOMOVE | SetWindowPosFlags.SWP_NOSIZE | SetWindowPosFlags.SWP_NOACTIVATE);
+                            }
                         }
-                        else
+                        finally
                         {
-                            // 全屏退出，置顶
-                            NativeMethods.SetWindowPos(hwnd, HwndConstants.HWND_TOPMOST, 0, 0, 0, 0,
-                                SetWindowPosFlags.SWP_NOMOVE | SetWindowPosFlags.SWP_NOSIZE | SetWindowPosFlags.SWP_NOACTIVATE);
+                            _allowZOrderChange = false;
                         }
                         break;
                 }
@@ -368,15 +401,23 @@ namespace SideDesk
         {
             if (msg == WindowMessage.WM_WINDOWPOSCHANGING)
             {
+                // 自身主动发起的操作（全屏让位）：完全放行
+                if (_allowZOrderChange)
+                    return IntPtr.Zero;
+
+                // AppBar 位置锁定：防止被拖动移位、防止被隐藏。
+                // 常驻 topmost（MainWindow.xaml Topmost=True）后侧边栏处于置顶层，Win+D 不会再把它压到桌面下，
+                // 故不再需要 Z 序下压拦截 / burst 重呈现那套动态恢复逻辑。
                 var pos = Marshal.PtrToStructure<WINDOWPOS>(lParam);
-                pos.flags |= 0x0002; // SWP_NOMOVE
+                pos.flags |= SetWindowPosFlags.SWP_NOMOVE; // 防止位置被改
+                pos.flags &= ~0x0080u; // 清除 SWP_HIDEWINDOW，防止被隐藏
                 Marshal.StructureToPtr(pos, lParam, true);
-                handled = true;
             }
             return IntPtr.Zero;
         }
 
-        private MONITORINFO GetTargetMonitor()
+        /// <summary>返回目标显示器的句柄+信息（句柄用于查该屏 DPI，保证 DPI 与坐标同源）。</summary>
+        private (IntPtr handle, MONITORINFO info) GetTargetMonitorEx()
         {
             var monitors = new List<(IntPtr handle, MONITORINFO info)>();
 
@@ -393,30 +434,23 @@ namespace SideDesk
             var sorted = monitors.OrderByDescending(m => m.info.dwFlags & 1).ToList();
 
             int index = Math.Min(ScreenIndex, sorted.Count - 1);
-            return sorted[index].info;
+            return sorted[index];
         }
 
-        private void GetMonitorDpi(out double dpiX, out double dpiY)
+        private MONITORINFO GetTargetMonitor() => GetTargetMonitorEx().info;
+
+        /// <summary>查询指定显示器句柄的 DPI。必须传入与坐标同源的 monitor 句柄（见 GetTargetMonitorEx），
+        /// 不可再按 ScreenIndex 独立枚举——枚举顺序不保证与排序后的目标屏一致，异 DPI 多屏下会取错屏导致定位错乱。</summary>
+        private void GetMonitorDpi(IntPtr hMonitor, out double dpiX, out double dpiY)
         {
             dpiX = 96;
             dpiY = 96;
 
             try
             {
-                var monitors = new List<IntPtr>();
-                NativeMethods.EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, (IntPtr hMonitor, IntPtr hdc, ref RECT pRect, int dwData) =>
-                {
-                    monitors.Add(hMonitor);
-                    return true;
-                }, 0);
-
-                if (monitors.Count > 0)
-                {
-                    int index = Math.Min(ScreenIndex, monitors.Count - 1);
-                    NativeMethods.GetDpiForMonitor(monitors[index], 0 /* MDT_EFFECTIVE_DPI */, out uint dx, out uint dy);
-                    dpiX = dx;
-                    dpiY = dy;
-                }
+                NativeMethods.GetDpiForMonitor(hMonitor, 0 /* MDT_EFFECTIVE_DPI */, out uint dx, out uint dy);
+                dpiX = dx;
+                dpiY = dy;
             }
             catch
             {

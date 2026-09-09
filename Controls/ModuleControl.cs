@@ -35,13 +35,11 @@ namespace SideDesk.Controls
         public string? BGColorOverride { get; set; }
         /// <summary>窗口级限制：引用导入的窗口不允许编辑（由 NativeModePanel 注入），与模块级限制叠加</summary>
         public bool WindowEditBlocked { get; set; }
-        /// <summary>窗口级限制：引用导入的窗口不允许删除（由 NativeModePanel 注入）</summary>
-        public bool WindowDeleteBlocked { get; set; }
 
-        /// <summary>编辑受限（模块自身或所属窗口的引用分享不允许编辑）</summary>
+        /// <summary>编辑受限（模块自身或所属窗口的引用分享不允许编辑）→ 内容区只读，拦截行数据增删改</summary>
         private bool EditBlocked => Item.IsShareReadOnly || WindowEditBlocked;
-        /// <summary>删除受限（模块自身或所属窗口的引用分享不允许删除）</summary>
-        private bool DeleteBlocked => Item.IsShareDeleteBlocked || WindowDeleteBlocked;
+        // 注：删除模块=取消引用，始终允许（不受 AllowDelete 限制）；AllowDelete 仅控制组件内行数据删除，
+        // 由后端 item-row.push 鉴权保障（allowDelete=false 时静默跳过删除），客户端不单独拦截行删除入口。
 
         // ===== 回调（由 NativeModePanel 注入）=====
         /// <summary>请求重新渲染所有面板</summary>
@@ -499,19 +497,34 @@ namespace SideDesk.Controls
         {
             _moduleMenu = new ContextMenu();
 
-            // 模块设置（引用分享只读时禁止修改标题/背景色/归属）
+            // 模块设置（引用分享只读时点击拦截提醒，不禁用——WPF 禁用菜单项 ToolTip 不显示，用户无感知）
             var settingsMi = new MenuItem { Header = Framework.Lang.T("common.moduleSettings") };
-            if (EditBlocked) { settingsMi.IsEnabled = false; settingsMi.ToolTip = Framework.Lang.T("nativePanel.sharedModuleNoChangeSettings"); }
+            if (EditBlocked)
+            {
+                var hint = Framework.Lang.T("nativePanel.sharedModuleNoChangeSettings");
+                settingsMi.ToolTip = hint;
+                AttachBlockedGuard(settingsMi, this, hint);
+            }
             settingsMi.Click += (s, e) => OnShowSettings?.Invoke(Item, DefaultTitle);
             _moduleMenu.Items.Add(settingsMi);
 
-            // 自定义菜单项（引用分享只读时一并禁用，避免绕过拦截层修改数据；Tag="keepWhenReadOnly" 的除外，如再分享）
+            // 自定义菜单项（引用分享只读时拦截，避免绕过拦截层修改数据；Tag="keepWhenReadOnly" 的除外，如再分享）
             foreach (var custom in _customMenuItems)
             {
                 if (EditBlocked && custom is MenuItem cmi && !Equals(cmi.Tag, "keepWhenReadOnly"))
                 {
-                    cmi.IsEnabled = false;
-                    cmi.ToolTip = Framework.Lang.T("nativePanel.sharedModuleNoModifyContent");
+                    var hint = Framework.Lang.T("nativePanel.sharedModuleNoModifyContent");
+                    cmi.ToolTip = hint;
+                    if (cmi.Items.Count > 0)
+                    {
+                        // 子菜单父项：禁用防止悬停展开后子项绕过拦截（子项无法触达）
+                        cmi.IsEnabled = false;
+                    }
+                    else
+                    {
+                        // 叶子项：保持可点击，点击时拦截并提醒
+                        AttachBlockedGuard(cmi, this, hint);
+                    }
                 }
                 _moduleMenu.Items.Add(custom);
             }
@@ -552,9 +565,10 @@ namespace SideDesk.Controls
             };
             _moduleMenu.Items.Add(pinMi);
 
-            // 删除模块（引用分享不允许删除时禁用）
+            // 删除模块：引用分享时语义为“取消引用/移除共享组件”，始终允许——接收方有权移除自己侧边栏的共享组件，
+            // 后端 sync.remove 对非属主仅解除引用并删除 share_import 记录、永不软删源模块。
+            // AllowDelete 只控制组件内行数据的删除（由内容区拦截层与后端 item-row 鉴权保障），不控制取消引用。
             var deleteMi = new MenuItem { Header = Framework.Lang.T("nativePanel.deleteModule") };
-            if (DeleteBlocked) { deleteMi.IsEnabled = false; deleteMi.ToolTip = Framework.Lang.T("nativePanel.sharedModuleNoDelete"); }
             deleteMi.Click += (s, e) => OnRemovePanel?.Invoke(Item);
             _moduleMenu.Items.Add(deleteMi);
 
@@ -591,13 +605,13 @@ namespace SideDesk.Controls
         }
 
         /// <summary>点击被拦截时短暂弹出提示（3 秒节流，避免刷屏）</summary>
-        private void ShowReadOnlyHint(FrameworkElement host)
+        private void ShowReadOnlyHint(FrameworkElement host, string? message = null)
         {
             if ((DateTime.Now - _lastReadOnlyHintAt).TotalSeconds < 3) return;
             _lastReadOnlyHintAt = DateTime.Now;
             var tip = new ToolTip
             {
-                Content = Framework.Lang.T("nativePanel.sharedModuleNoEditDelete"),
+                Content = message ?? Framework.Lang.T("nativePanel.sharedModuleNoEditDelete"),
                 PlacementTarget = host,
                 Placement = PlacementMode.MousePoint,
                 IsOpen = true
@@ -605,6 +619,20 @@ namespace SideDesk.Controls
             var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1.6) };
             timer.Tick += (s, e) => { tip.IsOpen = false; timer.Stop(); };
             timer.Start();
+        }
+
+        /// <summary>
+        /// 为权限受限的菜单项挂点击拦截：点击时关闭菜单并弹出提醒。
+        /// 替代 IsEnabled=false——WPF 禁用的 MenuItem 不响应鼠标、ToolTip 不显示，用户点击无感知。
+        /// </summary>
+        private void AttachBlockedGuard(MenuItem mi, FrameworkElement hintHost, string? message = null)
+        {
+            mi.PreviewMouseLeftButtonUp += (s, e) =>
+            {
+                e.Handled = true;
+                if (_moduleMenu != null) _moduleMenu.IsOpen = false;
+                ShowReadOnlyHint(hintHost, message);
+            };
         }
 
         // ===== 工具方法 =====

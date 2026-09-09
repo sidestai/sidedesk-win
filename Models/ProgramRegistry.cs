@@ -50,13 +50,16 @@ namespace SideDesk.Models
         /// </summary>
         public string DefaultProfileBaseDir { get; set; } = "";
 
-        private static readonly string FilePath = Path.Combine(
-            AppDomain.CurrentDomain.BaseDirectory, "program-registry.json");
+        private static readonly string Dir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SideDesk");
+
+        private static readonly string FilePath = Path.Combine(Dir, "program-registry.json");
 
         public void Save()
         {
             try
             {
+                Directory.CreateDirectory(Dir);
                 var json = JsonSerializer.Serialize(this, new JsonSerializerOptions
                 {
                     WriteIndented = true

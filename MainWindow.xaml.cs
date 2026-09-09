@@ -26,6 +26,9 @@ namespace SideDesk
         private DispatcherTimer? _hoverTimer;
         private SettingsWindow? _settingsWindow;
 
+        /// <summary>标题栏是否处于鼠标悬停态（多窗口时悬停展开切换按钮，平时仅显示当前序号+产品名）</summary>
+        private bool _isTitleBarHovered = false;
+
         /// <summary>启动引导通知是否已入队（多窗口实例共享，避免重复入队；富通知会广播到所有窗口）</summary>
         private static bool _welcomeNoticeEnqueued;
 
@@ -73,7 +76,7 @@ namespace SideDesk
                         Type = "open_webview",
                         Payload = new Dictionary<string, object>
                         {
-                            ["url"] = "https://www.baidu.com",
+                            ["url"] = Constants.URLs.HomePageBaseUrl,
                             ["title"] = Framework.Lang.T("common.web")
                         }
                     }
@@ -141,6 +144,15 @@ namespace SideDesk
 
         /// <summary>重新渲染原生模式面板（设置变更后调用）。</summary>
         public void RefreshNativePanels() => sidebarPanel.RefreshNativePanels();
+
+        /// <summary>当前活动标签是否正在显示指定 bar（小屏）。用于组件变更后定向刷新显示同一 bar 的其他侧边栏。</summary>
+        internal bool IsShowingBar(string barId)
+        {
+            if (_dockState == null || string.IsNullOrEmpty(barId)) return false;
+            int idx = _dockState.ActiveIndex;
+            if (idx < 0 || idx >= _dockState.WindowIds.Count) return false;
+            return _dockState.WindowIds[idx] == barId;
+        }
 
         /// <summary>好友资料变更通知（WS 推送）：更新原生面板的好友缓存并刷新展示。</summary>
         public void UpdateFriendProfile(string userId, string? nickName, string? avatar)
@@ -262,6 +274,15 @@ namespace SideDesk
             var showClose = isBothSide ? Visibility.Visible : Visibility.Collapsed;
             closeWindowMenu.Visibility = showClose;
             closeWindowSeparator.Visibility = showClose;
+
+            // 账户项：已登录（在线且持有 Token）显示账户名（点击进设置-账户页），未登录/掉线显示“登录”（点击弹登录窗）
+            // 掉线（AccountOffline）时本地 Token 仍保留但登录态未经服务器确认，按未登录处理，与设置-账户页口径一致
+            bool loggedIn = !string.IsNullOrEmpty(app.AppSettings.AccountToken) && !App.AccountOffline;
+            accountMenu.Header = loggedIn
+                ? (string.IsNullOrWhiteSpace(app.AppSettings.AccountName)
+                    ? Framework.Lang.T("common.account")
+                    : app.AppSettings.AccountName!)
+                : Framework.Lang.T("common.logIn");
         }
 
         /// <summary>
@@ -384,7 +405,10 @@ namespace SideDesk
             }
         }
 
-        private void Settings_Click(object sender, RoutedEventArgs e)
+        private void Settings_Click(object sender, RoutedEventArgs e) => OpenSettingsWindow(null);
+
+        /// <summary>打开（或激活）设置窗口；page 非空时定位到指定设置页（如 "account"）。</summary>
+        private void OpenSettingsWindow(string? page)
         {
             if (_settingsWindow == null || !_settingsWindow.IsVisible)
             {
@@ -393,6 +417,8 @@ namespace SideDesk
             }
             _settingsWindow.Show();
             _settingsWindow.Activate();
+            if (!string.IsNullOrEmpty(page))
+                _settingsWindow.NavigateToPage(page!);
         }
 
         private void CloseWindow_Click(object sender, RoutedEventArgs e)
@@ -415,10 +441,30 @@ namespace SideDesk
 
         #region 布局切换菜单
 
-        private void Login_Click(object sender, RoutedEventArgs e)
+        private void Login_Click(object sender, RoutedEventArgs e) => OpenLoginWindow();
+
+        /// <summary>登录入口：统一走 App.StartLoginAsync（默认弹出 WebView2 内嵌登录窗；OAuth2 浏览器登录由窗内“用浏览器打开”触发）。
+        /// 核心持久化由入口内部完成，这里仅在成功后拉取昵称/头像供账户项显示。</summary>
+        private void OpenLoginWindow()
         {
-            // 非模态打开登录窗（已有实例则激活前置，避免重复弹出）
-            LoginWindow.Open();
+            var app = (App)Application.Current;
+            _ = app.StartLoginAsync(() =>
+            {
+                if (!string.IsNullOrEmpty(app.AppSettings.AccountToken))
+                    _ = app.FetchAndSaveUserInfoAsync(app.AppSettings.AccountToken!); // 拉取昵称/头像，供账户项显示
+            });
+        }
+
+        /// <summary>更多菜单“账户/登录”项：未登录或掉线弹登录窗；已登录（在线且持有 Token）进入设置-账户页。</summary>
+        private void AccountMenu_Click(object sender, RoutedEventArgs e)
+        {
+            var app = (App)Application.Current;
+            // 与 MoreMenu_Opened 的账户项口径一致：掉线时按未登录处理，点击重新登录
+            bool loggedIn = !string.IsNullOrEmpty(app.AppSettings.AccountToken) && !App.AccountOffline;
+            if (!loggedIn)
+                OpenLoginWindow();             // 未登录/掉线：弹出登录窗口
+            else
+                OpenSettingsWindow("account"); // 已登录：打开设置并定位到账户页
         }
 
         private void Layout_Left(object sender, RoutedEventArgs e)
@@ -455,23 +501,8 @@ namespace SideDesk
             if (_configManager == null || _dockState == null) return;
             windowTabsPanel.Children.Clear();
 
-            // 只有一个窗口时产品名放在星号列左对齐；多窗口时放在标签列右侧右对齐，
-            // 星号列始终保持占位，确保更多按钮始终顶到右上角
-            if (_dockState.WindowIds.Count <= 1)
-            {
-                Grid.SetColumn(singleWindowTitle, 0);
-                singleWindowTitle.HorizontalAlignment = HorizontalAlignment.Left;
-                windowTabsPanel.Visibility = Visibility.Collapsed;
-                addWindowBtn.Visibility = Visibility.Collapsed;
-                return;
-            }
-
-            Grid.SetColumn(singleWindowTitle, 1);
-            singleWindowTitle.HorizontalAlignment = HorizontalAlignment.Right;
-
-            windowTabsPanel.Visibility = Visibility.Visible;
-            addWindowBtn.Visibility = Visibility.Visible;
-
+            // 逐个构建切换按钮（按钮数字 = 窗口序号，对应 Ctrl+1~9）；
+            // 具体的可见性/对齐统一交由 UpdateTitleBarDisplay 依据窗口数量与悬停态决定
             for (int i = 0; i < _dockState.WindowIds.Count; i++)
             {
                 var winId = _dockState.WindowIds[i];
@@ -479,6 +510,9 @@ namespace SideDesk
                 if (config == null) continue;
 
                 var index = i;
+                // 激活项蓝底(BrushAccent)：文字取语义画刷 BrushAccentText(深浅主题均为白)，与蓝底最高对比；
+                // 原先固定用 BrushTextMain(浅色主题近黑)→黑字压蓝底对比浑浊、看不清。非激活项透明底仍用 BrushTextMain
+                bool isActive = i == _dockState.ActiveIndex;
                 var btn = new Button
                 {
                     Content = $"{i + 1}",
@@ -488,12 +522,17 @@ namespace SideDesk
                     Padding = new Thickness(4, 2, 4, 2),
                     FontSize = 11,
                     Cursor = System.Windows.Input.Cursors.Hand,
-                    Background = (i == _dockState.ActiveIndex)
+                    Background = isActive
                         ? (Brush)FindResource("BrushAccent")
                         : Brushes.Transparent,
-                    Foreground = (Brush)FindResource("BrushTextMain"),
+                    Foreground = isActive
+                        ? (Brush)FindResource("BrushAccentText")
+                        : (Brush)FindResource("BrushTextMain"),
                     BorderThickness = new Thickness(0)
                 };
+                // 套用圆角样式：默认 Button 模板无圆角，改用带 CornerRadius 的 WindowTabButton 模板；
+                // 上面按激活态设置的 Background/Foreground 经 TemplateBinding 保留，高亮与主题色不受影响
+                btn.Style = (Style)FindResource("WindowTabButton");
                 btn.Click += (s, e) => WindowTab_Click(index);
 
                 // 右键菜单
@@ -545,6 +584,66 @@ namespace SideDesk
 
                 windowTabsPanel.Children.Add(btn);
             }
+
+            UpdateTitleBarDisplay();
+        }
+
+        /// <summary>
+        /// 依据窗口数量与标题栏悬停态更新标题栏显示：
+        /// 单窗口 → 只显示产品名（左对齐星号列），无序号、无切换按钮；
+        /// 多窗口平时 → 显示当前窗口序号 + 右侧产品名，折叠切换按钮；
+        /// 多窗口悬停 → 隐藏序号与产品名，展开切换按钮与添加按钮。
+        /// </summary>
+        private void UpdateTitleBarDisplay()
+        {
+            if (_dockState == null) return;
+
+            int count = _dockState.WindowIds.Count;
+
+            // 只有一个窗口（一个 bar）：不显示序号，只显示产品名
+            if (count <= 1)
+            {
+                activeIndexBadge.Visibility = Visibility.Collapsed;
+                windowTabsPanel.Visibility = Visibility.Collapsed;
+                addWindowBtn.Visibility = Visibility.Collapsed;
+                singleWindowTitle.Visibility = Visibility.Visible;
+                return;
+            }
+
+            // 多窗口：产品名固定在弹性列（col 1，尾部可省略），序号在 Auto 列（col 0）保证完整显示
+            if (_isTitleBarHovered)
+            {
+                // 悬停：隐藏序号与产品名，展开切换按钮 + 添加按钮
+                activeIndexBadge.Visibility = Visibility.Collapsed;
+                singleWindowTitle.Visibility = Visibility.Collapsed;
+                windowTabsPanel.Visibility = Visibility.Visible;
+                addWindowBtn.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                // 平时：显示当前活动窗口序号 + 产品名，折叠切换按钮
+                int active = _dockState.ActiveIndex;
+                if (active < 0 || active >= count) active = 0;
+                activeIndexText.Text = (active + 1).ToString();
+                activeIndexBadge.Visibility = Visibility.Visible;
+                singleWindowTitle.Visibility = Visibility.Visible;
+                windowTabsPanel.Visibility = Visibility.Collapsed;
+                addWindowBtn.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private void TitleBar_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
+        {
+            if (_isTitleBarHovered) return;
+            _isTitleBarHovered = true;
+            UpdateTitleBarDisplay();
+        }
+
+        private void TitleBar_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
+        {
+            if (!_isTitleBarHovered) return;
+            _isTitleBarHovered = false;
+            UpdateTitleBarDisplay();
         }
 
         private void WindowTab_Click(int index)
@@ -1064,6 +1163,29 @@ namespace SideDesk
                 _configManager?.AddToAllDocks(newWin);
                 ((App)Application.Current).RefreshAllWindowTabs();
                 WindowTab_Click(_dockState!.WindowIds.Count - 1);
+
+                if (resultShareMode == "reference")
+                {
+                    // 引用整窗口：服务端已把源窗口每个模块展开成 item 级引用记录，并在 data.items 返回模块明细。
+                    // 客户端据此建 panels（绑源 itemId）+ 逐个全量拉行，内容与源窗口实时共享；
+                    // 行可见性/实时通知/失效清理均由服务端 item 级记录自动接管（逻辑集中在 CloudSyncService，两个导入入口共用）。
+                    var refItems = data["items"] as Newtonsoft.Json.Linq.JArray;
+                    if (refItems != null && refItems.Count > 0)
+                    {
+                        await CloudSyncService.Instance.BuildReferenceWindowPanelsAsync(
+                            newWin, refItems, resultShareMode, resultShareId, resultShareCode,
+                            resultAllowEdit, resultAllowDelete, resultAllowReShare);
+                        _configManager?.Save();
+                    }
+                    RefreshNativePanels();
+                }
+                else
+                {
+                    // copy 模式：服务端已把源窗口全部模块复制到新窗口(resultBarServerId)，但本地 newWin.Panels 为空。
+                    // SyncNowAsync 只同步行数据、不拉结构，必须用 ReconcileAsync(pushLocal:false) 拉服务端结构把模块合并进来并全量拉行；
+                    // 否则导入后窗口是空的（看起来“组件全丢了”），要等下次重启对账才补齐。
+                    await CloudSyncService.Instance.ReconcileAsync(pushLocal: false);
+                }
 
                 ThemedMessageBox.Show(this,
                     Framework.Lang.TF("share.screenImportSucceeded", barTitleResult, resultShareMode == "copy" ? Framework.Lang.T("share.copyIndependent") : Framework.Lang.T("share.referenceRealtime")),
@@ -1962,7 +2084,9 @@ namespace SideDesk
                 {
                     try
                     {
-                        var cacheDir = Path.Combine(Path.GetTempPath(), "SideDesk", "notif-images");
+                        var cacheDir = Path.Combine(
+                            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                            "SideDesk", "cache", "notif-images");
                         Directory.CreateDirectory(cacheDir);
                         var fileName = $"{source.GetHashCode():X8}{Path.GetExtension(new Uri(source).AbsolutePath)}";
                         var cachePath = Path.Combine(cacheDir, fileName);

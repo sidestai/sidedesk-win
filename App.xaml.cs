@@ -109,6 +109,13 @@ namespace SideDesk
             // 旧日志文件迁移到统一的 Logs 目录（需在各类日志器写入前执行）
             MigrateLogsToLogsFolder();
 
+            // 每次启动清空上一次运行留下的调试日志（日志已改为固定名、不再按天分文件）
+            // 例外：windowlog_*.txt 是「使用时长/屏幕时长」功能的历史数据，保留不清
+            ClearDebugLogsOnStartup();
+
+            // 窗口使用时长原始日志 windowlog_*.txt 仅保留最近 7 天，清理更早的（数据已聚合入库，与开关状态无关）
+            Services.ScreenTimeHourlyService.PruneOldWindowLogs();
+
             // 网络请求日志开关（默认开启；日志写入 %LocalAppData%\SideDesk\Logs\http.log）
             Services.HttpLog.Enabled = AppSettings.HttpLogEnabled;
 
@@ -118,6 +125,8 @@ namespace SideDesk
             // 加载窗口配置
             WindowConfigs = WindowConfigManager.Load();
             WindowConfigs.EnsureDefault();
+            // 兜底：老用户曾删光所有 bar（EnsureDefault 已置标不再播种）或数据异常为空时补一个空 bar，避免侧边栏空白且右键失效
+            WindowConfigs.EnsureAtLeastOneBar();
 
             // 初始化数据轮询服务（中央数据源）
             Services.DataPollingService.Instance.SyncFromConfigs(WindowConfigs);
@@ -284,19 +293,45 @@ namespace SideDesk
             // 启动时验证 Token 有效性（延迟 2 秒，避免阻塞启动流程）
             _ = ValidateTokenOnStartupAsync();
 
-            // 【已禁用】启动 5 秒后静默检查更新 - 2026-06-09 禁用，解决程序自动重启问题
-            // 如果以后需要启用，请取消下面的注释
-            //_ = Task.Delay(5000).ContinueWith(async _ =>
-            //{
-            //    try
-            //    {
-            //        await VelopackUpdateService.Instance.StartSilentUpdateCheckAndDownloadAsync();
-            //    }
-            //    catch (Exception ex)
-            //    {
-            //        System.Diagnostics.Debug.WriteLine($"Silent update check error: {ex.Message}");
-            //    }
-            //}, TaskScheduler.Default);
+            // 启动 5 秒后静默检查并后台下载更新（尊重设置里的「自动更新」开关）。
+            // 注意：静默流程只检查 + 下载，绝不自动应用/重启（2026-06-09 曾因自动重启禁用，
+            // 现恢复为“下载完成后通知条提示，由用户在设置→关于里手动重启更新”）。
+            Services.VelopackUpdateService.Instance.UpdateReadyChanged += OnUpdateReadyNotify;
+            _ = Task.Delay(5000).ContinueWith(async _ =>
+            {
+                try
+                {
+                    await Services.VelopackUpdateService.Instance.StartSilentUpdateCheckAndDownloadAsync();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Silent update check error: {ex.Message}");
+                }
+            }, TaskScheduler.Default);
+        }
+
+        /// <summary>静默下载完成后触发：在主窗口通知条提示新版本就绪，点击打开设置→关于页手动应用重启</summary>
+        private void OnUpdateReadyNotify()
+        {
+            var version = Services.VelopackUpdateService.Instance.ReadyUpdateInfo?.TargetFullRelease.Version.ToString() ?? "";
+            Dispatcher.Invoke(() => ShowUpdateReadyNotification(version));
+        }
+
+        /// <summary>在所有主窗口上显示蓝色更新就绪通知，点击后打开设置→关于页（内含「应用更新并重启」按钮）</summary>
+        private void ShowUpdateReadyNotification(string version)
+        {
+            var blue = new System.Windows.Media.SolidColorBrush(
+                (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#2980B9"));
+            blue.Freeze();
+            foreach (var mw in _windows)
+            {
+                if (mw.IsLoaded)
+                {
+                    mw.DismissNotificationByTag("update-ready"); // 先清旧条目，避免重复检查时堆叠
+                    mw.ShowNotification(Framework.Lang.TF("update.readyNotification", version), blue, () =>
+                        OpenSettings(sw => sw.NavigateToPage("about")), "update-ready");
+                }
+            }
         }
 
         /// <summary>启动时验证 Token 有效性：延迟 2 秒后执行实际验证，避免阻塞启动流程</summary>
@@ -362,6 +397,13 @@ namespace SideDesk
                     MarkAccountOffline(false);
                     AppSettings.AccountLoginTime = DateTime.Now;
                     AppSettings.HasLoggedInBefore = true; // 确认会员身份
+                    // 登录态有效：默认开启云同步（除非用户主动关闭过 CloudSyncUserOptOut）
+                    bool justEnabledCloudSync = false;
+                    if (!AppSettings.CloudSyncUserOptOut && !AppSettings.EnableCloudSync)
+                    {
+                        AppSettings.EnableCloudSync = true;
+                        justEnabledCloudSync = true;
+                    }
                     AppSettings.Save();
 
                     // 拉取用户详情（昵称、头像等）
@@ -373,6 +415,11 @@ namespace SideDesk
 
                     // 登录态有效 → 同步服务端 MCP 工具注册表
                     try { _ = Services.McpToolRegistryService.Instance.SyncAsync(); } catch { }
+                    // 本次刚默认开启云同步 → 立即对账一次（OnStartup 时尚未开启、未触发同步；已开启时不重复启动）
+                    if (justEnabledCloudSync)
+                    {
+                        try { Services.CloudSyncService.Instance.Start(); } catch { }
+                    }
                     return;
                 }
 
@@ -441,6 +488,75 @@ namespace SideDesk
                             OpenSettings(sw => sw.SwitchToAccountPage()), "logged-out");
                 }
             });
+        }
+
+        /// <summary>
+        /// 登录成功后的核心持久化（与具体 UI 无关，可供任意登录入口调用）：
+        /// 保存 token/账户信息、登录后默认开启云同步（除非用户主动关闭过）、启动长连接与云同步对账。
+        /// token 为空时回退读取 <see cref="LoginWindow.LastToken"/>（WebView2 内嵌登录兜底路径拦截到的 token）。
+        /// 幂等：token 为空或已应用过则直接返回 false，避免多入口重复启动。
+        /// </summary>
+        public bool ApplyLoginSuccessCore(string? token = null)
+        {
+            token ??= LoginWindow.LastToken;
+            if (string.IsNullOrEmpty(token)) return false;
+
+            var s = AppSettings;
+            if (s.AccountToken == token) return false; // 已应用过（如多个入口同时订阅登录成功事件），不重复处理
+
+            s.AccountToken = token;
+            s.AccountName = LoginWindow.LastUserName;
+            s.AccountLoginTime = DateTime.Now;
+            s.HasLoggedInBefore = true; // 记录会员身份：曾经登录过
+            // 团队选择为空则默认切到"个人"(corpId='')
+            if (string.IsNullOrWhiteSpace(s.SelectedCorpId))
+            {
+                s.SelectedCorpId = null;
+                s.SelectedCorpName = null;
+            }
+            // 登录后默认开启云同步（除非用户曾主动关闭过 → CloudSyncUserOptOut）
+            if (!s.CloudSyncUserOptOut)
+                s.EnableCloudSync = true;
+            s.Save();
+
+            AccountTokenExpiredMessage = null; // 清除过期提示
+            MarkAccountVerified();             // 登录接口本身即接口确认
+            MarkAccountOffline(false);         // 清除离线标记（内部亦会关闭掉线通知）
+            DismissLoggedOutNotification();    // 关闭主窗口上的掉线登录提示
+
+            try { Services.BackendWebSocketService.Instance.Start(token!); } catch { } // 启动后端 WebSocket 长连接
+            _ = Services.McpToolRegistryService.Instance.SyncAsync(); // 立即拉取服务端 MCP 工具注册表
+            // 云同步已开启 → 立即对账一次（上传本地结构并回写 ServerId，分享等入口随之可用）
+            if (s.EnableCloudSync)
+            {
+                try { Services.CloudSyncService.Instance.Start(); } catch { }
+            }
+            return true;
+        }
+
+        /// <summary>WebView2 兜底登录窗的一次性「登录成功」回调（由 <see cref="StartLoginAsync"/> 统一管理，避免重复订阅）</summary>
+        private Action? _loginSucceededHandler;
+
+        /// <summary>
+        /// 统一登录入口：默认打开 WebView2 内嵌登录窗（保留原有一次性 LoginSucceeded 回调）。
+        /// 系统浏览器 OAuth2 登录改由登录页「用浏览器打开」入口触发（LoginWindow.OnWebMessageReceived），
+        /// 其成功后同样经 LoginSucceeded 回到本入口回调，完成核心持久化。
+        /// 登录核心持久化（保存 token、默认开启云同步、启动长连接与对账）在回调内完成；
+        /// <paramref name="onSuccess"/> 于登录成功、核心持久化之后在 UI 线程回调，供各入口刷新自身账户 UI / 拉取用户详情。
+        /// </summary>
+        public Task StartLoginAsync(Action? onSuccess = null)
+        {
+            if (_loginSucceededHandler != null) LoginWindow.LoginSucceeded -= _loginSucceededHandler;
+            _loginSucceededHandler = () =>
+            {
+                LoginWindow.LoginSucceeded -= _loginSucceededHandler;
+                _loginSucceededHandler = null;
+                ApplyLoginSuccessCore();
+                onSuccess?.Invoke();
+            };
+            LoginWindow.LoginSucceeded += _loginSucceededHandler;
+            LoginWindow.Open();
+            return Task.CompletedTask;
         }
 
         /// <summary>关闭所有主窗口上的掉线登录提示（登录成功后调用）</summary>
@@ -1083,6 +1199,21 @@ namespace SideDesk
                     // pushLocal=false 只拉不推，避免多设备间循环触发
                     _ = Services.CloudSyncService.Instance.ReconcileAsync(pushLocal: false);
                 }
+                else if (evt == "share_item_meta_updated" && data != null)
+                {
+                    // reference 分享：源模块元数据变更（title/itemData/type/groupId）
+                    var itemServerId = (string?)data["itemServerId"];
+                    if (!string.IsNullOrEmpty(itemServerId))
+                        _ = HandleShareItemMetaUpdatedAsync(itemServerId!);
+                }
+                else if (evt == "share_source_bar_updated" && data != null)
+                {
+                    // bar 级 reference 分享：源窗口结构变更（模块增删/窗口消失）
+                    var sourceBarId = (string?)data["sourceBarId"];
+                    var action = (string?)data["action"] ?? "items_changed";
+                    if (!string.IsNullOrEmpty(sourceBarId))
+                        _ = HandleShareSourceBarUpdatedAsync(sourceBarId!, action);
+                }
                 else if (evt == "team_join_request" && data != null)
                 {
                     // 团队加入申请（管理员收到）：气泡通知 + 设置窗团队页刷新
@@ -1248,6 +1379,109 @@ namespace SideDesk
                 foreach (var mw in _windows)
                 {
                     if (mw.IsLoaded)
+                        mw.RefreshNativePanels();
+                }
+            }));
+        }
+
+        /// <summary>
+        /// 处理源模块元数据变更通知（reference 分享）：拉取最新元数据 + 行数据，刷新本地面板。
+        /// 触发场景：属主修改模块 title/itemData，或导入者（allowEdit）修改后属主与其他导入者同步。
+        /// </summary>
+        private async System.Threading.Tasks.Task HandleShareItemMetaUpdatedAsync(string itemServerId)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(AppSettings.AccountToken)) return;
+                Models.PanelItem? target = null;
+                foreach (var win in WindowConfigs.Windows)
+                {
+                    target = FindPanelByServerId(win.Panels, itemServerId);
+                    if (target != null) break;
+                }
+                if (target == null) return;  // 本地未绑定该模块（可能是行级分享或已移除）
+
+                bool metaChanged = await Services.CloudSyncService.Instance.PullSharedItemMetaAsync(target);
+                bool rowsChanged = await Services.CloudSyncService.Instance.PullItemMergeFullAsync(target);
+                System.Diagnostics.Debug.WriteLine($"[App] share item meta update applied: {target.Type}, meta={metaChanged}, rows={rowsChanged}");
+                if (metaChanged || rowsChanged)
+                {
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        foreach (var mw in _windows)
+                            if (mw.IsLoaded) mw.RefreshNativePanels();
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[App] failed to handle share item meta update: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 处理源窗口结构变更通知（bar 级 reference 分享）：按 SourceBarId 定位入口窗口，diff 更新或整体移除。
+        /// action='items_changed'：源窗口下模块增删，重拉源 bar items diff 本地面板；
+        /// action='bar_removed'：源窗口整体消失，移除本地入口窗口（等同 share_cancelled(bar)）。
+        /// </summary>
+        private async System.Threading.Tasks.Task HandleShareSourceBarUpdatedAsync(string sourceBarId, string action)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(AppSettings.AccountToken)) return;
+
+                if (action == "bar_removed")
+                {
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        var win = WindowConfigs.Windows.FirstOrDefault(w => w.SourceBarId == sourceBarId);
+                        if (win == null) return;
+                        WindowConfigs.Windows.Remove(win);
+                        WindowConfigs.Save();
+                        foreach (var mw in _windows)
+                            if (mw.IsLoaded) mw.RemoveSharedWindowById(win.Id);
+                        System.Diagnostics.Debug.WriteLine($"[App] share source bar removed: {win.Name}");
+                    }));
+                    return;
+                }
+
+                // items_changed：定位入口窗口 → 拉源 bar items → diff 更新
+                Models.WindowConfig? entry = null;
+                foreach (var w in WindowConfigs.Windows)
+                    if (w.SourceBarId == sourceBarId) { entry = w; break; }
+                if (entry == null) return;
+
+                bool changed = await Services.CloudSyncService.Instance.PullSharedSourceBarAsync(entry);
+                System.Diagnostics.Debug.WriteLine($"[App] share source bar items changed: {entry.Name}, {(changed ? "updated" : "no change")}");
+                if (changed)
+                {
+                    WindowConfigs.Save();
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        foreach (var mw in _windows)
+                            if (mw.IsLoaded) mw.RefreshNativePanels();
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[App] failed to handle share source bar update: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 某个 bar（小屏）的组件被增删改后，刷新其他正在显示同一 bar 的侧边栏，使其同步呈现变更。
+        /// 各侧边栏共享同一 WindowConfig 实例，故仅需重渲染即可反映变更；except 为发起变更的窗口（已自行渲染，跳过）。
+        /// </summary>
+        public void RefreshWindowsShowingBar(string barId, MainWindow? except)
+        {
+            if (string.IsNullOrEmpty(barId)) return;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                foreach (var mw in _windows)
+                {
+                    if (!mw.IsLoaded || ReferenceEquals(mw, except)) continue;
+                    if (mw.IsShowingBar(barId))
                         mw.RefreshNativePanels();
                 }
             }));
@@ -2190,12 +2424,12 @@ namespace SideDesk
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                     "SideDesk",
                     "Logs",
-                    $"crash-{DateTime.Now:yyyy-MM-dd-HHmmss}.log");
+                    "crash.log");
                 
                 try
                 {
                     Directory.CreateDirectory(Path.GetDirectoryName(crashLog)!);
-                    File.WriteAllText(crashLog, $"""
+                    File.AppendAllText(crashLog, $"""
                         崩溃时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}
                         异常类型: {ex.GetType().FullName}
                         异常消息: {ex.Message}
@@ -2253,6 +2487,29 @@ namespace SideDesk
         }
 
         /// <summary>
+        /// 每次启动清空上一次运行留下的调试日志：日志不再按天分文件（统一 window.log / crash.log /
+        /// rendering.log / http.log / keyboard.log / lang-missing.log 等固定名），重开即清，只保留本次运行的记录。
+        /// 例外：windowlog_*.txt 是「使用时长分析 / 屏幕时长」功能按天累积的历史数据源，必须保留、且仍按天分文件。
+        /// </summary>
+        private static void ClearDebugLogsOnStartup()
+        {
+            try
+            {
+                string logsDir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SideDesk", "Logs");
+                if (!Directory.Exists(logsDir)) return;
+                foreach (var f in Directory.GetFiles(logsDir))
+                {
+                    string name = Path.GetFileName(f);
+                    // 保留窗口使用时长数据（windowlog_yyyyMMdd.txt），其余调试日志一律清掉
+                    if (name.StartsWith("windowlog_", StringComparison.OrdinalIgnoreCase)) continue;
+                    try { File.Delete(f); } catch { }
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>
         /// 记录崩溃信息
         /// </summary>
         private void LogCrash(string source, Exception ex, string? extra = null)
@@ -2277,7 +2534,7 @@ namespace SideDesk
                     "Logs");
                 Directory.CreateDirectory(logDir);
                 
-                string crashLog = Path.Combine(logDir, $"crash-{DateTime.Now:yyyy-MM-dd}.log");
+                string crashLog = Path.Combine(logDir, "crash.log");
                 File.AppendAllText(crashLog, logLine);
             }
             catch { }
@@ -2410,7 +2667,7 @@ namespace SideDesk
             }
         }
 
-        /// <summary>渲染诊断信息追加写入 %LocalAppData%\SideDesk\Logs\rendering-yyyy-MM-dd.log</summary>
+        /// <summary>渲染诊断信息追加写入 %LocalAppData%\SideDesk\Logs\rendering.log</summary>
         private static void WriteRenderingLog(System.Collections.Generic.List<string> lines)
         {
             try
@@ -2421,7 +2678,7 @@ namespace SideDesk
                 var sb = new System.Text.StringBuilder();
                 sb.AppendLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 渲染管线诊断");
                 foreach (var l in lines) sb.AppendLine("  " + l);
-                File.AppendAllText(Path.Combine(logDir, $"rendering-{DateTime.Now:yyyy-MM-dd}.log"), sb.ToString());
+                File.AppendAllText(Path.Combine(logDir, "rendering.log"), sb.ToString());
             }
             catch { }
         }

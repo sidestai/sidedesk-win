@@ -54,6 +54,12 @@ namespace SideDesk.Models
         /// <summary>URL 类型打开时使用的 ProgramRegistry Profile ID（空=不指定）</summary>
         public string ProfileId { get; set; }
 
+        /// <summary>高级项（Type="advanced"）动作配置 JSON（AdvancedItemConfig 序列化）</summary>
+        public string AdvancedConfigJson { get; set; }
+
+        /// <summary>组内排序序号（越小越靠前）：随行 content 持久化与云同步，拖拽调序后重排</summary>
+        public int SortIndex { get; set; }
+
         [JsonIgnore]
         public IntPtr WindowHandle { get; set; } = IntPtr.Zero;
 
@@ -334,14 +340,37 @@ namespace SideDesk.Models
         public static void AddItem(string groupId, QuickItem item)
         {
             var p = FindPanel(groupId);
-            if (p != null)
-                (p.QuickItems ??= new List<QuickItem>()).Add(item);
+            if (p == null) return;
+            var list = p.QuickItems ??= new List<QuickItem>();
+            item.SortIndex = list.Count; // 新项追加到末尾并赋予末位序号（列表始终按 SortIndex 有序）
+            list.Add(item);
         }
 
         public static void RemoveItem(string groupId, string itemId)
         {
             var p = FindPanel(groupId);
             p?.QuickItems?.RemoveAll(i => i.Id == itemId);
+        }
+
+        /// <summary>重排分组内所有项的 SortIndex 为 0..n-1（拖拽调序/跨组移动后调用）。</summary>
+        public static void ReindexItems(string groupId)
+        {
+            var p = FindPanel(groupId);
+            if (p?.QuickItems == null) return;
+            for (int i = 0; i < p.QuickItems.Count; i++)
+                p.QuickItems[i].SortIndex = i;
+        }
+
+        /// <summary>
+        /// 按 SortIndex 稳定排序（相同序号按创建时间兜底，保证多端一致）。
+        /// 本地加载/云端拉取后调用；旧数据无 SortIndex 时全为 0，退化为按创建时间排序。
+        /// </summary>
+        public static void SortByIndex(List<QuickItem>? items)
+        {
+            if (items == null || items.Count < 2) return;
+            var sorted = items.OrderBy(i => i.SortIndex).ThenBy(i => i.CreatedAt).ToList();
+            for (int i = 0; i < items.Count; i++)
+                items[i] = sorted[i];
         }
 
         /// <summary>门面模式下属性直接代理到面板，无需额外回写（保留方法签名兼容调用点）。</summary>

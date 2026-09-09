@@ -22,8 +22,6 @@ namespace SideDesk
         private bool _isLoading = true;
         private ProgramRegistryManager _registry = null!;
         private Guid _selectedDesktopId = Guid.Empty;
-        /// <summary>非模态登录窗登录成功回调（用于关闭设置窗前解除订阅）</summary>
-        private Action? _loginSucceededHandler;
 
         /// <summary>根据当前编辑上下文获取指定显示器的停靠配置</summary>
         private MonitorDockSettings ResolveMonitorConfig(int monitorIndex)
@@ -45,11 +43,6 @@ namespace SideDesk
             Closed += (s, e) =>
             {
                 try { Services.CloudSyncService.Instance.StatusChanged -= OnCloudSyncStatusChanged; } catch { }
-                if (_loginSucceededHandler != null)
-                {
-                    try { LoginWindow.LoginSucceeded -= _loginSucceededHandler; } catch { }
-                    _loginSucceededHandler = null;
-                }
             };
 
             SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(this, App.IsCurrentThemeLight());
@@ -922,43 +915,17 @@ namespace SideDesk
                 return;
             }
 
-            // 登录：非模态打开登录窗（可继续操作设置窗），成功后经事件回调执行登录后处理
-            if (_loginSucceededHandler != null) LoginWindow.LoginSucceeded -= _loginSucceededHandler;
-            _loginSucceededHandler = () =>
-            {
-                LoginWindow.LoginSucceeded -= _loginSucceededHandler;
-                _loginSucceededHandler = null;
-                ApplyLoginSuccess();
-            };
-            LoginWindow.LoginSucceeded += _loginSucceededHandler;
-            LoginWindow.Open();
+            // 登录：统一入口（优先系统浏览器 OAuth2 授权码 + PKCE，失败/超时降级 WebView2 内嵌登录窗）
+            // 核心持久化由 App.StartLoginAsync 内部完成，成功后回调 ApplyLoginSuccess 刷新本页账户 UI 并拉取用户详情
+            await _app.StartLoginAsync(ApplyLoginSuccess);
         }
 
-        /// <summary>登录成功后的处理：保存 Token、启动长连接、刷新账户 UI（由登录成功事件触发）</summary>
+        /// <summary>登录成功后的处理：核心持久化交给 App（含默认开启云同步），本页仅刷新账户 UI（由登录成功事件触发）</summary>
         private void ApplyLoginSuccess()
         {
+            _app.ApplyLoginSuccessCore(); // 幂等：保存 token、默认开启云同步、启动长连接与同步对账
             var s = _app.AppSettings;
-            if (string.IsNullOrEmpty(LoginWindow.LastToken)) return;
-
-            s.AccountToken = LoginWindow.LastToken;
-            s.AccountName = LoginWindow.LastUserName;
-            s.AccountLoginTime = DateTime.Now;
-            s.HasLoggedInBefore = true; // 记录会员身份：曾经登录过
-            // 登录成功后，若团队选择为空则默认切到"个人"(corpId='')
-            if (string.IsNullOrWhiteSpace(s.SelectedCorpId))
-            {
-                s.SelectedCorpId = null;
-                s.SelectedCorpName = null;
-            }
-            s.Save();
-            App.AccountTokenExpiredMessage = null; // 清除过期提示
-            App.MarkAccountVerified(); // 登录接口本身即接口确认
-            App.MarkAccountOffline(false); // 清除离线标记（内部亦会关闭掉线通知）
-            _app.DismissLoggedOutNotification(); // 关闭主窗口上的掉线登录提示
-
-            // 登录成功 → 启动后端 WebSocket 长连接
-            try { Services.BackendWebSocketService.Instance.Start(s.AccountToken!); } catch { }
-            _ = Services.McpToolRegistryService.Instance.SyncAsync(); // 登录：立即拉取服务端 MCP 工具注册表
+            if (string.IsNullOrEmpty(s.AccountToken)) return;
 
             RefreshAccountUI();
             RefreshCorpSelector();
@@ -987,6 +954,7 @@ namespace SideDesk
             }
 
             s.EnableCloudSync = on;
+            s.CloudSyncUserOptOut = !on; // 记录用户主动选择：关闭=主动退出（后续登录不再自动开启），开启=取消退出
             s.Save();
             try
             {
@@ -1088,6 +1056,10 @@ namespace SideDesk
 
         #region 云空间管理
 
+        /// <summary>云盘归属团队显示名：未指定/空显示为“个人”</summary>
+        private static string CorpDisplay(string? corpId, string? corpName) =>
+            string.IsNullOrEmpty(corpId) ? Framework.Lang.T("common.personal") : (string.IsNullOrEmpty(corpName) ? corpId! : corpName!);
+
         private void RefreshCloudSpaceList()
         {
             cloudSpaceListPanel.Children.Clear();
@@ -1160,6 +1132,21 @@ namespace SideDesk
                 {
                     if (space.RefType == "webdav") linkedDav = WebDavSourceManager.Find(space.RefId);
                     else linkedS3 = S3SourceManager.Find(space.RefId);
+                }
+
+                // 团队徽章：关联存储源归属团队时，在名称行尾标注团队名（创建时快照）
+                string? linkedCorpId = linkedS3?.CorpId ?? linkedDav?.CorpId;
+                string? linkedCorpName = linkedS3?.CorpName ?? linkedDav?.CorpName;
+                if (!string.IsNullOrEmpty(linkedCorpId))
+                {
+                    nameRow.Children.Add(new TextBlock
+                    {
+                        Text = Framework.Lang.TF("settings.cloudDriveTeam", CorpDisplay(linkedCorpId, linkedCorpName)),
+                        FontSize = 10,
+                        Foreground = (Brush)FindResource("BrushTextMuted"),
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Margin = new Thickness(6, 0, 0, 0), Opacity = 0.85
+                    });
                 }
 
                 var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
@@ -1345,6 +1332,18 @@ namespace SideDesk
                 return new TextBlock { Text = Framework.Lang.T(key), Foreground = (Brush)FindResource("BrushTextMain"), FontSize = 12, Margin = new Thickness(0, topMargin, 0, 4) };
             }
 
+            // 归属团队：新建显示当前选中的团队（保存时记录），编辑显示已记录的团队（不随切换变更）
+            var settings = _app.AppSettings;
+            string teamDisplay = davSource != null
+                ? CorpDisplay(davSource.CorpId, davSource.CorpName)
+                : CorpDisplay(settings.SelectedCorpId, settings.SelectedCorpName);
+            root.Children.Add(new TextBlock
+            {
+                Text = Framework.Lang.TF("settings.cloudDriveTeam", teamDisplay),
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                FontSize = 11, Margin = new Thickness(0, 0, 0, 4)
+            });
+
             root.Children.Add(MakeLabel("common.name", 0));
             var davNameBox = new TextBox { Text = davSource?.Name ?? editing.Name, Style = (Style)FindResource("GlobalTextBoxStyle") };
             root.Children.Add(davNameBox);
@@ -1411,7 +1410,13 @@ namespace SideDesk
                 var built = BuildDavFromForm();
                 if (built == null) return;
 
-                if (davSource == null) WebDavSourceManager.Add(built);
+                if (davSource == null)
+                {
+                    // 新建：记录归属团队（当前选中的 corp；未选择则空 = 个人）
+                    built.CorpId = settings.SelectedCorpId;
+                    built.CorpName = settings.SelectedCorpName;
+                    WebDavSourceManager.Add(built);
+                }
                 else WebDavSourceManager.Update(built);
 
                 editing.RefType = "webdav";
@@ -1464,6 +1469,18 @@ namespace SideDesk
             {
                 return new TextBlock { Text = Framework.Lang.T(key), Foreground = (Brush)FindResource("BrushTextMain"), FontSize = 12, Margin = new Thickness(0, topMargin, 0, 4) };
             }
+
+            // 归属团队：新建显示当前选中的团队（保存时记录），编辑显示已记录的团队（不随切换变更）
+            var settings = _app.AppSettings;
+            string teamDisplay = isNew
+                ? CorpDisplay(settings.SelectedCorpId, settings.SelectedCorpName)
+                : CorpDisplay(editing.CorpId, editing.CorpName);
+            root.Children.Add(new TextBlock
+            {
+                Text = Framework.Lang.TF("settings.cloudDriveTeam", teamDisplay),
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                FontSize = 11, Margin = new Thickness(0, 0, 0, 4)
+            });
 
             root.Children.Add(MakeLabel("common.name", 0));
             var nameBox = new TextBox { Text = editing.Name, Style = (Style)FindResource("GlobalTextBoxStyle") };
@@ -1578,7 +1595,13 @@ namespace SideDesk
                 var built = BuildFromForm();
                 if (built == null) return;
 
-                if (isNew) S3SourceManager.Add(built);
+                if (isNew)
+                {
+                    // 新建：记录归属团队（当前选中的 corp；未选择则空 = 个人）
+                    built.CorpId = settings.SelectedCorpId;
+                    built.CorpName = settings.SelectedCorpName;
+                    S3SourceManager.Add(built);
+                }
                 else S3SourceManager.Update(built);
 
                 // 同步维护关联的云空间条目（列表中可打开使用）
@@ -3287,13 +3310,13 @@ namespace SideDesk
                 }
             };
             var iconPath = app.IconPath;
-            Task.Run(() =>
+            // 节流加载：避免设置页批量渲染瓦片时对大量应用无上限并发提图标引发 ExtractAssociatedIcon 瞬时失败风暴
+            _ = FaviconService.LoadFileIconThrottledAsync(iconPath).ContinueWith(t =>
             {
-                var src = FaviconService.LoadFileIcon(iconPath);
-                if (src == null) return;
+                if (t.Result == null) return;
                 Dispatcher.BeginInvoke(() => tile.Child = new Image
                 {
-                    Source = src, Width = 28, Height = 28,
+                    Source = t.Result, Width = 28, Height = 28,
                     HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center
                 });
@@ -3357,10 +3380,11 @@ namespace SideDesk
                 list.Children.Add(row);
 
                 var iconPath = app.IconPath;
-                Task.Run(() =>
+                // 节流加载：避免对上百已安装应用无上限并发提图标引发 ExtractAssociatedIcon 瞬时失败风暴
+                var box = iconBox;
+                _ = FaviconService.LoadFileIconThrottledAsync(iconPath).ContinueWith(t =>
                 {
-                    var src = FaviconService.LoadFileIcon(iconPath);
-                    if (src != null) Dispatcher.BeginInvoke(() => iconBox.Source = src);
+                    if (t.Result != null) Dispatcher.BeginInvoke(() => box.Source = t.Result);
                 });
             }
 
@@ -5189,7 +5213,7 @@ namespace SideDesk
 
             // 团队模板需同步删后端；TeamId 取自展示列表（其他成员创建的远程模板不在本地文件中）
             string? teamId = _displayedTemplates.FirstOrDefault(t => t.Id == templateId)?.TeamId;
-            var userFile = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data-templates", "user-templates.json");
+            var userFile = DataTemplateManager.UserTemplatesFilePath;
             if (System.IO.File.Exists(userFile))
             {
                 try
@@ -5294,12 +5318,15 @@ namespace SideDesk
             // 设置开关状态
             autoUpdateSwitch.IsChecked = _app.AppSettings.EnableAutoUpdate;
 
-            // 显示当前版本
+            // 显示当前版本：产品版本（SemVer 三段，截掉 SourceLink 的 +commit 后缀）+ 文件版本（四段构建戳）
             try
             {
-                var mgr = new UpdateManager(""); // dummy，仅获取版本
-                if (mgr.IsInstalled)
-                    versionText.Text = Framework.Lang.TF("settings.versionLabel", mgr.CurrentVersion);
+                var fvi = System.Diagnostics.FileVersionInfo.GetVersionInfo(Environment.ProcessPath ?? "");
+                var fileVersion = fvi.FileVersion ?? "";
+                var productVersion = (fvi.ProductVersion ?? "").Split('+')[0];
+                if (string.IsNullOrEmpty(productVersion)) productVersion = fileVersion;
+                versionText.Text = Framework.Lang.TF("settings.productVersionLabel", productVersion);
+                fileVersionText.Text = Framework.Lang.TF("settings.fileVersionLabel", fileVersion);
             }
             catch { }
 
@@ -5757,6 +5784,18 @@ namespace SideDesk
                 };
 
                 var ctx = new ContextMenu { Style = (Style)FindResource("DarkContextMenuStyle") };
+
+                // 分享模块：登录 + 窗口与模块均已同步（有 ServerId）+ 引用导入的模块需允许再分享（与侧边栏模块级分享一致）
+                if (!string.IsNullOrEmpty(app.AppSettings.AccountToken)
+                    && !string.IsNullOrEmpty(win.ServerId)
+                    && !string.IsNullOrEmpty(panel.ServerId)
+                    && (panel.ShareMode != "reference" || panel.AllowReShare))
+                {
+                    var shareMi = new MenuItem { Header = Framework.Lang.T("nativePanel.shareModule") };
+                    shareMi.Click += (_, _) => ThemedMessageBox.ShowCreateShareDialog(dialog, win.ServerId!, panel.ServerId!, Framework.Lang.T("nativePanel.shareModule"));
+                    ctx.Items.Add(shareMi);
+                }
+
                 var delMi = new MenuItem { Header = Framework.Lang.T("common.delete"), Foreground = System.Windows.Media.Brushes.IndianRed };
                 delMi.Click += (_, _) =>
                 {
@@ -6074,124 +6113,11 @@ namespace SideDesk
             public string? OwnerType { get; set; }
         }
 
-        /// <summary>分享窗口按钮点击</summary>
-        private async void ShareWindow_Click(object sender, RoutedEventArgs e)
+        /// <summary>分享窗口按钮点击：整个小屏分享（复用统一创建分享对话框，仅传 barServerId）</summary>
+        private void ShareWindow_Click(object sender, RoutedEventArgs e)
         {
             if (sender is not Button btn || btn.Tag is not string serverId) return;
-
-            // 分享模式选择对话框（跟随主题）
-            var dialog = new System.Windows.Window
-            {
-                Title = Framework.Lang.T("settings.createShare"),
-                Width = 320,
-                SizeToContent = SizeToContent.Height,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Owner = this,
-                ResizeMode = ResizeMode.NoResize,
-                Background = (Brush)FindResource("BrushDialogBG"),
-                Foreground = (Brush)FindResource("BrushTextMain")
-            };
-            dialog.SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(dialog, App.IsCurrentThemeLight());
-
-            var radioStyle = (Style)FindResource("DarkRadioButtonStyle");
-            var checkStyle = (Style)FindResource("DarkCheckBoxStyle");
-
-            var panel = new StackPanel { Margin = new Thickness(20) };
-            panel.Children.Add(new TextBlock
-            {
-                Text = Framework.Lang.T("settings.chooseASharingMode"),
-                FontSize = 12,
-                Foreground = (Brush)FindResource("BrushTextSec"),
-                Margin = new Thickness(0, 0, 0, 10)
-            });
-
-            var copyRadio = new RadioButton { Content = Framework.Lang.T("settings.shareModeCopyHint"), Style = radioStyle, IsChecked = true, Margin = new Thickness(0, 0, 0, 8) };
-            var refRadio = new RadioButton { Content = Framework.Lang.T("settings.referenceLiveDataHint"), Style = radioStyle, Margin = new Thickness(0, 0, 0, 16) };
-            panel.Children.Add(copyRadio);
-            panel.Children.Add(refRadio);
-
-            var permLabel = new TextBlock
-            {
-                Text = Framework.Lang.T("settings.importerPermissions"),
-                FontSize = 12,
-                Foreground = (Brush)FindResource("BrushTextSec"),
-                Margin = new Thickness(0, 0, 0, 8)
-            };
-            panel.Children.Add(permLabel);
-            var cbEdit = new CheckBox { Content = Framework.Lang.T("common.allowEditing"), Style = checkStyle, IsChecked = true, Margin = new Thickness(0, 0, 0, 8) };
-            var cbDelete = new CheckBox { Content = Framework.Lang.T("common.allowDeletion"), Style = checkStyle, IsChecked = true, Margin = new Thickness(0, 0, 0, 8) };
-            var cbReShare = new CheckBox { Content = Framework.Lang.T("settings.allowReSharing"), Style = checkStyle, IsChecked = false, Margin = new Thickness(0, 0, 0, 16) };
-            panel.Children.Add(cbEdit);
-            panel.Children.Add(cbDelete);
-            panel.Children.Add(cbReShare);
-
-            var confirmBtn = new Button
-            {
-                Content = Framework.Lang.T("settings.createShareLink"),
-                Style = (Style)FindResource("PrimaryButtonStyle"),
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                Cursor = Cursors.Hand
-            };
-            panel.Children.Add(confirmBtn);
-            dialog.Content = panel;
-
-            // 分享模式与权限联动：
-            // 复制模式 —— 对方获得独立副本，权限固定为全部允许，整个权限区隐藏；
-            // 引用模式 —— 显示权限区，逐项可配，默认全部不选中
-            void ApplyShareMode(bool isCopy)
-            {
-                var vis = isCopy ? Visibility.Collapsed : Visibility.Visible;
-                permLabel.Visibility = cbEdit.Visibility = cbDelete.Visibility = cbReShare.Visibility = vis;
-                cbEdit.IsChecked = cbDelete.IsChecked = cbReShare.IsChecked = isCopy;
-            }
-            copyRadio.Checked += (_, _) => ApplyShareMode(true);
-            refRadio.Checked += (_, _) => ApplyShareMode(false);
-            ApplyShareMode(true);
-
-            confirmBtn.Click += async (_, _) =>
-            {
-                string mode = copyRadio.IsChecked == true ? "copy" : "reference";
-                try
-                {
-                    var app = (App)Application.Current;
-                    using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-                    var payload = Newtonsoft.Json.JsonConvert.SerializeObject(new
-                    {
-                        barServerId = serverId,
-                        shareMode = mode,
-                        allowEdit = cbEdit.IsChecked == true,
-                        allowDelete = cbDelete.IsChecked == true,
-                        allowReShare = cbReShare.IsChecked == true
-                    });
-                    using var content = new System.Net.Http.StringContent(payload, System.Text.Encoding.UTF8, "application/json");
-                    using var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, Constants.URLs.ServerBaseUrl + "/api/sidebar/share/create") { Content = content };
-                    req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + app.AppSettings.AccountToken);
-                    using var resp = await Services.HttpLog.SendAsync(http, req);
-                    string json = await resp.Content.ReadAsStringAsync();
-                    var root = Newtonsoft.Json.Linq.JObject.Parse(json);
-
-                    if (root["code"]?.ToObject<int>() == 200)
-                    {
-                        string code = root["data"]?["shareCode"]?.ToString() ?? "";
-                        dialog.Close();
-                        ThemedMessageBox.ShowShareResult(
-                            this,
-                            code,
-                            $"{Constants.URLs.FrontendBaseUrl}/s/{code}"
-                        );
-                    }
-                    else
-                    {
-                        MessageBox.Show(root["msg"]?.ToString() ?? Framework.Lang.T("settings.createShareFailed"), Framework.Lang.T("common.error"), MessageBoxButton.OK, MessageBoxImage.Warning);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show(Framework.Lang.TF("settings.createShareFailedDetail", ex.Message), Framework.Lang.T("common.error"), MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-            };
-
-            dialog.ShowDialog();
+            ThemedMessageBox.ShowCreateShareDialog(this, serverId, null, Framework.Lang.T("settings.createShare"));
         }
 
         /// <summary>导入窗口按钮点击</summary>
@@ -6244,7 +6170,9 @@ namespace SideDesk
                 {
                     var app = (App)Application.Current;
                     using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-                    var payload = Newtonsoft.Json.JsonConvert.SerializeObject(new { shareCode = code });
+                    // 预生成本地窗口 GUID 随导入请求上报，服务器记录在 share_import.local_id（供取消分享/失效清理按窗口匹配）
+                    string importLocalId = Guid.NewGuid().ToString();
+                    var payload = Newtonsoft.Json.JsonConvert.SerializeObject(new { shareCode = code, localId = importLocalId });
                     using var content = new System.Net.Http.StringContent(payload, System.Text.Encoding.UTF8, "application/json");
                     using var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, Constants.URLs.ServerBaseUrl + "/api/sidebar/share/import") { Content = content };
                     req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + app.AppSettings.AccountToken);
@@ -6254,17 +6182,30 @@ namespace SideDesk
 
                     if (root["code"]?.ToObject<int>() == 200)
                     {
-                        string? barServerId = root["data"]?["barServerId"]?.ToString();
-                        string? shareMode = root["data"]?["shareMode"]?.ToString();
-                        string? sourceBarId = root["data"]?["sourceBarId"]?.ToString();
+                        var dataNode = root["data"];
+                        string? barServerId = dataNode?["barServerId"]?.ToString();
+                        string? shareMode = dataNode?["shareMode"]?.ToString();
+                        string? sourceBarId = dataNode?["sourceBarId"]?.ToString();
+                        string? shareId = dataNode?["shareId"]?.ToString();
+                        string? shareCode = dataNode?["shareCode"]?.ToString();
+                        // 权限快照（服务端导入时固化）：引用模式下客户端据此拦截编辑/删除、判断再分享
+                        bool allowEdit = dataNode?["allowEdit"]?.ToObject<bool>() ?? true;
+                        bool allowDelete = dataNode?["allowDelete"]?.ToObject<bool>() ?? true;
+                        bool allowReShare = dataNode?["allowReShare"]?.ToObject<bool>() ?? false;
 
-                        // 添加到本地窗口配置
+                        // 添加到本地窗口配置（Id 用上报的 localId，与 share_import.local_id 对应，供取消分享/失效清理按窗口匹配）
                         var newWin = new Models.WindowConfig
                         {
+                            Id = importLocalId,
                             Name = Framework.Lang.T("common.importWindow"),
                             ServerId = barServerId,
                             ShareMode = shareMode,
                             SourceBarId = sourceBarId,
+                            ShareId = shareId,
+                            ShareCode = shareCode,
+                            AllowEdit = allowEdit,
+                            AllowDelete = allowDelete,
+                            AllowReShare = allowReShare,
                             OwnerType = "personal"
                         };
                         app.WindowConfigs.AddToAllDocks(newWin);
@@ -6272,6 +6213,26 @@ namespace SideDesk
                         app.RefreshAllWindowTabs();
 
                         dialog.Close();
+                        if (shareMode == "reference")
+                        {
+                            // 引用整窗口：服务端已把源窗口每个模块展开成 item 级引用记录，并在 data.items 返回模块明细。
+                            // 客户端据此建 panels（绑源 itemId）+ 逐个全量拉行，内容与源窗口实时共享；
+                            // 行可见性/实时通知/失效清理均由服务端 item 级记录自动接管（逻辑集中在 CloudSyncService，与主窗口导入入口共用）。
+                            var refItems = dataNode?["items"] as Newtonsoft.Json.Linq.JArray;
+                            if (refItems != null && refItems.Count > 0)
+                            {
+                                await Services.CloudSyncService.Instance.BuildReferenceWindowPanelsAsync(
+                                    newWin, refItems, shareMode!, shareId, shareCode, allowEdit, allowDelete, allowReShare);
+                                app.WindowConfigs.Save();
+                            }
+                            app.RefreshAllMainWindows();
+                        }
+                        else
+                        {
+                            // copy 模式：服务端已把源窗口全部模块复制到新窗口(barServerId)，但本地 newWin.Panels 为空。
+                            // SyncNowAsync 只同步行数据不拉结构，必须用 ReconcileAsync(pushLocal:false) 拉服务端结构把模块补进来，否则窗口空着要等重启。
+                            await Services.CloudSyncService.Instance.ReconcileAsync(pushLocal: false);
+                        }
                         MessageBox.Show(Framework.Lang.TF("settings.importWindowAddedMessage", shareMode == "copy" ? Framework.Lang.T("common.copy") : Framework.Lang.T("common.reference")), Framework.Lang.T("common.importSucceeded"), MessageBoxButton.OK, MessageBoxImage.Information);
                         _ = RefreshWindowListAsync();
                     }
@@ -6334,9 +6295,20 @@ namespace SideDesk
             {
                 string shareId = s["shareId"]?.ToString() ?? "";
                 bool isItem = s["shareLevel"]?.ToString() == "item";
-                string title = isItem
-                    ? (s["itemTitle"]?.ToString() ?? Framework.Lang.T("settings.untitledModule"))
-                    : (s["barTitle"]?.ToString() ?? Framework.Lang.T("settings.untitledWindow"));
+                // 模块显示名：优先后端返回的 title（QuickGroup 等后端已回退 itemData 内分组名）；
+                // 仍为空（便签等显示名不在 title 列的类型）按模块类型回退本地化默认标题；
+                // 后端仅当源模块确实不存在时才返回「已删除」，此处原样显示
+                string itemTitle = s["itemTitle"]?.ToString();
+                if (string.IsNullOrEmpty(itemTitle))
+                {
+                    itemTitle = s["itemType"]?.ToString() switch
+                    {
+                        "QuickGroup" => Framework.Lang.T("common.shortcut"),
+                        "StickyNotes" => Framework.Lang.T("common.stickyNotes"),
+                        _ => Framework.Lang.T("settings.untitledModule")
+                    };
+                }
+                string title = isItem ? itemTitle : (s["barTitle"]?.ToString() ?? Framework.Lang.T("settings.untitledWindow"));
                 string mode = s["shareMode"]?.ToString() == "copy" ? Framework.Lang.T("common.copy") : Framework.Lang.T("common.reference");
                 string level = isItem ? Framework.Lang.T("common.module") : Framework.Lang.T("common.window");
                 string code = s["shareCode"]?.ToString() ?? "";

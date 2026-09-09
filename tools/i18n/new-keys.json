@@ -99,5 +99,10 @@
 
   "连接时间": { "key": "common.connectedAt", "en": "Connected at" },
 
-  "{0} 副本": { "key": "common.copySuffix", "en": "{0} (Copy)" }
+  "{0} 副本": { "key": "common.copySuffix", "en": "{0} (Copy)" },
+
+  "产品版本 v{0}": { "key": "settings.productVersionLabel", "en": "Product version v{0}" },
+  "文件版本 {0}": { "key": "settings.fileVersionLabel", "en": "File version {0}" },
+
+  "新版本 {0} 已下载完成，点击前往更新": { "key": "update.readyNotification", "en": "New version {0} is ready — click to update" }
 }

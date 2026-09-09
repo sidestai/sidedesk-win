@@ -1091,7 +1091,10 @@ FROM local_item WHERE deleted_at IS NULL AND user_id=$scope ORDER BY sort_order,
                 p.FriendUserIds = fuRows.Select(r => r.UserId).Where(s => !string.IsNullOrEmpty(s)).ToList();
             var shortcuts = RowsToList<QuickItem>(rows, "shortcut");
             if (shortcuts != null)
+            {
+                QuickGroupManager.SortByIndex(shortcuts); // 按 SortIndex 恢复用户自定义顺序（sort_order 仅镜像列表顺序）
                 p.QuickItems = shortcuts;
+            }
 
             // 行同步类型面板无行时兜底空列表（区别于从未初始化的 null）；
             // 非行同步面板的列表属性保持 null（RowsToList 无匹配行时返回 null）

@@ -28,7 +28,7 @@ public partial class WebViewWindow : Window
     {
         try
         {
-            await webView.EnsureCoreWebView2Async();
+            await webView.EnsureCoreWebView2Async(await SideDesk.Services.WebView2Shared.GetAsync());
             var core = webView.CoreWebView2;
             core.Settings.AreDefaultContextMenusEnabled = true;
             core.Settings.IsStatusBarEnabled = false;

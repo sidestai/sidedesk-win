@@ -69,7 +69,7 @@ public class HtmlPluginHost : UserControl, IDisposable
         try
         {
             // 共享默认 WebView2 Environment（多插件多实例共用运行时，降低内存开销）
-            await _webView.EnsureCoreWebView2Async();
+            await _webView.EnsureCoreWebView2Async(await SideDesk.Services.WebView2Shared.GetAsync());
             if (_disposed) return;
             var core = _webView.CoreWebView2;
 

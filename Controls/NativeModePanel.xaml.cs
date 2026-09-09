@@ -36,6 +36,12 @@ namespace SideDesk.Controls
         private WindowConfig? _currentWindowConfig;
         private WindowConfigManager? _configManager;
 
+        /// <summary>
+        /// 抑制“bar 变更广播”标记：tab 切换/主题切换/全局刷新等仅展示场景重渲染时置真，
+        /// 避免把非数据变更的重绘广播给其他侧边栏（尤其内嵌网页组件会因此重载闪烁）。
+        /// </summary>
+        private bool _suppressBarBroadcast = false;
+
         // 数字员工全局库（懒加载，模块间共享）
         private DigitalEmployeeManager? _digitalEmployeeManager;
         private DigitalEmployeeManager DigitalEmployees
@@ -109,11 +115,18 @@ namespace SideDesk.Controls
             Instance = this;
             Loaded += NativeModePanel_Loaded;
             Unloaded += NativeModePanel_Unloaded;
-            
+
+            // 底部状态栏统计初始 Tooltip（窄侧边栏数字可能被截断，悬停看完整精确值；后续由计数回调持续刷新）
+            keyCountText.ToolTip = FormatKeyCountTooltip(_keyboardHookService?.TodayKeyCount ?? 0);
+            mouseDistText.ToolTip = FormatMouseDistanceTooltip(_mouseHookService?.TodayMouseDistance ?? 0);
+
             // 订阅主题变更事件，重建所有面板（独立模块 + 快捷分组）以应用新主题颜色
             App.ThemeChanged += () =>
             {
-                RenderPanels();
+                // 主题切换时所有面板各自重建，属仅展示重渲染，不广播给其他侧边栏
+                _suppressBarBroadcast = true;
+                try { RenderPanels(); }
+                finally { _suppressBarBroadcast = false; }
             };
         }
 
@@ -141,7 +154,10 @@ namespace SideDesk.Controls
             // 确保全局服务已启动（只启动一次）
             InitializeGlobalServices();
 
-            RenderPanels();
+            // tab 切换/加载属于“仅展示”：其他侧边栏共享同一 WindowConfig 实例、数据已一致，无需广播
+            _suppressBarBroadcast = true;
+            try { RenderPanels(); }
+            finally { _suppressBarBroadcast = false; }
             RefreshToolsBar();  // 刷新底部工具栏
         }
 
@@ -236,7 +252,13 @@ namespace SideDesk.Controls
         /// 根据当前窗口配置渲染所有面板
         /// </summary>
         /// <summary>外部触发重新渲染面板（例如设置变更后）。</summary>
-        public void RefreshLayout() => RenderPanels();
+        public void RefreshLayout()
+        {
+            // 全局刷新（设置变更）或被其他侧边栏广播触发的重渲染：仅本地重绘、不再回播，避免窗口间级联
+            _suppressBarBroadcast = true;
+            try { RenderPanels(); }
+            finally { _suppressBarBroadcast = false; }
+        }
 
         private Emoji.Wpf.TextBlock? _pinnedPlaceholder; // 置顶区拖放目标占位提示（仅拖拽期间临时显示，复用实例避免重复创建）
 
@@ -334,6 +356,23 @@ namespace SideDesk.Controls
             {
                 UpdateTeleportWidget();
             }
+
+            // 本次渲染若源于对 bar 数据的修改（增删改组件/排序等），通知其他正在显示同一 bar 的侧边栏同步刷新；
+            // 仅展示场景（tab 切换/主题切换/全局刷新）由 _suppressBarBroadcast 抑制，避免级联与无谓重载。
+            if (!_suppressBarBroadcast)
+                BroadcastBarToOtherWindows();
+        }
+
+        /// <summary>
+        /// 广播当前 bar（小屏）的变更：通知其他正在显示同一 bar 的侧边栏同步刷新，
+        /// 使在任一侧边栏上对组件的增删改都能实时反映到显示同一 bar 的其他侧边栏。
+        /// 发起变更的本窗口已自行渲染，作为 except 排除，避免重复重绘。
+        /// </summary>
+        private void BroadcastBarToOtherWindows()
+        {
+            var barId = _currentWindowConfig?.Id;
+            if (string.IsNullOrEmpty(barId) || _mainWindow == null) return;
+            ((App)Application.Current).RefreshWindowsShowingBar(barId, _mainWindow);
         }
 
         /// <summary>构建单个面板的可渲染 widget（可调高包装 + 面板 Id 标记 + 编辑模式拖拽手柄），供全量/增量渲染复用</summary>
@@ -533,8 +572,7 @@ namespace SideDesk.Controls
                 OnShowSettings = (p, t) => ShowPanelSettingsDialog(p, t),
                 OnRenamePanel = (p, t) => PromptRenamePanel(p, t),
                 // 窗口级引用分享限制下发到每个模块（与模块自身限制叠加）
-                WindowEditBlocked = _currentWindowConfig?.IsShareReadOnly ?? false,
-                WindowDeleteBlocked = _currentWindowConfig?.IsShareDeleteBlocked ?? false
+                WindowEditBlocked = _currentWindowConfig?.IsShareReadOnly ?? false
             };
 
             // 模块级分享（已同步且有窗口 ServerId 时显示；引用导入的模块需分享者授予再分享权限）
@@ -576,7 +614,7 @@ namespace SideDesk.Controls
         /// 设置了 item.PanelHeight 时应用固定高度并内部滚动；未设置时为自动高度。
         /// 内容未溢出（无法滚动）时将滑轮事件转发给外层页面，避免吞掉页面滚动。
         /// </summary>
-        private ScrollViewer BuildResizableHost(UIElement content, PanelItem item)
+        private ScrollViewer BuildResizableHost(UIElement content, PanelItem item, bool fillViewport = true)
         {
             var host = new ScrollViewer
             {
@@ -587,8 +625,9 @@ namespace SideDesk.Controls
             if (item.PanelHeight.HasValue && item.PanelHeight.Value > 0)
             {
                 host.Height = item.PanelHeight.Value;
-                // 固定高度时，让内容至少擑满可视区域：短内容填满整个模块，长内容仍可滚动
-                if (content is FrameworkElement cfe)
+                // 固定高度时，让内容至少擑满可视区域：短内容填满整个模块，长内容仍可滚动。
+                // 快捷组件传 fillViewport:false：项保持自然高度，不随面板高度拉伸。
+                if (fillViewport && content is FrameworkElement cfe)
                 {
                     cfe.SetBinding(FrameworkElement.MinHeightProperty,
                         new System.Windows.Data.Binding(nameof(ScrollViewer.ViewportHeight)) { Source = host });
@@ -617,13 +656,15 @@ namespace SideDesk.Controls
 
         /// <summary>
         /// 创建模块底部拖拽手柄：拖拽调整内容区高度并持久化到 item.PanelHeight；双击恢复自动高度。
+        /// emphasized：无外框卡片（如快捷组件）的手柄悬浮在内容下方间隙中、无背景衬托，
+        /// 需加大命中区域与线条可见度，否则用户无法发现。
         /// </summary>
-        private Border CreateResizeGrip(ScrollViewer host, PanelItem item)
+        private Border CreateResizeGrip(ScrollViewer host, PanelItem item, bool emphasized = false)
         {
             const double MinHeight = 48;
             var grip = new Border
             {
-                Height = 6,
+                Height = emphasized ? 10 : 6,
                 Background = Brushes.Transparent,
                 Cursor = Cursors.SizeNS,
                 Margin = new Thickness(0, 1, 0, 0),
@@ -632,17 +673,17 @@ namespace SideDesk.Controls
             };
             var line = new Border
             {
-                Width = 34,
-                Height = 3,
+                Width = emphasized ? 46 : 34,
+                Height = emphasized ? 4 : 3,
                 CornerRadius = new CornerRadius(1.5),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
                 Background = (Brush)FindResource("BrushTextMuted"),
-                Opacity = 0.35
+                Opacity = emphasized ? 0.6 : 0.35
             };
             grip.Child = line;
-            grip.MouseEnter += (s, e) => line.Opacity = 0.8;
-            grip.MouseLeave += (s, e) => line.Opacity = 0.35;
+            grip.MouseEnter += (s, e) => line.Opacity = emphasized ? 1.0 : 0.8;
+            grip.MouseLeave += (s, e) => line.Opacity = emphasized ? 0.6 : 0.35;
 
             bool dragging = false, moved = false;
             double startY = 0, startHeight = 0;
@@ -752,7 +793,8 @@ namespace SideDesk.Controls
                 return card;
             }
 
-            // 回退：非标准外框卡片（如直接返回的原始内容），在顶层包裹
+            // 回退：非标准外框卡片（如快捷组件直接返回裸内容），在顶层包裹。
+            // 此类模块没有卡片背景衬托，手柄悬浮在内容下方间隙中，必须用强调样式才可见。
             var spacing = widget.Margin;
             widget.Margin = new Thickness(0);
             var outerHost = BuildResizableHost(widget, item);
@@ -763,7 +805,7 @@ namespace SideDesk.Controls
             }
             var stack = new StackPanel { Margin = spacing };
             stack.Children.Add(outerHost);
-            stack.Children.Add(CreateResizeGrip(outerHost, item));
+            stack.Children.Add(CreateResizeGrip(outerHost, item, emphasized: true));
             return stack;
         }
 
@@ -841,119 +883,8 @@ namespace SideDesk.Controls
 
             var itemServerId = item.ServerId;
 
-            var dialog = new System.Windows.Window
-            {
-                Title = Framework.Lang.T("nativePanel.shareModule"),
-                Width = 320,
-                SizeToContent = SizeToContent.Height,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Owner = Window.GetWindow(this),
-                ResizeMode = ResizeMode.NoResize,
-                Background = (Brush)FindResource("BrushDialogBG"),
-                Foreground = (Brush)FindResource("BrushTextMain")
-            };
-            dialog.SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(dialog, App.IsCurrentThemeLight());
-
-            var radioStyle = (Style)FindResource("DarkRadioButtonStyle");
-            var checkStyle = (Style)FindResource("DarkCheckBoxStyle");
-
-            var panel = new StackPanel { Margin = new Thickness(20) };
-            panel.Children.Add(new TextBlock
-            {
-                Text = Framework.Lang.T("settings.chooseASharingMode"),
-                FontSize = 12,
-                Foreground = (Brush)FindResource("BrushTextSec"),
-                Margin = new Thickness(0, 0, 0, 10)
-            });
-
-            var copyRadio = new RadioButton { Content = Framework.Lang.T("settings.shareModeCopyHint"), Style = radioStyle, IsChecked = true, Margin = new Thickness(0, 0, 0, 8) };
-            var refRadio = new RadioButton { Content = Framework.Lang.T("settings.referenceLiveDataHint"), Style = radioStyle, Margin = new Thickness(0, 0, 0, 16) };
-            panel.Children.Add(copyRadio);
-            panel.Children.Add(refRadio);
-
-            var permLabel = new TextBlock
-            {
-                Text = Framework.Lang.T("settings.importerPermissions"),
-                FontSize = 12,
-                Foreground = (Brush)FindResource("BrushTextSec"),
-                Margin = new Thickness(0, 0, 0, 8)
-            };
-            panel.Children.Add(permLabel);
-            var cbEdit = new CheckBox { Content = Framework.Lang.T("common.allowEditing"), Style = checkStyle, IsChecked = true, Margin = new Thickness(0, 0, 0, 8) };
-            var cbDelete = new CheckBox { Content = Framework.Lang.T("common.allowDeletion"), Style = checkStyle, IsChecked = true, Margin = new Thickness(0, 0, 0, 8) };
-            var cbReShare = new CheckBox { Content = Framework.Lang.T("settings.allowReSharing"), Style = checkStyle, IsChecked = false, Margin = new Thickness(0, 0, 0, 16) };
-            panel.Children.Add(cbEdit);
-            panel.Children.Add(cbDelete);
-            panel.Children.Add(cbReShare);
-
-            var confirmBtn = new Button
-            {
-                Content = Framework.Lang.T("settings.createShareLink"),
-                Style = (Style)FindResource("PrimaryButtonStyle"),
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                Cursor = Cursors.Hand
-            };
-            panel.Children.Add(confirmBtn);
-            dialog.Content = panel;
-
-            // 分享模式与权限联动：
-            // 复制模式 —— 对方获得独立副本，权限固定为全部允许，整个权限区隐藏；
-            // 引用模式 —— 显示权限区，逐项可配，默认全部不选中
-            void ApplyShareMode(bool isCopy)
-            {
-                var vis = isCopy ? Visibility.Collapsed : Visibility.Visible;
-                permLabel.Visibility = cbEdit.Visibility = cbDelete.Visibility = cbReShare.Visibility = vis;
-                cbEdit.IsChecked = cbDelete.IsChecked = cbReShare.IsChecked = isCopy;
-            }
-            copyRadio.Checked += (_, _) => ApplyShareMode(true);
-            refRadio.Checked += (_, _) => ApplyShareMode(false);
-            ApplyShareMode(true);
-
-            confirmBtn.Click += async (_, _) =>
-            {
-                string mode = copyRadio.IsChecked == true ? "copy" : "reference";
-                try
-                {
-                    var app = (App)Application.Current;
-                    using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-                    var payload = Newtonsoft.Json.JsonConvert.SerializeObject(new
-                    {
-                        barServerId,
-                        itemServerId,
-                        shareMode = mode,
-                        allowEdit = cbEdit.IsChecked == true,
-                        allowDelete = cbDelete.IsChecked == true,
-                        allowReShare = cbReShare.IsChecked == true
-                    });
-                    using var content = new System.Net.Http.StringContent(payload, System.Text.Encoding.UTF8, "application/json");
-                    using var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, Constants.URLs.ServerBaseUrl + "/api/sidebar/share/create") { Content = content };
-                    req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + app.AppSettings.AccountToken);
-                    using var resp = await Services.HttpLog.SendAsync(http, req);
-                    string json = await resp.Content.ReadAsStringAsync();
-                    var root = Newtonsoft.Json.Linq.JObject.Parse(json);
-
-                    if (root["code"]?.ToObject<int>() == 200)
-                    {
-                        string code = root["data"]?["shareCode"]?.ToString() ?? "";
-                        dialog.Close();
-                        ThemedMessageBox.ShowShareResult(
-                            Application.Current.MainWindow,
-                            code,
-                            $"{Constants.URLs.FrontendBaseUrl}/s/{code}"
-                        );
-                    }
-                    else
-                    {
-                        MessageBox.Show(root["msg"]?.ToString() ?? Framework.Lang.T("settings.createShareFailed"), Framework.Lang.T("common.error"), MessageBoxButton.OK, MessageBoxImage.Warning);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show(Framework.Lang.TF("settings.createShareFailedDetail", ex.Message), Framework.Lang.T("common.error"), MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-            };
-
-            dialog.ShowDialog();
+            // 复用统一的创建分享对话框（模块级：附带 itemServerId）
+            ThemedMessageBox.ShowCreateShareDialog(Window.GetWindow(this), barServerId!, itemServerId, Framework.Lang.T("nativePanel.shareModule"));
         }
 
         /// <summary>删除插件面板后，若所有窗口配置中均无该插件的引用，则卸载 DLL 释放内存。</summary>
@@ -1188,7 +1119,12 @@ namespace SideDesk.Controls
             {
                 if (child.IsPinned) continue; // 已置顶的子面板由 RenderPanels 提取到置顶区渲染
                 var widget = CreatePanelWidget(child);
-                if (widget != null) contentPanel.Children.Add(widget);
+                if (widget == null) continue;
+                // 与顶层渲染一致：未走 WrapWidget 的自定义卡片模块（如快捷组件）也附加可调高能力，
+                // 否则编辑模式下分组内的此类模块没有底部拖拽手柄、无法调整高度（PanelHeight 也不生效）
+                if (widget is FrameworkElement cwfe && cwfe.Uid != "wrapHandled")
+                    widget = WrapResizable(cwfe, child);
+                contentPanel.Children.Add(widget);
             }
 
             // 展开/收起事件
@@ -1597,8 +1533,33 @@ namespace SideDesk.Controls
                 RenderPanels();
             };
 
+            // 可调高包装内置到分组卡片内（标题栏固定、内容区限高滚动、手柄在卡片内底部、背景连贯），
+            // 避免外层回退包装使手柄悬浮在卡片下方间隙中、固定高度时出现透明空隙；
+            // 标记 wrapHandled 使 BuildPanelWidget/分组渲染跳过外层 WrapResizable
+            _quickGroupUIService.ContentResizer = content => WrapQuickGroupContent(content, item);
+            container.Uid = "wrapHandled";
+
             _quickGroupUIService.LoadSingleGroup(item.Id);
             return container;
+        }
+
+        /// <summary>快捷面板可调高：内容区包入限高宿主；编辑模式再在其下方追加拖拽手柄（均在分组卡片内）</summary>
+        private UIElement WrapQuickGroupContent(UIElement content, PanelItem item)
+        {
+            // fillViewport:false —— 调高度时项保持自然高度，多余高度留白在卡片内。
+            // 内容先包入垂直 StackPanel 缓冲层：StackPanel 永远按子元素期望高度摆放，
+            // 即使限高宿主把内容区摆成 max(期望高, 视口高)（对齐语义实测不可靠），
+            // UniformGrid 也只拿自然高度，行高不被均分拉大、图标/按钮之间不出现大空隙。
+            var buffer = new StackPanel { VerticalAlignment = VerticalAlignment.Top };
+            buffer.Children.Add(content);
+            var host = BuildResizableHost(buffer, item, fillViewport: false);
+            // 快捷组件内部不显示滚动条（保留滚轮滚动）：高度不足时不出现右侧竖条，避免卡片内视觉割裂
+            host.VerticalScrollBarVisibility = ScrollBarVisibility.Hidden;
+            if (!_isEditMode) return host;
+            var stack = new StackPanel();
+            stack.Children.Add(host);
+            stack.Children.Add(CreateResizeGrip(host, item));
+            return stack;
         }
 
         private UIElement BuildStickyNotesWidget(PanelItem item)
@@ -1709,15 +1670,15 @@ namespace SideDesk.Controls
                     };
                     itemPanel.Children.Add(preview);
 
-                    // hover 显示按钮（删除按钮仅编辑模式，复制按钮始终可hover）
+                    // hover 显示按钮（删除按钮仅编辑模式，复制按钮始终可hover）；悬停进入时先记录外部前台窗口（点击会抢焦点，粘贴目标需在激活前捕获）
                     if (_isEditMode)
                     {
-                        itemPanel.MouseEnter += (s, ev) => { delBtn.Visibility = Visibility.Visible; copyBtn.Visibility = Visibility.Visible; };
+                        itemPanel.MouseEnter += (s, ev) => { CaptureExternalForeground(); delBtn.Visibility = Visibility.Visible; copyBtn.Visibility = Visibility.Visible; };
                         itemPanel.MouseLeave += (s, ev) => { delBtn.Visibility = Visibility.Collapsed; copyBtn.Visibility = Visibility.Collapsed; };
                     }
                     else
                     {
-                        itemPanel.MouseEnter += (s, ev) => { copyBtn.Visibility = Visibility.Visible; };
+                        itemPanel.MouseEnter += (s, ev) => { CaptureExternalForeground(); copyBtn.Visibility = Visibility.Visible; };
                         itemPanel.MouseLeave += (s, ev) => { copyBtn.Visibility = Visibility.Collapsed; };
                     }
 
@@ -1753,6 +1714,10 @@ namespace SideDesk.Controls
                         ev.Handled = true;
                     };
 
+                    // 点击整行：粘贴到进入侧边栏前的前台窗口焦点位置（复制/删除按钮点击已被 Button 标记 Handled，不会误触）
+                    itemPanel.Background = Brushes.Transparent; // 整行可命中（无背景的空白区域不响应点击）
+                    itemPanel.MouseLeftButtonUp += (s, ev) => PasteFavoriteToForeground(clipContent, clipType);
+
                     container.Children.Add(itemPanel);
                 }
             }
@@ -1775,6 +1740,55 @@ namespace SideDesk.Controls
                 }
             };
             return favModule;
+        }
+
+        /// <summary>进入侧边栏前的前台窗口：点击侧边栏会抢焦点，悬停进入时先记录外部窗口，作为收藏项点击粘贴的目标</summary>
+        private IntPtr _lastExternalForeground = IntPtr.Zero;
+
+        private void CaptureExternalForeground()
+        {
+            try
+            {
+                IntPtr fg = NativeMethods.GetForegroundWindow();
+                if (fg == IntPtr.Zero) return;
+                NativeMethods.GetWindowThreadProcessId(fg, out uint pid);
+                if (pid == Environment.ProcessId) return; // 自身窗口不记录，保留上一次的外部窗口
+                _lastExternalForeground = fg;
+            }
+            catch { }
+        }
+
+        /// <summary>点击收藏项：写入剪贴板 → 恢复进入侧边栏前的前台窗口 → 模拟 Ctrl+V 粘贴到其焦点位置（同语音输入 PasteTextToForeground 模式）</summary>
+        private void PasteFavoriteToForeground(string content, string contentType)
+        {
+            // 图片类型收藏只存了描述文字（无像素数据），无内容可粘贴
+            if (contentType == "Image") return;
+            try
+            {
+                if (contentType == "File")
+                {
+                    var sc = new StringCollection();
+                    sc.AddRange(content.Split('\n', StringSplitOptions.RemoveEmptyEntries));
+                    Clipboard.SetFileDropList(sc);
+                }
+                else
+                {
+                    Clipboard.SetText(content);
+                }
+            }
+            catch { return; }
+
+            IntPtr fg = _lastExternalForeground;
+            if (fg == IntPtr.Zero || !NativeMethods.IsWindow(fg)) return;
+            NativeMethods.SetForegroundWindow(fg);
+            // 等待前台切换完成后再发送 Ctrl+V（同 AdvancedActionService 粘贴的延时做法）
+            _ = System.Threading.Tasks.Task.Delay(80).ContinueWith(_ =>
+            {
+                NativeMethods.keybd_event(NativeMethods.VK_CONTROL_KEY, 0, 0, UIntPtr.Zero);
+                NativeMethods.keybd_event(NativeMethods.VK_V_KEY, 0, 0, UIntPtr.Zero);
+                NativeMethods.keybd_event(NativeMethods.VK_V_KEY, 0, NativeMethods.KEYEVENTF_KEYUP, UIntPtr.Zero);
+                NativeMethods.keybd_event(NativeMethods.VK_CONTROL_KEY, 0, NativeMethods.KEYEVENTF_KEYUP, UIntPtr.Zero);
+            });
         }
 
         /// <summary>将剪贴板历史条目添加为收藏（与拾取对话框同一数据模型）</summary>
@@ -1929,7 +1943,7 @@ namespace SideDesk.Controls
                 if (webView.Tag as string == "ready") return;
                 try
                 {
-                    await webView.EnsureCoreWebView2Async();
+                    await webView.EnsureCoreWebView2Async(await SideDesk.Services.WebView2Shared.GetAsync());
                     webView.CoreWebView2.Navigate("https://www.baidu.com");
                     webView.Tag = "ready";
                 }
@@ -2035,20 +2049,35 @@ namespace SideDesk.Controls
             return shape;
         }
 
-        /// <summary>设置灯形状的点亮/熄灭视觉（填充色 + 发光）</summary>
+        /// <summary>设置灯形状的点亮/熄灭视觉（填充色 + 发光）。
+        /// 熄灭态不再用统一深灰，而是把灯的原色去掉白色分量后等比压暗，保留色相与饱和度，
+        /// 使红/黄/绿在关闭时仍能一眼看出原本的颜色（只是明显更暗、无发光）。</summary>
         private static void ApplyLightVisual(System.Windows.Shapes.Shape shape, SignalLightItem light, bool lit)
         {
-            var color = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(lit ? light.Color : "#333333");
-            shape.Fill = new SolidColorBrush(color);
-            shape.Effect = lit
-                ? new System.Windows.Media.Effects.DropShadowEffect
+            var color = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(light.Color);
+            if (lit)
+            {
+                shape.Fill = new SolidColorBrush(color);
+                shape.Effect = new System.Windows.Media.Effects.DropShadowEffect
                 {
                     Color = color,
                     BlurRadius = light.Size * 0.4,
                     ShadowDepth = 0,
                     Opacity = 0.7
-                }
-                : null;
+                };
+            }
+            else
+            {
+                // 去白分量（min 通道归零）得到纯色相，再压暗到最大通道≈130：明显暗于点亮态（读作“熄灭”），但原色可辨
+                int min = Math.Min(color.R, Math.Min(color.G, color.B));
+                int r = color.R - min, g = color.G - min, b = color.B - min;
+                int max = Math.Max(r, Math.Max(g, b));
+                var dim = max <= 0
+                    ? System.Windows.Media.Color.FromRgb((byte)(color.R * 0.4), (byte)(color.G * 0.4), (byte)(color.B * 0.4)) // 纯灰阶无色相：整体压暗，避免全黑丢层次
+                    : System.Windows.Media.Color.FromRgb((byte)(r * (130.0 / max)), (byte)(g * (130.0 / max)), (byte)(b * (130.0 / max)));
+                shape.Fill = new SolidColorBrush(dim);
+                shape.Effect = null;
+            }
         }
 
         /// <summary>判断单个信号灯条件是否满足：Op = 等于/大于/小于/不存在；EQ/GT/LT 在变量缺失时不满足</summary>
@@ -3691,8 +3720,8 @@ namespace SideDesk.Controls
 
                 if (isIconLayout)
                 {
-                    var wrap = new WrapPanel { Orientation = Orientation.Horizontal };
-                    listContainer = wrap;
+                    // UniformGrid 按用户选择的列数分列：项撑满单元格并在其中水平居中（WrapPanel 整体左对齐无法居中）
+                    listContainer = new UniformGrid { Columns = cols };
                 }
                 else if (cols > 1)
                 {
@@ -3720,13 +3749,11 @@ namespace SideDesk.Controls
                         // ===== 图标布局（大/小图标）=====
                         bool isLarge = item.FileAreaLayout == "LargeIcons";
                         double iconSize = isLarge ? 48 : 28;
-                        double itemW = isLarge ? 80 : 60;
 
+                        // 项宽不写死：撑满单元格（容器宽度 ÷ 列数），名称在单元格内换行并居中
                         var iconStack = new StackPanel
                         {
-                            Width = itemW,
                             Margin = new Thickness(4),
-                            HorizontalAlignment = HorizontalAlignment.Center,
                             Cursor = Cursors.Hand,
                             Tag = isFolder ? "__folder__" : null
                         };
@@ -3741,7 +3768,10 @@ namespace SideDesk.Controls
                                 FontSize = iconSize,
                                 HorizontalAlignment = HorizontalAlignment.Center
                             };
-                        iconStack.Children.Add(iconElement);
+                        // 图标套一层图标大小的 Grid：编辑模式的删除按钮才能贴着图标右缘（而非整个单元格）
+                        var iconHolder = new Grid { HorizontalAlignment = HorizontalAlignment.Center };
+                        iconHolder.Children.Add(iconElement);
+                        iconStack.Children.Add(iconHolder);
 
                         // 名称
                         var nameText = new Emoji.Wpf.TextBlock
@@ -3821,16 +3851,10 @@ namespace SideDesk.Controls
                             iconStack.MouseEnter += (s, e) => delIconBorder.Visibility = Visibility.Visible;
                             iconStack.MouseLeave += (s, e) => delIconBorder.Visibility = Visibility.Collapsed;
 
-                            // 用 Grid 叠放图标和删除按钮
-                            var iconGrid = new Grid();
-                            iconGrid.Children.Add(iconStack);
-                            iconGrid.Children.Add(delIconBorder);
-                            listContainer.Children.Add(iconGrid);
+                            // 删除按钮叠在 iconHolder 上，随图标居中，不受单元格宽度影响
+                            iconHolder.Children.Add(delIconBorder);
                         }
-                        else
-                        {
-                            listContainer.Children.Add(iconStack);
-                        }
+                        listContainer.Children.Add(iconStack);
 
                         // 目录项支持拖拽接收
                         if (isFolder)
@@ -4018,11 +4042,11 @@ namespace SideDesk.Controls
             // 基于 ModuleControl 基础组件包装
             var module = CreateModuleControl(Framework.Lang.T("nativePanel.fileArea"), item);
 
-            var addFileMi = new MenuItem { Header = Framework.Lang.T("nativePanel.addFile") };
+            var addFileMi = new MenuItem { Header = Framework.Lang.T("nativePanel.addFileEmoji") };
             addFileMi.Click += (s, e) => AddFileToArea(item);
             module.AddCustomMenuItem(addFileMi);
 
-            var addFolderMi = new MenuItem { Header = Framework.Lang.T("nativePanel.addFolder") };
+            var addFolderMi = new MenuItem { Header = Framework.Lang.T("nativePanel.addFolderEmoji") };
             addFolderMi.Click += (s, e) => AddFolderToArea(item);
             module.AddCustomMenuItem(addFolderMi);
 
@@ -5178,9 +5202,7 @@ namespace SideDesk.Controls
             else if (type == PanelType.TodoList)
                 newPanel.TodoItems = new List<TodoItem>();
 
-            // 自动开启编辑模式（需在构建 widget 前，确保新模块挂上编辑模式拖拽手柄）
-            _isEditMode = true;
-            _currentWindowConfig.IsEditMode = true;
+            // 保持当前模式：不自动开启编辑模式（需要拖拽调序/调高时由用户手动开启）
 
             AddTopLevelPanel(newPanel);
         }
@@ -5602,6 +5624,8 @@ namespace SideDesk.Controls
             int index = AddPanelToGroupOrTop(newPanel);
             _configManager?.Save();
             InsertPanelWidgetIncremental(newPanel, index);
+            // 增量插入不经过 RenderPanels，需显式广播：让其他显示同一 bar 的侧边栏同步出现新组件
+            BroadcastBarToOtherWindows();
         }
 
         private void AddSignalLightPanel_Click(object sender, RoutedEventArgs e)
@@ -7294,6 +7318,13 @@ namespace SideDesk.Controls
 
         #region 键盘/鼠标计数器 UI
 
+        /// <summary>底部状态栏统计的完整信息 Tooltip：窄侧边栏下数字可能被截断看不全，悬停显示带千分位的精确值</summary>
+        private static string FormatKeyCountTooltip(int count)
+            => $"{Framework.Lang.T("nativePanel.todayKeystrokes")}: {count:N0}";
+
+        private static string FormatMouseDistanceTooltip(long pixels)
+            => $"{Framework.Lang.T("nativePanel.mouseMovement")}: {pixels:N0} px";
+
         private void OnKeyCountChanged(int count)
         {
             Dispatcher.BeginInvoke(() =>
@@ -7301,6 +7332,7 @@ namespace SideDesk.Controls
                 if (_keyCountValueButton != null)
                     _keyCountValueButton.Content = $"⌨ {KeyboardHookService.FormatCount(count)}";
                 keyCountText.Text = $"⌨ {KeyboardHookService.FormatCount(count)}";
+                keyCountText.ToolTip = FormatKeyCountTooltip(count);
             });
         }
 
@@ -7313,6 +7345,7 @@ namespace SideDesk.Controls
                 if (_mouseDistanceValueButton != null)
                     _mouseDistanceValueButton.Content = $"🖱 {MouseHookService.FormatDistance(distance)}";
                 mouseDistText.Text = $"🖱 {MouseHookService.FormatDistance(distance)}";
+                mouseDistText.ToolTip = FormatMouseDistanceTooltip(distance);
             });
         }
 
@@ -7476,12 +7509,8 @@ namespace SideDesk.Controls
 
             if (_mainWindow != null)
             {
-                // 根据侧边栏停靠位置决定便签弹出方向
-                double noteLeft;
-                if (_mainWindow.DockSide == DockEdge.Left)
-                    noteLeft = _mainWindow.Left + _mainWindow.Width; // 左侧停靠 -> 弹在右边（紧贴）
-                else
-                    noteLeft = _mainWindow.Left - 420;               // 右侧停靠 -> 弹在左边（紧贴，420是弹窗宽度）
+                // 便签浮窗贴着本侧边栏弹出（左停靠弹右侧、右停靠弹左侧），弹窗宽度 420
+                double noteLeft = _mainWindow.GetFlyoutLeft(420);
 
                 _stickyNotePanelDialog.Show(_mainWindow,
                     noteLeft,
@@ -7561,12 +7590,8 @@ namespace SideDesk.Controls
 
             if (_mainWindow != null)
             {
-                // 根据侧边栏停靠位置决定便签弹出方向
-                double noteLeft;
-                if (_mainWindow.DockSide == DockEdge.Left)
-                    noteLeft = _mainWindow.Left + _mainWindow.Width; // 左侧停靠 -> 弹在右边（紧贴）
-                else
-                    noteLeft = _mainWindow.Left - 420;               // 右侧停靠 -> 弹在左边（紧贴，420是弹窗宽度）
+                // 便签浮窗贴着本侧边栏弹出（左停靠弹右侧、右停靠弹左侧），弹窗宽度 420
+                double noteLeft = _mainWindow.GetFlyoutLeft(420);
 
                 _stickyNotePanelDialog.Show(_mainWindow,
                     noteLeft,
@@ -7918,9 +7943,10 @@ namespace SideDesk.Controls
                 _aiChatWebWindow = new SideDesk.Windows.AIChatWebWindow();
                 if (_mainWindow != null)
                 {
-                    _aiChatWebWindow.Left = _mainWindow.Left + _mainWindow.Width;
-                    _aiChatWebWindow.Top = _mainWindow.Top;
                     _aiChatWebWindow.Width = 420;
+                    // 贴着被点击的侧边栏弹出（左停靠弹右侧、右停靠弹左侧），避免弹到相邻显示器
+                    _aiChatWebWindow.Left = _mainWindow.GetFlyoutLeft(420);
+                    _aiChatWebWindow.Top = _mainWindow.Top;
                     _aiChatWebWindow.Height = Math.Max(400, _mainWindow.Height);
                 }
                 _aiChatWebWindow.Show();
@@ -7937,7 +7963,7 @@ namespace SideDesk.Controls
             if (_mainWindow != null)
             {
                 _aiChatDialog.Show(_mainWindow,
-                    _mainWindow.Left + _mainWindow.Width,
+                    _mainWindow.GetFlyoutLeft(500),
                     _mainWindow.Top, 400, _mainWindow.Height);
             }
         }
@@ -7953,7 +7979,7 @@ namespace SideDesk.Controls
             if (_mainWindow != null)
             {
                 _windowUsagePanel.Show(_mainWindow,
-                    _mainWindow.Left + _mainWindow.Width,
+                    _mainWindow.GetFlyoutLeft(420),
                     _mainWindow.Top, 400, _mainWindow.Height);
             }
         }
@@ -9849,7 +9875,8 @@ namespace SideDesk.Controls
             menu.Items.Add(Make(Framework.Lang.T("common.imageCarousel"), AddImageCarouselPanel_Click));
             menu.Items.Add(Make(Framework.Lang.T("common.dailyActivity"), AddDailyActivityPanel_Click));
             menu.Items.Add(Make(Framework.Lang.T("common.calendar"), AddCalendarPanel_Click));
-            menu.Items.Add(Make(Framework.Lang.T("common.digitalEmployees"), AddDigitalEmployeePanel_Click));
+            // 暂时隐藏「数字员工」入口（需要时取消注释恢复）
+            // menu.Items.Add(Make(Framework.Lang.T("common.digitalEmployees"), AddDigitalEmployeePanel_Click));
             menu.Items.Add(Make(Framework.Lang.T("common.friends"), AddFriendPanel_Click));
             menu.Items.Add(Make(Framework.Lang.T("settings.baiduSearch"), AddWebBaiduPanel_Click));
             menu.Items.Add(new Separator());

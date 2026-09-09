@@ -224,6 +224,10 @@ namespace SideDesk
             // 从所有窗口及两侧 dock 中移除（内部已处理 Windows + LeftDock + RightDock + Save）
             configManager.Remove(config.Id);
 
+            // 兜底：删光所有 bar 后立即补一个空 bar，避免侧边栏 ClearContent 空白且右键失效（空白态无新建入口的死状态）；
+            // 后续 ActiveIndex 修正 / RefreshAllWindowTabs / SwitchToWindowByIndex / PopulateList 会自动展示这个新 bar
+            configManager.EnsureAtLeastOneBar();
+
             // 修正当前 dock 的活动索引并刷新界面（删除已同步所有 dock，广播刷新全部窗口）
             if (dockState.ActiveIndex >= dockState.WindowIds.Count)
                 dockState.ActiveIndex = Math.Max(0, dockState.WindowIds.Count - 1);

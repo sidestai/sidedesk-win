@@ -258,7 +258,8 @@ namespace SideDesk.Framework
             set { _showAIChat = value; NotifyPropertyChanged("ShowAIChat"); }
         }
 
-        private bool _showUsageStats { get; set; } = true;
+        // 默认关闭：仅在用户显式开启「使用时长分析」后，WindowLogger 才采集窗口日志（windowlog_*.txt）
+        private bool _showUsageStats { get; set; } = false;
         [JsonProperty]
         public bool ShowUsageStats
         {

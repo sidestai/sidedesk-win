@@ -117,9 +117,14 @@ namespace SideDesk
 
         // DWM
         public const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+        public const int DWMWA_CLOAK = 13;      // 设置：1=披上隐身斗篷(不渲染)，0=解除
+        public const int DWMWA_CLOAKED = 14;    // 获取：当前是否被 cloak
 
         [DllImport("dwmapi.dll", PreserveSig = true)]
         public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+
+        [DllImport("dwmapi.dll", PreserveSig = true)]
+        public static extern int DwmGetWindowAttribute(IntPtr hwnd, int attr, out int attrValue, int attrSize);
 
         // DWM 桌面合成是否启用（渲染诊断用，Win8+ 恒为 true）
         [DllImport("dwmapi.dll", PreserveSig = true)]
@@ -150,6 +155,81 @@ namespace SideDesk
 
         [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
         internal static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+
+        // Z 序相邻窗口遍历（诊断 Win+D 后谁盖住了侧边栏）
+        [DllImport("user32.dll")]
+        internal static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
+
+        internal const uint GW_HWNDNEXT = 2;
+        internal const uint GW_HWNDPREV = 3;
+
+        // 命中测试：返回屏幕某点当前最顶层可命中窗口（诊断侧边栏区域到底被谁占据）
+        [DllImport("user32.dll")]
+        internal static extern IntPtr WindowFromPoint(POINT pt);
+
+        [DllImport("user32.dll")]
+        internal static extern IntPtr GetAncestor(IntPtr hWnd, uint gaFlags);
+
+        internal const uint GA_ROOT = 2;
+
+        // 屏幕像素采样 + 强制重绘（诊断/修复分层窗口 Win+D 后不渲染）
+        [DllImport("user32.dll")]
+        internal static extern IntPtr GetDC(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        internal static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+
+        [DllImport("gdi32.dll")]
+        internal static extern uint GetPixel(IntPtr hdc, int x, int y);
+
+        [DllImport("user32.dll")]
+        internal static extern bool RedrawWindow(IntPtr hWnd, IntPtr lprcUpdate, IntPtr hrgnUpdate, uint flags);
+
+        internal const uint RDW_INVALIDATE = 0x0001;
+        internal const uint RDW_ERASE = 0x0004;
+        internal const uint RDW_ALLCHILDREN = 0x0080;
+        internal const uint RDW_UPDATENOW = 0x0100;
+        internal const uint RDW_FRAME = 0x0400;
+
+        // 可靠的屏幕合成像素捕获：DWM 下 GetDC(NULL)+GetPixel 读到的是过期重定向表面，
+        // 必须 BitBlt(SRCCOPY|CAPTUREBLT) 把真实合成结果（含分层窗口/置顶覆盖）抓进内存位图再取色。
+        [DllImport("gdi32.dll")]
+        internal static extern IntPtr CreateCompatibleDC(IntPtr hdc);
+
+        [DllImport("gdi32.dll")]
+        internal static extern IntPtr CreateCompatibleBitmap(IntPtr hdc, int nWidth, int nHeight);
+
+        [DllImport("gdi32.dll")]
+        internal static extern IntPtr SelectObject(IntPtr hdc, IntPtr hgdiobj);
+
+        [DllImport("gdi32.dll")]
+        internal static extern bool BitBlt(IntPtr hdcDest, int xDest, int yDest, int wDest, int hDest,
+            IntPtr hdcSrc, int xSrc, int ySrc, uint rop);
+
+        [DllImport("gdi32.dll")]
+        internal static extern bool DeleteObject(IntPtr hObject);
+
+        [DllImport("gdi32.dll")]
+        internal static extern bool DeleteDC(IntPtr hdc);
+
+        internal const uint SRCCOPY = 0x00CC0020;
+        internal const uint CAPTUREBLT = 0x40000000;
+
+        // WinEvent 钩子：监听“显示桌面”等系统级事件（比 Z 序推断语义更明确）
+        public delegate void WinEventDelegate(IntPtr hWinEventHook, uint eventType, IntPtr hwnd,
+            int idObject, int idChild, uint dwEventThread, uint dwmsEventTime);
+
+        [DllImport("user32.dll")]
+        internal static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr hmodWinEventProc,
+            WinEventDelegate lpfnWinEventProc, uint idProcess, uint idThread, uint dwFlags);
+
+        [DllImport("user32.dll")]
+        internal static extern bool UnhookWinEvent(IntPtr hWinEventHook);
+
+        internal const uint WINEVENT_OUTOFCONTEXT = 0x0000;
+        internal const uint WINEVENT_SKIPOWNPROCESS = 0x0002;
+
+        internal const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
 
         // Window enumeration
         [DllImport("user32.dll")]
@@ -204,6 +284,57 @@ namespace SideDesk
         internal const byte VK_V_KEY = 0x56;
         internal const uint KEYEVENTF_KEYUP = 0x0002;
 
+        // SendInput（逐字符输入，高级项粘贴方式 type 用）
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct INPUT
+        {
+            public uint type;
+            public INPUTUNION U;
+        }
+
+        [StructLayout(LayoutKind.Explicit)]
+        internal struct INPUTUNION
+        {
+            [FieldOffset(0)] public MOUSEINPUT mi;
+            [FieldOffset(0)] public KEYBDINPUT ki;
+            [FieldOffset(0)] public HARDWAREINPUT hi;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct MOUSEINPUT
+        {
+            public int dx;
+            public int dy;
+            public uint mouseData;
+            public uint dwFlags;
+            public uint time;
+            public IntPtr dwExtraInfo;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct KEYBDINPUT
+        {
+            public ushort wVk;
+            public ushort wScan;
+            public uint dwFlags;
+            public uint time;
+            public IntPtr dwExtraInfo;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct HARDWAREINPUT
+        {
+            public uint uMsg;
+            public ushort wParamL;
+            public ushort wParamH;
+        }
+
+        internal const uint INPUT_KEYBOARD = 1;
+        internal const uint KEYEVENTF_UNICODE = 0x0004;
+
+        [DllImport("user32.dll", SetLastError = true)]
+        internal static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+
         // Window state
         [DllImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -234,6 +365,7 @@ namespace SideDesk
         internal const int SW_HIDE = 0;
         internal const int SW_RESTORE = 9;
         internal const int SW_SHOW = 5;
+        internal const int SW_SHOWNA = 8; // 显示但不抢焦点
         internal const int SW_SHOWNORMAL = 1;
         internal const uint WM_CLOSE = 0x0010;
         internal const uint WM_LBUTTONDOWN = 0x0201;
@@ -508,6 +640,12 @@ namespace SideDesk
         public const int WM_WINDOWPOSCHANGING = 0x0046;
         public const int WM_ACTIVATE = 0x0006;
         public const int WM_CLIPBOARDUPDATE = 0x031D;
+        public const int WM_SYSCOMMAND = 0x0112;
+    }
+
+    internal static class SysCommand
+    {
+        public const int SC_MINIMIZE = 0xF020;
     }
 
     internal static class HookConstants
@@ -526,6 +664,7 @@ namespace SideDesk
         public const uint SWP_NOZORDER = 0x0004;
         public const uint SWP_NOACTIVATE = 0x0010;
         public const uint SWP_FRAMECHANGED = 0x0020;
+        public const uint SWP_SHOWWINDOW = 0x0040;
     }
 
     internal static class WindowLongIndex
@@ -537,12 +676,14 @@ namespace SideDesk
     {
         public const long WS_EX_TOOLWINDOW = 0x00000080;
         public const long WS_EX_NOACTIVATE = 0x08000000;
+        public const long WS_EX_TOPMOST = 0x00000008;
     }
 
     internal static class HwndConstants
     {
         public static readonly IntPtr HWND_BOTTOM = new IntPtr(1);
         public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+        public static readonly IntPtr HWND_NOTOPMOST = new IntPtr(-2);
     }
 
     #endregion

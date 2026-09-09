@@ -18,6 +18,10 @@ namespace SideDesk.Models
         public string Username { get; set; } = "";
         /// <summary>密码（DPAPI 加密后的 base64 密文）</summary>
         public string PasswordEncrypted { get; set; } = "";
+        /// <summary>归属团队 ID（创建时当前选中的 corpId；空 = 个人）</summary>
+        public string? CorpId { get; set; }
+        /// <summary>归属团队名称（仅展示用，随创建时快照）</summary>
+        public string? CorpName { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.Now;
 
         /// <summary>解密后的密码（解密失败返回空串）</summary>

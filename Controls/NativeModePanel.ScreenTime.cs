@@ -159,7 +159,7 @@ namespace SideDesk.Controls
                 });
                 row.Children.Add(new Emoji.Wpf.TextBlock
                 {
-                    Text = $"{kv.Key}  {ratio:P0}  {WindowUsageStats.FormatDuration(TimeSpan.FromSeconds(kv.Value), !_screenTimeCompact)}",
+                    Text = $"{ProgramCategoryManager.GetDisplayName(kv.Key)}  {ratio:P0}  {WindowUsageStats.FormatDuration(TimeSpan.FromSeconds(kv.Value), !_screenTimeCompact)}",
                     FontSize = 11,
                     Foreground = (Brush)FindResource("BrushTextMain"),
                     VerticalAlignment = VerticalAlignment.Center
@@ -231,7 +231,7 @@ namespace SideDesk.Controls
 
                 var name = new Emoji.Wpf.TextBlock
                 {
-                    Text = $"{kv.Key}  {ratio:P0}",
+                    Text = $"{ProgramCategoryManager.GetDisplayName(kv.Key)}  {ratio:P0}",
                     FontSize = 12,
                     Foreground = (Brush)FindResource("BrushTextMain"),
                     VerticalAlignment = VerticalAlignment.Center

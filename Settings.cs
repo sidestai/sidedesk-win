@@ -17,7 +17,7 @@ namespace SideDesk
         public int LeftHoverWidth { get; set; } = 200;
 
         public int RightPanelWidth { get; set; } = 105;
-        public bool RightHoverEnabled { get; set; } = true;
+        public bool RightHoverEnabled { get; set; } = false;
         public int RightHoverWidth { get; set; } = 200;
     }
 
@@ -71,7 +71,7 @@ namespace SideDesk
 
         // 右侧停靠宽度与浮动配置
         public int RightPanelWidth { get; set; } = 105;
-        public bool RightHoverEnabled { get; set; } = true;
+        public bool RightHoverEnabled { get; set; } = false;
         public int RightHoverWidth { get; set; } = 200;
 
         public string ThemeName { get; set; } = "";
@@ -142,6 +142,9 @@ namespace SideDesk
 
         /// <summary>是否开启云同步（开启后定时把本地全部配置备份到服务器）</summary>
         public bool EnableCloudSync { get; set; } = false;
+
+        /// <summary>用户是否主动关闭过云同步（true=主动关闭；登录后不再自动开启，尊重用户选择）</summary>
+        public bool CloudSyncUserOptOut { get; set; } = false;
 
         /// <summary>是否启用加密同步（敏感设置项加密后再上传）</summary>
         public bool SyncEncryptEnabled { get; set; } = false;
@@ -273,13 +276,19 @@ namespace SideDesk
             return profile.GetMonitor(monitorIndex);
         }
 
-        private static readonly string SettingsPath = Path.Combine(
-            AppDomain.CurrentDomain.BaseDirectory, "settings.json");
+        /// <summary>配置目录：%LocalAppData%\SideDesk（与 sidedesk.db、日志同目录，稳定不随版本更新被清空）</summary>
+        private static readonly string SettingsDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SideDesk");
+
+        /// <summary>主配置文件路径：%LocalAppData%\SideDesk\app-settings.json（文件名与云同步 key 一致，
+        /// 且区别于 Framework.AppSettings 的 settings.json，避免同目录撞名）</summary>
+        private static readonly string SettingsPath = Path.Combine(SettingsDir, "app-settings.json");
 
         public void Save()
         {
             try
             {
+                Directory.CreateDirectory(SettingsDir);
                 var json = JsonSerializer.Serialize(this, new JsonSerializerOptions
                 {
                     WriteIndented = true

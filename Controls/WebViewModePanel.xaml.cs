@@ -28,7 +28,7 @@ namespace SideDesk.Controls
 
             try
             {
-                await webView.EnsureCoreWebView2Async();
+                await webView.EnsureCoreWebView2Async(await SideDesk.Services.WebView2Shared.GetAsync());
                 _isInitialized = true;
                 Debug.WriteLine("[WebViewModePanel] WebView2 init succeeded");
 

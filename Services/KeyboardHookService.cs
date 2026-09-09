@@ -259,9 +259,8 @@ namespace SideDesk.Services
                     Directory.CreateDirectory(logDir);
                 }
                 
-                // 每天一个日志文件
-                string dailyLogFile = _logFilePath.Replace(".log", $"-{DateTime.Now:yyyy-MM-dd}.log");
-                File.AppendAllText(dailyLogFile, message + Environment.NewLine);
+                // 统一写固定文件 keyboard.log（不再按天分文件）；上次运行的记录由 App 启动时 ClearDebugLogsOnStartup 清空
+                File.AppendAllText(_logFilePath, message + Environment.NewLine);
             }
             catch (Exception ex)
             {

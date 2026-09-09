@@ -61,6 +61,15 @@ namespace SideDesk.Controls
             };
             _dialog.Loaded += (s, e) => HideFromTaskbar(_dialog);
             _dialog.SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(_dialog);
+            // ESC 关闭窗口（走公共 Close 以同步清理 _dialog 引用）
+            _dialog.PreviewKeyDown += (s, e) =>
+            {
+                if (e.Key == System.Windows.Input.Key.Escape)
+                {
+                    Close();
+                    e.Handled = true;
+                }
+            };
             // 背景走主题资源绑定，切换主题时自动刷新
             _dialog.SetResourceReference(Window.BackgroundProperty, "BrushDialogBG");
 
@@ -468,7 +477,7 @@ namespace SideDesk.Controls
 
                 double ratio = kv.Value / grandTotal;
                 string durationStr = WindowUsageStats.FormatDuration(TimeSpan.FromSeconds(kv.Value));
-                string label = $"{kv.Key} {ratio:P1} ({durationStr})";
+                string label = $"{ProgramCategoryManager.GetDisplayName(kv.Key)} {ratio:P1} ({durationStr})";
                 var color = categoryColors.ContainsKey(kv.Key) ? categoryColors[kv.Key] : Color.FromRgb(130, 130, 130);
 
                 // 颜色方块
@@ -726,7 +735,7 @@ namespace SideDesk.Controls
             }
             else
             {
-                btn.Content = category;
+                btn.Content = ProgramCategoryManager.GetDisplayName(category);
                 btn.SetResourceReference(System.Windows.Controls.Control.BackgroundProperty, "BrushAccent");
                 btn.Foreground = new SolidColorBrush(Colors.White);
             }
@@ -748,7 +757,7 @@ namespace SideDesk.Controls
             {
                 var catBtn = new Button
                 {
-                    Content = cat,
+                    Content = ProgramCategoryManager.GetDisplayName(cat),
                     Width = 100,
                     Height = 28,
                     Margin = new Thickness(4, 2, 4, 2),

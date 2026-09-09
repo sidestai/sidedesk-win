@@ -683,6 +683,7 @@ public class WindowConfigManager
     /// 样例数据初始化：仅新安装（当前作用域未置标）且没有任何 bar 时，自动创建默认 bar 并填充示例面板；
     /// 置标后即使用户删光所有 bar 也不再自动填充。旧版升级首次启动若已有 bar 则只置标不建数据；
     /// 若 bar 为空视为用户已主动清空，同样不再补建。
+    /// 示例面板顺序：便签（使用指南/欢迎）→ 常用网址快捷组 → 分组（信号灯）→ 今日待办 → 番茄闹钟。
     /// </summary>
     public void EnsureDefault()
     {
@@ -691,16 +692,93 @@ public class WindowConfigManager
 
         if (Windows.Count == 0)
         {
+            // 播种文案按编译区域切换：中文构建用中文，国际构建（API_REGION_EN）用英文；
+            // 产品英文名跟随 i18n 惯例 common.metadeskScreen = SideDesk，元桌浏览器英文名为 MetaDesk
+#if API_REGION_EN
+            const string noteHowTo = "How to use SideDesk\n· Right-click the sidebar to add or edit modules\n· Drag a module's title bar to reorder\n· Change theme, language and dock side in Settings";
+            const string noteWelcome = "Welcome to SideDesk!\nA smart sidebar that lives on the edge of your screen: notes, todos, shortcuts, timers... always within reach, no window switching.";
+            const string groupName = "Frequent Sites";
+            const string browserName = "MetaDesk";
+            const string browserUrl = "https://www.desktxp.com";
+            const string officialName = "Official Site";
+            const string bingName = "Bing";
+            const string todoEat = "Eat";
+            const string todoSleep = "Sleep";
+#else
+            const string noteHowTo = "如何使用元桌小屏\n· 右键侧边栏可添加/编辑模块\n· 拖拽模块标题栏可排序\n· 设置中可换主题、语言与停靠位置";
+            const string noteWelcome = "欢迎使用元桌小屏！\n这是一条常驻屏幕边缘的智能侧边栏：便签、待办、快捷方式、计时器……触手可及，无需切换窗口。";
+            const string groupName = "常用网址";
+            const string browserName = "元桌浏览器";
+            const string browserUrl = "https://yzllq.com";
+            const string officialName = "元桌小屏官网";
+            const string bingName = "必应";
+            const string todoEat = "吃饭";
+            const string todoSleep = "睡觉";
+#endif
             var defaultWin = new WindowConfig
             {
                 Name = Framework.Lang.T("common.home"),
                 Type = WindowType.Native,
                 Panels = new List<PanelItem>
                 {
-                    new() { Type = PanelType.QuickGroup },
-                    new() { Type = PanelType.StickyNotes },
-                    new() { Type = PanelType.Clipboard },
-                    new() { Type = PanelType.SystemMonitor }
+                    // ① 便签：使用指南 + 欢迎文案
+                    new()
+                    {
+                        Type = PanelType.StickyNotes,
+                        StickyNotes = new List<StickyNote>
+                        {
+                            new() { Content = noteHowTo },
+                            new() { Content = noteWelcome }
+                        }
+                    },
+                    // ② 快捷组：常用网址（单列列表）
+                    new()
+                    {
+                        Type = PanelType.QuickGroup,
+                        QuickGroupName = groupName,
+                        QuickColumns = 1,
+                        QuickItems = new List<QuickItem>
+                        {
+                            new() { Name = browserName, Type = "url", Target = browserUrl, SortIndex = 0 },
+                            new() { Name = bingName, Type = "url", Target = "https://www.bing.com", SortIndex = 1 },
+                            new() { Name = "DEEPSEEK", Type = "url", Target = "https://chat.deepseek.com", SortIndex = 2 },
+                            new() { Name = officialName, Type = "url", Target = Constants.URLs.HomePageBaseUrl, SortIndex = 3 }
+                        }
+                    },
+                    // ③ 分组：内嵌信号灯（红/黄/绿三灯竖排，与手动添加的默认配置一致）
+                    new()
+                    {
+                        Type = PanelType.Group,
+                        Title = Framework.Lang.T("nativePanel.newGroup"),
+                        IsExpanded = true,
+                        ChildPanels = new List<PanelItem>
+                        {
+                            new()
+                            {
+                                Type = PanelType.SignalLight,
+                                Title = Framework.Lang.T("nativePanel.signalLight"),
+                                SignalLightVertical = true,
+                                SignalLights = new List<SignalLightItem>
+                                {
+                                    new() { Color = "#FF4444", Size = 36, Icon = "", IsOn = true },
+                                    new() { Color = "#FFAA00", Size = 36, Icon = "", IsOn = true },
+                                    new() { Color = "#44CC44", Size = 36, Icon = "", IsOn = true }
+                                }
+                            }
+                        }
+                    },
+                    // ④ 今日待办：示例任务
+                    new()
+                    {
+                        Type = PanelType.TodoList,
+                        TodoItems = new List<TodoItem>
+                        {
+                            new() { Text = todoEat },
+                            new() { Text = todoSleep }
+                        }
+                    },
+                    // ⑤ 番茄闹钟：默认 25 分钟番茄钟
+                    new() { Type = PanelType.Pomodoro, Pomodoro = new PomodoroSettings() }
                 }
             };
             Windows.Add(defaultWin);
@@ -708,5 +786,22 @@ public class WindowConfigManager
             RightDock.WindowIds.Add(defaultWin.Id);
             Save();
         }
+    }
+
+    /// <summary>
+    /// 兜底保证至少存在一个 bar：所有 bar 被删光（或数据异常为空）时创建一个空的原生 bar。
+    /// 否则侧边栏会 ClearContent 折叠 nativePanel → 右键失效，且空白态无「新建小屏」入口，陷入无法新增模块的死状态。
+    /// 与 EnsureDefault「首次安装播种示例面板」不同：这里只建一个空 bar（尊重用户已清空内容的意图），
+    /// 空 bar 会显示「右键添加模块」提示且右键可用。
+    /// </summary>
+    public void EnsureAtLeastOneBar()
+    {
+        if (Windows.Count > 0) return;
+        AddToAllDocks(new WindowConfig
+        {
+            Name = Framework.Lang.T("common.home"),
+            Type = WindowType.Native,
+            Panels = new List<PanelItem>()
+        });
     }
 }

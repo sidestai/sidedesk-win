@@ -28,6 +28,10 @@ namespace SideDesk.Models
         public bool UsePathStyle { get; set; }
         /// <summary>存储根前缀（可选，相当于虚拟根目录，不以 / 开头、以 / 结尾）</summary>
         public string Prefix { get; set; } = "";
+        /// <summary>归属团队 ID（创建时当前选中的 corpId；空 = 个人）</summary>
+        public string? CorpId { get; set; }
+        /// <summary>归属团队名称（仅展示用，随创建时快照）</summary>
+        public string? CorpName { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.Now;
 
         /// <summary>解密后的 SecretAccessKey（解密失败返回空串）</summary>

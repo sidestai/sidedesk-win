@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <assemblyIdentity version="1.0.0.0" name="SideDesk.app" />
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
+    <security>
+      <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
+        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <!-- Windows 10 / Windows 11 -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
+    </application>
+  </compatibility>
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <!-- Per-Monitor DPI Aware V2：异 DPI 多屏（如主屏100%+副屏150%）正确工作的前提。
+           缺失时进程跑在默认 DPI 上下文，Win32 坐标 API（GetMonitorInfo/GetDpiForMonitor/
+           SHAppBarMessage）返回虚拟化坐标，副屏 AppBar 的 ABM_SETPOS 工作区与真实物理区域不符，
+           最大化窗口不避让 → 侧边栏(topmost)与最大化窗口重叠。 -->
+      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/windowsSettings">true/pm</dpiAware>
+      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/windowsSettings">PerMonitorV2,PerMonitor</dpiAwareness>
+    </windowsSettings>
+  </application>
+</assembly>

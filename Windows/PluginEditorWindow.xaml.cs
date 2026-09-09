@@ -22,7 +22,7 @@ public partial class PluginEditorWindow : Window
     {
         try
         {
-            await webView.EnsureCoreWebView2Async();
+            await webView.EnsureCoreWebView2Async(await SideDesk.Services.WebView2Shared.GetAsync());
             webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
             webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
 

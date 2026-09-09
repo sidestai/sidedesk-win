@@ -63,6 +63,10 @@ namespace SideDesk.Services
         private const string StructurePullEndpoint = Constants.URLs.ServerBaseUrl + "/api/sidebar/sync/pull";
         // 我仍有效的分享导入记录接口（启动对账清理失效共享组件用）
         private const string ShareImportsEndpoint = Constants.URLs.ServerBaseUrl + "/api/sidebar/share/imports/mine";
+        // reference 分享实时刷新：单模块元数据（share_item_meta_updated 通知后拉取）
+        private const string SharedItemEndpoint = Constants.URLs.ServerBaseUrl + "/api/sidebar/sync/shared-item";
+        // reference 分享实时刷新：源窗口下所有模块（share_source_bar_updated 通知后拉取）
+        private const string SharedBarItemsEndpoint = Constants.URLs.ServerBaseUrl + "/api/sidebar/sync/shared-bar-items";
 
         private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(30) };
         private bool _syncing;
@@ -683,8 +687,8 @@ namespace SideDesk.Services
             return true;
         }
 
-        /// <summary>从服务端模块结构构建 PanelItem（itemData 模块设置逐字段应用，列表数据由行级拉取另行填充）。</summary>
-        private static PanelItem BuildPanelFromServerItem(JObject item, WindowConfig win)
+        /// <summary>从服务端模块结构构建 PanelItem（itemData 模块设置逐字段应用，列表数据由行级拉取另行填充）。供引用整窗口导入复用。</summary>
+        internal static PanelItem BuildPanelFromServerItem(JObject item, WindowConfig win)
         {
             string itemType = item["itemType"]?.ToString() ?? "StickyNotes";
             PanelType panelType = Enum.TryParse<PanelType>(itemType, true, out var parsed) ? parsed : PanelType.StickyNotes;
@@ -707,23 +711,87 @@ namespace SideDesk.Services
             // 应用 itemData 中的模块级设置
             if (item["itemData"] is JObject data)
             {
-                foreach (var prop in data.Properties())
-                {
-                    // 元数据字段以本地为准，不允许 itemData 覆盖；
-                    // 行级同步类型的列表/对象已改由行表读取，服务端 itemData 中的旧快照不得回灌
-                    if (prop.Name is "Id" or "ServerId" or "Type" or "ChildPanels" or "Pomodoro"
-                        or "StickyNotes" or "TodoItems" or "TimerItems" or "CountdownItems"
-                        or "SignalLights" or "ClipboardItems" or "FileItems"
-                        or "DashboardItems" or "DigitalEmployeeIds" or "FriendUserIds" or "QuickItems") continue;
-                    var targetProp = panel.GetType().GetProperty(prop.Name);
-                    if (targetProp != null && targetProp.CanWrite && prop.Value.Type != JTokenType.Null)
-                    {
-                        try { targetProp.SetValue(panel, prop.Value.ToObject(targetProp.PropertyType)); }
-                        catch { /* 忽略单个字段解析失败 */ }
-                    }
-                }
+                ApplyItemDataToPanel(panel, data);
             }
             return panel;
+        }
+
+        /// <summary>
+        /// 将服务端 itemData 字段映射到既有 PanelItem 属性（反射赋值，排除元数据与行级列表字段）。
+        /// 与 <see cref="BuildPanelFromServerItem"/> 中的 itemData 映射逻辑保持一致。
+        /// 返回是否有字段实际发生变化（用于决定是否需要刷新 UI）。
+        /// </summary>
+        private static bool ApplyItemDataToPanel(PanelItem panel, JObject itemData)
+        {
+            bool changed = false;
+            foreach (var prop in itemData.Properties())
+            {
+                // 元数据字段以本地为准，不允许 itemData 覆盖；
+                // 行级同步类型的列表/对象已改由行表读取，服务端 itemData 中的旧快照不得回灌
+                if (prop.Name is "Id" or "ServerId" or "Type" or "ChildPanels" or "Pomodoro"
+                    or "StickyNotes" or "TodoItems" or "TimerItems" or "CountdownItems"
+                    or "SignalLights" or "ClipboardItems" or "FileItems"
+                    or "DashboardItems" or "DigitalEmployeeIds" or "FriendUserIds" or "QuickItems") continue;
+                var targetProp = panel.GetType().GetProperty(prop.Name);
+                if (targetProp == null || !targetProp.CanWrite || prop.Value.Type == JTokenType.Null) continue;
+                try
+                {
+                    var newValue = prop.Value.ToObject(targetProp.PropertyType);
+                    var oldValue = targetProp.GetValue(panel);
+                    if (!Equals(oldValue, newValue))
+                    {
+                        targetProp.SetValue(panel, newValue);
+                        changed = true;
+                    }
+                }
+                catch { /* 忽略单个字段解析失败 */ }
+            }
+            return changed;
+        }
+
+        /// <summary>
+        /// 引用整窗口导入：按服务端返回的源模块明细在窗口内建 panels（ServerId=源 itemId，直接绑源数据），
+        /// 处理分组挂载，再逐个全量拉行。行可见性/实时通知/失效清理均由服务端展开的 item 级引用记录自动接管。
+        /// MainWindow 与设置页两个导入入口共用。返回建好的模块数。
+        /// </summary>
+        internal async Task<int> BuildReferenceWindowPanelsAsync(WindowConfig win, JArray items, string shareMode, string? shareId, string? shareCode, bool allowEdit, bool allowDelete, bool allowReShare)
+        {
+            var panelMap = new Dictionary<string, PanelItem>();
+            var ordered = new List<(JObject token, PanelItem panel)>();
+            foreach (var tok in items)
+            {
+                if (tok is not JObject it) continue;
+                string sid = it["serverId"]?.ToString() ?? "";
+                if (string.IsNullOrEmpty(sid) || panelMap.ContainsKey(sid)) continue;
+                var p = BuildPanelFromServerItem(it, win);
+                // 分享属性：标记为引用导入，客户端据此拦截编辑/删除、并支持再分享判断
+                p.ShareMode = shareMode;
+                p.ShareId = shareId;
+                p.ShareCode = shareCode;
+                p.AllowEdit = allowEdit;
+                p.AllowDelete = allowDelete;
+                p.AllowReShare = allowReShare;
+                panelMap[sid] = p;
+                ordered.Add((it, p));
+            }
+            // 分组子模块挂到父分组，其余按服务端顺序加入窗口
+            foreach (var entry in ordered)
+            {
+                string? gid = entry.token["groupId"]?.ToString();
+                if (!string.IsNullOrEmpty(gid) && panelMap.TryGetValue(gid!, out var parent) && !ReferenceEquals(parent, entry.panel))
+                {
+                    parent.ChildPanels ??= new List<PanelItem>();
+                    parent.ChildPanels.Add(entry.panel);
+                }
+                else
+                {
+                    win.Panels.Add(entry.panel);
+                }
+            }
+            // 逐个全量拉行数据（PullItemFullAsync 内部按类型/ServerId 自行跳过不可同步的模块）
+            foreach (var p in panelMap.Values)
+                await PullItemFullAsync(p).ConfigureAwait(false);
+            return panelMap.Count;
         }
 
         /// <summary>
@@ -1328,6 +1396,155 @@ namespace SideDesk.Services
             return changed;
         }
 
+        /// <summary>
+        /// 拉取单个源模块的最新元数据（title/itemData/itemType/groupId）并写入本地 PanelItem。
+        /// 用于 reference 分享收到 share_item_meta_updated 通知后刷新模块配置。
+        /// 返回是否有字段变化。
+        /// </summary>
+        public async Task<bool> PullSharedItemMetaAsync(PanelItem p)
+        {
+            var app = (SideDesk.App)System.Windows.Application.Current;
+            var settings = app.AppSettings;
+            if (!settings.EnableCloudSync || string.IsNullOrEmpty(settings.AccountToken)) return false;
+            if (string.IsNullOrEmpty(p.ServerId)) return false;
+            try
+            {
+                var url = SharedItemEndpoint + $"?serverId={Uri.EscapeDataString(p.ServerId)}";
+                using var req = new HttpRequestMessage(HttpMethod.Get, url);
+                req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + settings.AccountToken);
+                using var resp = await HttpLog.SendAsync(_http, req).ConfigureAwait(false);
+                if (!resp.IsSuccessStatusCode) return false;
+                var root = JObject.Parse(await resp.Content.ReadAsStringAsync().ConfigureAwait(false));
+                if (root["code"]?.Value<int>() != 200) return false;
+                var data = root["data"] as JObject;
+                if (data == null) return false;
+
+                bool changed = false;
+                var newTitle = data["title"]?.ToString();
+                if (p.Title != newTitle) { p.Title = newTitle; changed = true; }
+                if (data["itemData"] is JObject itemData && ApplyItemDataToPanel(p, itemData)) changed = true;
+                return changed;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] PullSharedItemMetaAsync failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 拉取源窗口下所有模块结构，与入口窗口本地 Panels 做 diff：
+        /// - 服务端有、本地无 → 新建 PanelItem（含分组挂载）并全量拉行；
+        /// - 服务端有、本地有 → 更新元数据（Title/itemData），不动行数据；
+        /// - 服务端无、本地有 → 从 Panels 移除（源模块已被属主删除）。
+        /// 用于 bar 级 reference 分享收到 share_source_bar_updated(items_changed) 通知后刷新入口窗口。
+        /// </summary>
+        public async Task<bool> PullSharedSourceBarAsync(WindowConfig win)
+        {
+            var app = (SideDesk.App)System.Windows.Application.Current;
+            var settings = app.AppSettings;
+            if (!settings.EnableCloudSync || string.IsNullOrEmpty(settings.AccountToken)) return false;
+            if (string.IsNullOrEmpty(win.SourceBarId)) return false;
+            try
+            {
+                var url = SharedBarItemsEndpoint + $"?barServerId={Uri.EscapeDataString(win.SourceBarId)}";
+                using var req = new HttpRequestMessage(HttpMethod.Get, url);
+                req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + settings.AccountToken);
+                using var resp = await HttpLog.SendAsync(_http, req).ConfigureAwait(false);
+                if (!resp.IsSuccessStatusCode) return false;
+                var root = JObject.Parse(await resp.Content.ReadAsStringAsync().ConfigureAwait(false));
+                if (root["code"]?.Value<int>() != 200) return false;
+                if (root["data"]?["items"] is not JArray items) return false;
+
+                bool changed = false;
+                var serverIds = new HashSet<string>();
+                var newPanels = new List<PanelItem>();
+                var panelMap = new Dictionary<string, PanelItem>();
+
+                // 第一遍：diff 既有面板元数据 + 收集新增面板
+                foreach (var it in items.OfType<JObject>())
+                {
+                    var sid = it["serverId"]?.ToString();
+                    if (string.IsNullOrEmpty(sid)) continue;
+                    serverIds.Add(sid!);
+                    PanelItem? existing = null;
+                    foreach (var p in EnumeratePanelsRecursive(win.Panels))
+                        if (p.ServerId == sid) { existing = p; break; }
+                    if (existing != null)
+                    {
+                        var newTitle = it["title"]?.ToString();
+                        if (existing.Title != newTitle) { existing.Title = newTitle; changed = true; }
+                        if (it["itemData"] is JObject itemData && ApplyItemDataToPanel(existing, itemData)) changed = true;
+                    }
+                    else
+                    {
+                        var newPanel = BuildPanelFromServerItem(it, win);
+                        // 分享属性：标记为引用导入（与 BuildReferenceWindowPanelsAsync 一致）
+                        newPanel.ShareMode = win.ShareMode;
+                        newPanel.ShareId = win.ShareId;
+                        newPanel.ShareCode = win.ShareCode;
+                        newPanel.AllowEdit = win.AllowEdit;
+                        newPanel.AllowDelete = win.AllowDelete;
+                        newPanel.AllowReShare = win.AllowReShare;
+                        newPanels.Add(newPanel);
+                        if (!string.IsNullOrEmpty(newPanel.ServerId)) panelMap[newPanel.ServerId!] = newPanel;
+                        changed = true;
+                    }
+                }
+
+                // 第二遍：新增面板挂到窗口（分组子模块挂到父分组，其余追加到末尾）
+                foreach (var it in items.OfType<JObject>())
+                {
+                    var sid = it["serverId"]?.ToString();
+                    if (string.IsNullOrEmpty(sid) || !panelMap.TryGetValue(sid!, out var panel)) continue;
+                    string? groupId = it["groupId"]?.ToString();
+                    PanelItem? parent = null;
+                    if (!string.IsNullOrEmpty(groupId))
+                    {
+                        if (!panelMap.TryGetValue(groupId!, out parent))
+                        {
+                            foreach (var p in EnumeratePanelsRecursive(win.Panels))
+                                if (p.ServerId == groupId) { parent = p; break; }
+                        }
+                    }
+                    if (parent != null && !ReferenceEquals(parent, panel))
+                    {
+                        parent.ChildPanels ??= new List<PanelItem>();
+                        parent.ChildPanels.Add(panel);
+                    }
+                    else
+                    {
+                        win.Panels.Add(panel);
+                    }
+                }
+
+                // 第三遍：移除服务端已不存在的本地共享面板（仅限有 ServerId 的，不动本地自建面板）
+                for (int i = win.Panels.Count - 1; i >= 0; i--)
+                {
+                    var p = win.Panels[i];
+                    if (string.IsNullOrEmpty(p.ServerId)) continue;
+                    if (!serverIds.Contains(p.ServerId))
+                    {
+                        win.Panels.RemoveAt(i);
+                        changed = true;
+                    }
+                }
+
+                // 第四遍：新增面板全量拉行
+                foreach (var np in newPanels)
+                {
+                    if (RowChangeTracker.IsRowSyncable(np.Type))
+                        await PullItemFullAsync(np).ConfigureAwait(false);
+                }
+                return changed;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] PullSharedSourceBarAsync failed: {ex.Message}");
+                return false;
+            }
+        }
+
         private async Task<bool> PullPanelRows(PanelItem p, Settings settings, bool forceFull = false, bool fullMerge = false)
         {
             if (!RowChangeTracker.IsRowSyncable(p.Type)) return false;
@@ -1536,7 +1753,9 @@ namespace SideDesk.Services
                     p.FriendUserIds = fuRows.Select(r => r.UserId).Where(s => !string.IsNullOrEmpty(s)).ToList();
                     break;
                 case PanelType.QuickGroup:
-                    p.QuickItems = NJson.JsonConvert.DeserializeObject<List<QuickItem>>(json) ?? new();
+                    var quickItems = NJson.JsonConvert.DeserializeObject<List<QuickItem>>(json) ?? new();
+                    QuickGroupManager.SortByIndex(quickItems); // 服务端按 id 返回，需按 SortIndex 恢复用户自定义顺序
+                    p.QuickItems = quickItems;
                     break;
             }
         }
@@ -2242,12 +2461,9 @@ namespace SideDesk.Services
         {
             string local = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SideDesk");
-            return key switch
-            {
-                "app-settings.json" => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "settings.json"),
-                "user-templates.json" => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data-templates", "user-templates.json"),
-                _ => Path.Combine(local, key)
-            };
+            // 主配置(app-settings.json)、用户模板(user-templates.json)、程序注册表(program-registry.json)
+            // 均已迁到 %LocalAppData%\SideDesk\ 根目录，备份 key 即文件名，默认映射直接命中
+            return Path.Combine(local, key);
         }
 
         #endregion
@@ -2257,8 +2473,8 @@ namespace SideDesk.Services
         {
             var files = new Dictionary<string, string>();
 
-            // 1) %LocalAppData%\SideDesk\ 下的全部 *.json（quickgroups.json、
-            //    bookmarks.json、aitools.json、programs.json、browser_profiles.json、settings.json 等）
+            // 1) %LocalAppData%\SideDesk\ 下的全部 *.json（app-settings.json、user-templates.json、
+            //    program-registry.json、quickgroups.json、bookmarks.json、aitools.json、settings.json 等）
             string localFolder = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SideDesk");
             AddJsonFilesFromFolder(files, localFolder);
@@ -2272,15 +2488,8 @@ namespace SideDesk.Services
             }
             catch { }
 
-            // 2) 程序目录下的 settings.json（应用停靠/主题/账户等设置）
-            TryAddFile(files,
-                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "settings.json"),
-                "app-settings.json");
-
-            // 3) 自定义数据模版
-            TryAddFile(files,
-                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data-templates", "user-templates.json"),
-                "user-templates.json");
+            // 主配置(app-settings.json)、用户模板(user-templates.json)、程序注册表(program-registry.json)
+            // 已迁到 %LocalAppData%\SideDesk\ 根目录，由上面第 1) 步的 *.json 遍历统一收录，无需再单独添加
 
             var payload = new
             {
