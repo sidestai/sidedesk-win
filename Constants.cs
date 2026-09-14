@@ -48,6 +48,8 @@ namespace SideDesk
 #if API_REGION_EN
             public const string ServerBaseUrl = "https://api.sidedesk.desktxp.com/console";
 #else
+            // 正式环境（生产域名，前后端均部署在 /console 子路径下）；
+            // 本地调试时改回 Vite dev server http://localhost:3007（/api 代理到后端 8082，WS 回退直连 127.0.0.1:19190）
             public const string ServerBaseUrl = "https://api.sidedesk.bigjing.com/console";
 #endif
 

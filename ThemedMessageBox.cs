@@ -195,8 +195,8 @@ public static class ThemedMessageBox
 
     /// <summary>
     /// 统一的“创建分享”对话框：选择分享模式（复制/引用）与导入方权限，确认后 POST /api/sidebar/share/create，
-    /// 成功则弹出分享结果窗（短码 + 链接）。itemServerId 为 null → 分享整个小屏（载荷仅含 barServerId）；非 null → 分享单个模块（附带 itemServerId）。
-    /// 供设置页「小屏窗口」行分享、窗口结构树节点分享、侧边栏模块分享统一复用，避免多处重复实现。
+    /// 成功则弹出分享结果窗（短码 + 链接）。itemServerId 为 null → 分享整个微屏（载荷仅含 barServerId）；非 null → 分享单个模块（附带 itemServerId）。
+    /// 供设置页「微屏窗口」行分享、窗口结构树节点分享、侧边栏模块分享统一复用，避免多处重复实现。
     /// </summary>
     public static void ShowCreateShareDialog(Window? owner, string barServerId, string? itemServerId, string? title = null)
     {
@@ -289,7 +289,7 @@ public static class ThemedMessageBox
                 var app = (App)Application.Current;
                 using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
                 bool allowEdit = cbEdit.IsChecked == true, allowDelete = cbDelete.IsChecked == true, allowReShare = cbReShare.IsChecked == true;
-                // itemServerId 为 null → 分享整个小屏（载荷不含 itemServerId 字段，与原窗口级分享一致）
+                // itemServerId 为 null → 分享整个微屏（载荷不含 itemServerId 字段，与原窗口级分享一致）
                 object payloadObj = itemServerId != null
                     ? new { barServerId, itemServerId, shareMode = mode, allowEdit, allowDelete, allowReShare }
                     : new { barServerId, shareMode = mode, allowEdit, allowDelete, allowReShare };

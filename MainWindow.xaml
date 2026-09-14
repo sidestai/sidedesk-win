@@ -59,10 +59,19 @@
                                Foreground="{DynamicResource BrushBG}"
                                VerticalAlignment="Center" HorizontalAlignment="Center"/>
                 </Border>
-                <!-- 窗口切换按钮：悬停时显示，弹性列内可裁剪，避免挤掉更多按钮 -->
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" ClipToBounds="True">
-                    <StackPanel x:Name="windowTabsPanel" Orientation="Horizontal" Margin="3,0"/>
-                    <Button x:Name="addWindowBtn" Content="+" Click="AddWindow_Click"
+                <!-- 窗口切换按钮：悬停时显示；ScrollViewer 限宽于弹性列内可横向滚动（滚轮转换见 WindowTabs_PreviewMouseWheel），
+                     按钮多时仍可滚到最前/最后；加号按钮置于 Auto 列始终可见不被滚走 -->
+                <Grid Grid.Column="1" VerticalAlignment="Center" ClipToBounds="True">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <ScrollViewer x:Name="windowTabsScroll" Grid.Column="0"
+                                  HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
+                                  PreviewMouseWheel="WindowTabs_PreviewMouseWheel">
+                        <StackPanel x:Name="windowTabsPanel" Orientation="Horizontal" Margin="3,0"/>
+                    </ScrollViewer>
+                    <Button x:Name="addWindowBtn" Grid.Column="1" Content="+" Click="AddWindow_Click"
                             Width="22" Height="22"
                             FontSize="14"
                             Background="Transparent"
@@ -71,19 +80,31 @@
                             Cursor="Hand"
                             ToolTip="{l:T window.addWindow}"
                             Margin="2,0"/>
-                </StackPanel>
+                </Grid>
                 <!-- 产品名：与切换按钮同列(互斥显示)，空间不足时尾部省略，优先保证序号完整 -->
                 <TextBlock x:Name="singleWindowTitle" Grid.Column="1" Text="{l:T common.metadeskScreen}"
                            VerticalAlignment="Center" HorizontalAlignment="Left" Margin="2,0,6,0"
                            TextTrimming="CharacterEllipsis"
                            Foreground="{DynamicResource BrushTextMain}" FontSize="12"/>
-                <Button x:Name="moreButton" Grid.Column="2" Content="⋯" Click="MoreButton_Click"
+                <Button x:Name="moreButton" Grid.Column="2" Click="MoreButton_Click"
                         VerticalAlignment="Center"
                         Width="30" Height="30"
                         FontSize="16" FontWeight="Bold" Padding="5,2"
                         Background="Transparent" Foreground="{DynamicResource BrushTextMain}"
                         BorderThickness="0" Cursor="Hand"
                         ToolTip="{l:T common.more}">
+                    <!-- 未读红点叠在 ⋯ 右上角：通知中心有未读时显示（见 UpdateUnreadBadge） -->
+                    <Button.Content>
+                        <Grid>
+                            <TextBlock Text="⋯" FontSize="16" FontWeight="Bold"
+                                       Foreground="{DynamicResource BrushTextMain}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <Ellipse x:Name="moreUnreadDot" Width="7" Height="7" Fill="#EF4444"
+                                     HorizontalAlignment="Right" VerticalAlignment="Top"
+                                     Margin="0,1,-2,0" IsHitTestVisible="False"
+                                     Visibility="Collapsed"/>
+                        </Grid>
+                    </Button.Content>
                     <Button.ContextMenu>
                         <ContextMenu x:Name="moreMenu" Opened="MoreMenu_Opened">
                             <Separator x:Name="menuSeparator1"/>
@@ -93,7 +114,23 @@
                                 <MenuItem Header="{l:T nativePanel.loading}"/>
                             </MenuItem>
                             <MenuItem Header="{l:T common.screenManagement}" Click="ScreenManager_Click"/>
-                            <MenuItem x:Name="notificationCenterMenu" Header="{l:T common.notificationCenter}" Click="NotificationCenter_Click"/>
+                            <MenuItem x:Name="notificationCenterMenu" Click="NotificationCenter_Click"
+                                      Header="{l:T common.notificationCenter}" Tag="Collapsed">
+                                <!-- 菜单项右侧未读红点：与更多按钮红点同源（NotificationService.UnreadCount）。
+                                     全局 MenuItem 样式用 emoji:TextBlock 渲染字符串 Header，故红点放在
+                                     本项自有的 HeaderTemplate 里，显隐由 Tag（Visibility）驱动 -->
+                                <MenuItem.HeaderTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal">
+                                            <emoji:TextBlock Text="{Binding}" VerticalAlignment="Center"/>
+                                            <Ellipse Width="6" Height="6" Fill="#EF4444"
+                                                     Margin="6,0,0,0" VerticalAlignment="Center"
+                                                     IsHitTestVisible="False"
+                                                     Visibility="{Binding Tag, RelativeSource={RelativeSource AncestorType=MenuItem}}"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </MenuItem.HeaderTemplate>
+                            </MenuItem>
                             <MenuItem Header="{l:T common.settings}" Click="Settings_Click"/>
                             <MenuItem x:Name="toolsMenu" Header="{l:T common.tools}" SubmenuOpened="ToolsMenu_SubmenuOpened">
                                 <MenuItem Header="{l:T nativePanel.loading}"/>

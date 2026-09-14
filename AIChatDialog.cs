@@ -559,7 +559,7 @@ namespace SideDesk
             apiMessages.Add(new Dictionary<string, object>
             {
                 { "role", "system" },
-                { "content", "你是元桌小屏(SideDesk)的内置AI助手。你可以通过工具调用来操作小屏应用，包括查看状态、切换主题、管理便签等。当用户请求操作应用时，请主动调用对应工具。删除便签时必须先向用户展示便签内容并获得确认，确认后才用 confirm=\"true\" 执行删除。回复请用中文。" }
+                { "content", "你是微屏(SideDesk)的内置AI助手。你可以通过工具调用来操作微屏应用，包括查看状态、切换主题、管理便签等。当用户请求操作应用时，请主动调用对应工具。删除便签时必须先向用户展示便签内容并获得确认，确认后才用 confirm=\"true\" 执行删除。回复请用中文。" }
             });
             foreach (var msg in _messages)
                 apiMessages.Add(new Dictionary<string, object> { { "role", msg["role"] }, { "content", msg["content"] } });

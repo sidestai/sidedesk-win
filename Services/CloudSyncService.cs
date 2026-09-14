@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Net.Http;
 using System.Text;
@@ -98,6 +99,35 @@ namespace SideDesk.Services
         public void Stop() { }
 
         /// <summary>
+        /// 内存窗口配置与当前账号作用域是否已脱节（登录态已变更、但窗口尚未按新作用域重载）。
+        /// 脱节时内存结构属于旧作用域 —— 典型是“登出重启后重新登录”：作用域已瞬间翻回 u:{密文}，
+        /// 而内存里只剩启动时 EnsureAtLeastOneBar 兜底建出的一个空窗口。此时上传结构会让服务端 bar 级
+        /// 对账把该账号全部窗口与模块软删（连带分享失效），推送行数据也会把旧作用域内容写到新账号名下，
+        /// 因此推送阶段必须整体跳过（拉取同样无意义：合并进脱节内存后无法安全落盘）。
+        /// </summary>
+        private static bool IsManagerScopeStale(WindowConfigManager mgr)
+        {
+            var loaded = mgr.LoadedScope;
+            return !string.IsNullOrEmpty(loaded) && loaded != LocalDbService.CurrentScope();
+        }
+
+        /// <summary>
+        /// 结构上传是否必须拒绝。两种致命情形：
+        /// 1) 内存作用域与当前作用域脱节（登录态已变更、窗口尚未重载）；
+        /// 2) 已持有 Token（服务端按登录者归属数据）但内存数据仍属未归属的 local 作用域。
+        ///    这是「登出重启后重新登录」的必经态：ApplyLoginSuccessCore 先存 Token 并立即启动对账，
+        ///    而 AccountUserId 要等 /auth/userinfo 回来才写入，因此两边作用域都是 local、情形 1 的戳比对会放行。
+        ///    此时上报的只有 local 作用域的兜底空窗口，服务端 bar 级对账会把该用户全部窗口与模块软删。
+        /// 正确顺序是：先 AdoptScope 把 local 数据晋升到 u:{密文} 并重载窗口，再上报。
+        /// </summary>
+        private static bool MustRejectStructureUpload(WindowConfigManager mgr, Settings settings)
+        {
+            if (IsManagerScopeStale(mgr)) return true;
+            return !string.IsNullOrEmpty(settings.AccountToken)
+                && string.Equals(mgr.LoadedScope, "local", StringComparison.Ordinal);
+        }
+
+        /// <summary>
         /// 启动对账 / 结构刷新：
         /// 1) pushLocal=true 时先上传本地未同步的窗口/模块（离线变更）并回写 serverId；
         /// 2) 推送本地行级离线变更后，拉取服务端全量结构补齐本地缺失的窗口/模块；
@@ -113,6 +143,13 @@ namespace SideDesk.Services
             if (string.IsNullOrEmpty(settings.AccountToken))
             {
                 StatusChanged?.Invoke(CloudSyncState.NotLoggedIn, Framework.Lang.T("cloudDrive.cannotSyncNotLogged"));
+                return false;
+            }
+
+            // 内存结构不属于当前账号作用域（或仍为未归属的 local）：上传即等于让服务端清空该账号全部窗口 —— 整次对账作废
+            if (MustRejectStructureUpload(app.WindowConfigs, settings))
+            {
+                System.Diagnostics.Debug.WriteLine("[CloudSync] reconcile skipped: structure upload unsafe (scope stale or still 'local' while authenticated)");
                 return false;
             }
 
@@ -150,6 +187,11 @@ namespace SideDesk.Services
 
                 if (structureChanged)
                 {
+                    // 合并进来的窗口可能不在 dock 中：dock 与窗口表是两份独立持久化，登录晋升会用
+                    // local dock 覆盖账号 dock，而「窗口已存在→回填模块」分支不碰 dock → 该 bar
+                    // 无标签、不渲染，只能等重启 Load() 的 RepairDockMembership 才可见。
+                    // 故结构变更后先自愈 dock 成员（尊重 ShowInTabs），再落盘与刷新，免重启立即可见。
+                    app.WindowConfigs.RepairDockMembership();
                     System.Windows.Application.Current?.Dispatcher?.Invoke(() => app.WindowConfigs.Save());
                     app.RefreshAllMainWindows();
                     // 结构变更可能增删窗口，同步刷新所有窗口的顶部标签栏
@@ -182,6 +224,13 @@ namespace SideDesk.Services
             if (string.IsNullOrEmpty(settings.AccountToken))
             {
                 StatusChanged?.Invoke(CloudSyncState.NotLoggedIn, Framework.Lang.T("cloudDrive.cannotSyncNotLogged"));
+                return false;
+            }
+
+            // 同 ReconcileAsync：严禁把旧作用域或仍未归属的 local 结构当作该账号的全量上报
+            if (MustRejectStructureUpload(app.WindowConfigs, settings))
+            {
+                System.Diagnostics.Debug.WriteLine("[CloudSync] sync skipped: structure upload unsafe (scope stale or still 'local' while authenticated)");
                 return false;
             }
 
@@ -220,10 +269,32 @@ namespace SideDesk.Services
         /// <summary>上传本地全量结构（bars/items），回写 localId -> serverId 映射并同步设置项。返回是否成功。</summary>
         private async Task<bool> UploadStructureAsync(Settings settings, WindowConfigManager mgr)
         {
-            // 结构化载荷：使用内存中的实时窗口配置（bars/items）
-            string bundle = BuildSyncPayloadJson(mgr);
+            // 兜底守卫（Reconcile/SyncNow 入口已拦，此处防新增调用点遗漏，如 NotifyRowsChanged 的 needStructure 分支）：
+            // 不安全的结构一旦上传，服务端 bar 级对账会软删该账号全部窗口，本地与云端同时不可自愈
+            if (MustRejectStructureUpload(mgr, settings))
+            {
+                System.Diagnostics.Debug.WriteLine("[CloudSync] structure upload rejected: scope stale or still 'local' while authenticated");
+                return false;
+            }
+            // 折叠：本地无 serverId 的 bar 不得上传成新 bar —— 组件并入第一个已同步 bar 后删除该本地 bar
+            if (FoldUnboundBarsIntoFirstBar(mgr))
+            {
+                // 被折叠删除的可能正是侧边栏正在显示的 bar：面板 _currentWindowConfig 与 dock 状态
+                // 仍指向已删实例（且其 Panels 已被清空），仅重绘永远停在旧对象上 → 免重启重绑定：
+                // 先自愈 dock 成员（确保并入后的目标 bar 在 dock 中），再重设 mgr + 重切活动窗口。
+                mgr.RepairDockMembership();
+                var appUi = System.Windows.Application.Current as App;
+                appUi?.ReloadAllWindowsUiFromCurrentConfigs();
+            }
+
+            // 显式删除墓碑：本地库中 deleted_at 非空且尚未确认上报的窗口/模块。
+            // 服务端的删除只认这份列表 —— 「内存里没有」不再被解读为「用户删了」
+            var (deletedBars, deletedItems) = LocalDbService.LoadPendingDeleteTombstones();
+
+            // 结构化载荷：使用内存中的实时窗口配置（bars/items）+ 删除墓碑
+            string bundle = BuildSyncPayloadJson(mgr, deletedBars: deletedBars, deletedItems: deletedItems);
             // 打印上传载荷到调试日志（缩进格式，便于复制给接口实现方；Release 构建自动移除）
-            System.Diagnostics.Debug.WriteLine("[CloudSync] upload payload POST " + SyncEndpoint + ":\n" + BuildSyncPayloadJson(mgr, indented: true));
+            System.Diagnostics.Debug.WriteLine("[CloudSync] upload payload POST " + SyncEndpoint + ":\n" + BuildSyncPayloadJson(mgr, indented: true, deletedBars: deletedBars, deletedItems: deletedItems));
             using var content = new StringContent(bundle, Encoding.UTF8, "application/json");
             using var req = new HttpRequestMessage(HttpMethod.Post, SyncEndpoint) { Content = content };
             req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + settings.AccountToken);
@@ -240,6 +311,10 @@ namespace SideDesk.Services
             // 打印服务器响应到调试日志（Release 构建自动移除）
             System.Diagnostics.Debug.WriteLine("[CloudSync] server response: " + responseJson);
             ApplyServerIdMappings(responseJson, settings, mgr);
+
+            // 墓碑已被服务端受理（HTTP 2xx 且返回了 serverId 映射）：只把本次上报过的那些标为已确认，
+            // 保留到期后清理；上报失败或本次未涵盖的墓碑保持 deleted_synced=0，下次结构上传时重报
+            LocalDbService.MarkTombstonesSynced(deletedBars, deletedItems);
 
             // 窗口同步成功后，追加设置项同步
             await SyncSettingsAsync(settings).ConfigureAwait(false);
@@ -524,6 +599,51 @@ namespace SideDesk.Services
             return changed;
         }
 
+        /// <summary>
+        /// 上传前折叠：本地无 serverId 的 personal bar 不上传为新 bar —— 把它的全部组件并入本地第一个
+        /// 已同步（有 serverId）的 personal bar 末尾，然后删除该本地 bar（用户规则：不随便新增 bar）。
+        /// 语义：无 serverId 的 bar 是兜底/晋升残留的「错误容器」，内容有价值、容器无价值；
+        /// 并入的组件随本次上传作为第一个 bar 的新 items 上报，服务端不会多出 bar。
+        /// 本地没有任何已同步 bar 时不折叠（内容无处可去，保留原样由上传新建第一个 bar）。
+        /// 组件无论是否已同步都移走：bar 删除不打墓碑（server_id 空）服务端无感知，
+        /// 但已同步组件若留在被删 bar 下会随本地结构消失而失去归属。
+        /// 返回是否真正发生了折叠（调用方据此触发 dock 自愈与 UI 重绑定）。
+        /// </summary>
+        private static bool FoldUnboundBarsIntoFirstBar(WindowConfigManager mgr)
+        {
+            try
+            {
+                WindowConfig? target = null;
+                foreach (var w in mgr.Windows)
+                    if (!string.IsNullOrEmpty(w.ServerId) && w.OwnerType == "personal") { target = w; break; }
+                if (target == null) return false;
+
+                var unbound = new List<WindowConfig>();
+                foreach (var w in mgr.Windows)
+                    if (w.ServerId == null && w.OwnerType == "personal" && w.ShareMode == null)
+                        unbound.Add(w);
+                if (unbound.Count == 0) return false;
+
+                foreach (var bar in unbound)
+                {
+                    if (bar.Panels != null && bar.Panels.Count > 0)
+                    {
+                        target.Panels.AddRange(bar.Panels);
+                        bar.Panels = new List<PanelItem>();
+                    }
+                    // Windows + 两侧 dock 移除并落库；无 serverId 不打墓碑，服务端无感知
+                    mgr.Remove(bar.Id);
+                    System.Diagnostics.Debug.WriteLine($"[CloudSync] folded unsynced bar into first bar: {bar.Name} -> {target.Name}");
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[CloudSync] fold unbound bars failed: {ex.Message}");
+                return false;
+            }
+        }
+
         #region 结构拉取与对账
 
         /// <summary>
@@ -561,11 +681,21 @@ namespace SideDesk.Services
                         }
                 }
 
+                // 本地删除墓碑：本设备已明确删除、服务端尚未确认受理的窗口/模块。
+                // 拉取合并必须对它们免疫 —— 否则服务端回灌会把已删项重新建回内存，随后 Save() 的
+                // upsert 复活语义（deleted_at=NULL）会抹掉墓碑，删除意图永久丢失、已删窗口在两端复活。
+                // 典型触发：结构上传失败后仍继续拉取；或收到其他设备 structure_changed 通知走只拉不推。
+                var (tombBars, tombItems) = LocalDbService.LoadPendingDeleteTombstones();
+                var tombBarSet = new HashSet<string>(tombBars, StringComparer.Ordinal);
+                var tombItemSet = new HashSet<string>(tombItems, StringComparer.Ordinal);
+
                 bool changed = false;
                 foreach (var barToken in serverBars.OfType<JObject>())
                 {
                     string? barServerId = barToken["serverId"]?.ToString();
                     if (string.IsNullOrEmpty(barServerId)) continue;
+                    // 已打墓碑的窗口不接受回灌：等墓碑上报确认，服务端自然不再返回它
+                    if (tombBarSet.Contains(barServerId!)) continue;
                     var items = barToken["items"] as JArray ?? new JArray();
 
                     // 按 ServerId 查找本地窗口
@@ -602,7 +732,7 @@ namespace SideDesk.Services
                                 Name = barTitle,
                                 OwnerType = "personal",
                             };
-                            if (MergeServerItemsIntoWindow(win, items, newPanelsOut) || items.Count == 0)
+                            if (MergeServerItemsIntoWindow(win, items, newPanelsOut, tombItemSet) || items.Count == 0)
                             {
                                 // 云端补齐的窗口同步进入两侧 dock，所有窗口顶部标签可见
                                 mgr.AddToAllDocks(win);
@@ -618,7 +748,7 @@ namespace SideDesk.Services
                     }
 
                     // 窗口已存在：补齐缺失模块
-                    if (MergeServerItemsIntoWindow(localWin, items, newPanelsOut))
+                    if (MergeServerItemsIntoWindow(localWin, items, newPanelsOut, tombItemSet))
                     {
                         changed = true;
                         System.Diagnostics.Debug.WriteLine($"[CloudSync] backfilled new cloud modules for window {localWin.Name}");
@@ -636,8 +766,9 @@ namespace SideDesk.Services
         /// <summary>
         /// 将服务端模块清单补齐到窗口（已存在 ServerId 的跳过，本地版本优先）；
         /// group 子模块（groupId 非空）挂到父分组下。返回是否有新增模块。
+        /// <paramref name="deletedServerIds"/> 为本地未确认的删除墓碑，命中的模块一律跳过（不接受服务端回灌复活）。
         /// </summary>
-        private static bool MergeServerItemsIntoWindow(WindowConfig win, JArray items, List<PanelItem> newPanelsOut)
+        private static bool MergeServerItemsIntoWindow(WindowConfig win, JArray items, List<PanelItem> newPanelsOut, HashSet<string>? deletedServerIds = null)
         {
             // 收集本地已存在的模块 ServerId（含分组子项）
             var existingServerIds = new HashSet<string>();
@@ -651,6 +782,8 @@ namespace SideDesk.Services
             {
                 string? serverId = itemToken["serverId"]?.ToString();
                 if (string.IsNullOrEmpty(serverId) || existingServerIds.Contains(serverId!)) continue;
+                // 已打墓碑的模块不接受回灌（同 bar 级理由）
+                if (deletedServerIds != null && deletedServerIds.Contains(serverId!)) continue;
                 newPanels[serverId!] = BuildPanelFromServerItem(itemToken, win);
                 order.Add(itemToken);
             }
@@ -731,7 +864,8 @@ namespace SideDesk.Services
                 if (prop.Name is "Id" or "ServerId" or "Type" or "ChildPanels" or "Pomodoro"
                     or "StickyNotes" or "TodoItems" or "TimerItems" or "CountdownItems"
                     or "SignalLights" or "ClipboardItems" or "FileItems"
-                    or "DashboardItems" or "DigitalEmployeeIds" or "FriendUserIds" or "QuickItems") continue;
+                    or "DashboardItems" or "DigitalEmployeeIds" or "FriendUserIds" or "QuickItems"
+                    or "CheckInItems") continue;
                 var targetProp = panel.GetType().GetProperty(prop.Name);
                 if (targetProp == null || !targetProp.CanWrite || prop.Value.Type == JTokenType.Null) continue;
                 try
@@ -982,6 +1116,7 @@ namespace SideDesk.Services
                 PanelType.Friend => p.FriendUserIds == null ? null
                     : p.FriendUserIds.Select(id => new FriendUserRow { Id = id.ToString(), UserId = id.ToString() }).ToList(),
                 PanelType.QuickGroup => p.QuickItems,
+                PanelType.CheckIn => p.CheckInItems,
                 _ => null
             };
             if (list == null) return null;
@@ -1757,6 +1892,10 @@ namespace SideDesk.Services
                     QuickGroupManager.SortByIndex(quickItems); // 服务端按 id 返回，需按 SortIndex 恢复用户自定义顺序
                     p.QuickItems = quickItems;
                     break;
+                case PanelType.CheckIn:
+                    var checkInItems = NJson.JsonConvert.DeserializeObject<List<CheckInItem>>(json) ?? new();
+                    p.CheckInItems = checkInItems.OrderBy(c => c.SortIndex).ToList(); // 服务端按 id 返回，按 SortIndex 恢复顺序
+                    break;
             }
         }
 
@@ -1890,11 +2029,18 @@ namespace SideDesk.Services
         };
 
         /// <summary>
-        /// 构建云同步结构化上传载荷：{ app, machine, corpId, syncedAt, bars[] }。
+        /// 本客户端声明的云同步结构协议版本。
+        /// 2 = 上报显式删除墓碑（deletedBars/deletedItems），服务端只按墓碑删，不再做「缺席即删除」对账。
+        /// </summary>
+        public const int SyncProtocolVersion = 2;
+
+        /// <summary>
+        /// 构建云同步结构化上传载荷：{ app, machine, corpId, syncedAt, syncProtocol, bars[], deletedBars[], deletedItems[] }。
         /// bar 含 localId/name/bgColor/items；item 含 localId/type/title/bgColor/data，
         /// group 类型的 item 额外带一层子项（items）。
         /// </summary>
-        public static string BuildSyncPayloadJson(WindowConfigManager mgr, bool indented = false)
+        public static string BuildSyncPayloadJson(WindowConfigManager mgr, bool indented = false,
+            IReadOnlyList<string>? deletedBars = null, IReadOnlyList<string>? deletedItems = null)
         {
             // 同一 ServerId 模块出现在多个窗口时（自导入 reference 共存：原窗口 + 导入视图），
             // 上传只保留第一个窗口中的条目，后续窗口跳过：避免服务端把模块归属在窗口间
@@ -1949,7 +2095,13 @@ namespace SideDesk.Services
                 machine = Environment.MachineName,
                 corpId,
                 syncedAt = DateTime.Now.ToString("o"),
+                // 必须显式声明协议版本，不能靠 deletedBars 是否存在来判断：
+                // 新客户端恰好没有待上报墓碑时该列表为空，服务端会误判为旧客户端并退回缺席对账，
+                // 等于又把「不完整视图」当成了删除意图
+                syncProtocol = SyncProtocolVersion,
                 bars,
+                deletedBars = deletedBars ?? Array.Empty<string>(),
+                deletedItems = deletedItems ?? Array.Empty<string>(),
                 variables,
                 dataItems,
                 variableSets
@@ -2090,6 +2242,7 @@ namespace SideDesk.Services
             jo.Remove("DigitalEmployeeIds");
             jo.Remove("FriendUserIds");
             jo.Remove("QuickItems");
+            jo.Remove("CheckInItems");
 
             foreach (var prop in jo.Properties().Where(pr => pr.Value.Type == JTokenType.Null).ToList())
                 prop.Remove();
@@ -2370,25 +2523,37 @@ namespace SideDesk.Services
 
         #region 本地备份 / 恢复 / 导出
 
-        // 本地备份目录与文件（覆盖式，仅保留最后一个）
+        // 本地备份目录与文件（覆盖式，仅保留最后一个）。
+        // 新格式为 zip 包：config-bundle.json（全部 JSON 配置打包）+ sidedesk.db（SQLite 一致性快照）
         private static string BackupDir => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SideDesk", "backup");
+        private static string LastBackupZip => Path.Combine(BackupDir, "last-backup.zip");
+        // 旧格式（纯 JSON bundle）：仅用于兼容恢复，新备份一律写 zip 并清理旧文件
         private static string LastBackupFile => Path.Combine(BackupDir, "last-backup.json");
 
-        /// <summary>是否存在本地备份。</summary>
-        public static bool HasLocalBackup() => File.Exists(LastBackupFile);
+        /// <summary>是否存在本地备份（新 zip 或旧 json 格式）。</summary>
+        public static bool HasLocalBackup() => File.Exists(LastBackupZip) || File.Exists(LastBackupFile);
+
+        /// <summary>本地备份目录（%LocalAppData%\SideDesk\backup），供「选择备份文件恢复」对话框定位默认目录。</summary>
+        public static string LocalBackupDir => BackupDir;
 
         /// <summary>获取最后一次本地备份的时间（无则返回 null）。</summary>
         public static DateTime? GetLocalBackupTime()
-            => File.Exists(LastBackupFile) ? File.GetLastWriteTime(LastBackupFile) : null;
+        {
+            if (File.Exists(LastBackupZip)) return File.GetLastWriteTime(LastBackupZip);
+            if (File.Exists(LastBackupFile)) return File.GetLastWriteTime(LastBackupFile);
+            return null;
+        }
 
-        /// <summary>创建本地备份（覆盖式，只保留最后一个）。返回是否成功。</summary>
+        /// <summary>创建本地备份（覆盖式，只保留最后一个）：JSON 配置 + SQLite 快照打包为 zip。返回是否成功。</summary>
         public static bool CreateLocalBackup()
         {
             try
             {
                 Directory.CreateDirectory(BackupDir);
-                File.WriteAllText(LastBackupFile, BuildConfigBundleJson(indented: true));
+                BuildBackupZip(LastBackupZip);
+                // 清理旧格式备份，避免恢复时二义
+                if (File.Exists(LastBackupFile)) File.Delete(LastBackupFile);
                 return true;
             }
             catch (Exception ex)
@@ -2398,17 +2563,107 @@ namespace SideDesk.Services
             }
         }
 
-        /// <summary>从最后一次本地备份恢复所有配置。返回恢复的文件数（-1 表示失败/无备份）。</summary>
+        /// <summary>导出备份 zip 到指定路径（设置页「导出」用，内容与本地备份一致）。</summary>
+        public static void ExportBackupZip(string destPath)
+        {
+            var dir = Path.GetDirectoryName(destPath);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            BuildBackupZip(destPath);
+        }
+
+        /// <summary>构建备份 zip：config-bundle.json（全部 JSON 配置）+ sidedesk.db（VACUUM INTO 一致性快照，已合并 WAL）。
+        /// 先写 .tmp 再替换，避免中途失败留下半截 zip。</summary>
+        private static void BuildBackupZip(string destZip)
+        {
+            string tmpZip = destZip + ".tmp";
+            string? dbSnap = null;
+            try
+            {
+                if (File.Exists(tmpZip)) File.Delete(tmpZip);
+                using (var zip = ZipFile.Open(tmpZip, ZipArchiveMode.Create))
+                {
+                    var entry = zip.CreateEntry("config-bundle.json", CompressionLevel.Optimal);
+                    using (var w = new StreamWriter(entry.Open(), new UTF8Encoding(false)))
+                        w.Write(BuildConfigBundleJson(indented: true));
+
+                    // SQLite 快照（db 不存在时跳过，例如全新安装未落库）
+                    dbSnap = Path.Combine(Path.GetTempPath(), $"sidedesk-db-snap-{Guid.NewGuid():N}.db");
+                    if (LocalDbService.CreateSnapshot(dbSnap))
+                        zip.CreateEntryFromFile(dbSnap, "sidedesk.db", CompressionLevel.Optimal);
+                }
+                File.Move(tmpZip, destZip, overwrite: true);
+            }
+            finally
+            {
+                try { if (File.Exists(tmpZip)) File.Delete(tmpZip); } catch { }
+                try { if (dbSnap != null && File.Exists(dbSnap)) File.Delete(dbSnap); } catch { }
+            }
+        }
+
+        /// <summary>从最后一次本地备份恢复所有配置与数据库。返回恢复的文件数（-1 表示失败/无备份）。</summary>
         public static int RestoreLocalBackup()
         {
             try
             {
+                // 新格式 zip：先整体替换 SQLite（含连接池释放与 WAL 边车清理），再写回 JSON 配置
+                // （其中 windows.json 会被 ReimportJsonIfExists 重新导入新 db，与备份时点一致）
+                if (File.Exists(LastBackupZip))
+                    return RestoreFromZipFile(LastBackupZip);
+                // 旧格式兼容：纯 JSON bundle
                 if (!File.Exists(LastBackupFile)) return -1;
                 return RestoreFromBundleJson(File.ReadAllText(LastBackupFile));
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[Backup] restore failed: {ex.Message}");
+                return -1;
+            }
+        }
+
+        /// <summary>从任意 zip 备份包恢复所有配置与数据库（先替换 SQLite 快照，再写回 JSON 配置）。
+        /// 返回恢复的文件数（-1 表示失败）。</summary>
+        public static int RestoreFromZipFile(string zipPath)
+        {
+            string tmp = Path.Combine(Path.GetTempPath(), $"sidedesk-restore-{Guid.NewGuid():N}");
+            try
+            {
+                Directory.CreateDirectory(tmp);
+                ZipFile.ExtractToDirectory(zipPath, tmp);
+                string dbSnap = Path.Combine(tmp, "sidedesk.db");
+                if (File.Exists(dbSnap))
+                {
+                    try { LocalDbService.ReplaceDbWithFile(dbSnap); }
+                    catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[Backup] failed to replace SQLite db: {ex.Message}"); }
+                }
+                string bundle = Path.Combine(tmp, "config-bundle.json");
+                if (!File.Exists(bundle)) return 0;
+                return RestoreFromBundleJson(File.ReadAllText(bundle));
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Backup] restore from zip failed: {ex.Message}");
+                return -1;
+            }
+            finally
+            {
+                try { Directory.Delete(tmp, true); } catch { }
+            }
+        }
+
+        /// <summary>从用户选择的备份文件恢复：自动识别 .json 配置包或 .zip 备份包（含无扩展名，按 zip 处理）。
+        /// 返回恢复的文件数（-1 表示失败）。</summary>
+        public static int RestoreFromBackupFile(string path)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(path) || !File.Exists(path)) return -1;
+                if (string.Equals(Path.GetExtension(path), ".json", StringComparison.OrdinalIgnoreCase))
+                    return RestoreFromBundleJson(File.ReadAllText(path));
+                return RestoreFromZipFile(path);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Backup] restore from file failed: {ex.Message}");
                 return -1;
             }
         }

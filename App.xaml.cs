@@ -46,22 +46,61 @@ namespace SideDesk
         }
 
         /// <summary>
-        /// 提示重启应用（切换账号/退出登录）：本地数据按账号作用域隔离，窗口在启动时按当时作用域创建，
-        /// 需重启才能加载目标账号的数据。确认后先拉起新实例再退出当前实例（OnExit 内 Environment.Exit 兜底）。
+        /// 账号作用域变更后在进程内切换窗口数据（登录/登出/登录态失效均走此路径，不再要求重启）：
+        /// 按新作用域重新加载 WindowConfigManager 并重新注入各主窗口，面板与标签栏随即呈现目标作用域的数据。
+        /// 调用前提：作用域晋升（AdoptScope）已落库 —— 否则新作用域加载会缺刚晋升的数据，
+        /// 随后一次保存会把它们当作「已删除」打墓碑上报服务端。
+        /// 重载后 mgr.LoadedScope 与 CurrentScope 一致，SaveManager / 结构上传的作用域守卫随之放行。
         /// </summary>
-        public static void PromptRestartForAccountSwitch(string message)
+        public void ReloadWindowConfigsForNewScope()
         {
-            void Prompt()
+            void Reload()
             {
-                var r = MessageBox.Show(message, Framework.Lang.T("login.switchAccount"), MessageBoxButton.OKCancel, MessageBoxImage.Question);
-                if (r != MessageBoxResult.OK) return;
-                try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = true }); }
-                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[App] failed to launch new instance: {ex.Message}"); }
-                Current.Shutdown();
+                WindowConfigs = WindowConfigManager.Load();
+                WindowConfigs.EnsureDefault();
+                WindowConfigs.EnsureAtLeastOneBar();
+                foreach (var mw in _windows)
+                {
+                    // 已加载：重设 mgr 并重切活动窗口（面板渲染依赖当前窗口实例，仅重绘不够）；
+                    // 未加载：只注入 mgr，其 MainWindow_Loaded 会自行按新 dock 切换活动窗口
+                    if (mw.IsLoaded) mw.ReloadForScopeSwitch(WindowConfigs);
+                    else mw.SetWindowConfigManager(WindowConfigs);
+                }
+                foreach (Window w in Current.Windows)
+                    if (w is SettingsWindow sw) sw.RefreshAfterScopeSwitch();
             }
             var dispatcher = Current?.Dispatcher;
             if (dispatcher == null) return;
-            if (dispatcher.CheckAccess()) Prompt(); else dispatcher.Invoke(Prompt);
+            if (dispatcher.CheckAccess()) Reload(); else dispatcher.Invoke(Reload);
+
+            // 作用域已对齐：补一次云同步对账。登录瞬间那次 Start() 因 MustRejectStructureUpload
+            // （持 Token 但内存仍属 local）被拦下，此刻内存已属新作用域，才是与服务端对齐的正确时机。
+            // 登出/登录态失效路径已清 Token 并关闭云同步，条件为假不会误触发。
+            if (AppSettings.EnableCloudSync && !string.IsNullOrEmpty(AppSettings.AccountToken))
+            {
+                try { _ = Services.CloudSyncService.Instance.ReconcileAsync(pushLocal: true); } catch { }
+            }
+        }
+
+        /// <summary>
+        /// 内存结构发生「bar 增删」级变更后免重启重绑定 UI：仅重绘（RefreshAllMainWindows）不够 ——
+        /// 面板 _currentWindowConfig 与 MainWindow._dockState 仍指向被删除的旧 bar 实例
+        /// （典型：云同步上传前折叠把正在显示的离线 bar 并入已同步 bar 后删除），
+        /// 必须像 ReloadWindowConfigsForNewScope 那样对已加载主窗口重设 mgr + 重切活动窗口。
+        /// </summary>
+        public void ReloadAllWindowsUiFromCurrentConfigs()
+        {
+            void Reload()
+            {
+                foreach (var mw in _windows)
+                {
+                    if (mw.IsLoaded) mw.ReloadForScopeSwitch(WindowConfigs);
+                    else mw.SetWindowConfigManager(WindowConfigs);
+                }
+            }
+            var dispatcher = Current?.Dispatcher;
+            if (dispatcher == null) return;
+            if (dispatcher.CheckAccess()) Reload(); else dispatcher.Invoke(Reload);
         }
 
         private readonly System.Collections.Generic.List<MainWindow> _windows = new();
@@ -199,6 +238,9 @@ namespace SideDesk
             {
                 Services.BackendWebSocketService.Instance.MessageReceived -= OnBackendWsMessage;
                 Services.BackendWebSocketService.Instance.MessageReceived += OnBackendWsMessage;
+                // 连接建立（登录 / 断线重连）后补拉待处理的团队申请与邀请，离线期间错过的也能进通知中心
+                Services.BackendWebSocketService.Instance.Connected -= OnBackendWsConnected;
+                Services.BackendWebSocketService.Instance.Connected += OnBackendWsConnected;
             }
             catch (Exception ex)
             {
@@ -329,7 +371,7 @@ namespace SideDesk
                 {
                     mw.DismissNotificationByTag("update-ready"); // 先清旧条目，避免重复检查时堆叠
                     mw.ShowNotification(Framework.Lang.TF("update.readyNotification", version), blue, () =>
-                        OpenSettings(sw => sw.NavigateToPage("about")), "update-ready");
+                        OpenSettings(sw => sw.SwitchToAboutPage()), "update-ready");
                 }
             }
         }
@@ -454,9 +496,9 @@ namespace SideDesk
                     // 显示橙色掉线通知
                     ShowLoggedOutNotification();
 
-                    // 作用域已回退：窗口仍显示旧账号数据，提示重启加载未登录（本地）数据
+                    // 作用域已回退：进程内切换到未登录（本地）数据，无需重启打断用户
                     if (wasLoggedIn)
-                        PromptRestartForAccountSwitch(Framework.Lang.T("login.sessionExpiredRestartConfirm"));
+                        ReloadWindowConfigsForNewScope();
 
                     // 401/403 是服务器的明确应答（Token 无效），网络可达 → 不算离线，直接结束
                     return;
@@ -595,10 +637,13 @@ namespace SideDesk
 
                 // 用户 ID（encrypt2 密文）：本地数据按账号隔离的作用域 + 加密同步密钥派生 salt
                 string? userIdEnc = data.TryGetProperty("userId", out var uid) ? uid.GetString() : null;
-                // 运行中从 A 切换到 B（旧值非空且不同）：窗口仍是旧账号作用域数据，需提示重启
-                bool accountSwitched = !string.IsNullOrEmpty(AppSettings.AccountUserId)
-                    && !string.IsNullOrWhiteSpace(userIdEnc) && userIdEnc != AppSettings.AccountUserId;
-                if (!string.IsNullOrWhiteSpace(userIdEnc) && userIdEnc != AppSettings.AccountUserId)
+                // 作用域变更即需重载窗口数据，包含「登出后重新登录」（旧值为空）这一档：
+                // 内存里的 WindowConfigs 属于加载时的作用域，作用域一旦翻转就与当前账号脱节
+                // （登出后只剩 EnsureAtLeastOneBar 兜底建出的空窗口）。旧逻辑只在「旧值非空」时处理，
+                // 漏掉的 空→有值 这一档会让内存配置永久停留在 local 作用域，随后任意一次保存或结构上传
+                // 就会把该账号本地与服务端的全部窗口清空。
+                bool scopeChanged = !string.IsNullOrWhiteSpace(userIdEnc) && userIdEnc != AppSettings.AccountUserId;
+                if (scopeChanged)
                 {
                     AppSettings.AccountUserId = userIdEnc;
                     changed = true;
@@ -643,18 +688,27 @@ namespace SideDesk
                 if (changed) AppSettings.Save();
 
                 // 登录/切换账号后：把未归属（local）的本地变量数据晋升到当前用户并补传服务器（无残留时空查询，幂等）
+                Task? adoptTask = null;
                 if (!string.IsNullOrWhiteSpace(userIdEnc))
                 {
-                    _ = Task.Run(() =>
+                    adoptTask = Task.Run(() =>
                     {
                         try { Services.DataPollingService.Instance.AdoptPendingLocalData(); }
                         catch (Exception adoptEx) { System.Diagnostics.Debug.WriteLine($"[Auth] orphaned data promotion error: {adoptEx.Message}"); }
                     });
                 }
 
-                // 切换账号：窗口数据仍为旧账号作用域，提示重启加载新账号数据
-                if (accountSwitched)
-                    PromptRestartForAccountSwitch(Framework.Lang.T("login.accountSwitchedRestartConfirm"));
+                // 作用域变更：进程内重载窗口数据到新作用域（登录/切换账号后直接呈现该账号状态，无需重启）。
+                // 须等晋升落库完成再重载 —— 否则新作用域加载会缺刚晋升进来的数据，
+                // 随后一次保存就会把它们当作「已删除」打墓碑上报
+                if (scopeChanged)
+                {
+                    if (adoptTask != null)
+                    {
+                        try { await adoptTask.ConfigureAwait(false); } catch { }
+                    }
+                    ReloadWindowConfigsForNewScope();
+                }
             }
             catch (Exception ex)
             {
@@ -1056,6 +1110,8 @@ namespace SideDesk
                 {
                     var fromName = (string?)data["fromName"] ?? Framework.Lang.T("nativePanel.unknownUser");
                     var requestId = (string?)data["requestId"] ?? "";
+                    // 同步写一条进通知中心（参与服务端已读状态与红点，气泡只是瞬时提示）
+                    Services.NotificationSyncService.Instance.EnqueueLiveSilent("friend_request", data);
 
                     Dispatcher.Invoke(() =>
                     {
@@ -1090,6 +1146,41 @@ namespace SideDesk
                             }
                         }
                         System.Diagnostics.Debug.WriteLine($"[BackendWS] friend_request notification handled, anyShown={anyShown}");
+                    });
+                }
+                else if (evt == "friend_request_result" && data != null)
+                {
+                    // 好友请求审批结果（发起方收到）：通过/拒绝气泡；通过后好友关系变化需刷新好友列表
+                    bool accepted = data["accepted"]?.ToObject<bool>() == true;
+                    var friendName = (string?)data["friendName"] ?? Framework.Lang.T("nativePanel.unknownUser");
+                    // 同步写进通知中心（未读亮红点，点过即已读并回传服务端）
+                    Services.NotificationSyncService.Instance.EnqueueLiveSilent("friend_request_result", data);
+                    Dispatcher.Invoke(() =>
+                    {
+                        foreach (var mw in _windows)
+                        {
+                            if (!mw.IsLoaded) continue;
+                            try
+                            {
+                                mw.ShowBubbleNotification(accepted
+                                    ? Framework.Lang.TF("nativePanel.friendRequestApproved", friendName)
+                                    : Framework.Lang.TF("nativePanel.friendRequestDeclined", friendName));
+                            }
+                            catch { }
+                        }
+                        // 设置窗口打开时刷新好友页（通过后新好友入列表；拒绝后请求列表移除该条）
+                        foreach (Window w in Windows)
+                        {
+                            try
+                            {
+                                if (w is SettingsWindow sw && sw.IsLoaded)
+                                    sw.OnFriendStatusChanged();
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[BackendWS] failed to refresh friends on settings window: {ex}");
+                            }
+                        }
                     });
                 }
                 else if (evt == "friend_online" && data != null)
@@ -1216,24 +1307,17 @@ namespace SideDesk
                 }
                 else if (evt == "team_join_request" && data != null)
                 {
-                    // 团队加入申请（管理员收到）：气泡通知 + 设置窗团队页刷新
-                    var applicantName = (string?)data["applicantName"] ?? Framework.Lang.T("nativePanel.unknownUser");
-                    var teamName = (string?)data["teamName"] ?? "";
-                    Dispatcher.Invoke(() =>
-                    {
-                        foreach (var mw in _windows)
-                        {
-                            if (!mw.IsLoaded) continue;
-                            try { mw.ShowBubbleNotification(Framework.Lang.TF("nativePanel.teamApplyNotification", applicantName, teamName)); } catch { }
-                        }
-                        NotifySettingsTeamChanged(membershipChanged: false);
-                    });
+                    // 团队加入申请（管理员收到）：写入通知中心（未读红点 + 卡片上直接同意/拒绝，点击主体跳设置团队页）
+                    Services.TeamNotificationService.Instance.EnqueueJoinRequest(data);
+                    Dispatcher.Invoke(() => NotifySettingsTeamChanged(membershipChanged: false));
                 }
                 else if (evt == "team_application_result" && data != null)
                 {
                     // 加入申请审批结果（申请人收到）：通过/拒绝气泡；通过时成员关系变化需刷新团队切换下拉
                     bool accepted = data["accepted"]?.ToObject<bool>() == true;
                     var teamName = (string?)data["teamName"] ?? "";
+                    // 同步写进通知中心（未读亮红点，点过即已读并回传服务端）
+                    Services.NotificationSyncService.Instance.EnqueueLiveSilent("team_application_result", data);
                     Dispatcher.Invoke(() =>
                     {
                         foreach (var mw in _windows)
@@ -1252,24 +1336,17 @@ namespace SideDesk
                 }
                 else if (evt == "team_invite" && data != null)
                 {
-                    // 团队邀请（被邀请人收到）
-                    var inviterName = (string?)data["inviterName"] ?? Framework.Lang.T("common.admin");
-                    var teamName = (string?)data["teamName"] ?? "";
-                    Dispatcher.Invoke(() =>
-                    {
-                        foreach (var mw in _windows)
-                        {
-                            if (!mw.IsLoaded) continue;
-                            try { mw.ShowBubbleNotification(Framework.Lang.TF("nativePanel.teamInviteNotification", inviterName, teamName)); } catch { }
-                        }
-                        NotifySettingsTeamChanged(membershipChanged: false);
-                    });
+                    // 团队邀请（被邀请人收到）：同样进通知中心，卡片上可直接接受/拒绝
+                    Services.TeamNotificationService.Instance.EnqueueInvitation(data);
+                    Dispatcher.Invoke(() => NotifySettingsTeamChanged(membershipChanged: false));
                 }
                 else if (evt == "team_member_joined" && data != null)
                 {
                     // 成员入团通知（管理员/邀请人收到）
                     var memberName = (string?)data["memberName"] ?? Framework.Lang.T("team.newMember");
                     var teamName = (string?)data["teamName"] ?? "";
+                    // 同步写进通知中心（参与已读状态与红点）
+                    Services.NotificationSyncService.Instance.EnqueueLiveSilent("team_member_joined", data);
                     Dispatcher.Invoke(() =>
                     {
                         foreach (var mw in _windows)
@@ -1280,6 +1357,51 @@ namespace SideDesk
                         NotifySettingsTeamChanged(membershipChanged: false);
                     });
                 }
+                else if (evt == "bar_meta_updated" && data != null)
+                {
+                    // Web 端修改微屏元数据（当前为改名）：按 ServerId 回写本地窗口名、落盘并刷新顶部标签栏
+                    var barServerId = (string?)data["barServerId"];
+                    var title = (string?)data["title"];
+                    if (!string.IsNullOrEmpty(barServerId) && !string.IsNullOrEmpty(title))
+                    {
+                        Dispatcher.Invoke(() =>
+                        {
+                            WindowConfig? target = null;
+                            foreach (var w in WindowConfigs.Windows)
+                                if (w.ServerId == barServerId) { target = w; break; }
+                            if (target == null || target.Name == title) return;
+                            target.Name = title!;
+                            WindowConfigs.Save();
+                            RefreshAllWindowTabs();
+                        });
+                    }
+                }
+                else if (evt == "team_membership_revoked" && data != null)
+                {
+                    // 被移出团队/退出团队/团队解散：即时清除该团队全部本地数据（窗口/卡片/云盘源/变量集/数据项）
+                    var corpId = (string?)data["corpId"];
+                    if (!string.IsNullOrEmpty(corpId))
+                        Dispatcher.Invoke(() => PurgeTeamDataLocal(corpId!));
+                }
+                else if (evt == "team_item_removed" && data != null)
+                {
+                    // 团队卡片被作者删除或改归属其他团队：成员端即时从 bar 移除该卡片
+                    var itemServerId = (string?)data["itemServerId"];
+                    if (!string.IsNullOrEmpty(itemServerId))
+                        Dispatcher.Invoke(() => RemoveTeamItemLocal(itemServerId!));
+                }
+                else if (evt == "team_bar_removed" && data != null)
+                {
+                    // 团队窗口被删除：成员端即时移除本地对应团队窗口
+                    var teamBarServerId = (string?)data["barServerId"];
+                    if (!string.IsNullOrEmpty(teamBarServerId))
+                        Dispatcher.Invoke(() => RemoveTeamWindowLocal(teamBarServerId!));
+                }
+                else if (data != null && (evt == "team_membership_notice" || evt == "team_item_notice" || evt == "share_revoked_notice"))
+                {
+                    // 团队/分享类用户通知：成员操作告知 + 「内容被移除」告知
+                    HandleTeamNotice(evt!, data);
+                }
             }
             catch (Exception ex)
             {
@@ -1287,8 +1409,103 @@ namespace SideDesk
             }
         }
 
+        /// <summary>
+        /// 团队/分享类用户通知，写入通知中心（未读红点、可回溯、点过即已读并回传服务端）+ 弹一次气泡。
+        /// 同一入口承载两类语义，措辞差异由 BuildTeamNoticeText 按事件与 reason 区分：
+        /// - 成员操作（新增/改名/内容修改/移动/恢复/加入团队/行数据变更）：只客观陈述「谁做了什么」；
+        /// - 内容被移除（被移出团队/团队解散、卡片·微屏被作者删除或改归属、引用分享被取消）：本地数据已由配套指令
+        ///   （team_membership_revoked / team_item_removed / team_bar_removed / share_cancelled）即时清除，文案说明「为什么没了」。
+        /// 实时气泡与通知中心条目共用同一份文案，保证重启后从列表同步回来的文字一致。
+        /// </summary>
+        private void HandleTeamNotice(string evt, Newtonsoft.Json.Linq.JObject data)
+        {
+            try
+            {
+                var text = Services.NotificationSyncService.BuildTeamNoticeText(evt, data);
+                if (string.IsNullOrEmpty(text)) return;
+                Services.NotificationSyncService.Instance.EnqueueLiveSilent(evt, data);
+                Dispatcher.Invoke(() =>
+                {
+                    foreach (var mw in _windows)
+                    {
+                        if (!mw.IsLoaded) continue;
+                        try { mw.ShowBubbleNotification(text!); } catch { }
+                    }
+                });
+                System.Diagnostics.Debug.WriteLine($"[App] team notice shown: {evt} :: {text}");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[App] failed to handle team notice {evt}: {ex.Message}");
+            }
+        }
+
+        /// <summary>后端 WS 连接建立：拉取服务端通知列表同步已读状态（服务端为权威源，重启后红点自动恢复；接口不可用时降级为只补团队待办）；
+        /// 并对账一次团队身份，补上离线期间错过的 team_membership_revoked 推送</summary>
+        private void OnBackendWsConnected()
+        {
+            _ = Services.NotificationSyncService.Instance.SyncAsync();
+            _ = ReconcileTeamMembershipAsync();
+        }
+
+        /// <summary>
+        /// 团队身份兜底对账：成员被移出时客户端可能离线/正在重启，错过 team_membership_revoked 推送后
+        /// 本地团队数据会永久残留（拉取对账只补缺、不删多余），因此每次 WS 连接建立（含重连）按服务端
+        /// 团队列表清理本机已无身份的团队数据。仅在列表成功取回时执行 —— 接口失败/未登录返回 null，
+        /// 此时宁可保留数据也绝不误删。
+        /// </summary>
+        private async System.Threading.Tasks.Task ReconcileTeamMembershipAsync()
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(AppSettings.AccountToken)) return;
+                var teams = await Services.TeamService.Instance.ListTeamsAsync().ConfigureAwait(false);
+                if (teams == null) return;
+                var joined = new System.Collections.Generic.HashSet<string>(
+                    teams.Where(t => !string.IsNullOrEmpty(t.Id)).Select(t => t.Id), StringComparer.Ordinal);
+
+                // 本机带团队归属的全部 corpId：团队窗口 / 团队卡片 / 后台数据项 / 变量集 / 云盘源 / 当前选中团队
+                var local = new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal);
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    foreach (var w in WindowConfigs.Windows)
+                    {
+                        if (w.OwnerType == "team" && !string.IsNullOrEmpty(w.CorpId)) local.Add(w.CorpId!);
+                        foreach (var p in w.Panels) CollectPanelTeamIds(p, local);
+                    }
+                    foreach (var d in WindowConfigs.BackgroundDashboardItems)
+                        if (!string.IsNullOrEmpty(d.TeamId)) local.Add(d.TeamId!);
+                    foreach (var v in WindowConfigs.VariableSets)
+                        if (!string.IsNullOrEmpty(v.TeamId)) local.Add(v.TeamId!);
+                    foreach (var s in S3SourceManager.GetAll())
+                        if (!string.IsNullOrEmpty(s.CorpId)) local.Add(s.CorpId!);
+                    foreach (var s in WebDavSourceManager.GetAll())
+                        if (!string.IsNullOrEmpty(s.CorpId)) local.Add(s.CorpId!);
+                    if (!string.IsNullOrEmpty(AppSettings.SelectedCorpId)) local.Add(AppSettings.SelectedCorpId!);
+                });
+
+                foreach (var corpId in local.Where(id => !joined.Contains(id)).ToList())
+                {
+                    System.Diagnostics.Debug.WriteLine($"[App] team membership lost (offline reconcile), purging corp={corpId}");
+                    await Dispatcher.InvokeAsync(() => PurgeTeamDataLocal(corpId));
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[App] team membership reconcile failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>递归收集面板树中归属团队的 corpId（团队卡片可能嵌在个人窗口的分组里）</summary>
+        private static void CollectPanelTeamIds(Models.PanelItem p, System.Collections.Generic.HashSet<string> sink)
+        {
+            if (p.OwnerType == "team" && !string.IsNullOrEmpty(p.TeamId)) sink.Add(p.TeamId!);
+            if (p.ChildPanels == null) return;
+            foreach (var c in p.ChildPanels) CollectPanelTeamIds(c, sink);
+        }
+
         /// <summary>团队相关事件发生时刷新设置窗口（若打开）的团队页</summary>
-        private void NotifySettingsTeamChanged(bool membershipChanged)
+        internal void NotifySettingsTeamChanged(bool membershipChanged)
         {
             foreach (Window w in Windows)
             {
@@ -1436,8 +1653,14 @@ namespace SideDesk
                     {
                         var win = WindowConfigs.Windows.FirstOrDefault(w => w.SourceBarId == sourceBarId);
                         if (win == null) return;
+                        // 与 share_cancelled(bar) 同语义：窗口下的卡片均为源模块引用 → 本地行硬删不留墓碑，
+                        // 窗口自身保留墓碑让服务端软删这个入口空壳（否则下次结构拉取会把它补回来）
+                        var refItemUids = new System.Collections.Generic.List<string>();
+                        foreach (var p in win.Panels) CollectPanelUids(p, refItemUids);
                         WindowConfigs.Windows.Remove(win);
+                        Services.LocalDbService.HardDeleteRows(null, refItemUids);
                         WindowConfigs.Save();
+                        Services.DataPollingService.Instance.SyncFromConfigs(WindowConfigs);
                         foreach (var mw in _windows)
                             if (mw.IsLoaded) mw.RemoveSharedWindowById(win.Id);
                         System.Diagnostics.Debug.WriteLine($"[App] share source bar removed: {win.Name}");
@@ -1470,7 +1693,7 @@ namespace SideDesk
         }
 
         /// <summary>
-        /// 某个 bar（小屏）的组件被增删改后，刷新其他正在显示同一 bar 的侧边栏，使其同步呈现变更。
+        /// 某个 bar（微屏）的组件被增删改后，刷新其他正在显示同一 bar 的侧边栏，使其同步呈现变更。
         /// 各侧边栏共享同一 WindowConfig 实例，故仅需重渲染即可反映变更；except 为发起变更的窗口（已自行渲染，跳过）。
         /// </summary>
         public void RefreshWindowsShowingBar(string barId, MainWindow? except)
@@ -1487,7 +1710,7 @@ namespace SideDesk
             }));
         }
 
-        /// <summary>刷新所有已加载主窗口顶部的窗口标签栏（小屏增删/改名等结构变更后调用，保证多窗口同步）</summary>
+        /// <summary>刷新所有已加载主窗口顶部的窗口标签栏（微屏增删/改名等结构变更后调用，保证多窗口同步）</summary>
         public void RefreshAllWindowTabs()
         {
             Dispatcher.BeginInvoke(new Action(() =>
@@ -1540,22 +1763,35 @@ namespace SideDesk
                         if (win == null && !string.IsNullOrEmpty(sourceBarId))
                             win = WindowConfigs.Windows.FirstOrDefault(w => w.SourceBarId == sourceBarId);
                         if (win == null) return;
+                        // 引用窗口下的卡片全部是「源模块引用」（ServerId 指向分享者的模块），本地行必须硬删：
+                        // 若留下墓碑，下次结构上传会把删除意图报到源模块上，而源模块属团队且本机是其成员时
+                        // 服务端会判定本机有删除权 → 真删源模块（分享者与其他成员一起丢数据）。
+                        // 窗口自身保留墓碑：它是导入时服务端为本人新建的入口空壳，需让服务端一并软删，
+                        // 否则下次结构拉取会把这个空窗口补回来（复活→再清理反复抖动，且服务端残留脏行）。
+                        var refItemUids = new System.Collections.Generic.List<string>();
+                        foreach (var p in win.Panels) CollectPanelUids(p, refItemUids);
                         WindowConfigs.Windows.Remove(win);
+                        Services.LocalDbService.HardDeleteRows(null, refItemUids);
                         WindowConfigs.Save();
+                        Services.DataPollingService.Instance.SyncFromConfigs(WindowConfigs);
                         foreach (var mw in _windows)
                             if (mw.IsLoaded) mw.RemoveSharedWindowById(win.Id);
-                        System.Diagnostics.Debug.WriteLine($"[App] share cancelled: removing imported window localId={win.Id}");
+                        System.Diagnostics.Debug.WriteLine($"[App] share cancelled: removing imported window localId={win.Id}, refItems={refItemUids.Count}");
                     }
                     else
                     {
+                        var refItemUids = new System.Collections.Generic.List<string>();
                         bool removed = false;
                         foreach (var w in WindowConfigs.Windows)
-                            removed |= RemoveSharedPanels(w.Panels, localId, itemServerId);
+                            removed |= RemoveSharedPanels(w.Panels, localId, itemServerId, refItemUids);
                         if (!removed) return;
+                        // 同上：引用卡片的 ServerId 指向分享者的源模块，硬删避免墓碑误伤源数据
+                        Services.LocalDbService.HardDeleteRows(null, refItemUids);
                         WindowConfigs.Save();
+                        Services.DataPollingService.Instance.SyncFromConfigs(WindowConfigs);
                         foreach (var mw in _windows)
                             if (mw.IsLoaded) mw.RefreshNativePanels();
-                        System.Diagnostics.Debug.WriteLine($"[App] share cancelled: removing imported component localId={localId}, ServerId={itemServerId}");
+                        System.Diagnostics.Debug.WriteLine($"[App] share cancelled: removing imported component localId={localId}, ServerId={itemServerId}, panels={refItemUids.Count}");
                     }
                 }));
             }
@@ -1565,8 +1801,9 @@ namespace SideDesk
             }
         }
 
-        /// <summary>递归移除匹配的导入面板：优先按 localId 精确匹配；无 localId 时按 ServerId 匹配</summary>
-        private static bool RemoveSharedPanels(System.Collections.Generic.List<Models.PanelItem> panels, string localId, string itemServerId)
+        /// <summary>递归移除匹配的导入面板：优先按 localId 精确匹配；无 localId 时按 ServerId 匹配。
+        /// sink 收集被移除面板（含其子面板）的本地 uid，供调用方硬删本地库行（引用面板的 ServerId 指向源模块，不得上报删除意图）</summary>
+        private static bool RemoveSharedPanels(System.Collections.Generic.List<Models.PanelItem> panels, string localId, string itemServerId, System.Collections.Generic.List<string> sink)
         {
             bool removed = false;
             for (int i = panels.Count - 1; i >= 0; i--)
@@ -1577,12 +1814,13 @@ namespace SideDesk
                     : (!string.IsNullOrEmpty(itemServerId) && p.ServerId == itemServerId);
                 if (match)
                 {
+                    CollectPanelUids(p, sink);
                     panels.RemoveAt(i);
                     removed = true;
                     continue;
                 }
                 if (p.ChildPanels != null)
-                    removed |= RemoveSharedPanels(p.ChildPanels, localId, itemServerId);
+                    removed |= RemoveSharedPanels(p.ChildPanels, localId, itemServerId, sink);
             }
             return removed;
         }
@@ -1600,6 +1838,218 @@ namespace SideDesk
             }
             return null;
         }
+
+        #region 团队数据即时清理（后端 WS 推送驱动）
+
+        /// <summary>
+        /// 团队成员身份失效（被管理员移出 / 主动退出 / 团队解散）：清除该团队在本机的全部数据 ——
+        /// 团队窗口与其下全部卡片、个人窗口里归属该团队的卡片、后台数据项、变量集（本地 + 云端登记）、
+        /// 团队云盘源（S3/WebDAV）、团队数据模板；若当前选中的正是该团队则回落到「个人」。
+        /// 本地库走行级硬删（不打删除墓碑）：服务端数据仍归属团队/作者，本设备只是失去访问权，
+        /// 若上报删除意图会软删其他成员仍在使用的团队数据。
+        /// </summary>
+        private void PurgeTeamDataLocal(string corpId)
+        {
+            try
+            {
+                var removedBarUids = new System.Collections.Generic.List<string>();
+                var removedItemUids = new System.Collections.Generic.List<string>();
+
+                // 1) 团队窗口：整个窗口消失，其下卡片（无论归属）一并移除
+                var teamWindows = WindowConfigs.Windows.Where(w => w.OwnerType == "team" && w.CorpId == corpId).ToList();
+                foreach (var win in teamWindows)
+                {
+                    removedBarUids.Add(win.Id);
+                    foreach (var p in win.Panels) CollectPanelUids(p, removedItemUids);
+                    WindowConfigs.Windows.Remove(win);
+                }
+
+                // 2) 个人窗口里归属该团队的卡片（团队卡片可被放进个人窗口的分组内）
+                foreach (var win in WindowConfigs.Windows)
+                    RemoveTeamPanels(win.Panels, corpId, removedItemUids);
+
+                // 3) 后台数据项与变量集（团队作用域）
+                int bgRemoved = WindowConfigs.BackgroundDashboardItems.RemoveAll(d => d.TeamId == corpId);
+                int setRemoved = WindowConfigs.VariableSets.RemoveAll(v => v.TeamId == corpId);
+
+                // 4) 当前选中团队即被清除的团队 → 回落个人，避免继续按该团队拉团队库/云盘
+                bool selectionReset = AppSettings.SelectedCorpId == corpId;
+                if (selectionReset)
+                {
+                    AppSettings.SelectedCorpId = null;
+                    AppSettings.SelectedCorpName = null;
+                    AppSettings.Save();
+                }
+
+                // 5) 团队云盘源（仅存本机，服务端无副本，直接删）
+                int driveRemoved = 0;
+                foreach (var s in S3SourceManager.GetAll().Where(x => x.CorpId == corpId).ToList())
+                {
+                    S3SourceManager.Delete(s.Id);
+                    driveRemoved++;
+                }
+                foreach (var s in WebDavSourceManager.GetAll().Where(x => x.CorpId == corpId).ToList())
+                {
+                    WebDavSourceManager.Delete(s.Id);
+                    driveRemoved++;
+                }
+
+                // 6) 团队数据模板（用户自建模板文件；内置模板无团队归属，不动）
+                PurgeTeamUserTemplates(corpId);
+
+                // 7) 落盘：先硬删本地库行（不生成墓碑），再全量保存，随后重建轮询与变量聚合。
+                // 仅在窗口/卡片结构确实变动时才 Save：Save 是「以内存为准」的全量重写，
+                // 只改了云盘源/模板/选中团队时没必要重写，也避开启动早期内存尚未就绪的误删风险。
+                bool configChanged = removedBarUids.Count > 0 || removedItemUids.Count > 0 || bgRemoved > 0 || setRemoved > 0;
+                if (configChanged)
+                {
+                    Services.LocalDbService.HardDeleteRows(removedBarUids, removedItemUids);
+                    WindowConfigs.Save();
+                    Services.DataPollingService.Instance.SyncFromConfigs(WindowConfigs);
+                }
+                Services.VariableSetService.Instance.PurgeTeam(corpId);
+
+                // 8) UI：摘掉已移除团队窗口的标签并切走、重绘面板；团队下拉与云盘窗口一并刷新
+                foreach (var mw in _windows)
+                {
+                    if (!mw.IsLoaded) continue;
+                    foreach (var win in teamWindows) mw.RemoveSharedWindowById(win.Id);
+                    mw.RefreshNativePanels();
+                }
+                if (selectionReset)
+                {
+                    // 正展示该团队云盘的窗口已无访问权，直接关闭（标题栏团队名也已失效）
+                    foreach (Window w in Windows)
+                    {
+                        try { if (w is CloudDriveWindow && w.IsLoaded) w.Close(); } catch { }
+                    }
+                }
+                NotifySettingsTeamChanged(membershipChanged: true);
+
+                System.Diagnostics.Debug.WriteLine(
+                    $"[App] team data purged: corp={corpId}, windows={teamWindows.Count}, items={removedItemUids.Count}, " +
+                    $"bgItems={bgRemoved}, varSets={setRemoved}, drives={driveRemoved}, selectionReset={selectionReset}");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[App] failed to purge team data: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 团队卡片被作者删除或改归属到其他团队：从本机所有窗口移除该卡片（连同其子面板）。
+        /// 服务端已由作者完成删除/改归属，本地同样硬删不留墓碑。
+        /// </summary>
+        private void RemoveTeamItemLocal(string itemServerId)
+        {
+            try
+            {
+                var removedItemUids = new System.Collections.Generic.List<string>();
+                bool removed = false;
+                foreach (var win in WindowConfigs.Windows)
+                    removed |= RemovePanelsByServerId(win.Panels, itemServerId, removedItemUids);
+                if (!removed) return;
+
+                Services.LocalDbService.HardDeleteRows(null, removedItemUids);
+                WindowConfigs.Save();
+                Services.DataPollingService.Instance.SyncFromConfigs(WindowConfigs);
+                foreach (var mw in _windows)
+                    if (mw.IsLoaded) mw.RefreshNativePanels();
+                System.Diagnostics.Debug.WriteLine($"[App] team item removed: serverId={itemServerId}, panels={removedItemUids.Count}");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[App] failed to remove team item: {ex.Message}");
+            }
+        }
+
+        /// <summary>团队窗口被删除：成员端移除本地对应窗口（含其下全部卡片与 dock/标签占用）</summary>
+        private void RemoveTeamWindowLocal(string barServerId)
+        {
+            try
+            {
+                var win = WindowConfigs.Windows.FirstOrDefault(w => w.ServerId == barServerId);
+                if (win == null) return;
+                var removedItemUids = new System.Collections.Generic.List<string>();
+                foreach (var p in win.Panels) CollectPanelUids(p, removedItemUids);
+                WindowConfigs.Windows.Remove(win);
+
+                Services.LocalDbService.HardDeleteRows(new[] { win.Id }, removedItemUids);
+                WindowConfigs.Save();
+                Services.DataPollingService.Instance.SyncFromConfigs(WindowConfigs);
+                foreach (var mw in _windows)
+                    if (mw.IsLoaded) mw.RemoveSharedWindowById(win.Id);
+                System.Diagnostics.Debug.WriteLine($"[App] team window removed: {win.Name} (serverId={barServerId})");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[App] failed to remove team window: {ex.Message}");
+            }
+        }
+
+        /// <summary>清除用户自建数据模板中归属该团队的模板（内置模板随版本部署、无团队归属，不动）</summary>
+        private static void PurgeTeamUserTemplates(string corpId)
+        {
+            try
+            {
+                string path = Models.DataTemplateManager.UserTemplatesFilePath;
+                if (!System.IO.File.Exists(path)) return;
+                var list = Models.DataTemplateManager.LoadUserTemplates();
+                int before = list.Count;
+                list.RemoveAll(t => t.TeamId == corpId);
+                if (list.Count == before) return;
+                System.IO.File.WriteAllText(path, Newtonsoft.Json.JsonConvert.SerializeObject(list, Newtonsoft.Json.Formatting.Indented));
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[App] failed to purge team data templates: {ex.Message}");
+            }
+        }
+
+        /// <summary>收集面板及其全部子面板的本地 uid（供本地库硬删定位行）</summary>
+        private static void CollectPanelUids(Models.PanelItem p, System.Collections.Generic.List<string> sink)
+        {
+            sink.Add(p.Id);
+            if (p.ChildPanels == null) return;
+            foreach (var c in p.ChildPanels) CollectPanelUids(c, sink);
+        }
+
+        /// <summary>递归移除归属指定团队的卡片（团队卡片可能嵌在个人窗口的分组里）</summary>
+        private static void RemoveTeamPanels(System.Collections.Generic.List<Models.PanelItem> panels, string corpId, System.Collections.Generic.List<string> sink)
+        {
+            for (int i = panels.Count - 1; i >= 0; i--)
+            {
+                var p = panels[i];
+                if (p.OwnerType == "team" && p.TeamId == corpId)
+                {
+                    CollectPanelUids(p, sink);
+                    panels.RemoveAt(i);
+                    continue;
+                }
+                if (p.ChildPanels != null) RemoveTeamPanels(p.ChildPanels, corpId, sink);
+            }
+        }
+
+        /// <summary>按 ServerId 递归移除卡片（连同其子面板），返回是否移除了至少一个</summary>
+        private static bool RemovePanelsByServerId(System.Collections.Generic.List<Models.PanelItem> panels, string serverId, System.Collections.Generic.List<string> sink)
+        {
+            bool removed = false;
+            for (int i = panels.Count - 1; i >= 0; i--)
+            {
+                var p = panels[i];
+                if (p.ServerId == serverId)
+                {
+                    CollectPanelUids(p, sink);
+                    panels.RemoveAt(i);
+                    removed = true;
+                    continue;
+                }
+                if (p.ChildPanels != null) removed |= RemovePanelsByServerId(p.ChildPanels, serverId, sink);
+            }
+            return removed;
+        }
+
+        #endregion
 
         /// <summary>
         /// 通知队列就绪事件：在 UI 线程将通知转发到所有已加载的主窗口渲染。

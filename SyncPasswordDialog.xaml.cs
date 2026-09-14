@@ -4,7 +4,7 @@ namespace SideDesk
 {
     public partial class SyncPasswordDialog : Window
     {
-        /// <summary>用户输入的密码（调用方用于派生密钥后应立即清空引用）</summary>
+        /// <summary>用户设置的同步加密密码（与登录密码无关；调用方用于派生密钥后应立即清空引用）</summary>
         public string Password { get; private set; } = "";
 
         public SyncPasswordDialog()
@@ -14,18 +14,12 @@ namespace SideDesk
 
         private void Ok_Click(object sender, RoutedEventArgs e)
         {
-            string pwd = passwordBox.Password;
-            string confirm = confirmBox.Password;
+            // 密码以明文直接显示，用户可即时核对，故不再需要二次确认输入
+            string pwd = passwordText.Text;
 
-            if (string.IsNullOrEmpty(pwd))
+            if (string.IsNullOrWhiteSpace(pwd))
             {
-                ThemedMessageBox.Show(this, Framework.Lang.T(Framework.Lang.T("misc.pleaseEnterThePassword")), Framework.Lang.T("common.notice"));
-                return;
-            }
-
-            if (pwd != confirm)
-            {
-                ThemedMessageBox.Show(this, Framework.Lang.T(Framework.Lang.T("common.passwordMismatch")), Framework.Lang.T("common.notice"));
+                ThemedMessageBox.Show(this, Framework.Lang.T("misc.pleaseEnterThePassword"), Framework.Lang.T("common.notice"));
                 return;
             }
 

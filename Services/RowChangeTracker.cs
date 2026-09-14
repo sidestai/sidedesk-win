@@ -125,6 +125,7 @@ public class RowChangeTracker
         PanelType.DigitalEmployee => "digital_employee",
         PanelType.Friend => "friend_user",
         PanelType.QuickGroup => "shortcut",
+        PanelType.CheckIn => "check_in",
         _ => "unknown"
     };
 
@@ -136,7 +137,7 @@ public class RowChangeTracker
             or PanelType.Clipboard or PanelType.FileArea
             or PanelType.Pomodoro or PanelType.DataDashboard
             or PanelType.DigitalEmployee or PanelType.Friend
-            or PanelType.QuickGroup => true,
+            or PanelType.QuickGroup or PanelType.CheckIn => true,
         _ => false
     };
 }

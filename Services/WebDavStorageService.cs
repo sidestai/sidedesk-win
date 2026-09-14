@@ -21,6 +21,9 @@ namespace SideDesk.Services
         private readonly WebDavSource _src;
         private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromMinutes(30) };
 
+        /// <summary>最近一次上传失败的原因（已本地化，成功或从未失败为 null）</summary>
+        public string? LastUploadError { get; private set; }
+
         private static readonly HttpMethod Propfind = new("PROPFIND");
         private static readonly HttpMethod Mkcol = new("MKCOL");
 
@@ -178,6 +181,7 @@ namespace SideDesk.Services
         /// <summary>上传本地文件（PUT + 进度回调）</summary>
         public async Task<bool> UploadFileAsync(string localPath, string parentDir, Action<double>? progress = null)
         {
+            LastUploadError = null;
             try
             {
                 string relPath = parentDir + Path.GetFileName(localPath);
@@ -191,6 +195,9 @@ namespace SideDesk.Services
                 {
                     string err = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
                     System.Diagnostics.Debug.WriteLine($"[WebDAV] upload failed: HTTP {(int)resp.StatusCode} - {err}");
+                    LastUploadError = resp.StatusCode == HttpStatusCode.Forbidden
+                        ? Framework.Lang.T("cloudDrive.uploadNoWritePermission")
+                        : Framework.Lang.T("cloudDrive.uploadFailedReason");
                     return false;
                 }
                 await resp.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
@@ -200,8 +207,19 @@ namespace SideDesk.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[WebDAV] upload error: {ex.Message}");
+                LastUploadError = Framework.Lang.T("cloudDrive.uploadFailedReason");
                 return false;
             }
+        }
+
+        /// <summary>
+        /// 上传前预检：试列目标目录以验证连接与凭证（能列≠一定能写，只读凭证仍靠上传失败兜底）。
+        /// 返回 null=放行；非 null=拦截原因（已本地化）。
+        /// </summary>
+        public async Task<string?> ProbeWritableAsync(string parentDir)
+        {
+            var probe = await ListDirectoryAsync(parentDir).ConfigureAwait(false);
+            return probe == null ? Framework.Lang.T("cloudDrive.uploadProbeFailed") : null;
         }
 
         /// <summary>下载文件到本地（GET + 进度回调）</summary>

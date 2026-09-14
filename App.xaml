@@ -93,7 +93,7 @@
             </Style>
 
             <!-- ===== Window Tab Button (标题栏悬停态多窗口分页选择器，圆角) =====
-                 背景由代码按激活态动态设置(激活=BrushAccent/非激活=Transparent)，经 TemplateBinding 保留；
+                 背景由代码按激活态动态设置(激活=BrushTextMain 反色底/非激活=Transparent)，经 TemplateBinding 保留；
                  固定小圆角(4)保证标题栏小标签始终有可见圆角，不随主题圆角过大/为0而失真 -->
             <Style x:Key="WindowTabButton" TargetType="{x:Type Button}">
                 <Setter Property="FocusVisualStyle" Value="{x:Null}" />
@@ -307,7 +307,7 @@
                 </Style.Resources>
             </Style>
 
-            <!-- 全局隐式样式：为未显式指定样式的 ScrollViewer（代码动态创建的模块滚动区、弹出滚动列表等）移除默认虚线焦点框 -->
+            <!-- 全局隐式样式：为未显式指定样式的 ScrollViewer（代码动态创建的卡片滚动区、弹出滚动列表等）移除默认虚线焦点框 -->
             <Style TargetType="ScrollViewer">
                 <Setter Property="FocusVisualStyle" Value="{x:Null}" />
             </Style>

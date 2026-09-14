@@ -108,7 +108,7 @@ namespace SideDesk
         /// <summary>内置 HTTP Server 监听端口（默认 19195）</summary>
         public int HttpServerPort { get; set; } = 19195;
 
-        /// <summary>数据模块连接方式："extension" = 浏览器插件（启动 WS 19191），"cdp" = 直连 CDP（需浏览器开启 --remote-debugging-port）</summary>
+        /// <summary>数据卡片连接方式："extension" = 浏览器插件（启动 WS 19191），"cdp" = 直连 CDP（需浏览器开启 --remote-debugging-port）</summary>
         public string DataConnectionMode { get; set; } = "extension";
 
         /// <summary>CDP 模式连接的浏览器调试端口（浏览器需以 --remote-debugging-port=此端口 启动）</summary>
@@ -191,6 +191,9 @@ namespace SideDesk
 
         /// <summary>已关闭/已点击的通知记录（key=通知唯一标识，value=记录时间；用于控制某类通知在周期内不再出现）</summary>
         public Dictionary<string, DateTime> DismissedNotices { get; set; } = new();
+
+        /// <summary>本地持久化的已读通知 ID 列表（插入序，代码内封顶 500）：重启后据此恢复已读状态，避免回传失败或本地通知的红点复现</summary>
+        public List<string> ReadNotificationIds { get; set; } = new();
 
         /// <summary>判断指定 key 的通知是否应显示（从未记录过，或抑制周期已过期）</summary>
         public bool ShouldShowNotice(string key, TimeSpan? suppressPeriod = null)

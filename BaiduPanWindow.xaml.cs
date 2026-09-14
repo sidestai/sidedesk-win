@@ -268,7 +268,8 @@ namespace SideDesk
             // 简单输入对话框
             var inputDialog = new Window
             {
-                Title = Framework.Lang.T("cloudDrive.newFolder"), Width = 320, Height = 160,
+                Title = Framework.Lang.T("cloudDrive.newFolder"), Width = 320,
+                SizeToContent = SizeToContent.Height, // 高度随内容自适应，避免固定高度裁切底部按钮
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Owner = this, ResizeMode = ResizeMode.NoResize,
                 Background = (Brush)FindResource("BrushBG")

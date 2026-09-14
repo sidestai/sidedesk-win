@@ -129,7 +129,7 @@ namespace SideDesk.Services
 
             mcp.AddTool("set_theme", "切换 SideDesk 主题模式（Dark/Light/System）", (string themeMode) => AIToolService.Tool_SetTheme(themeMode));
 
-            mcp.AddTool("list_windows", "列出所有小屏窗口配置（ID、名称、类型、面板数量）", () => AIToolService.Tool_ListWindows());
+            mcp.AddTool("list_windows", "列出所有微屏窗口配置（ID、名称、类型、面板数量）", () => AIToolService.Tool_ListWindows());
 
             mcp.AddTool("list_ws_clients", "列出当前已连接的 WebSocket 客户端（浏览器扩展）", () => AIToolService.Tool_ListWsClients());
 
@@ -194,7 +194,7 @@ namespace SideDesk.Services
                 };
             });
 
-            mcp.AddResource("sidedesk://windows", "Window Configs", "所有小屏窗口配置", () =>
+            mcp.AddResource("sidedesk://windows", "Window Configs", "所有微屏窗口配置", () =>
             {
                 var app = (App)System.Windows.Application.Current;
                 return app.WindowConfigs.Windows.Select(w => new

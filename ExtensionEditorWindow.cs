@@ -19,13 +19,13 @@ public partial class ExtensionEditorWindow : Window
     /// <summary>动作类型元数据：emoji 图标 / 名称键 / 描述键 / 主题色</summary>
     internal static readonly Dictionary<string, (string Emoji, string NameKey, string DescKey, string Color)> TypeMeta = new()
     {
-        ["url"] = ("🌐", "advanced.typeUrl", "advanced.typeUrlDesc", "#3b82f6"),
+        ["url"] = ("🌐", "notification.openWebPage", "advanced.typeUrlDesc", "#3b82f6"),
         ["exec"] = ("🚀", "advanced.typeExec", "advanced.typeExecDesc", "#a855f7"),
         ["keys"] = ("⌨️", "advanced.typeKeys", "advanced.typeKeysDesc", "#10b981"),
         ["paste"] = ("📋", "advanced.typePaste", "advanced.typePasteDesc", "#ec4899"),
         ["script"] = ("🖥️", "advanced.typeScript", "advanced.typeScriptDesc", "#f59e0b"),
         ["clipboard"] = ("📎", "advanced.typeClipboard", "advanced.typeClipboardDesc", "#06b6d4"),
-        ["search"] = ("🔍", "advanced.typeSearch", "advanced.typeSearchDesc", "#6366f1"),
+        ["search"] = ("🔍", "common.search", "advanced.typeSearchDesc", "#6366f1"),
     };
 
     private static readonly string[] _presetColors =

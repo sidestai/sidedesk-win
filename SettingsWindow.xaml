@@ -51,7 +51,7 @@
                     <ListBoxItem Content="{l:T settings.programManagement}"/>
                     <ListBoxItem Content="{l:T common.plugins}"/>
                     <ListBoxItem Content="{l:T common.tools}"/>
-                    <ListBoxItem Content="{l:T common.module}"/>
+                    <ListBoxItem Content="{l:T common.dataDashboard}"/>
                     <ListBoxItem Content="{l:T common.myData}"/>
                     <ListBoxItem Content="{l:T settings.llm.models}"/>
                     <ListBoxItem Content="{l:T common.hotkeys}"/>
@@ -107,7 +107,7 @@
                                            FontWeight="SemiBold"/>
                                 <TextBlock Text="{l:T settings.languageSwitchHint}"
                                            Foreground="{DynamicResource BrushTextMuted}"
-                                           FontSize="{DynamicResource FontSizeTiny}"
+                                           FontSize="{DynamicResource FontSizeSmall}"
                                            TextWrapping="Wrap" Margin="0,2,8,0"/>
                             </StackPanel>
                         </DockPanel>
@@ -131,7 +131,7 @@
                                                FontWeight="SemiBold"/>
                                     <TextBlock Text="{l:T settings.perDesktopHint}"
                                                Foreground="{DynamicResource BrushTextMuted}"
-                                               FontSize="{DynamicResource FontSizeTiny}"
+                                               FontSize="{DynamicResource FontSizeSmall}"
                                                TextWrapping="Wrap" Margin="0,2,8,0"/>
                                 </StackPanel>
                             </DockPanel>
@@ -173,7 +173,7 @@
                                            FontWeight="SemiBold"/>
                                 <TextBlock Text="{l:T settings.chatModeHint}"
                                            Foreground="{DynamicResource BrushTextMuted}"
-                                           FontSize="{DynamicResource FontSizeTiny}"
+                                           FontSize="{DynamicResource FontSizeSmall}"
                                            TextWrapping="Wrap" Margin="0,2,8,0"/>
                             </StackPanel>
                         </DockPanel>
@@ -196,7 +196,7 @@
                                            FontWeight="SemiBold"/>
                                 <TextBlock x:Name="mcpConfigStatusText" Text="{l:T settings.mcpToolNotDownloaded}"
                                            Foreground="{DynamicResource BrushTextMuted}"
-                                           FontSize="{DynamicResource FontSizeTiny}"
+                                           FontSize="{DynamicResource FontSizeSmall}"
                                            TextWrapping="Wrap" Margin="0,2,8,0"/>
                             </StackPanel>
                         </DockPanel>
@@ -219,7 +219,7 @@
                                            FontWeight="SemiBold"/>
                                 <TextBlock Text="{l:T settings.softwareRenderingHint}"
                                            Foreground="{DynamicResource BrushTextMuted}"
-                                           FontSize="{DynamicResource FontSizeTiny}"
+                                           FontSize="{DynamicResource FontSizeSmall}"
                                            TextWrapping="Wrap" Margin="0,2,8,0"/>
                             </StackPanel>
                         </DockPanel>
@@ -242,7 +242,7 @@
                                            FontWeight="SemiBold"/>
                                 <TextBlock Text="{l:T settings.aiPicksHint}"
                                            Foreground="{DynamicResource BrushTextMuted}"
-                                           FontSize="{DynamicResource FontSizeTiny}"
+                                           FontSize="{DynamicResource FontSizeSmall}"
                                            Margin="0,2,0,0"
                                            TextWrapping="Wrap"/>
                             </StackPanel>
@@ -345,7 +345,7 @@
                                                FontWeight="SemiBold"/>
                                     <TextBlock x:Name="accountSubText" Text="{l:T settings.logInToEnable}"
                                                Foreground="{DynamicResource BrushTextMuted}"
-                                               FontSize="{DynamicResource FontSizeSmall}"
+                                               FontSize="{DynamicResource FontSizeSmallPlus}"
                                                Margin="0,4,0,0"/>
                                 </StackPanel>
                             </DockPanel>
@@ -369,7 +369,7 @@
                                                FontWeight="SemiBold"/>
                                     <TextBlock Text="{l:T settings.autoBackupHint}"
                                                Foreground="{DynamicResource BrushTextMuted}"
-                                               FontSize="{DynamicResource FontSizeTiny}"
+                                               FontSize="{DynamicResource FontSizeSmall}"
                                                TextWrapping="Wrap" Margin="0,2,8,0"/>
                                 </StackPanel>
                             </DockPanel>
@@ -401,7 +401,7 @@
                                                FontSize="{DynamicResource FontSizeNormal}"/>
                                     <TextBlock Text="{l:T settings.encryptedSyncHint}"
                                                Foreground="{DynamicResource BrushTextMuted}"
-                                               FontSize="{DynamicResource FontSizeTiny}"
+                                               FontSize="{DynamicResource FontSizeSmall}"
                                                TextWrapping="Wrap" Margin="0,2,8,0"/>
                                 </StackPanel>
                             </DockPanel>
@@ -418,7 +418,7 @@
                                                FontSize="{DynamicResource FontSizeNormal}"/>
                                     <TextBlock Text="{l:T settings.pullSettingsHint}"
                                                Foreground="{DynamicResource BrushTextMuted}"
-                                               FontSize="{DynamicResource FontSizeTiny}"
+                                               FontSize="{DynamicResource FontSizeSmall}"
                                                TextWrapping="Wrap" Margin="0,2,8,0"/>
                                 </StackPanel>
                             </DockPanel>
@@ -436,7 +436,7 @@
                                        FontWeight="SemiBold"/>
                             <TextBlock Text="{l:T settings.localBackupHint}"
                                        Foreground="{DynamicResource BrushTextMuted}"
-                                       FontSize="{DynamicResource FontSizeTiny}"
+                                       FontSize="{DynamicResource FontSizeSmall}"
                                        TextWrapping="Wrap" Margin="0,2,0,0"/>
                             <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,12,0,12"/>
                             <Grid>
@@ -452,9 +452,22 @@
                                     <Button Content="{l:T common.backup}" Click="Backup_Click"
                                             Style="{StaticResource GhostButtonStyle}"
                                             Padding="14,6" Height="30" Margin="0,0,8,0"/>
-                                    <Button x:Name="restoreBtn" Content="{l:T common.restore}" Click="Restore_Click"
+                                    <Button x:Name="restoreBtn" Click="Restore_Click"
                                             Style="{StaticResource GhostButtonStyle}"
-                                            Padding="14,6" Height="30" Margin="0,0,8,0"/>
+                                            Padding="14,6" Height="30" Margin="0,0,8,0">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{l:T common.restore}" VerticalAlignment="Center"/>
+                                            <Path Data="M0,0 L4,4 L8,0" Stroke="{DynamicResource BrushTextMain}"
+                                                  StrokeThickness="1.3" Width="8" Height="4" Stretch="Uniform"
+                                                  Margin="6,1,0,0" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                        <Button.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem x:Name="restoreLastBackupMenu" Header="{l:T settings.restoreLastBackup}" Click="RestoreLastBackup_Click"/>
+                                                <MenuItem Header="{l:T settings.restoreFromFile}" Click="RestoreFromFile_Click"/>
+                                            </ContextMenu>
+                                        </Button.ContextMenu>
+                                    </Button>
                                     <Button Content="{l:T settings.exportConfiguration}" Click="ExportConfig_Click"
                                             Style="{StaticResource GhostButtonStyle}"
                                             Padding="14,6" Height="30"/>
@@ -485,9 +498,6 @@
                     <StackPanel Orientation="Horizontal">
                         <Button Content="{l:T settings.addCloudSpace}" Click="AddCloudSpace_Click"
                                 Style="{StaticResource GhostButtonStyle}" Padding="12,6" Margin="0,0,8,0"/>
-                        <Button Content="{l:T settings.restoreBuiltIn}" Click="RestoreBuiltinSpaces_Click"
-                                Style="{StaticResource GhostButtonStyle}" Padding="12,6"
-                                ToolTip="{l:T settings.restoreMissingBuiltIn}"/>
                     </StackPanel>
                 </StackPanel>
 
@@ -495,9 +505,11 @@
                 <StackPanel x:Name="pageTeams" Visibility="Collapsed" Margin="0,0,0,20">
                     <DockPanel Margin="0,0,0,8">
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                            <Button Content="{l:T settings.addTeam}" Click="AddTeam_Click"
+                            <Button x:Name="teamManageBtn" Content="{l:T settings.teamManage}" Click="TeamManage_Click"
                                     Style="{StaticResource GhostButtonStyle}" Padding="12,6" Margin="0,0,8,0"/>
-                            <Button Content="{l:T common.joinTeam}" Click="JoinTeam_Click"
+                            <Button x:Name="addTeamBtn" Content="{l:T settings.addTeam}" Click="AddTeam_Click"
+                                    Style="{StaticResource GhostButtonStyle}" Padding="12,6" Margin="0,0,8,0"/>
+                            <Button x:Name="joinTeamBtn" Content="{l:T common.joinTeam}" Click="JoinTeam_Click"
                                     Style="{StaticResource GhostButtonStyle}" Padding="12,6"
                                     ToolTip="{l:T settings.enterTeamCodeHint}"/>
                         </StackPanel>
@@ -511,14 +523,7 @@
                                FontSize="{DynamicResource FontSizeSmall}"
                                Margin="0,0,0,16"/>
 
-                    <Border Background="{DynamicResource BrushInputBG}"
-                            BorderBrush="{DynamicResource BrushBorder}"
-                            BorderThickness="1" CornerRadius="6"
-                            Padding="12" Margin="0,0,0,8">
-                        <StackPanel x:Name="teamListPanel"/>
-                    </Border>
-
-                    <!-- 待处理加入申请区（管理员可见） -->
+                    <!-- 待处理加入申请区（管理员可见）：放在团队列表之上，待办事项首屏可见，不用往下翻 -->
                     <Border x:Name="teamApplySection" Background="{DynamicResource BrushInputBG}"
                             BorderBrush="{DynamicResource BrushBorder}"
                             BorderThickness="1" CornerRadius="6"
@@ -530,7 +535,7 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- 我收到的团队邀请区 -->
+                    <!-- 我收到的团队邀请区：同属待办，一并置顶 -->
                     <Border x:Name="teamInviteSection" Background="{DynamicResource BrushInputBG}"
                             BorderBrush="{DynamicResource BrushBorder}"
                             BorderThickness="1" CornerRadius="6"
@@ -540,6 +545,13 @@
                                        Foreground="{DynamicResource BrushTextMain}" Margin="0,0,0,8"/>
                             <StackPanel x:Name="teamInvitePanel"/>
                         </StackPanel>
+                    </Border>
+
+                    <Border Background="{DynamicResource BrushInputBG}"
+                            BorderBrush="{DynamicResource BrushBorder}"
+                            BorderThickness="1" CornerRadius="6"
+                            Padding="12" Margin="0,0,0,8">
+                        <StackPanel x:Name="teamListPanel"/>
                     </Border>
                 </StackPanel>
 
@@ -624,7 +636,7 @@
                     </Border>
 
                     <!-- 我的好友码 -->
-                    <Border Background="{DynamicResource BrushInputBG}"
+                    <Border x:Name="friendCodeCard" Background="{DynamicResource BrushInputBG}"
                             BorderBrush="{DynamicResource BrushBorder}"
                             BorderThickness="1" CornerRadius="6"
                             Padding="12" Margin="0,12,0,0">
@@ -713,7 +725,7 @@
                         </StackPanel>
                     </Grid>
 
-                    <!-- 隐藏模块外框时同时隐藏标题 -->
+                    <!-- 隐藏卡片外框时同时隐藏标题 -->
                     <Grid Margin="0,0,0,16">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
@@ -749,7 +761,7 @@
                                   Unchecked="ShowNotificationStripSwitch_Changed"/>
                     </Grid>
 
-                    <!-- 分享组件边框颜色 -->
+                    <!-- 分享卡片边框颜色 -->
                     <Grid Margin="0,0,0,16">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
@@ -771,7 +783,7 @@
                         </StackPanel>
                     </Grid>
 
-                    <!-- 团队组件边框颜色 -->
+                    <!-- 团队卡片边框颜色 -->
                     <Grid Margin="0,0,0,16">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
@@ -790,6 +802,29 @@
                                      Tag="team"
                                      LostFocus="BorderHex_LostFocus"
                                      KeyDown="BorderHex_KeyDown"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- 卡片内字体大小 -->
+                    <Grid Margin="0,0,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="{l:T settings.cardFontSize}" Foreground="{DynamicResource BrushTextMain}"
+                                       FontSize="{DynamicResource FontSizeNormal}"/>
+                            <TextBlock Text="{l:T settings.cardFontSizeHint}" Foreground="{DynamicResource BrushTextMuted}"
+                                       FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBox x:Name="cardFontSizeBox" Width="70"
+                                     Style="{StaticResource GlobalTextBoxStyle}"
+                                     TextAlignment="Center"
+                                     LostFocus="CardFontSize_LostFocus"
+                                     KeyDown="CardFontSize_KeyDown"/>
+                            <TextBlock Text="px" Foreground="{DynamicResource BrushTextMuted}"
+                                       VerticalAlignment="Center" Margin="6,0,0,0"/>
                         </StackPanel>
                     </Grid>
                 </StackPanel>
@@ -952,7 +987,7 @@
                                            FontWeight="SemiBold"/>
                                 <TextBlock Text="{l:T settings.titleLockHint}" 
                                            Foreground="{DynamicResource BrushTextMuted}"
-                                           FontSize="{DynamicResource FontSizeTiny}"/>
+                                           FontSize="{DynamicResource FontSizeSmall}"/>
                             </StackPanel>
                         </DockPanel>
                     </Border>
@@ -974,7 +1009,7 @@
                                            FontWeight="SemiBold"/>
                                 <TextBlock Text="{l:T settings.mcpEndpointHint}"
                                            Foreground="{DynamicResource BrushTextMuted}"
-                                           FontSize="{DynamicResource FontSizeTiny}"
+                                           FontSize="{DynamicResource FontSizeSmall}"
                                            Margin="0,2,0,0"/>
                             </StackPanel>
                         </DockPanel>
@@ -997,7 +1032,7 @@
                                            FontWeight="SemiBold"/>
                                 <TextBlock Text="{l:T settings.httpServerHint}" 
                                            Foreground="{DynamicResource BrushTextMuted}"
-                                           FontSize="{DynamicResource FontSizeTiny}"
+                                           FontSize="{DynamicResource FontSizeSmall}"
                                            Margin="0,2,0,0"/>
                                 <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                     <TextBlock Text="{l:T settings.port}" Foreground="{DynamicResource BrushTextSec}" 
@@ -1029,7 +1064,7 @@
                                            FontWeight="SemiBold"/>
                                 <TextBlock Text="{l:T settings.usageTrackingHint}"
                                            Foreground="{DynamicResource BrushTextMuted}"
-                                           FontSize="{DynamicResource FontSizeTiny}"
+                                           FontSize="{DynamicResource FontSizeSmall}"
                                            Margin="0,2,0,0"/>
                             </StackPanel>
                         </DockPanel>
@@ -1052,103 +1087,111 @@
                                            FontWeight="SemiBold"/>
                                 <TextBlock Text="{l:T settings.automaticallyRunSidedeskAfter}"
                                            Foreground="{DynamicResource BrushTextMuted}"
-                                           FontSize="{DynamicResource FontSizeTiny}"
+                                           FontSize="{DynamicResource FontSizeSmall}"
                                            Margin="0,2,0,0"/>
                             </StackPanel>
                         </DockPanel>
                     </Border>
                 </StackPanel>
                 
-                <!-- 模块页面 -->
+                <!-- 数据看板页面 -->
                 <StackPanel x:Name="pageModules" Visibility="Collapsed" Margin="0,0,0,20">
-                    <TextBlock Text="{l:T common.module}" 
+                    <TextBlock Text="{l:T common.dataDashboard}" 
                                FontSize="{DynamicResource FontSizeSubtitle}" 
                                FontWeight="Bold"
                                Foreground="{DynamicResource BrushTextMain}"
                                Margin="0,0,0,8"/>
-                    <TextBlock Text="{l:T settings.moduleConfigHint}" 
-                               Foreground="{DynamicResource BrushTextMuted}" 
-                               FontSize="{DynamicResource FontSizeSmall}" 
+                    <!-- 页面内容暂时下线，只留占位提示；恢复方法：删掉下面的占位 TextBlock，并把 modulesPageBody 的 Visibility 改回 Visible -->
+                    <TextBlock Text="{l:T settings.comingSoon}"
+                               FontSize="{DynamicResource FontSizeNormal}"
+                               Foreground="{DynamicResource BrushTextMuted}"
                                Margin="0,0,0,20"/>
-                    
-                    <!-- 数据模块连接方式 -->
-                    <Border Background="{DynamicResource BrushInputBG}" 
-                            BorderBrush="{DynamicResource BrushBorder}" 
-                            BorderThickness="1" CornerRadius="8" 
-                            Padding="16" Margin="0,0,0,12">
-                        <StackPanel>
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                <TextBlock Text="{l:T settings.webDataSourceMode}" 
-                                           Foreground="{DynamicResource BrushTextMain}"
-                                           FontSize="{DynamicResource FontSizeNormal}"/>
-                                <TextBlock Text=" ❓" FontSize="12" Cursor="Help" VerticalAlignment="Center"
-                                           ToolTip="{l:T settings.webFetchModeHint}"
-                                           Foreground="{DynamicResource BrushTextMuted}"/>
-                            </StackPanel>
-                            <RadioButton x:Name="rbModeExtension" Content="{l:T settings.browserExtensionMode}" GroupName="DataFetchMode"
-                                         Foreground="{DynamicResource BrushTextMain}" FontSize="13"
-                                         Margin="0,0,0,6" Checked="DataFetchMode_Changed"/>
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                <RadioButton x:Name="rbModeCdp" Content="{l:T settings.cdpConnectionMode}" GroupName="DataFetchMode"
-                                             Foreground="{DynamicResource BrushTextMain}" FontSize="13"
-                                             VerticalAlignment="Center" Checked="DataFetchMode_Changed"/>
-                                <Button Content="{l:T settings.testConnection}" Click="TestCdpConnection_Click"
-                                        Style="{StaticResource GhostButtonStyle}" Padding="8,3"
-                                        FontSize="11" Margin="12,0,0,0" VerticalAlignment="Center"/>
-                            </StackPanel>
-                            <!-- CDP 端口配置（仅 CDP 模式显示） -->
-                            <StackPanel x:Name="cdpPortSection" Orientation="Horizontal" Visibility="Collapsed" Margin="20,0,0,0">
-                                <TextBlock Text="{l:T settings.debugPort}" Foreground="{DynamicResource BrushTextSec}" 
-                                           FontSize="12" VerticalAlignment="Center"/>
-                                <TextBox x:Name="cdpPortBox" Width="70" FontSize="12" Padding="4,3"
-                                         Text="9222" LostFocus="CdpPort_LostFocus"/>
-                                <TextBlock Text="{l:T settings.remoteDebuggingPortNote}" 
-                                           Foreground="{DynamicResource BrushTextMuted}" 
-                                           FontSize="11" VerticalAlignment="Center" Margin="8,0,0,0"/>
-                            </StackPanel>
-                            <!-- 隐藏浏览器启动模式（仅 CDP 模式显示） -->
-                            <StackPanel x:Name="hiddenBrowserSection" Orientation="Horizontal" Visibility="Collapsed" Margin="20,8,0,0">
-                                <TextBlock Text="{l:T settings.hiddenBrowser}" Foreground="{DynamicResource BrushTextSec}" 
-                                           FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                <ComboBox x:Name="hiddenBrowserModeCombo" Width="90" FontSize="11"
-                                          SelectionChanged="HiddenBrowserMode_Changed">
-                                    <ComboBoxItem Content="{l:T settings.headlessMode}" Tag="headless"/>
-                                    <ComboBoxItem Content="{l:T common.hiddenWindow}" Tag="hidden"/>
-                                </ComboBox>
-                            </StackPanel>
-                        </StackPanel>
-                    </Border>
-                                        
-                    <!-- 数据模版 -->
-                    <StackPanel Margin="0,0,0,8">
-                        <TextBlock Text="{l:T data.myTemplates}"
-                                   FontSize="{DynamicResource FontSizeNormal}" 
-                                   FontWeight="SemiBold"
-                                   Foreground="{DynamicResource BrushTextMain}"/>
-                        <TextBlock Text="{l:T data.myTemplatesHint}" 
+
+                    <StackPanel x:Name="modulesPageBody" Visibility="Collapsed">
+                        <TextBlock Text="{l:T settings.moduleConfigHint}" 
                                    Foreground="{DynamicResource BrushTextMuted}" 
                                    FontSize="{DynamicResource FontSizeSmall}" 
-                                   Margin="0,4,0,0"/>
-                    </StackPanel>
+                                   Margin="0,0,0,20"/>
                     
-                    <Border Background="{DynamicResource BrushInputBG}" 
-                            BorderBrush="{DynamicResource BrushBorder}" 
-                            BorderThickness="1" CornerRadius="6" 
-                            Padding="12" Margin="0,0,0,8">
-                        <StackPanel x:Name="templateListPanel"/>
-                    </Border>
-                    <Grid Margin="0,0,0,0">
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
-                            <Button Content="{l:T settings.newTemplate}" Click="AddTemplate_Click"
-                                    Style="{StaticResource GhostButtonStyle}" Padding="12,6"/>
-                            <Button Content="{l:T settings.importFromDashboard}" Click="ImportFromDashboard_Click"
-                                    Style="{StaticResource GhostButtonStyle}" Padding="12,6" Margin="10,0,0,0"/>
+                        <!-- 数据卡片连接方式 -->
+                        <Border Background="{DynamicResource BrushInputBG}" 
+                                BorderBrush="{DynamicResource BrushBorder}" 
+                                BorderThickness="1" CornerRadius="8" 
+                                Padding="16" Margin="0,0,0,12">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <TextBlock Text="{l:T settings.webDataSourceMode}" 
+                                               Foreground="{DynamicResource BrushTextMain}"
+                                               FontSize="{DynamicResource FontSizeNormal}"/>
+                                    <TextBlock Text=" ❓" FontSize="12" Cursor="Help" VerticalAlignment="Center"
+                                               ToolTip="{l:T settings.webFetchModeHint}"
+                                               Foreground="{DynamicResource BrushTextMuted}"/>
+                                </StackPanel>
+                                <RadioButton x:Name="rbModeExtension" Content="{l:T settings.browserExtensionMode}" GroupName="DataFetchMode"
+                                             Foreground="{DynamicResource BrushTextMain}" FontSize="13"
+                                             Margin="0,0,0,6" Checked="DataFetchMode_Changed"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <RadioButton x:Name="rbModeCdp" Content="{l:T settings.cdpConnectionMode}" GroupName="DataFetchMode"
+                                                 Foreground="{DynamicResource BrushTextMain}" FontSize="13"
+                                                 VerticalAlignment="Center" Checked="DataFetchMode_Changed"/>
+                                    <Button Content="{l:T settings.testConnection}" Click="TestCdpConnection_Click"
+                                            Style="{StaticResource GhostButtonStyle}" Padding="8,3"
+                                            FontSize="11" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <!-- CDP 端口配置（仅 CDP 模式显示） -->
+                                <StackPanel x:Name="cdpPortSection" Orientation="Horizontal" Visibility="Collapsed" Margin="20,0,0,0">
+                                    <TextBlock Text="{l:T settings.debugPort}" Foreground="{DynamicResource BrushTextSec}" 
+                                               FontSize="12" VerticalAlignment="Center"/>
+                                    <TextBox x:Name="cdpPortBox" Width="70" FontSize="12" Padding="4,3"
+                                             Text="9222" LostFocus="CdpPort_LostFocus"/>
+                                    <TextBlock Text="{l:T settings.remoteDebuggingPortNote}" 
+                                               Foreground="{DynamicResource BrushTextMuted}" 
+                                               FontSize="11" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                </StackPanel>
+                                <!-- 隐藏浏览器启动模式（仅 CDP 模式显示） -->
+                                <StackPanel x:Name="hiddenBrowserSection" Orientation="Horizontal" Visibility="Collapsed" Margin="20,8,0,0">
+                                    <TextBlock Text="{l:T settings.hiddenBrowser}" Foreground="{DynamicResource BrushTextSec}" 
+                                               FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <ComboBox x:Name="hiddenBrowserModeCombo" Width="90" FontSize="11"
+                                              SelectionChanged="HiddenBrowserMode_Changed">
+                                        <ComboBoxItem Content="{l:T settings.headlessMode}" Tag="headless"/>
+                                        <ComboBoxItem Content="{l:T common.hiddenWindow}" Tag="hidden"/>
+                                    </ComboBox>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                                        
+                        <!-- 数据模版 -->
+                        <StackPanel Margin="0,0,0,8">
+                            <TextBlock Text="{l:T data.myTemplates}"
+                                       FontSize="{DynamicResource FontSizeNormal}" 
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource BrushTextMain}"/>
+                            <TextBlock Text="{l:T data.myTemplatesHint}" 
+                                       Foreground="{DynamicResource BrushTextMuted}" 
+                                       FontSize="{DynamicResource FontSizeSmall}" 
+                                       Margin="0,4,0,0"/>
                         </StackPanel>
-                        <Button Content="{l:T market.dataTemplateMarket}" Click="OpenDataTemplateMarket_Click"
-                                Style="{StaticResource GhostButtonStyle}" Padding="12,6"
-                                HorizontalAlignment="Right"
-                                ToolTip="{l:T market.openTemplateMarketHint}"/>
-                    </Grid>
+                    
+                        <Border Background="{DynamicResource BrushInputBG}" 
+                                BorderBrush="{DynamicResource BrushBorder}" 
+                                BorderThickness="1" CornerRadius="6" 
+                                Padding="12" Margin="0,0,0,8">
+                            <StackPanel x:Name="templateListPanel"/>
+                        </Border>
+                        <Grid Margin="0,0,0,0">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                                <Button Content="{l:T settings.newTemplate}" Click="AddTemplate_Click"
+                                        Style="{StaticResource GhostButtonStyle}" Padding="12,6"/>
+                                <Button Content="{l:T settings.importFromDashboard}" Click="ImportFromDashboard_Click"
+                                        Style="{StaticResource GhostButtonStyle}" Padding="12,6" Margin="10,0,0,0"/>
+                            </StackPanel>
+                            <Button Content="{l:T market.dataTemplateMarket}" Click="OpenDataTemplateMarket_Click"
+                                    Style="{StaticResource GhostButtonStyle}" Padding="12,6"
+                                    HorizontalAlignment="Right"
+                                    ToolTip="{l:T market.openTemplateMarketHint}"/>
+                        </Grid>
+                    </StackPanel>
                 </StackPanel>
                 
                 <!-- 我的数据页面 -->
@@ -1163,7 +1206,7 @@
                                FontSize="{DynamicResource FontSizeSmall}" 
                                Margin="0,0,0,20"/>
                     <UniformGrid x:Name="myDataCardsGrid" Columns="2"/>
-                    <!-- 数据模块入口（原「模块」页的我的数据看板） -->
+                    <!-- 数据卡片入口（原「模块」页的我的数据看板） -->
                     <Button Click="OpenDashboardList_Click" Margin="6,12,6,0"
                             Style="{StaticResource GhostButtonStyle}" Padding="10,6"
                             HorizontalAlignment="Left"
@@ -1201,11 +1244,11 @@
                                            FontWeight="SemiBold"/>
                                 <TextBlock Text="{l:T settings.windowTabHotkeyHint}" 
                                            Foreground="{DynamicResource BrushTextMuted}"
-                                           FontSize="{DynamicResource FontSizeTiny}"
+                                           FontSize="{DynamicResource FontSizeSmall}"
                                            Margin="0,2,0,0"/>
                                 <TextBlock Text="{l:T settings.hotkeyInterceptNote}" 
                                            Foreground="{DynamicResource BrushTextMuted}"
-                                           FontSize="{DynamicResource FontSizeTiny}"
+                                           FontSize="{DynamicResource FontSizeSmall}"
                                            TextWrapping="Wrap"
                                            Margin="0,4,0,0"/>
                             </StackPanel>
@@ -1229,7 +1272,7 @@
                                            FontWeight="SemiBold"/>
                                 <TextBlock Text="{l:T settings.voiceHotkeyHint}" 
                                            Foreground="{DynamicResource BrushTextMuted}"
-                                           FontSize="{DynamicResource FontSizeTiny}"
+                                           FontSize="{DynamicResource FontSizeSmall}"
                                            TextWrapping="Wrap"
                                            Margin="0,2,0,0"/>
                                 <Grid Margin="0,10,0,0">
@@ -1256,7 +1299,7 @@
                                 </Grid>
                                 <TextBlock Text="{l:T settings.voiceHotkeyInterceptNote}"
                                            Foreground="{DynamicResource BrushTextMuted}"
-                                           FontSize="{DynamicResource FontSizeTiny}"
+                                           FontSize="{DynamicResource FontSizeSmall}"
                                            TextWrapping="Wrap"
                                            Margin="0,8,0,0"/>
                             </StackPanel>
@@ -1264,20 +1307,31 @@
                     </Border>
                 </StackPanel>
 
-                <!-- 小屏窗口管理页面 -->
+                <!-- 微屏窗口管理页面 -->
                 <StackPanel x:Name="pageWindows" Visibility="Collapsed">
                     <TextBlock Text="{l:T common.screenWindow}" 
                                FontSize="{DynamicResource FontSizeSubtitle}" 
                                FontWeight="Bold"
                                Foreground="{DynamicResource BrushTextMain}"
-                               Margin="0,0,0,24"/>
+                               Margin="0,0,0,12"/>
 
-                    <!-- 操作按钮栏 -->
+                    <!-- 显隐说明：与独立微屏管理窗口同文案，勾选「显示」的微屏才出现在顶部标签栏 -->
+                    <TextBlock Text="{l:T screenTime.screenVisibilityHint}"
+                               Foreground="{DynamicResource BrushTextMuted}"
+                               FontSize="{DynamicResource FontSizeSmall}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,16"/>
+
+                    <!-- 操作按钮栏（文案含 emoji，需用 Emoji.Wpf.TextBlock 作 Content 才能彩色渲染） -->
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
-                        <Button Content="{l:T common.importWindow}" Style="{StaticResource GhostButtonStyle}" 
-                                Padding="12,6" Click="ImportWindow_Click" Margin="0,0,8,0"/>
-                        <Button Content="{l:T settings.mySharesEmoji}" Style="{StaticResource GhostButtonStyle}" 
-                                Padding="12,6" Click="MyShares_Click"/>
+                        <Button Style="{StaticResource GhostButtonStyle}" 
+                                Padding="12,6" Click="ImportWindow_Click" Margin="0,0,8,0">
+                            <emoji:TextBlock Text="{l:T common.importWindow}"/>
+                        </Button>
+                        <Button Style="{StaticResource GhostButtonStyle}" 
+                                Padding="12,6" Click="MyShares_Click">
+                            <emoji:TextBlock Text="{l:T settings.mySharesEmoji}"/>
+                        </Button>
                     </StackPanel>
 
                     <!-- 窗口列表（代码动态生成） -->
@@ -1292,6 +1346,10 @@
                                Foreground="{DynamicResource BrushTextMain}"
                                Margin="0,0,0,24"/>
                     
+                    <!-- 产品图标：运行时从 exe 内嵌图标提取，提取失败保持隐藏不影响布局 -->
+                    <Image x:Name="aboutIconImage" Width="48" Height="48"
+                           Margin="0,0,0,12" Visibility="Collapsed"
+                           RenderOptions.BitmapScalingMode="HighQuality"/>
                     <TextBlock Text="{l:T common.metadeskScreen}" 
                                FontSize="20" FontWeight="Bold"
                                Foreground="{DynamicResource BrushTextMain}"
@@ -1405,17 +1463,17 @@
                                        FontWeight="SemiBold"/>
                             <TextBlock Text="{l:T settings.apiKey.introHint}"
                                        Foreground="{DynamicResource BrushTextMuted}"
-                                       FontSize="{DynamicResource FontSizeTiny}"
+                                       FontSize="{DynamicResource FontSizeSmall}"
                                        Margin="0,2,0,0" TextWrapping="Wrap"/>
                             <TextBlock Text="{l:T settings.apiKey.localApiHint}"
                                        Foreground="{DynamicResource BrushTextMuted}"
-                                       FontSize="{DynamicResource FontSizeTiny}"
+                                       FontSize="{DynamicResource FontSizeSmall}"
                                        Margin="0,2,0,0" TextWrapping="Wrap"/>
 
                             <!-- 未登录提示 -->
                             <TextBlock x:Name="apiKeyLoginHint" Text="{l:T settings.apiKey.loginRequired}"
                                        Foreground="{DynamicResource BrushTextMuted}"
-                                       FontSize="{DynamicResource FontSizeTiny}"
+                                       FontSize="{DynamicResource FontSizeSmall}"
                                        Visibility="Collapsed" Margin="0,10,0,0"/>
 
                             <!-- 创建：点击后弹对话框输入名称（备注用） -->
@@ -1449,7 +1507,7 @@
                             <StackPanel x:Name="apiKeyListBox" Margin="0,12,0,0"/>
                             <TextBlock x:Name="apiKeyEmptyText" Text="{l:T settings.apiKey.noKeysHint}"
                                        Foreground="{DynamicResource BrushTextMuted}"
-                                       FontSize="{DynamicResource FontSizeTiny}" Margin="0,4,0,0"/>
+                                       FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0"/>
                         </StackPanel>
                     </Border>
 

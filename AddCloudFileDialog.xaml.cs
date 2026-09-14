@@ -98,14 +98,16 @@ public partial class AddCloudFileDialog : Window
         Close();
     }
 
-    /// <summary>云盘选中项 → FileAreaItem（external=true 表示外部存储源：无公开直链，打开时走认证下载）</summary>
+    /// <summary>云盘选中项 → FileAreaItem（external=true 表示外部存储源：打开时走各自后端的认证下载）</summary>
     private static FileAreaItem BuildFromDriveFile(CloudSpace space, CloudDriveFile file, bool external = false)
     {
+        // 元桌云盘桶为私有 ACL，不存匿名直链快照：Path 存对象键（打开时据此签名下载，
+        // 编辑别名对话框可显示/复制），CloudUrl 保持 null
         string? downloadUrl = external ? null : CloudDriveService.Instance.BuildDownloadUrl(file);
         return new FileAreaItem
         {
             Name = file.Name,
-            Path = external ? "" : (downloadUrl ?? file.OssKey ?? ""),
+            Path = external ? "" : (file.OssKey ?? downloadUrl ?? ""),
             IsFolder = file.IsFolder,
             IsCloudFile = true,
             CloudSpaceId = space.Id,

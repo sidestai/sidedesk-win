@@ -57,18 +57,31 @@ namespace SideDesk
 
             Loaded += MainWindow_Loaded;
 
+            // 未读红点：通知中心数据变化（新增/已读/清空/移除）时刷新更多按钮与「通知中心」菜单项的未读标记
+            Services.NotificationService.Instance.HistoryChanged += OnNotificationHistoryChanged;
+            Closed += (s, e) => Services.NotificationService.Instance.HistoryChanged -= OnNotificationHistoryChanged;
+
             // Ctrl+1~9 快速切换窗口标签
             PreviewKeyDown += MainWindow_PreviewKeyDown;
 
-            // 启动引导通知（富通知）：点击在独立 WebView2 窗口打开网页；点击过一次后永久不再出现
+            // 启动引导通知（富通知）：点击在独立 WebView2 窗口打开网页；
+            // 免打扰标记只控制气泡不再弹：已点击/已阅过时仍以已读静默条目保留在通知中心，直到用户清空
             var app = (App)Application.Current;
             const string welcomeNoticeKey = "welcome_open_webview";
-            if (!_welcomeNoticeEnqueued && app.AppSettings.ShouldShowNotice(welcomeNoticeKey))
+            if (!_welcomeNoticeEnqueued)
             {
                 _welcomeNoticeEnqueued = true;
-                Services.NotificationService.Instance.Enqueue(new NotificationPayload
+                // 分区域准备「欢迎使用」引导页：中文版走 bigjing 主域名，英文版使用独立品牌域名 sidedesktop.com
+#if API_REGION_EN
+                const string welcomeHelpUrl = "https://sidedesktop.com/help";
+                const string welcomeHelpTitle = "Hello, I am SideDesktop";
+#else
+                const string welcomeHelpUrl = "https://sidedesk.bigjing.com/help";
+                const string welcomeHelpTitle = "欢迎使用微屏";
+#endif
+                var welcomePayload = new NotificationPayload
                 {
-                    Title = Framework.Lang.T("nativePanel.clickToOpenA"),
+                    Title = welcomeHelpTitle,
                     Body = Framework.Lang.T("nativePanel.browseTheWebIn"),
                     NoticeKey = welcomeNoticeKey,
                     ClickMain = new NotificationAction
@@ -76,11 +89,20 @@ namespace SideDesk
                         Type = "open_webview",
                         Payload = new Dictionary<string, object>
                         {
-                            ["url"] = Constants.URLs.HomePageBaseUrl,
-                            ["title"] = Framework.Lang.T("common.web")
+                            ["url"] = welcomeHelpUrl,
+                            ["title"] = welcomeHelpTitle
                         }
                     }
-                });
+                };
+                if (!app.AppSettings.ShouldShowNotice(welcomeNoticeKey))
+                {
+                    // 已点击/已阅过：不弹气泡，以已读条目入中心；发送时间用首次确认时间保持列表日期真实
+                    welcomePayload.DisplayMode = NotificationDisplayMode.Silent;
+                    welcomePayload.IsRead = true;
+                    if (app.AppSettings.DismissedNotices.TryGetValue(welcomeNoticeKey, out var ackTime))
+                        welcomePayload.Timestamp = ackTime;
+                }
+                Services.NotificationService.Instance.Enqueue(welcomePayload);
             }
         }
 
@@ -140,12 +162,15 @@ namespace SideDesk
             {
                 SwitchToWindowByIndex(_dockState.ActiveIndex);
             }
+
+            // 初始未读红点（窗口创建前可能已有补拉入队的待办）
+            UpdateUnreadBadge();
         }
 
         /// <summary>重新渲染原生模式面板（设置变更后调用）。</summary>
         public void RefreshNativePanels() => sidebarPanel.RefreshNativePanels();
 
-        /// <summary>当前活动标签是否正在显示指定 bar（小屏）。用于组件变更后定向刷新显示同一 bar 的其他侧边栏。</summary>
+        /// <summary>当前活动标签是否正在显示指定 bar（微屏）。用于卡片变更后定向刷新显示同一 bar 的其他侧边栏。</summary>
         internal bool IsShowingBar(string barId)
         {
             if (_dockState == null || string.IsNullOrEmpty(barId)) return false;
@@ -239,6 +264,9 @@ namespace SideDesk
             var menu = sender as ContextMenu;
             if (menu == null) return;
 
+            // 菜单展开时再校一次红点（防止事件错过）
+            UpdateUnreadBadge();
+
             // 清除旧的动态窗口列表项（menuSeparator1 之前的所有项）
             int separatorIndex = menu.Items.IndexOf(menuSeparator1);
             for (int i = separatorIndex - 1; i >= 0; i--)
@@ -298,7 +326,7 @@ namespace SideDesk
         }
 
         /// <summary>
-        /// "添加模块"子菜单展开时动态填充：与空白处右键菜单的 addModuleMenu 内容一致（NativeModePanel.PopulateAddModuleMenu）
+        /// "添加卡片"子菜单展开时动态填充：与空白处右键菜单的 addModuleMenu 内容一致（NativeModePanel.PopulateAddModuleMenu）
         /// </summary>
         private void AddModuleMenu_SubmenuOpened(object sender, RoutedEventArgs e)
         {
@@ -310,11 +338,10 @@ namespace SideDesk
             sidebarPanel.PopulateAddModuleMenu(menu);
         }
 
-        /// <summary>“小屏管理”菜单入口：弹出独立管理窗口。</summary>
+        /// <summary>“微屏管理”菜单入口：打开设置窗口并定位到“微屏窗口”页（不再弹独立管理窗口）。</summary>
         private void ScreenManager_Click(object sender, RoutedEventArgs e)
         {
-            if (_configManager == null || _dockState == null) return;
-            new ScreenManagerWindow(this).ShowDialog();
+            OpenSettingsWindow("windows");
         }
 
         /// <summary>打开通知中心窗口（已有实例则激活）</summary>
@@ -330,6 +357,23 @@ namespace SideDesk
                 }
             }
             new NotificationCenterWindow().Show();
+        }
+
+        /// <summary>通知中心数据变更（可能来自 WS 等非 UI 线程）：切回 UI 线程刷新未读红点</summary>
+        private void OnNotificationHistoryChanged() => Dispatcher.BeginInvoke(new Action(UpdateUnreadBadge));
+
+        /// <summary>
+        /// 按未读数刷新红点：标题栏「⋯」按钮右上角 + 菜单里「通知中心」项右侧。
+        /// 打开通知中心会全部标已读，红点随之消失；待办被审批后由 TeamNotificationService 移除条目，同样消红点。
+        /// </summary>
+        private void UpdateUnreadBadge()
+        {
+            var visibility = Services.NotificationService.Instance.UnreadCount > 0
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            if (moreUnreadDot != null) moreUnreadDot.Visibility = visibility;
+            // 「通知中心」菜单项的红点在 HeaderTemplate 内，通过 Tag 传 Visibility（全局样式只接受字符串 Header）
+            if (notificationCenterMenu != null) notificationCenterMenu.Tag = visibility;
         }
 
         /// <summary>通用主题化确认对话框（返回是否点击了确定）。</summary>
@@ -496,10 +540,24 @@ namespace SideDesk
             RefreshWindowTabs();
         }
 
+        /// <summary>
+        /// 账号作用域切换后重载：重设配置管理器并切换到新作用域的活动窗口。
+        /// 面板渲染依赖 sidebarPanel 持有的 _currentWindowConfig 实例，仅 RefreshNativePanels 重绘
+        /// 仍会渲染切换前的旧窗口实例（拉取合并是增量新建，不会替换当前实例），
+        /// 必须像启动流程（MainWindow_Loaded）那样重新 SwitchToWindow 才会呈现新作用域数据。
+        /// </summary>
+        internal void ReloadForScopeSwitch(WindowConfigManager manager)
+        {
+            SetWindowConfigManager(manager);
+            SwitchToWindowByIndex(_dockState?.ActiveIndex ?? 0);
+            RefreshNativePanels();
+        }
+
         internal void RefreshWindowTabs()
         {
             if (_configManager == null || _dockState == null) return;
             windowTabsPanel.Children.Clear();
+            Button? activeBtn = null;
 
             // 逐个构建切换按钮（按钮数字 = 窗口序号，对应 Ctrl+1~9）；
             // 具体的可见性/对齐统一交由 UpdateTitleBarDisplay 依据窗口数量与悬停态决定
@@ -510,8 +568,9 @@ namespace SideDesk
                 if (config == null) continue;
 
                 var index = i;
-                // 激活项蓝底(BrushAccent)：文字取语义画刷 BrushAccentText(深浅主题均为白)，与蓝底最高对比；
-                // 原先固定用 BrushTextMain(浅色主题近黑)→黑字压蓝底对比浑浊、看不清。非激活项透明底仍用 BrushTextMain
+                // 激活项反色底（底色=BrushTextMain、字色=BrushBG），与标题栏序号徽标同一反色规范：
+                // 深浅主题下均呈高对比单色效果，避免原 BrushAccent 蓝底在浅色主题下对比浑浊。
+                // 主题切换经 App.ThemeChanged 重建标签，快照取色即可跟随。非激活项透明底仍用 BrushTextMain
                 bool isActive = i == _dockState.ActiveIndex;
                 var btn = new Button
                 {
@@ -523,10 +582,10 @@ namespace SideDesk
                     FontSize = 11,
                     Cursor = System.Windows.Input.Cursors.Hand,
                     Background = isActive
-                        ? (Brush)FindResource("BrushAccent")
+                        ? (Brush)FindResource("BrushTextMain")
                         : Brushes.Transparent,
                     Foreground = isActive
-                        ? (Brush)FindResource("BrushAccentText")
+                        ? (Brush)FindResource("BrushBG")
                         : (Brush)FindResource("BrushTextMain"),
                     BorderThickness = new Thickness(0)
                 };
@@ -582,10 +641,30 @@ namespace SideDesk
 
                 btn.ContextMenu = ctx;
 
+                if (isActive) activeBtn = btn;
                 windowTabsPanel.Children.Add(btn);
             }
 
+            // 激活标签滚进视野：按钮多超出标签区宽度时，切换后保证当前项可见；
+            // 延到布局更新后执行，否则 ScrollViewer 尺寸未定 BringIntoView 无效
+            if (activeBtn != null)
+                Dispatcher.BeginInvoke(new Action(activeBtn.BringIntoView), System.Windows.Threading.DispatcherPriority.Loaded);
+
             UpdateTitleBarDisplay();
+        }
+
+        /// <summary>
+        /// 标签区滚轮横向滚动：ScrollViewer 滚轮默认纵向，横向内容需手动转换。
+        /// 向上滚看更前（左）、向下滚看更后（右），步进约一个标签宽；不可滚时不拦截事件。
+        /// </summary>
+        private void WindowTabs_PreviewMouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
+        {
+            var sv = windowTabsScroll;
+            if (sv == null || sv.ScrollableWidth <= 0) return;
+            e.Handled = true;
+            double step = 36;
+            double offset = sv.HorizontalOffset + (e.Delta > 0 ? -step : step);
+            sv.ScrollToHorizontalOffset(Math.Max(0, Math.Min(sv.ScrollableWidth, offset)));
         }
 
         /// <summary>
@@ -996,7 +1075,7 @@ namespace SideDesk
         }
 
         /// <summary>
-        /// 执行导入：直接使用已知 shareLevel，读当前小屏 ServerId 并 POST 导入接口。
+        /// 执行导入：直接使用已知 shareLevel，读当前微屏 ServerId 并 POST 导入接口。
         /// </summary>
         private async Task DoImportShareAsync(string code, string shareLevel, Window dialog)
         {
@@ -1005,7 +1084,7 @@ namespace SideDesk
             var token = app.AppSettings.AccountToken;
             Debug.WriteLine($"[ImportShare] starting import, code={code}, shareLevel={shareLevel}, hasToken={!string.IsNullOrEmpty(token)}");
         
-            // 构建导入请求（item 级将当前小屏的 ServerId 传入）
+            // 构建导入请求（item 级将当前微屏的 ServerId 传入）
             string? targetBarServerId = null;
             if (shareLevel == "item" && _configManager != null && _dockState != null)
             {
@@ -1142,7 +1221,7 @@ namespace SideDesk
             }
             else
             {
-                // === Bar 级导入：新建小屏并切换 ===
+                // === Bar 级导入：新建微屏并切换 ===
                 dialog.Close();
                 Debug.WriteLine($"[ImportShare] bar-level import completed, new bar created");
                 string barTitleResult = data["barTitle"]?.ToString() ?? Framework.Lang.T("common.importWindow");
@@ -1198,7 +1277,7 @@ namespace SideDesk
             var dialog = new AddWindowDialog { Owner = this };
             if (dialog.ShowDialog() == true && dialog.Result != null)
             {
-                // 新小屏同时加入左右两侧 dock，并广播刷新所有窗口的顶部标签
+                // 新微屏同时加入左右两侧 dock，并广播刷新所有窗口的顶部标签
                 _configManager!.AddToAllDocks(dialog.Result);
                 ((App)Application.Current).RefreshAllWindowTabs();
                 WindowTab_Click(_dockState!.WindowIds.Count - 1);
@@ -1979,7 +2058,6 @@ namespace SideDesk
                     var capturedAction = action;
                     btn.Click += async (s, e) =>
                     {
-                        RecordNoticeDismissal(n);
                         DismissRichNotification(holder);
                         await NotificationActionService.ExecuteAsync(capturedAction, n);
                     };
@@ -2041,26 +2119,18 @@ namespace SideDesk
                 if (e.OriginalSource is Button) return; // 按钮点击不触发主体动作
                 if (n.ClickMain != null)
                 {
-                    RecordNoticeDismissal(n);
                     DismissRichNotification(holder);
                     await NotificationActionService.ExecuteAsync(n.ClickMain, n);
                 }
                 else
                 {
+                    // 点过即已读：无 clickMain 的卡片点开详情也算已读，回传服务端
+                    Services.NotificationSyncService.Instance.MarkRead(n);
                     ShowNotificationDetail($"{n.Title}\n{n.Body}");
                 }
             };
 
             return holder;
-        }
-
-        /// <summary>记录通知免打扰标识（通知被点击时调用；带 NoticeKey 的通知点击后不再重复出现）</summary>
-        private void RecordNoticeDismissal(NotificationPayload n)
-        {
-            if (string.IsNullOrEmpty(n.NoticeKey)) return;
-            var app = (App)Application.Current;
-            app.AppSettings.DismissNotice(n.NoticeKey);
-            app.AppSettings.Save();
         }
 
         /// <summary>解析颜色字符串（#RRGGBB / #AARRGGBB），失败返回 null</summary>

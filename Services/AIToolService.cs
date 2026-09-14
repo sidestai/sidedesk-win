@@ -24,7 +24,7 @@ namespace SideDesk.Services
                 new { type = "function", function = new { name = "get_settings", description = "获取 SideDesk 当前设置概览（主题、布局、宽度等）", parameters = new { type = "object", properties = new { }, required = new string[] { } } } },
                 new { type = "function", function = new { name = "set_theme", description = "切换 SideDesk 主题模式", parameters = new { type = "object", properties = new { themeMode = new { type = "string", description = "主题模式：Dark、Light 或 System", @enum = new[] { "Dark", "Light", "System" } } }, required = new[] { "themeMode" } } } },
                 new { type = "function", function = new { name = "set_layout", description = "切换主显示器停靠布局", parameters = new { type = "object", properties = new { layout = new { type = "string", description = "布局模式：Left、Right、Both 或 None", @enum = new[] { "Left", "Right", "Both", "None" } } }, required = new[] { "layout" } } } },
-                new { type = "function", function = new { name = "list_windows", description = "列出所有小屏窗口配置（ID、名称、类型、面板数量）", parameters = new { type = "object", properties = new { }, required = new string[] { } } } },
+                new { type = "function", function = new { name = "list_windows", description = "列出所有微屏窗口配置（ID、名称、类型、面板数量）", parameters = new { type = "object", properties = new { }, required = new string[] { } } } },
                 new { type = "function", function = new { name = "list_ws_clients", description = "列出当前已连接的 WebSocket 客户端（浏览器扩展）", parameters = new { type = "object", properties = new { }, required = new string[] { } } } },
                 new { type = "function", function = new { name = "broadcast_ws", description = "向所有已连接的 WebSocket 客户端（浏览器扩展）广播消息", parameters = new { type = "object", properties = new { message = new { type = "string", description = "要广播的消息内容" } }, required = new[] { "message" } } } },
                 new { type = "function", function = new { name = "list_notes", description = "获取所有便签列表（含全局便签和模块内便签）", parameters = new { type = "object", properties = new { }, required = new string[] { } } } },
@@ -96,7 +96,7 @@ namespace SideDesk.Services
             var app = (App)System.Windows.Application.Current;
             return new
             {
-                appName = "元桌小屏 (SideDesk)",
+                appName = "微屏 (SideDesk)",
                 mcpServer = new { running = McpServerService.Instance.IsRunning, port = McpServerService.Port },
                 webSocketServer = new
                 {

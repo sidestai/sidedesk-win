@@ -30,6 +30,42 @@ public static class LocalDbService
 
     public static bool DbExists => File.Exists(DbPath);
 
+    /// <summary>生成数据库一致性快照（VACUUM INTO，自动合并 WAL 数据）供备份/导出打包 zip。
+    /// db 不存在或失败返回 false。</summary>
+    public static bool CreateSnapshot(string targetPath)
+    {
+        if (!DbExists) return false;
+        try
+        {
+            if (File.Exists(targetPath)) File.Delete(targetPath);
+            using var conn = Open();
+            using var cmd = conn.CreateCommand();
+            // VACUUM INTO 的文件名不支持参数绑定，内联并转义单引号（路径为本地受控临时文件）
+            cmd.CommandText = $"VACUUM INTO '{targetPath.Replace("'", "''")}';";
+            cmd.ExecuteNonQuery();
+            return File.Exists(targetPath);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[LocalDb] snapshot failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>用快照文件整体替换现有数据库（备份恢复用）：
+    /// 释放连接池 → 删主库与 WAL/SHM 边车文件 → 快照落位 → 再清一次池（防止旧句柄复活）。</summary>
+    public static void ReplaceDbWithFile(string snapshotPath)
+    {
+        SqliteConnection.ClearAllPools();
+        foreach (var suffix in new[] { "", "-wal", "-shm" })
+        {
+            string p = DbPath + suffix;
+            if (File.Exists(p)) File.Delete(p);
+        }
+        File.Move(snapshotPath, DbPath);
+        SqliteConnection.ClearAllPools();
+    }
+
     /// <summary>
     /// 当前数据作用域：登录后 "u:{encrypt2密文}"（来自 /auth/userinfo），未登录 "local"（未归属，登录时晋升给当前登录者）。
     /// 布局与内容类数据（窗口/组件/便签/待办等）按作用域隔离，防止切换登录账号串数据。
@@ -54,6 +90,24 @@ public static class LocalDbService
         {
             using var conn = Open();
             return GetState(conn, ScopedKey(key, CurrentScope())) == "1";
+        }
+        catch { return false; }
+    }
+
+    /// <summary>
+    /// 任意作用域是否已置过该一次性标记（含无后缀的早期 key）。
+    /// 用于「全库只播一次」的引导类初始化：换账号/登出不应重复播种示例数据。
+    /// </summary>
+    public static bool AnyScopeStateFlag(string key)
+    {
+        try
+        {
+            using var conn = Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT 1 FROM local_app_state WHERE key=$k OR key LIKE $p LIMIT 1";
+            cmd.Parameters.AddWithValue("$k", key);
+            cmd.Parameters.AddWithValue("$p", key + "@%");
+            return cmd.ExecuteScalar() != null;
         }
         catch { return false; }
     }
@@ -107,6 +161,10 @@ public static class LocalDbService
         AddColumnIfMissing(conn, "local_todo_item", "user_id", "TEXT NOT NULL DEFAULT 'local'");
         AddColumnIfMissing(conn, "local_clipboard_item", "user_id", "TEXT NOT NULL DEFAULT 'local'");
         AddColumnIfMissing(conn, "local_row_id_map", "user_id", "TEXT NOT NULL DEFAULT 'local'");
+        // 删除墓碑标记：deleted_at 此前只用于读过滤、从未被写入（删除一律硬删），现改为墓碑语义；
+        // deleted_synced 标记该墓碑是否已成功上报服务端，上报后仍保留一段时间供追查，到期由 PurgeOldTombstones 清理
+        AddColumnIfMissing(conn, "local_bar", "deleted_synced", "INTEGER NOT NULL DEFAULT 0");
+        AddColumnIfMissing(conn, "local_item", "deleted_synced", "INTEGER NOT NULL DEFAULT 0");
 
         using var cmd = conn.CreateCommand();
         cmd.CommandText = @"
@@ -129,7 +187,8 @@ CREATE TABLE IF NOT EXISTS local_bar (
   enabled_tools TEXT,
   created_at    TEXT,
   updated_at    TEXT,
-  deleted_at    TEXT
+  deleted_at    TEXT,
+  deleted_synced INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS local_item (
@@ -150,7 +209,8 @@ CREATE TABLE IF NOT EXISTS local_item (
   corp_id     TEXT,
   created_at  TEXT,
   updated_at  TEXT,
-  deleted_at  TEXT
+  deleted_at  TEXT,
+  deleted_synced INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_item_bar ON local_item(bar_uid, sort_order);
@@ -322,12 +382,25 @@ DROP TABLE local_data_variable_old;";
     /// <summary>将整个管理器状态写入 SQLite（单事务，全量 upsert + 清理已删除行；只影响当前作用域的行）。</summary>
     public static void SaveManager(WindowConfigManager mgr)
     {
+        var scope = CurrentScope();
+
+        // 作用域一致性守卫：内存实例是在别的作用域下加载的（登出/登录后窗口尚未重载）。
+        // 本方法是“以内存为准”的全量重写：DeleteMissing 按内存 uid 集合删差集、行级数据先整表删再按内存重插，
+        // 内存为空（登出重启后只剩 EnsureAtLeastOneBar 兜底的空窗口）即等于把当前作用域数据全删；
+        // 且 Save 随后触发的结构上传会让服务端把该账号全部窗口对账软删 —— 本地与云端同时不可自愈。
+        // 宁可丢弃这一次保存（未落盘的改动在重启重载后由用户重做），也绝不毁数据。
+        if (!string.IsNullOrEmpty(mgr.LoadedScope) && mgr.LoadedScope != scope)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                $"[LocalDb] save rejected: manager scope '{mgr.LoadedScope}' != current scope '{scope}' (account switched, window reload pending)");
+            return;
+        }
+
         using var conn = Open();
         using var tx = conn.BeginTransaction();
         try
         {
             var now = DateTime.Now.ToString("o");
-            var scope = CurrentScope();
 
             // 快捷分组一次性迁移：quickgroups.json（及更早的 bookmarks/aitools/programs）
             // 的分组数据写入对应快捷面板，此后快捷项随面板走行级存储
@@ -350,9 +423,9 @@ DROP TABLE local_data_variable_old;";
                     SaveItemTree(conn, p, win.Id, null, ref order, now, liveItemUids, scope);
             }
 
-            // 清理内存中已不存在的行（窗口/模块删除；仅当前作用域，不碰其他账号的数据）
-            DeleteMissing(conn, "local_bar", "local_uid", liveBarUids, scope);
-            DeleteMissing(conn, "local_item", "local_uid", liveItemUids, scope);
+            // 给内存中已不存在的行打删除墓碑（窗口/模块删除；仅当前作用域，不碰其他账号的数据）
+            TombstoneMissing(conn, "local_bar", "local_uid", liveBarUids, scope, now);
+            TombstoneMissing(conn, "local_item", "local_uid", liveItemUids, scope, now);
 
             // 行级数据：全量重写（数据量小，语义最简单：删掉的行/孤儿行自动清理；仅当前作用域）
             // 重写前先留存已缓存的服务端行 ID（映射表优先，行表已有值兜底），重插后回填
@@ -414,7 +487,8 @@ ON CONFLICT(local_uid) DO UPDATE SET
   window_type=excluded.window_type, url=excluded.url, is_edit_mode=excluded.is_edit_mode,
   is_app_mode=excluded.is_app_mode, show_in_tabs=excluded.show_in_tabs, owner_type=excluded.owner_type,
   corp_id=excluded.corp_id, share_mode=excluded.share_mode, source_bar_id=excluded.source_bar_id,
-  enabled_tools=excluded.enabled_tools, updated_at=excluded.updated_at;";
+  enabled_tools=excluded.enabled_tools, updated_at=excluded.updated_at,
+  deleted_at=NULL, deleted_synced=0;";
         cmd.Parameters.AddWithValue("$uid", win.Id);
         cmd.Parameters.AddWithValue("$scope", scope);
         cmd.Parameters.AddWithValue("$sid", (object?)win.ServerId ?? DBNull.Value);
@@ -455,7 +529,8 @@ ON CONFLICT(local_uid) DO UPDATE SET
         nameof(PanelItem.DashboardItems),
         nameof(PanelItem.DigitalEmployeeIds),
         nameof(PanelItem.FriendUserIds),
-        nameof(PanelItem.QuickItems)
+        nameof(PanelItem.QuickItems),
+        nameof(PanelItem.CheckInItems)
     };
 
     private class PanelItemContractResolver : DefaultContractResolver
@@ -680,6 +755,13 @@ WHERE row_uid = $uid;";
             foreach (var q in p.QuickItems)
                 Insert(q.Id, "shortcut", JsonConvert.SerializeObject(q), o++);
         }
+        // 打卡：每个打卡项一行（含当日计数，跨天由客户端 EnsureTodayCount 清零）
+        if (p.CheckInItems != null)
+        {
+            int o = 0;
+            foreach (var c in p.CheckInItems)
+                Insert(c.Id, "check_in", JsonConvert.SerializeObject(c), o++);
+        }
     }
 
     private static void InsertRow(SqliteConnection conn, string itemUid, string rowUid,
@@ -766,13 +848,26 @@ VALUES ($uid, $scope, $content, $created, $updated);";
 
     /// <summary>
     /// 作用域晋升：把 from 作用域下的布局与内容数据归入 to 作用域（未归属 local 数据“跟人走”）。
-    /// 内容表直接 UPDATE；作用域化 state keys 源值覆盖目标（离线数据时间上更新）后删除源 key。
+    /// 内容表直接 UPDATE；作用域化 state keys 仅在目标作用域尚无该状态时采用源值（见下），随后删除源 key。
     /// </summary>
     public static void AdoptScope(string from, string to)
     {
         if (string.IsNullOrEmpty(from) || string.IsNullOrEmpty(to) || from == to) return;
         using var conn = Open();
         using var tx = conn.BeginTransaction();
+
+        // 兜底空 bar 不晋升：登出回 local 时 EnsureAtLeastOneBar 会建一个空 bar 防零 bar 死状态，
+        // 它不是用户数据；若随晋升进入账号作用域，每次登出/登入循环都会多出一个空窗口。
+        // 无内容（local_item 无存活行）且未同步（server_id 空）即判定为兜底/空建，
+        // 硬删无损 —— 服务端从不知道它存在，无需墓碑。
+        using (var prune = conn.CreateCommand())
+        {
+            prune.CommandText = @"DELETE FROM local_bar
+WHERE user_id=$from AND server_id IS NULL AND deleted_at IS NULL
+  AND local_uid NOT IN (SELECT bar_uid FROM local_item WHERE user_id=$from AND deleted_at IS NULL);";
+            prune.Parameters.AddWithValue("$from", from);
+            prune.ExecuteNonQuery();
+        }
 
         foreach (var table in new[] { "local_bar", "local_item", "local_item_row", "local_row_id_map",
             "local_sticky_note", "local_global_note", "local_todo_item", "local_clipboard_item" })
@@ -789,7 +884,14 @@ VALUES ($uid, $scope, $content, $created, $updated);";
         {
             var src = GetState(conn, ScopedKey(key, from)) ?? (from == "local" ? GetState(conn, key) : null);
             if (src == null) continue;
-            UpsertState(conn, ScopedKey(key, to), src);
+            var dstKey = ScopedKey(key, to);
+            // 仅当目标作用域尚无该状态时才采用源值（首次登录：未归属 local 数据“跟人走”）。
+            // 目标已存在则保留目标 —— 修复「登出→再登入同一账号」：登出时 local 只剩
+            // EnsureAtLeastOneBar 兜底建出的空 dock（左右 ActiveIndex 均为 0），若无条件覆盖会把账号
+            // 真实的左右 dock 状态（含用户各自选定的活动标签序号，如左=1、右=2）冲掉，
+            // 导致再登入后两侧都回落到 1（内容表已按 user_id 迁移，窗口本身不受影响）。
+            if (GetState(conn, dstKey) == null)
+                UpsertState(conn, dstKey, src);
             DeleteState(conn, ScopedKey(key, from));
             if (from == "local") DeleteState(conn, key);
         }
@@ -849,7 +951,8 @@ ON CONFLICT(local_uid) DO UPDATE SET
   server_id=excluded.server_id, bar_uid=excluded.bar_uid, parent_uid=excluded.parent_uid,
   sort_order=excluded.sort_order, title=excluded.title, item_type=excluded.item_type,
   group_id=excluded.group_id, item_data=excluded.item_data, owner_type=excluded.owner_type,
-  team_id=excluded.team_id, team_name=excluded.team_name, corp_id=excluded.corp_id, updated_at=excluded.updated_at;";
+  team_id=excluded.team_id, team_name=excluded.team_name, corp_id=excluded.corp_id, updated_at=excluded.updated_at,
+  deleted_at=NULL, deleted_synced=0;";
         cmd.Parameters.AddWithValue("$uid", p.Id);
         cmd.Parameters.AddWithValue("$scope", scope);
         cmd.Parameters.AddWithValue("$sid", (object?)p.ServerId ?? DBNull.Value);
@@ -890,14 +993,19 @@ ON CONFLICT(key) DO UPDATE SET value=excluded.value;";
         cmd.ExecuteNonQuery();
     }
 
-    /// <summary>删除表中 uid 不在内存集合里的行（仅当前作用域；按 IN 分批，避免参数上限）。</summary>
-    private static void DeleteMissing(SqliteConnection conn, string table, string column, HashSet<string> liveUids, string scope)
+    /// <summary>
+    /// 给表中 uid 不在内存集合里的行打删除墓碑（仅当前作用域；按 IN 分批，避免参数上限）。
+    /// 不硬删：deleted_at 非空的行是“客户端明确删除”的唯一凭据，云同步据此上报显式墓碑，
+    /// 服务端只删有墓碑的（协议 v2）。硬删会让离线删除无从表达，已删窗口在下次拉取时复活。
+    /// LoadManager 以 deleted_at IS NULL 过滤，墓碑对 UI 不可见。
+    /// </summary>
+    private static void TombstoneMissing(SqliteConnection conn, string table, string column, HashSet<string> liveUids, string scope, string now)
     {
-        // 先取出库中当前作用域的全部 uid，内存求差集，再按差集删除（数据量小，简单可靠）
+        // 先取出库中当前作用域「仍存活」的全部 uid，内存求差集，再按差集打墓碑（数据量小，简单可靠）
         var dbUids = new List<string>();
         using (var q = conn.CreateCommand())
         {
-            q.CommandText = $"SELECT {column} FROM {table} WHERE user_id=$scope";
+            q.CommandText = $"SELECT {column} FROM {table} WHERE user_id=$scope AND deleted_at IS NULL";
             q.Parameters.AddWithValue("$scope", scope);
             using var rd = q.ExecuteReader();
             while (rd.Read()) dbUids.Add(rd.GetString(0));
@@ -912,9 +1020,121 @@ ON CONFLICT(key) DO UPDATE SET value=excluded.value;";
             names.Add($"$d{i}");
             cmd.Parameters.AddWithValue($"$d{i}", dead[i]);
         }
-        cmd.CommandText = $"DELETE FROM {table} WHERE user_id=$scope AND {column} IN ({string.Join(",", names)})";
+        // deleted_synced 归零：强制重新上报（上一次上报可能失败）
+        cmd.CommandText = $"UPDATE {table} SET deleted_at=$now, deleted_synced=0 WHERE user_id=$scope AND {column} IN ({string.Join(",", names)})";
         cmd.Parameters.AddWithValue("$scope", scope);
+        cmd.Parameters.AddWithValue("$now", now);
         cmd.ExecuteNonQuery();
+    }
+
+    // ==================== 删除墓碑（云同步显式删除凭据）====================
+
+    /// <summary>墓碑保留天数：上报确认后仍保留一段时间供事后追查数据流向，到期硬删。</summary>
+    private const int TombstoneRetentionDays = 30;
+
+    /// <summary>到期墓碑清理是否已在本进程执行过</summary>
+    private static bool _tombstonesPurged;
+
+    /// <summary>
+    /// 读取当前作用域内待上报的删除墓碑（deleted_at 非空且尚未确认上报），返回其 server_id 列表。
+    /// 只取 server_id 非空的行 —— 从未同步到服务端的本地行，服务端不认识，既无需也无法删。
+    /// </summary>
+    public static (List<string> Bars, List<string> Items) LoadPendingDeleteTombstones()
+    {
+        var bars = new List<string>();
+        var items = new List<string>();
+        try
+        {
+            using var conn = Open();
+            var scope = CurrentScope();
+            Collect(conn, "local_bar", scope, bars);
+            Collect(conn, "local_item", scope, items);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[LocalDb] load delete tombstones failed: {ex.Message}");
+        }
+        return (bars, items);
+
+        static void Collect(SqliteConnection conn, string table, string scope, List<string> sink)
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"SELECT server_id FROM {table} WHERE user_id=$scope AND deleted_at IS NOT NULL" +
+                              " AND deleted_synced=0 AND server_id IS NOT NULL AND server_id<>''";
+            cmd.Parameters.AddWithValue("$scope", scope);
+            using var rd = cmd.ExecuteReader();
+            while (rd.Read()) sink.Add(rd.GetString(0));
+        }
+    }
+
+    /// <summary>
+    /// 把指定墓碑标为已确认（结构上传成功后调用）。只标本次真正上报过的 server_id，
+    /// 不按作用域批量标 —— 否则上传期间新产生的墓碑会被误标为已确认，删除意图静默丢失。
+    /// 不立即硬删：保留 <see cref="TombstoneRetentionDays"/> 天供追查，到期由 <see cref="PurgeOldTombstones"/> 清理。
+    /// </summary>
+    public static void MarkTombstonesSynced(IReadOnlyList<string> barServerIds, IReadOnlyList<string> itemServerIds)
+    {
+        if (barServerIds.Count == 0 && itemServerIds.Count == 0) return;
+        try
+        {
+            using var conn = Open();
+            var scope = CurrentScope();
+            using var tx = conn.BeginTransaction();
+            Mark(conn, "local_bar", scope, barServerIds);
+            Mark(conn, "local_item", scope, itemServerIds);
+            tx.Commit();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[LocalDb] mark tombstones synced failed: {ex.Message}");
+        }
+
+        static void Mark(SqliteConnection conn, string table, string scope, IReadOnlyList<string> ids)
+        {
+            if (ids.Count == 0) return;
+            using var cmd = conn.CreateCommand();
+            var names = new List<string>();
+            for (int i = 0; i < ids.Count; i++)
+            {
+                names.Add($"$s{i}");
+                cmd.Parameters.AddWithValue($"$s{i}", ids[i]);
+            }
+            cmd.CommandText = $"UPDATE {table} SET deleted_synced=1 WHERE user_id=$scope AND deleted_at IS NOT NULL" +
+                              $" AND server_id IN ({string.Join(",", names)})";
+            cmd.Parameters.AddWithValue("$scope", scope);
+            cmd.ExecuteNonQuery();
+        }
+    }
+
+    /// <summary>
+    /// 硬删超过保留期的已确认墓碑（每进程一次，由 LoadManager 启动加载时触发）。
+    /// 只清 deleted_synced=1 的 —— 未确认的墓碑必须留到成功上报为止，否则删除意图丢失、已删窗口会在拉取时复活。
+    /// </summary>
+    public static void PurgeOldTombstones()
+    {
+        if (_tombstonesPurged) return;
+        _tombstonesPurged = true;
+        try
+        {
+            // deleted_at 以 ToString("o") 写入（本地时间 + 固定时区偏移），ISO 8601 字典序即时间序
+            var cutoff = DateTime.Now.AddDays(-TombstoneRetentionDays).ToString("o");
+            using var conn = Open();
+            using var tx = conn.BeginTransaction();
+            int total = 0;
+            foreach (var table in new[] { "local_bar", "local_item" })
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = $"DELETE FROM {table} WHERE deleted_synced=1 AND deleted_at IS NOT NULL AND deleted_at<$cutoff";
+                cmd.Parameters.AddWithValue("$cutoff", cutoff);
+                total += cmd.ExecuteNonQuery();
+            }
+            tx.Commit();
+            if (total > 0) System.Diagnostics.Debug.WriteLine($"[LocalDb] purged {total} expired delete tombstones");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[LocalDb] purge tombstones failed: {ex.Message}");
+        }
     }
 
     // ==================== 读取 ====================
@@ -922,6 +1142,9 @@ ON CONFLICT(key) DO UPDATE SET value=excluded.value;";
     /// <summary>从 SQLite 加载完整管理器状态（仅当前作用域的数据）。</summary>
     public static WindowConfigManager LoadManager()
     {
+        // 到期墓碑清理（每进程一次）：在打开本次连接前做完，避免与加载过程交叠
+        PurgeOldTombstones();
+
         var mgr = new WindowConfigManager();
         var scope = CurrentScope();
         using var conn = Open();
@@ -1036,6 +1259,8 @@ FROM local_item WHERE deleted_at IS NULL AND user_id=$scope ORDER BY sort_order,
         if (!string.IsNullOrEmpty(varSets))
             mgr.VariableSets = SafeDeserializeList<VariableSet>(varSets) ?? new();
 
+        // 打标：记录本次加载所依据的作用域，供 SaveManager 与结构上传做一致性守卫
+        mgr.LoadedScope = scope;
         return mgr;
     }
 
@@ -1075,6 +1300,9 @@ FROM local_item WHERE deleted_at IS NULL AND user_id=$scope ORDER BY sort_order,
             p.CountdownItems = RowsToList<CountdownItem>(rows, "countdown");
             p.SignalLights = RowsToList<SignalLightItem>(rows, "signal_light");
             p.FileItems = RowsToList<FileAreaItem>(rows, "file_area");
+            var checkIns = RowsToList<CheckInItem>(rows, "check_in");
+            if (checkIns != null)
+                p.CheckInItems = checkIns.OrderBy(c => c.SortIndex).ToList(); // 按 SortIndex 稳定恢复用户自定义顺序
             // 番茄钟单行：有行则覆盖；无行保留 item_data 旧值（旧库升级首载兼容），仍为空则不干预
             var pomodoros = RowsToList<PomodoroSettings>(rows, "pomodoro");
             if (pomodoros != null && pomodoros.Count > 0)
@@ -1114,6 +1342,7 @@ FROM local_item WHERE deleted_at IS NULL AND user_id=$scope ORDER BY sort_order,
                     case PanelType.DigitalEmployee: p.DigitalEmployeeIds ??= new List<string>(); break;
                     case PanelType.Friend: p.FriendUserIds ??= new List<string>(); break;
                     case PanelType.QuickGroup: p.QuickItems ??= new List<QuickItem>(); break;
+                    case PanelType.CheckIn: p.CheckInItems ??= new List<CheckInItem>(); break;
                 }
             }
         }

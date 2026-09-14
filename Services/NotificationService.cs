@@ -37,13 +37,20 @@ namespace SideDesk.Services
         /// <summary>稍后提醒的定时器列表（防止被 GC 回收）</summary>
         private readonly List<Timer> _snoozeTimers = new();
 
+        /// <summary>App 尚未就绪时的兜底已读 ID 列表（避免启动极早期时序下已读状态丢失）</summary>
+        private static readonly List<string> _fallbackReadIds = new();
+
+        /// <summary>本地持久化的已读通知 ID（存于 AppSettings，重启不丢）</summary>
+        private static List<string> ReadIds =>
+            (System.Windows.Application.Current as App)?.AppSettings.ReadNotificationIds ?? _fallbackReadIds;
+
         /// <summary>通知中心历史记录（最新在前）</summary>
         public List<NotificationPayload> History { get; } = new();
 
-        /// <summary>未读通知数量</summary>
+        /// <summary>未读通知数量（陈旧超一个月的未读不计入红点）</summary>
         public int UnreadCount
         {
-            get { lock (_lock) { return History.Count(h => !h.IsRead); } }
+            get { lock (_lock) { return History.Count(h => h.ShowUnread); } }
         }
 
         /// <summary>有新通知需要显示时触发（参数：通知载荷；订阅者需在 UI 线程渲染）</summary>
@@ -165,6 +172,18 @@ namespace SideDesk.Services
                 if (!string.IsNullOrEmpty(payload.GroupId))
                     _activeGroupIds.Remove(payload.GroupId);
             }
+            // 本地通知（无服务端 ID、带免打扰标识，如欢迎引导）：气泡收起即视为已阅，
+            // 本地标记已读并持久化，避免重启后同条通知再次亮红点；
+            // 同时记录免打扰：重启后气泡不再弹，但中心仍以已读条目保留直到用户清空
+            if (payload.ServerId == null && !string.IsNullOrEmpty(payload.NoticeKey))
+            {
+                MarkRead(payload.Id);
+                if (System.Windows.Application.Current is App app)
+                {
+                    app.AppSettings.DismissNotice(payload.NoticeKey);
+                    app.AppSettings.Save();
+                }
+            }
             Debug.WriteLine($"[Notification] notification dismissed: {payload.Title}");
             ProcessQueue();
         }
@@ -201,6 +220,116 @@ namespace SideDesk.Services
                     item.IsRead = true;
             }
             HistoryChanged?.Invoke();
+        }
+
+        /// <summary>标记单条通知为已读（点过即已读；触发 HistoryChanged，红点随之更新）</summary>
+        public void MarkRead(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return;
+            bool changed = false;
+            string? noticeKey = null;
+            lock (_lock)
+            {
+                var item = History.FirstOrDefault(h => h.Id == id);
+                if (item != null && !item.IsRead)
+                {
+                    item.IsRead = true;
+                    changed = true;
+                    noticeKey = item.NoticeKey;
+                }
+            }
+            if (changed)
+            {
+                PersistReadId(id);
+                // 本地通知的 Id 每次启动随机，需同时按 NoticeKey 落标记才能跨重启生效
+                if (!string.IsNullOrEmpty(noticeKey)) PersistReadId(noticeKey);
+                HistoryChanged?.Invoke();
+            }
+        }
+
+        /// <summary>指定 ID 是否已在本地持久化已读记录中（供同步服务与服务端状态对齐）</summary>
+        public bool IsLocallyRead(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return false;
+            lock (_lock) { return ReadIds.Contains(id); }
+        }
+
+        /// <summary>持久化已读 ID（插入序，封顶 500 条防止配置无限增长）</summary>
+        private static void PersistReadId(string id)
+        {
+            try
+            {
+                var list = ReadIds;
+                if (list.Contains(id)) return;
+                list.Add(id);
+                while (list.Count > 500) list.RemoveAt(0);
+                (System.Windows.Application.Current as App)?.AppSettings.Save();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[Notification] persist read id failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>按 ID 查找历史条目（返回引用，供同步服务对齐服务端已读状态）</summary>
+        public NotificationPayload? FindById(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return null;
+            lock (_lock) { return History.FirstOrDefault(h => h.Id == id); }
+        }
+
+        /// <summary>服务端重通知 bump：指定条目重置为未读、刷新时间并置顶（触发 HistoryChanged，红点随之更新）；同时清掉本地持久化已读标记，避免重启后被旧标记拦回已读</summary>
+        public void Bump(string id, DateTime timestamp)
+        {
+            lock (_lock)
+            {
+                var item = History.FirstOrDefault(h => h.Id == id);
+                if (item == null) return;
+                item.IsRead = false;
+                item.Timestamp = timestamp;
+                History.Remove(item);
+                History.Insert(0, item);
+                ReadIds.Remove(id);
+            }
+            (System.Windows.Application.Current as App)?.AppSettings.Save();
+            HistoryChanged?.Invoke();
+        }
+
+        /// <summary>清除指定 ID 的本地持久化已读标记（服务端重通知需恢复未读，不能被旧标记拦回已读）</summary>
+        public void ForgetReadMarker(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return;
+            bool removed;
+            lock (_lock) { removed = ReadIds.Remove(id); }
+            if (removed) (System.Windows.Application.Current as App)?.AppSettings.Save();
+        }
+
+        /// <summary>
+        /// 按 ID 移除通知中心里的单条历史（业务已处理完毕时调用，避免留下过期未读）。
+        /// 返回是否命中；未命中不触发 HistoryChanged。
+        /// </summary>
+        public bool RemoveById(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return false;
+
+            bool removed;
+            lock (_lock)
+            {
+                removed = History.RemoveAll(h => h.Id == id) > 0;
+            }
+            if (removed)
+            {
+                Debug.WriteLine($"[Notification] history item removed: {id}");
+                HistoryChanged?.Invoke();
+            }
+            return removed;
+        }
+
+        /// <summary>通知中心是否已存在指定 ID 的历史（供外部去重，避免同一事件重复入队）</summary>
+        public bool ContainsId(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return false;
+            lock (_lock) { return History.Any(h => h.Id == id); }
         }
 
         /// <summary>清空通知中心历史</summary>
@@ -260,6 +389,10 @@ namespace SideDesk.Services
         {
             lock (_lock)
             {
+                // 已读状态恢复：本地持久化已读的 ID/NoticeKey 重启/重新同步后直接以已读入历史（防红点复现）
+                if (!payload.IsRead && (ReadIds.Contains(payload.Id)
+                    || (!string.IsNullOrEmpty(payload.NoticeKey) && ReadIds.Contains(payload.NoticeKey))))
+                    payload.IsRead = true;
                 History.Insert(0, payload);
                 while (History.Count > MaxHistoryCount)
                     History.RemoveAt(History.Count - 1);

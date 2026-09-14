@@ -364,7 +364,7 @@ namespace SideDesk.Controls
         }
 
         /// <summary>
-        /// 广播当前 bar（小屏）的变更：通知其他正在显示同一 bar 的侧边栏同步刷新，
+        /// 广播当前 bar（微屏）的变更：通知其他正在显示同一 bar 的侧边栏同步刷新，
         /// 使在任一侧边栏上对组件的增删改都能实时反映到显示同一 bar 的其他侧边栏。
         /// 发起变更的本窗口已自行渲染，作为 except 排除，避免重复重绘。
         /// </summary>
@@ -490,6 +490,7 @@ namespace SideDesk.Controls
                 PanelType.Timer => BuildTimerWidget(item),
                 PanelType.TodoList => BuildTodoWidget(item),
                 PanelType.SignalLight => BuildSignalLightWidget(item),
+                PanelType.CheckIn => BuildCheckInWidget(item),
                 PanelType.DigitalEmployee => BuildDigitalEmployeeWidget(item),
                 PanelType.Friend => BuildFriendWidget(item),
                 PanelType.ImageCarousel => BuildImageCarouselWidget(item),
@@ -1025,13 +1026,15 @@ namespace SideDesk.Controls
                 (Framework.Lang.T("common.todayTodos"), PanelType.TodoList),
                 (Framework.Lang.T("common.clipboardFavorites"), PanelType.Clipboard),
                 (Framework.Lang.T("common.systemInfo"), PanelType.SystemMonitor),
-                (Framework.Lang.T("common.usageStatistics"), PanelType.UsageStats),
+                // 暂时隐藏「使用统计」入口（需要时取消注释恢复）
+                // (Framework.Lang.T("common.usageStatistics"), PanelType.UsageStats),
                 (Framework.Lang.T("common.fileArea"), PanelType.FileArea),
                 (Framework.Lang.T("common.dataDashboard"), PanelType.DataDashboard),
                 (Framework.Lang.T("common.timer"), PanelType.Timer),
                 (Framework.Lang.T("common.countdown"), PanelType.Countdown),
                 (Framework.Lang.T("common.pomodoroAlarm"), PanelType.Pomodoro),
                 (Framework.Lang.T("common.signalLight"), PanelType.SignalLight),
+                (Framework.Lang.T("common.checkIn"), PanelType.CheckIn),
                 (Framework.Lang.T("common.imageCarousel"), PanelType.ImageCarousel),
                 (Framework.Lang.T("common.dailyActivity"), PanelType.DailyActivity),
                 (Framework.Lang.T("common.calendar"), PanelType.Calendar),
@@ -1525,6 +1528,8 @@ namespace SideDesk.Controls
             _quickGroupUIService = new QuickGroupUIService(_groupPanel);
             _quickGroupUIService.OwnerWindow = _mainWindow;
             _quickGroupUIService.OwnerWindowConfig = _currentWindowConfig;
+            // 绑定模式下标题栏是面板调序拖拽手柄，编辑模式时显示移动光标（与其他模块标题栏一致）
+            _quickGroupUIService.IsEditMode = _isEditMode;
 
             // 分组删除时门面已移除对应面板，这里只需保存并重绘
             _quickGroupUIService.OnGroupDeleted = (gid) =>
@@ -3776,7 +3781,7 @@ namespace SideDesk.Controls
                         // 名称
                         var nameText = new Emoji.Wpf.TextBlock
                         {
-                            Text = fileItem.Name,
+                            Text = FileItemDisplayName(fileItem),
                             FontSize = isLarge ? 12 : 11,
                             TextAlignment = TextAlignment.Center,
                             TextTrimming = TextTrimming.CharacterEllipsis,
@@ -3802,22 +3807,14 @@ namespace SideDesk.Controls
                             catch { }
                         };
 
-                        // 右键菜单（云文件用自定义菜单，本地文件调用资源管理器原生右键菜单）
+                        // 右键菜单：云文件用云菜单；本地文件用自有菜单（系统右键收进菜单末项）
                         iconStack.MouseRightButtonDown += (s, e) =>
                         {
-                            if (isCloud)
-                            {
-                                var cloudMenu = BuildCloudFileContextMenu(capturedFileItem, item);
-                                cloudMenu.PlacementTarget = iconStack;
-                                cloudMenu.IsOpen = true;
-                                e.Handled = true;
-                                return;
-                            }
-                            iconStack.Opacity = 0.7;
-                            var hwnd = new System.Windows.Interop.WindowInteropHelper(Window.GetWindow(this)).Handle;
-                            var pt = System.Windows.Forms.Cursor.Position;
-                            NativeMethods.ShowExplorerContextMenu(hwnd, filePath, pt.X, pt.Y);
-                            iconStack.Opacity = 1.0;
+                            var menu = isCloud
+                                ? BuildCloudFileContextMenu(capturedFileItem, item)
+                                : BuildFileItemContextMenu(capturedFileItem, item, filePath, isFolder);
+                            menu.PlacementTarget = iconStack;
+                            menu.IsOpen = true;
                             e.Handled = true;
                         };
 
@@ -3860,6 +3857,9 @@ namespace SideDesk.Controls
                         if (isFolder)
                         {
                             iconStack.AllowDrop = true;
+                            // 关键修复：StackPanel 默认 Background=null，空白区不接收命中测试，拖拽会穿透到外层
+                            // 被当成“添加到文件区”。设为 Transparent 让整个文件夹项都能接收拖放 → 正确复制进目录。
+                            iconStack.Background = Brushes.Transparent;
                             iconStack.DragEnter += (s, e) =>
                             {
                                 if (e.Data.GetDataPresent(DataFormats.FileDrop))
@@ -3928,7 +3928,7 @@ namespace SideDesk.Controls
                         // 图标 + 名称（云文件/云目录带云标记）
                         var nameBlock = new Emoji.Wpf.TextBlock
                         {
-                            Text = fileItem.Name,
+                            Text = FileItemDisplayName(fileItem),
                             VerticalAlignment = VerticalAlignment.Center,
                             TextTrimming = TextTrimming.CharacterEllipsis,
                             Foreground = (Brush)FindResource("BrushTextMain"),
@@ -3972,23 +3972,14 @@ namespace SideDesk.Controls
                         row.Children.Add(openBtn);
                         row.Children.Add(iconNamePanel);
 
-                        // 右键菜单（云文件用自定义菜单，本地文件调用资源管理器原生右键菜单）
-                        var highlightBrush = (Brush)FindResource("BrushListViewItemMouseOver");
+                        // 右键菜单：云文件用云菜单；本地文件用自有菜单（系统右键收进菜单末项）
                         row.MouseRightButtonDown += (s, e) =>
                         {
-                            if (isCloud)
-                            {
-                                var cloudMenu = BuildCloudFileContextMenu(capturedFileItem, item);
-                                cloudMenu.PlacementTarget = row;
-                                cloudMenu.IsOpen = true;
-                                e.Handled = true;
-                                return;
-                            }
-                            row.Background = highlightBrush;
-                            var hwnd = new System.Windows.Interop.WindowInteropHelper(Window.GetWindow(this)).Handle;
-                            var pt = System.Windows.Forms.Cursor.Position;
-                            NativeMethods.ShowExplorerContextMenu(hwnd, filePath, pt.X, pt.Y);
-                            row.Background = Brushes.Transparent;
+                            var menu = isCloud
+                                ? BuildCloudFileContextMenu(capturedFileItem, item)
+                                : BuildFileItemContextMenu(capturedFileItem, item, filePath, isFolder);
+                            menu.PlacementTarget = row;
+                            menu.IsOpen = true;
                             e.Handled = true;
                         };
 
@@ -4008,6 +3999,8 @@ namespace SideDesk.Controls
                         if (isFolder)
                         {
                             row.AllowDrop = true;
+                            // 关键修复：DockPanel 默认 Background=null，空白区拖拽穿透（同图标布局）→ 设 Transparent
+                            row.Background = Brushes.Transparent;
                             row.DragEnter += (s, e) =>
                             {
                                 if (e.Data.GetDataPresent(DataFormats.FileDrop))
@@ -4187,6 +4180,19 @@ namespace SideDesk.Controls
                 return;
             }
 
+            // 元桌云盘文件（内置空间 + 有文件记录 ID）：向后端请求预签名直链，下载到临时目录后用默认程序打开
+            var metadeskSpace = string.IsNullOrEmpty(fileItem.CloudSpaceId)
+                ? null
+                : CloudSpaceManager.GetAll().Find(sp => sp.Id == fileItem.CloudSpaceId);
+            if (metadeskSpace != null && metadeskSpace.IsBuiltin && !string.IsNullOrEmpty(fileItem.CloudFileId))
+            {
+                _ = DownloadAndOpenCloudFileAsync(
+                    savePath => CloudDriveService.Instance.DownloadViaPresignedUrlAsync(fileItem.CloudFileId!, savePath, null),
+                    fileItem);
+                return;
+            }
+
+            // 其余（云空间主页 / 网络文件）：是网址用浏览器打开，纯 ID 复制到剪贴板
             try
             {
                 string url = fileItem.CloudUrl ?? "";
@@ -4205,7 +4211,13 @@ namespace SideDesk.Controls
         }
 
         /// <summary>外部存储源（S3/WebDAV）文件：认证下载到临时目录后打开（已有临时文件则复用）</summary>
-        private async System.Threading.Tasks.Task DownloadAndOpenExternalFileAsync(IDriveBackend backend, FileAreaItem fileItem)
+        private System.Threading.Tasks.Task DownloadAndOpenExternalFileAsync(IDriveBackend backend, FileAreaItem fileItem)
+            => DownloadAndOpenCloudFileAsync(
+                (savePath) => backend.DownloadToFileAsync(new CloudDriveFile { Id = fileItem.CloudFileId ?? "", Name = fileItem.Name }, savePath, null),
+                fileItem);
+
+        /// <summary>云文件统一临时缓存打开：下载到 %TEMP%\SideDesk\cloud-open（已存在则复用）后用默认程序打开</summary>
+        private async System.Threading.Tasks.Task DownloadAndOpenCloudFileAsync(Func<string, System.Threading.Tasks.Task<bool>> download, FileAreaItem fileItem)
         {
             try
             {
@@ -4213,11 +4225,13 @@ namespace SideDesk.Controls
                 System.IO.Directory.CreateDirectory(dir);
                 string safeName = string.Join("_", (fileItem.Name ?? "file").Split(System.IO.Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries));
                 if (string.IsNullOrWhiteSpace(safeName)) safeName = "file";
-                string savePath = System.IO.Path.Combine(dir, $"{fileItem.Id.Replace("-", "")[..Math.Min(8, fileItem.Id.Length)]}_{safeName}");
+                string idPart = (fileItem.Id ?? "").Replace("-", "");
+                if (idPart.Length == 0) idPart = "cloud";
+                string savePath = System.IO.Path.Combine(dir, $"{idPart[..Math.Min(8, idPart.Length)]}_{safeName}");
 
                 if (!System.IO.File.Exists(savePath))
                 {
-                    bool ok = await backend.DownloadToFileAsync(new CloudDriveFile { Id = fileItem.CloudFileId ?? "", Name = fileItem.Name }, savePath, null);
+                    bool ok = await download(savePath);
                     if (!ok)
                     {
                         MessageBox.Show(Framework.Lang.T("cloudDrive.downloadFailedPleaseTry"), Framework.Lang.T("common.operationFailed"), MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -4232,10 +4246,97 @@ namespace SideDesk.Controls
             }
         }
 
+        /// <summary>文件区项显示名：别名优先，未设别名回退原始文件名</summary>
+        private static string FileItemDisplayName(FileAreaItem f) =>
+            string.IsNullOrWhiteSpace(f.Alias) ? f.Name : f.Alias!;
+
+        /// <summary>向菜单加入「编辑别名」项：别名屏幕上优先显示，清空恢复原名</summary>
+        private void AddEditAliasMenuItem(ContextMenu ctx, FileAreaItem fileItem)
+        {
+            var aliasMi = new MenuItem { Header = Framework.Lang.T("nativePanel.editAlias") };
+            aliasMi.Click += (s, e) =>
+            {
+                var dlg = new EditAliasDialog(fileItem.Name, fileItem.Path, fileItem.Alias) { Owner = Window.GetWindow(this) };
+                if (dlg.ShowDialog() != true) return;
+                // 留空 = 清除别名恢复显示原名；填得与原名相同也视为无别名，不存冗余值
+                var alias = dlg.Alias;
+                fileItem.Alias = (string.IsNullOrEmpty(alias) || alias == fileItem.Name) ? null : alias;
+                _configManager?.Save();
+                RenderPanels();
+            };
+            ctx.Items.Add(aliasMi);
+        }
+
+        /// <summary>
+        /// 本地文件/文件夹项右键菜单：编辑别名 / 打开 / 打开所在位置 / 移除 / 系统右键菜单。
+        /// 原「项上右键直接弹资源管理器原生菜单」改由末项「系统右键菜单」承载，
+        /// 让别名等自有操作成为右键第一入口。
+        /// </summary>
+        private ContextMenu BuildFileItemContextMenu(FileAreaItem fileItem, PanelItem panelItem, string filePath, bool isFolder)
+        {
+            var ctx = new ContextMenu();
+            AddEditAliasMenuItem(ctx, fileItem);
+
+            var openMi = new MenuItem { Header = Framework.Lang.T("common.open") };
+            openMi.Click += (s, e) =>
+            {
+                try
+                {
+                    if (isFolder)
+                        Process.Start(new ProcessStartInfo("explorer.exe", filePath) { UseShellExecute = false });
+                    else
+                        Process.Start(new ProcessStartInfo(filePath) { UseShellExecute = true });
+                }
+                catch { }
+            };
+            ctx.Items.Add(openMi);
+
+            var locMi = new MenuItem { Header = Framework.Lang.T("nativePanel.openLocation") };
+            locMi.Click += (s, e) =>
+            {
+                try
+                {
+                    if (isFolder)
+                        Process.Start(new ProcessStartInfo("explorer.exe", filePath) { UseShellExecute = false });
+                    else
+                        Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{filePath}\"") { UseShellExecute = false });
+                }
+                catch { }
+            };
+            ctx.Items.Add(locMi);
+
+            var removeMi = new MenuItem { Header = Framework.Lang.T("nativePanel.removeFromArea") };
+            removeMi.Click += (s, e) =>
+            {
+                panelItem.FileItems?.Remove(fileItem);
+                _configManager?.Save();
+                RenderPanels();
+            };
+            ctx.Items.Add(removeMi);
+
+            ctx.Items.Add(new Separator());
+
+            // 原系统右键功能收进菜单项：弹资源管理器原生上下文菜单（复制/重命名/属性等）
+            var sysMi = new MenuItem { Header = Framework.Lang.T("nativePanel.systemContextMenu") };
+            sysMi.Click += (s, e) =>
+            {
+                var hwnd = new System.Windows.Interop.WindowInteropHelper(Window.GetWindow(this)).Handle;
+                var pt = System.Windows.Forms.Cursor.Position;
+                NativeMethods.ShowExplorerContextMenu(hwnd, filePath, pt.X, pt.Y);
+            };
+            ctx.Items.Add(sysMi);
+
+            return ctx;
+        }
+
         /// <summary>云文件右键菜单：打开 / 复制链接 / 复制文件ID / 删除</summary>
         private ContextMenu BuildCloudFileContextMenu(FileAreaItem fileItem, PanelItem panelItem)
         {
             var ctx = new ContextMenu();
+
+            // 别名对云文件同样有效：屏幕上优先显示别名
+            AddEditAliasMenuItem(ctx, fileItem);
+            ctx.Items.Add(new Separator());
 
             var openMi = new MenuItem { Header = Framework.Lang.T("common.open") };
             openMi.Click += (s, e) => OpenCloudFile(fileItem);
@@ -4289,122 +4390,6 @@ namespace SideDesk.Controls
             catch { }
         }
 
-        /// <summary>构建文件项右键菜单</summary>
-        private ContextMenu BuildFileItemContextMenu(FileAreaItem fileItem, PanelItem panelItem, string filePath, bool isFolder)
-        {
-            var ctx = new ContextMenu();
-            var capturedFileItem = fileItem;
-
-            if (isFolder)
-            {
-                var menuOpen = new MenuItem { Header = Framework.Lang.T("common.open") };
-                menuOpen.Click += (s, e) =>
-                {
-                    try { Process.Start(new ProcessStartInfo("explorer.exe", filePath) { UseShellExecute = false }); }
-                    catch { }
-                };
-                ctx.Items.Add(menuOpen);
-
-                var menuEmpty = new MenuItem { Header = Framework.Lang.T("nativePanel.emptyFolder") };
-                menuEmpty.Click += (s, e) =>
-                {
-                    if (MessageBox.Show(Framework.Lang.TF("nativePanel.emptyEverythingUnder", filePath), Framework.Lang.T("nativePanel.confirmClear"), MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK)
-                    {
-                        try
-                        {
-                            foreach (var f in System.IO.Directory.GetFiles(filePath)) System.IO.File.Delete(f);
-                            foreach (var d in System.IO.Directory.GetDirectories(filePath)) System.IO.Directory.Delete(d, true);
-                        }
-                        catch (Exception ex) { MessageBox.Show(Framework.Lang.TF("nativePanel.failedToClear", ex.Message)); }
-                    }
-                };
-                ctx.Items.Add(menuEmpty);
-
-                var menuDel = new MenuItem { Header = Framework.Lang.T("common.delete") };
-                menuDel.Click += (s, e) =>
-                {
-                    if (MessageBox.Show(Framework.Lang.TF("nativePanel.deleteFolderAndEverything", filePath), Framework.Lang.T("nativePanel.confirmDeletion"), MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK)
-                    {
-                        try
-                        {
-                            System.IO.Directory.Delete(filePath, true);
-                            panelItem.FileItems.Remove(capturedFileItem);
-                            _configManager?.Save();
-                            RenderPanels();
-                        }
-                        catch (Exception ex) { MessageBox.Show(Framework.Lang.TF("settings.deleteFailedDetail", ex.Message)); }
-                    }
-                };
-                ctx.Items.Add(menuDel);
-
-                ctx.Items.Add(new Separator());
-                var menuProps = new MenuItem { Header = Framework.Lang.T("common.properties") };
-                menuProps.Click += (s, e) =>
-                {
-                    try { NativeMethods.ShowFileProperties(filePath); }
-                    catch { }
-                };
-                ctx.Items.Add(menuProps);
-            }
-            else
-            {
-                var menuOpen = new MenuItem { Header = Framework.Lang.T("common.open") };
-                menuOpen.Click += (s, e) =>
-                {
-                    try { Process.Start(new ProcessStartInfo(filePath) { UseShellExecute = true }); }
-                    catch { }
-                };
-                ctx.Items.Add(menuOpen);
-
-                var menuLocate = new MenuItem { Header = Framework.Lang.T("common.locate") };
-                menuLocate.Click += (s, e) =>
-                {
-                    try { Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{filePath}\"") { UseShellExecute = false }); }
-                    catch { }
-                };
-                ctx.Items.Add(menuLocate);
-
-                var menuDel = new MenuItem { Header = Framework.Lang.T("common.delete") };
-                menuDel.Click += (s, e) =>
-                {
-                    if (MessageBox.Show(Framework.Lang.TF("nativePanel.deleteFile", filePath), Framework.Lang.T("nativePanel.confirmDeletion"), MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK)
-                    {
-                        try
-                        {
-                            System.IO.File.Delete(filePath);
-                            panelItem.FileItems.Remove(capturedFileItem);
-                            _configManager?.Save();
-                            RenderPanels();
-                        }
-                        catch (Exception ex) { MessageBox.Show(Framework.Lang.TF("settings.deleteFailedDetail", ex.Message)); }
-                    }
-                };
-                ctx.Items.Add(menuDel);
-
-                ctx.Items.Add(new Separator());
-                var menuProps = new MenuItem { Header = Framework.Lang.T("common.properties") };
-                menuProps.Click += (s, e) =>
-                {
-                    try { NativeMethods.ShowFileProperties(filePath); }
-                    catch { }
-                };
-                ctx.Items.Add(menuProps);
-            }
-
-            // 从列表移除（不删除磁盘文件）
-            ctx.Items.Add(new Separator());
-            var menuRemoveFromList = new MenuItem { Header = Framework.Lang.T("nativePanel.removeFromList") };
-            menuRemoveFromList.Click += (s, e) =>
-            {
-                panelItem.FileItems.Remove(capturedFileItem);
-                _configManager?.Save();
-                RenderPanels();
-            };
-            ctx.Items.Add(menuRemoveFromList);
-
-            return ctx;
-        }
-
         /// <summary>云操作登录态校验：未登录时提示用户并返回 false</summary>
         private bool EnsureLoggedInForCloud()
         {
@@ -4434,6 +4419,7 @@ namespace SideDesk.Controls
             if (e.Data.GetDataPresent(DataFormats.FileDrop))
             {
                 var files = (string[])e.Data.GetData(DataFormats.FileDrop);
+                int okCount = 0;
                 foreach (var path in files)
                 {
                     var fileName = System.IO.Path.GetFileName(path);
@@ -4445,29 +4431,13 @@ namespace SideDesk.Controls
                         {
                             // 复制文件到目标目录
                             System.IO.File.Copy(path, destPath, overwrite: true);
+                            okCount++;
                         }
                         else if (System.IO.Directory.Exists(path))
                         {
                             // 复制目录到目标目录
                             CopyDirectory(path, destPath);
-                        }
-
-                        // 如果拖入的文件已在文件区列表中，更新其路径为目录内的新位置
-                        var existingItem = panelItem.FileItems.FirstOrDefault(f => f.Path == path);
-                        if (existingItem != null)
-                        {
-                            existingItem.Path = destPath;
-                            existingItem.Name = fileName;
-                        }
-                        // 如果文件不在文件区列表中，也添加进去（方便用户看到）
-                        else
-                        {
-                            panelItem.FileItems.Add(new FileAreaItem
-                            {
-                                Path = destPath,
-                                Name = fileName,
-                                IsFolder = System.IO.Directory.Exists(destPath)
-                            });
+                            okCount++;
                         }
                     }
                     catch (Exception ex)
@@ -4475,8 +4445,26 @@ namespace SideDesk.Controls
                         MessageBox.Show(Framework.Lang.TF("nativePanel.copyFailed", ex.Message));
                     }
                 }
-                _configManager?.Save();
-                RenderPanels();
+                // 文件已复制进目标目录，不再在文件区顶层重复列出（符合“放入文件夹”语义）。
+                // 轻量成功反馈：短暂高亮该文件夹项。
+                if (okCount > 0 && sender is DependencyObject dobj && TryFindResource("BrushListViewItemMouseOver") is Brush hl)
+                {
+                    // sender 是文件夹项容器：图标/列表布局为 Panel(StackPanel/DockPanel)，弹出布局为 Border，统一用 DependencyProperty 设 Background
+                    DependencyProperty? bgProp = sender switch
+                    {
+                        Panel => Panel.BackgroundProperty,
+                        Border => Border.BackgroundProperty,
+                        Control => Control.BackgroundProperty,
+                        _ => null
+                    };
+                    if (bgProp != null)
+                    {
+                        dobj.SetValue(bgProp, hl);
+                        var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+                        timer.Tick += (_, _) => { dobj.SetValue(bgProp, Brushes.Transparent); timer.Stop(); };
+                        timer.Start();
+                    }
+                }
                 e.Handled = true;
             }
         }
@@ -4788,6 +4776,18 @@ namespace SideDesk.Controls
                 parentId = backend.RootId;
             }
 
+            // 上传前预检：元桌云盘查登录态，外部存储源（S3/WebDAV）试探目录连通性/凭证，
+            // 拦截“注定失败”的上传（未登录/连不上/凭证无效），避免进度环走完才静默失败。
+            string? probeError = backend != null
+                ? await backend.ProbeWritableAsync(parentId)
+                : await CloudDriveService.Instance.ProbeUploadAsync();
+            if (probeError != null)
+            {
+                MessageBox.Show(probeError, Framework.Lang.T("cloudDrive.uploadResult"),
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
             // 在云目录图标上挂载环形进度条
             RingProgress? ring = null;
             if (iconGrid != null)
@@ -4799,6 +4799,8 @@ namespace SideDesk.Controls
 
             int total = localFiles.Count;
             int done = 0;
+            var failedNames = new List<string>();
+            string? lastError = null;
             foreach (var path in localFiles)
             {
                 var ringRef = ring;
@@ -4812,15 +4814,32 @@ namespace SideDesk.Controls
                     ? await backend.UploadFileAsync(path, parentId, onProgress)
                     : await Task.Run(() => CloudDriveService.Instance.UploadFileAsync(path, parentId, onProgress));
                 if (success) done++;
+                else
+                {
+                    failedNames.Add(System.IO.Path.GetFileName(path));
+                    // 记录首个失败原因（backend.LastUploadError 已在上传失败时本地化）
+                    lastError ??= backend?.LastUploadError ?? CloudDriveService.Instance.LastUploadError;
+                }
                 ring?.SetProgress((double)done / total);
             }
 
-            // 短暂停留满格状态后移除进度条
+            // 短暂停留后移除进度条（全成功满格；有失败停在真实比例，避免误导为成功）
             if (ring != null && iconGrid != null)
             {
-                ring.SetProgress(1);
+                ring.SetProgress(done == total ? 1 : (double)done / total);
                 await Task.Delay(500);
                 iconGrid.Children.Remove(ring.Root);
+            }
+
+            // 明确失败提示：不再静默——列出失败文件与原因（无写入权限/网络等）
+            if (failedNames.Count > 0)
+            {
+                string names = string.Join("、", failedNames.Take(3)) + (failedNames.Count > 3 ? " …" : "");
+                string reason = lastError ?? Framework.Lang.T("cloudDrive.uploadFailedReason");
+                string msg = Framework.Lang.TF("cloudDrive.uploadSummary", done, failedNames.Count)
+                             + "\n" + names + "\n" + reason;
+                MessageBox.Show(msg, Framework.Lang.T("cloudDrive.uploadResult"),
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
@@ -5301,11 +5320,11 @@ namespace SideDesk.Controls
             PanelItem newPanelItem;
             if (type == PanelType.Timer)
             {
-                // 对于计时器，创建空的容器，不添加默认计时器
+                // 计时器支持 0-n 个：新建组件时默认带 1 个，避免空模块
                 newPanelItem = new PanelItem 
                 { 
                     Type = PanelType.Timer,
-                    TimerItems = new List<TimerItem>(),  // ✅ 空列表，不添加默认项
+                    TimerItems = new List<TimerItem> { new TimerItem() },  // 默认 1 个计时器
                     SkipWrapper = true  // ✅ 标记跳过外层容器
                 };
             }
@@ -5570,7 +5589,7 @@ namespace SideDesk.Controls
             {
                 Type = PanelType.Timer,
                 Title = Framework.Lang.T("nativePanel.timer"),
-                TimerItems = new List<TimerItem>()
+                TimerItems = new List<TimerItem> { new TimerItem() }  // 默认 1 个计时器（支持 0-n）
             };
             AddTopLevelPanel(newPanel);
         }
@@ -5640,6 +5659,24 @@ namespace SideDesk.Controls
                     new() { Color = "#FF4444", Size = 36, Icon = "", IsOn = true },
                     new() { Color = "#FFAA00", Size = 36, Icon = "", IsOn = true },
                     new() { Color = "#44CC44", Size = 36, Icon = "", IsOn = true }
+                }
+            };
+            AddTopLevelPanel(newPanel);
+        }
+
+        private void AddCheckInPanel_Click(object sender, RoutedEventArgs e)
+        {
+            if (_currentWindowConfig == null || _configManager == null) return;
+            var newPanel = new PanelItem
+            {
+                Type = PanelType.CheckIn,
+                Title = Framework.Lang.T("common.checkIn"),
+                CheckInColumns = 2,
+                CheckInItems = new List<CheckInItem>
+                {
+                    new() { Text = Framework.Lang.T("nativePanel.presetDrinkWater"), Icon = "💧", Color = "#3498DB", SortIndex = 0 },
+                    new() { Text = Framework.Lang.T("nativePanel.presetStandUp"), Icon = "🧍", Color = "#2ECC71", SortIndex = 1 },
+                    new() { Text = Framework.Lang.T("nativePanel.presetEyeRest"), Icon = "👀", Color = "#E67E22", SortIndex = 2 }
                 }
             };
             AddTopLevelPanel(newPanel);
@@ -6548,7 +6585,7 @@ namespace SideDesk.Controls
 
         // ==================== 日历模块 ====================
 
-        /// <summary>日历模块：紧凑月历 + 鼠标悬停弹出放大窗口（适配小屏看不清的场景）</summary>
+        /// <summary>日历模块：紧凑月历 + 鼠标悬停弹出放大窗口（适配微屏看不清的场景）</summary>
         private UIElement BuildCalendarWidget(PanelItem item)
         {
             var root = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
@@ -6726,7 +6763,7 @@ namespace SideDesk.Controls
             }
         }
 
-        /// <summary>构建日历悬停放大弹窗内容（大尺寸月历，便于小屏下查看）</summary>
+        /// <summary>构建日历悬停放大弹窗内容（大尺寸月历，便于微屏下查看）</summary>
         private UIElement BuildCalendarPopupContent(DateTime month, DateTime today)
         {
             var popupRoot = new Border
@@ -9863,7 +9900,8 @@ namespace SideDesk.Controls
             menu.Items.Add(Make(Framework.Lang.T("common.todayTodos"), AddTodoPanel_Click));
             menu.Items.Add(Make(Framework.Lang.T("common.clipboardFavorites"), AddClipboardPanel_Click));
             menu.Items.Add(Make(Framework.Lang.T("common.systemInfo"), AddSystemMonitorPanel_Click));
-            menu.Items.Add(Make(Framework.Lang.T("common.usageStatistics"), AddUsageStatsPanel_Click));
+            // 暂时隐藏「使用统计」入口（需要时取消注释恢复）
+            // menu.Items.Add(Make(Framework.Lang.T("common.usageStatistics"), AddUsageStatsPanel_Click));
             menu.Items.Add(Make(Framework.Lang.T("common.screenTime"), AddScreenTimePanel_Click));
             menu.Items.Add(Make(Framework.Lang.T("common.fileArea"), AddFileAreaPanel_Click));
             menu.Items.Add(Make(Framework.Lang.T("common.dataDashboard"), AddDataDashboard_Click));
@@ -9872,6 +9910,7 @@ namespace SideDesk.Controls
             menu.Items.Add(Make(Framework.Lang.T("common.countdown"), AddCountdownPanel_Click));
             menu.Items.Add(Make(Framework.Lang.T("common.pomodoroAlarm"), AddPomodoroPanel_Click));
             menu.Items.Add(Make(Framework.Lang.T("common.signalLight"), AddSignalLightPanel_Click));
+            menu.Items.Add(Make(Framework.Lang.T("common.checkIn"), AddCheckInPanel_Click));
             menu.Items.Add(Make(Framework.Lang.T("common.imageCarousel"), AddImageCarouselPanel_Click));
             menu.Items.Add(Make(Framework.Lang.T("common.dailyActivity"), AddDailyActivityPanel_Click));
             menu.Items.Add(Make(Framework.Lang.T("common.calendar"), AddCalendarPanel_Click));

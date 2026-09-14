@@ -168,7 +168,7 @@ namespace SideDesk.Controls
         /// <summary>填充"添加模块"菜单（窗口右上角菜单使用，与空白处右键菜单内容一致）。</summary>
         public void PopulateAddModuleMenu(System.Windows.Controls.MenuItem menu) => nativePanel.PopulateAddModuleMenu(menu);
 
-        /// <summary>清空内容区域，显示空白（所有小屏均不可见时调用）。</summary>
+        /// <summary>清空内容区域，显示空白（所有微屏均不可见时调用）。</summary>
         public void ClearContent()
         {
             webViewPanel.Visibility = Visibility.Collapsed;

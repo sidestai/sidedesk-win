@@ -183,7 +183,7 @@ public partial class ExtensionEditorWindow
         var urlForm = MakeForm("url");
         urlForm.Children.Add(new Emoji.Wpf.TextBlock
         {
-            Text = "🌐 " + Framework.Lang.T("advanced.typeUrl"),
+            Text = "🌐 " + Framework.Lang.T("notification.openWebPage"),
             FontSize = (double)FindResource("FontSizeSubtitle"),
             FontWeight = FontWeights.Bold,
             Foreground = (Brush)FindResource("BrushTextMain"),
@@ -241,7 +241,7 @@ public partial class ExtensionEditorWindow
             Framework.Lang.T("advanced.launchNormal"),
             Framework.Lang.T("advanced.launchAdmin"),
             Framework.Lang.T("advanced.launchMinimized"),
-            Framework.Lang.T("advanced.launchHidden"));
+            Framework.Lang.T("common.hiddenWindow"));
         AddField(execForm, "advanced.launchMode", _fLaunchModeCombo);
 
         // ---------- keys ----------
@@ -336,7 +336,7 @@ public partial class ExtensionEditorWindow
         _fOutputCombo = MakeCombo(
             Framework.Lang.T("advanced.outputNotify"),
             Framework.Lang.T("advanced.outputPaste"),
-            Framework.Lang.T("advanced.outputCopy"),
+            Framework.Lang.T("common.copyToClipboard"),
             Framework.Lang.T("advanced.outputNone"));
         AddField(scriptForm, "advanced.outputHandle", _fOutputCombo);
         var timeoutDock = new DockPanel();
@@ -373,13 +373,13 @@ public partial class ExtensionEditorWindow
         var searchForm = MakeForm("search");
         searchForm.Children.Add(new Emoji.Wpf.TextBlock
         {
-            Text = "🔍 " + Framework.Lang.T("advanced.typeSearch"),
+            Text = "🔍 " + Framework.Lang.T("common.search"),
             FontSize = (double)FindResource("FontSizeSubtitle"),
             FontWeight = FontWeights.Bold,
             Foreground = (Brush)FindResource("BrushTextMain"),
             Margin = new Thickness(0, 0, 0, 12)
         });
-        _fSearchPresetCombo = MakeCombo("Google", "Bing", Framework.Lang.T("advanced.baidu"), "GitHub", Framework.Lang.T("advanced.custom"));
+        _fSearchPresetCombo = MakeCombo("Google", "Bing", Framework.Lang.T("advanced.baidu"), "GitHub", Framework.Lang.T("common.custom"));
         _fSearchPresetCombo.SelectionChanged += (s, e) =>
         {
             int idx = _fSearchPresetCombo.SelectedIndex;
@@ -488,7 +488,7 @@ public partial class ExtensionEditorWindow
         };
         _previewName = new Emoji.Wpf.TextBlock
         {
-            Text = Framework.Lang.T("advanced.typeUrl"),
+            Text = Framework.Lang.T("notification.openWebPage"),
             FontSize = (double)FindResource("FontSizeNormal"),
             Foreground = (Brush)FindResource("BrushTextMain")
         };
@@ -585,12 +585,12 @@ public partial class ExtensionEditorWindow
         // 外观
         panel.Children.Add(new TextBlock
         {
-            Text = Framework.Lang.T("advanced.appearance"),
+            Text = Framework.Lang.T("common.appearance"),
             FontSize = (double)FindResource("FontSizeSmall"),
             Foreground = (Brush)FindResource("BrushTextMuted"),
             Margin = new Thickness(0, 0, 0, 8)
         });
-        panel.Children.Add(MakeLabel(Framework.Lang.T("advanced.iconLabel")));
+        panel.Children.Add(MakeLabel(Framework.Lang.T("common.iconLabel")));
         var iconDock = new DockPanel();
         _iconPreview = new ContentControl { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
         DockPanel.SetDock(_iconPreview, Dock.Right);

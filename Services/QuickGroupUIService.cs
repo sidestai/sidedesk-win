@@ -85,6 +85,9 @@ namespace SideDesk.Services
         /// <summary>分组被删除时触发，参数为 groupId；用于 1:1 面板绑定模式下通知上层移除 PanelItem</summary>
         public Action<string>? OnGroupDeleted { get; set; }
 
+        /// <summary>宿主面板是否处于编辑模式（NativeModePanel 构建 widget 时设置；绑定模式下标题栏显示移动光标）</summary>
+        public bool IsEditMode { get; set; }
+
         /// <summary>
         /// 面板可调高包装注入点（由 NativeModePanel 设置）：接管分组卡片内的内容区（contentPanel），
         /// 返回实际放入卡片的内容（限高滚动宿主 + 编辑模式手柄），使手柄位于卡片内底部、背景连贯。
@@ -674,30 +677,41 @@ namespace SideDesk.Services
 
             // 标题栏
             var titleBar = new DockPanel { Margin = new Thickness(5, 3, 5, 3) };
-            titleBar.Tag = group.Id;
+            // 1:1 面板绑定模式（LoadSingleGroup）下本分组卡片即顶层面板：标题栏改挂「面板调序拖拽手柄」标记，
+            // 由编辑模式下 NativeModePanel.AttachPanelDragHandlers（挂在面板容器上）识别并发起 PanelItemId 拖拽，
+            // 从而支持与其他模块调序、拖入/拖出置顶区；
+            // 旧版多分组容器模式仍保留 Tag=group.Id（UpdateGroupTitleCount 与组间调序使用）
+            bool panelBound = !string.IsNullOrEmpty(_boundGroupId);
+            titleBar.Tag = panelBound ? ModuleControl.DragHandleTag : group.Id;
+            if (panelBound && IsEditMode)
+                titleBar.Cursor = Cursors.SizeAll;
             // 隐藏模块外框时一并隐藏标题栏（不占位）
             if (group.HideFrame)
                 titleBar.Visibility = Visibility.Collapsed;
 
-            // 拖拽排序
-            Point dragStartPoint = default;
-            bool dragReady = false;
-            titleBar.MouseLeftButtonDown += (s, ev) => { dragStartPoint = ev.GetPosition(titleBar); dragReady = true; };
-            titleBar.MouseMove += (s, ev) =>
+            // 组间拖拽排序（仅旧版多分组容器模式；绑定模式下由外层面板调序拖拽接管，
+            // QuickGroupId 拖拽在顶层不被识别，会造成「拖不动」的假死）
+            if (!panelBound)
             {
-                if (dragReady && ev.LeftButton == MouseButtonState.Pressed)
+                Point dragStartPoint = default;
+                bool dragReady = false;
+                titleBar.MouseLeftButtonDown += (s, ev) => { dragStartPoint = ev.GetPosition(titleBar); dragReady = true; };
+                titleBar.MouseMove += (s, ev) =>
                 {
-                    Point pos = ev.GetPosition(titleBar);
-                    if (Math.Abs(pos.X - dragStartPoint.X) > SystemParameters.MinimumHorizontalDragDistance ||
-                        Math.Abs(pos.Y - dragStartPoint.Y) > SystemParameters.MinimumVerticalDragDistance)
+                    if (dragReady && ev.LeftButton == MouseButtonState.Pressed)
                     {
-                        dragReady = false;
-                        var data = new DataObject("QuickGroupId", group.Id);
-                        DragDrop.DoDragDrop(border, data, DragDropEffects.Move);
+                        Point pos = ev.GetPosition(titleBar);
+                        if (Math.Abs(pos.X - dragStartPoint.X) > SystemParameters.MinimumHorizontalDragDistance ||
+                            Math.Abs(pos.Y - dragStartPoint.Y) > SystemParameters.MinimumVerticalDragDistance)
+                        {
+                            dragReady = false;
+                            var data = new DataObject("QuickGroupId", group.Id);
+                            DragDrop.DoDragDrop(border, data, DragDropEffects.Move);
+                        }
                     }
-                }
-            };
-            titleBar.MouseLeftButtonUp += (s, ev) => { dragReady = false; };
+                };
+                titleBar.MouseLeftButtonUp += (s, ev) => { dragReady = false; };
+            }
 
             // 右键菜单：编辑/删除整个快捷组
             titleBar.MouseRightButtonUp += (s, ev) =>
@@ -1080,7 +1094,9 @@ namespace SideDesk.Services
                 {
                     foreach (var op in outerPanel.Children)
                     {
-                        if (op is DockPanel titleBar && titleBar.Tag as string == groupId)
+                        // 结构化匹配：outerPanel 内唯一的 DockPanel 即标题栏
+                        // （绑定模式下 titleBar.Tag 为 panelDragHandle 拖拽手柄标记，不再等于 groupId）
+                        if (op is DockPanel titleBar)
                         {
                             foreach (var tb in titleBar.Children)
                             {

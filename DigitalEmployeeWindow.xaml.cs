@@ -14,7 +14,7 @@ namespace SideDesk
         private DigitalEmployee? _current;
         private bool _isLoading;
 
-        /// <summary>窗口关闭后，若员工库有变更可通过该回调通知调用方刷新模块</summary>
+        /// <summary>窗口关闭后，若员工库有变更可通过该回调通知调用方刷新卡片</summary>
         public Action? OnChanged { get; set; }
 
         public DigitalEmployeeWindow(DigitalEmployeeManager manager)

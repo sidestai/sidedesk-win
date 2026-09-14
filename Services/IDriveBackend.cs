@@ -27,13 +27,15 @@ namespace SideDesk.Services
         string? BuildOpenUrl(CloudDriveFile file);
         /// <summary>下载文件到本地路径（进度回调）</summary>
         Task<bool> DownloadToFileAsync(CloudDriveFile file, string savePath, Action<double>? progress);
+        /// <summary>上传前预检目标目录可写性：返回 null 放行；非 null 为拦截原因（已本地化，可直接展示）</summary>
+        Task<string?> ProbeWritableAsync(string parentId);
+        /// <summary>最近一次 UploadFileAsync 失败的原因（成功或从未失败为 null）</summary>
+        string? LastUploadError { get; }
     }
 
     /// <summary>元桌云盘后端：包装现有 CloudDriveService（STS + OSS 直传 + 服务端入库）</summary>
     public sealed class MetadeskDriveBackend : IDriveBackend
     {
-        private static readonly HttpClient _downloadHttp = new() { Timeout = TimeSpan.FromMinutes(30) };
-
         public string RootId => "0";
         public bool RequiresLogin => true;
 
@@ -52,42 +54,20 @@ namespace SideDesk.Services
         public Task<long> GetTotalUsedBytesAsync()
             => CloudDriveService.Instance.GetTotalUsedBytesAsync();
 
-        public string? BuildOpenUrl(CloudDriveFile file)
-            => CloudDriveService.Instance.BuildDownloadUrl(file);
+        /// <summary>元桌云盘桶为私有 ACL，不提供匿名直链，打开/下载一律走 STS 签名 GET</summary>
+        public string? BuildOpenUrl(CloudDriveFile file) => null;
 
         public async Task<bool> DownloadToFileAsync(CloudDriveFile file, string savePath, Action<double>? progress)
         {
-            string? url = BuildOpenUrl(file);
-            if (string.IsNullOrEmpty(url)) return false;
-            try
-            {
-                using var resp = await _downloadHttp.GetAsync(url, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
-                if (!resp.IsSuccessStatusCode) return false;
-                long total = resp.Content.Headers.ContentLength ?? -1;
-                long received = 0;
-                int lastPct = -1;
-                await using var src = await resp.Content.ReadAsStreamAsync().ConfigureAwait(false);
-                await using var dst = new FileStream(savePath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true);
-                byte[] buffer = new byte[81920];
-                int read;
-                while ((read = await src.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false)) > 0)
-                {
-                    await dst.WriteAsync(buffer, 0, read).ConfigureAwait(false);
-                    received += read;
-                    if (total > 0)
-                    {
-                        int pct = (int)(received * 100 / total);
-                        if (pct != lastPct) { lastPct = pct; progress?.Invoke(pct); }
-                    }
-                }
-                progress?.Invoke(100);
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
+            // 私有桶：按文件记录 ID 向后端请求预签名直链下载（file.Id 为加密记录 id）
+            if (file.IsFolder || string.IsNullOrEmpty(file.Id)) return false;
+            return await CloudDriveService.Instance.DownloadViaPresignedUrlAsync(file.Id, savePath, progress).ConfigureAwait(false);
         }
+
+        public string? LastUploadError => CloudDriveService.Instance.LastUploadError;
+
+        public Task<string?> ProbeWritableAsync(string parentId)
+            => CloudDriveService.Instance.ProbeUploadAsync();
     }
 
     /// <summary>S3 存储源后端：客户端直连用户自己的 S3 桶（无需元桌登录）</summary>
@@ -132,6 +112,11 @@ namespace SideDesk.Services
 
         public Task<bool> DownloadToFileAsync(CloudDriveFile file, string savePath, Action<double>? progress)
             => _s3.DownloadToFileAsync(file.Id, savePath, progress);
+
+        public string? LastUploadError => _s3.LastUploadError;
+
+        public Task<string?> ProbeWritableAsync(string parentId)
+            => _s3.ProbeWritableAsync(parentId);
     }
 
     /// <summary>WebDAV 存储源后端：客户端直连标准 WebDAV 服务器（无需元桌登录）</summary>
@@ -177,6 +162,11 @@ namespace SideDesk.Services
 
         public Task<bool> DownloadToFileAsync(CloudDriveFile file, string savePath, Action<double>? progress)
             => _dav.DownloadToFileAsync(file.Id, savePath, progress);
+
+        public string? LastUploadError => _dav.LastUploadError;
+
+        public Task<string?> ProbeWritableAsync(string parentId)
+            => _dav.ProbeWritableAsync(parentId);
     }
 
     /// <summary>存储后端解析器：按云空间配置查找外部存储后端（S3 / WebDAV）；

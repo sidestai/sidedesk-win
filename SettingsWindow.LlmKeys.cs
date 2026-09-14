@@ -184,7 +184,7 @@ namespace SideDesk
 
             var editBtn = new Button
             {
-                Content = Framework.Lang.T("settings.llm.editKey"),
+                Content = Framework.Lang.T("common.edit"),
                 Style = (Style)FindResource("GhostButtonStyle"),
                 Padding = new Thickness(10, 4, 10, 4),
                 Margin = new Thickness(0, 0, 6, 0),
@@ -230,7 +230,7 @@ namespace SideDesk
             _llmProviderCombo.SelectionChanged += (s, e) => { if (!_llmComboSuppress) OnLlmProviderChanged(); };
             form.Children.Add(_llmProviderCombo);
 
-            form.Children.Add(BuildLlmFormLabel(Framework.Lang.T("settings.llm.name")));
+            form.Children.Add(BuildLlmFormLabel(Framework.Lang.T("common.name")));
             _llmNameBox = new TextBox
             {
                 Style = (Style)FindResource("GlobalTextBoxStyle"),
@@ -299,7 +299,7 @@ namespace SideDesk
             var btnRow = new StackPanel { Orientation = Orientation.Horizontal };
             _llmSaveBtn = new Button
             {
-                Content = Framework.Lang.T("settings.llm.save"),
+                Content = Framework.Lang.T("common.save"),
                 Style = (Style)FindResource("PrimaryButtonStyle"),
                 Padding = new Thickness(16, 5, 16, 5),
                 Cursor = Cursors.Hand
@@ -360,8 +360,8 @@ namespace SideDesk
             AddLlmProviderGroupHeader(Framework.Lang.T("settings.llm.regionIntl"));
             foreach (var m in AIConfigManager.SupportedModels)
                 if (m.Region == "intl") _llmProviderCombo.Items.Add(new ComboBoxItem { Content = m.Name, Tag = m.Id });
-            AddLlmProviderGroupHeader(Framework.Lang.T("settings.llm.customProvider"));
-            _llmProviderCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("settings.llm.customProvider"), Tag = "custom" });
+            AddLlmProviderGroupHeader(Framework.Lang.T("common.custom"));
+            _llmProviderCombo.Items.Add(new ComboBoxItem { Content = Framework.Lang.T("common.custom"), Tag = "custom" });
 
             // 选中目标厂商（编辑时预填；新增默认选中第一个可见厂商）
             string target = providerId ?? (LlmHideCn ? "openai" : "deepseek");
@@ -381,7 +381,7 @@ namespace SideDesk
                 var model = AIConfigManager.SupportedModels.Find(m => m.Id == providerId);
                 if (model != null)
                 {
-                    if (providerId == "custom") _llmNameBox.Text = model.Name == Framework.Lang.T("settings.llm.customProvider") ? "" : model.Name;
+                    if (providerId == "custom") _llmNameBox.Text = model.Name == Framework.Lang.T("common.custom") ? "" : model.Name;
                     _llmKeyBox.Text = AIConfigManager.GetApiKeyFor(providerId);
                     _llmModelIdBox.Text = model.DefaultModelId ?? "";
                 }
@@ -486,7 +486,7 @@ namespace SideDesk
                     AIConfigManager.AddOrUpdateModel(new AIModelInfo
                     {
                         Id = "custom",
-                        Name = string.IsNullOrEmpty(name) ? Framework.Lang.T("settings.llm.customProvider") : name,
+                        Name = string.IsNullOrEmpty(name) ? Framework.Lang.T("common.custom") : name,
                         ApiBaseUrl = baseUrl,
                         DefaultModelId = modelId,
                         Region = "custom"

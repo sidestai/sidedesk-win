@@ -480,7 +480,7 @@ namespace SideDesk.Services
 
             var win = new Window
             {
-                Title = Framework.Lang.T("advanced.typeSearch"),
+                Title = Framework.Lang.T("common.search"),
                 Width = 380,
                 SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterScreen,

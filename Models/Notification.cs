@@ -37,13 +37,16 @@ namespace SideDesk.Models
         Snooze,
         InputReply,
         Dismiss,
+        /// <summary>团队加入申请/邀请的审批（同意或拒绝），payload: applicationId / kind / decision</summary>
+        TeamApplyHandle,
         Unknown
     }
 
     /// <summary>
     /// 通知动作定义：type + label + payload。
     /// payload 中可包含 url / path / tab / filePath / command / runInBackground /
-    /// snoozeInterval / placeholder / replyActionId / buttons 等字段。
+    /// snoozeInterval / placeholder / replyActionId / buttons /
+    /// applicationId / kind / decision 等字段。
     /// </summary>
     public class NotificationAction
     {
@@ -68,6 +71,7 @@ namespace SideDesk.Models
                 "snooze" or "remind_later" => NotificationActionType.Snooze,
                 "input_reply" => NotificationActionType.InputReply,
                 "dismiss" => NotificationActionType.Dismiss,
+                "team_apply_handle" => NotificationActionType.TeamApplyHandle,
                 _ => NotificationActionType.Unknown
             };
         }
@@ -166,8 +170,14 @@ namespace SideDesk.Models
         /// <summary>是否已读（通知中心使用）</summary>
         public bool IsRead { get; set; }
 
+        /// <summary>服务端通知行 ID（encrypt2 密文）：与 /api/notification/read|clear 同步已读/清空状态；null 表示纯本地通知</summary>
+        public string? ServerId { get; set; }
+
         /// <summary>通知免打扰标识（点击/关闭后记录到 Settings.DismissedNotices，配合 ShouldShowNotice 控制不再出现；null 表示不参与免打扰）</summary>
         public string? NoticeKey { get; set; }
+
+        /// <summary>是否显示未读红点：未读且发送时间在 1 个月内（本地已标记已读的自然不亮；超一个月的陈旧未读也不再亮）</summary>
+        public bool ShowUnread => !IsRead && DateTime.Now - Timestamp <= TimeSpan.FromDays(30);
 
         /// <summary>从 WebSocket JSON data 对象解析通知载荷（snake_case 字段映射）</summary>
         public static NotificationPayload FromJson(JObject data)

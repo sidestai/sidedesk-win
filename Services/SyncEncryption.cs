@@ -5,7 +5,7 @@ using System.Text;
 namespace SideDesk.Services
 {
     /// <summary>
-    /// 云同步加密工具：基于登录密码派生 AES-256 密钥，使用 AES-GCM 加解密敏感设置项。
+    /// 云同步加密工具：基于用户设置的同步加密密码派生 AES-256 密钥，使用 AES-GCM 加解密敏感设置项。
     /// 派生密钥通过 Windows DPAPI 保护后缓存到本地。
     /// </summary>
     public static class SyncEncryption
@@ -17,7 +17,7 @@ namespace SideDesk.Services
         private const string CipherPrefix = "ENC:v1:";
 
         /// <summary>
-        /// 从用户登录密码 + userId 派生 AES-256 密钥（PBKDF2-SHA256）。
+        /// 从用户设置的同步加密密码 + userId 派生 AES-256 密钥（PBKDF2-SHA256）。
         /// salt 只需确定性且每用户唯一，直接用 encrypt2 密文 userId 即可，无需数字 ID。
         /// </summary>
         public static byte[] DeriveKey(string password, string userId)

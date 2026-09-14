@@ -23,6 +23,9 @@ namespace SideDesk.Services
         private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromMinutes(30) };
         private const string Service = "s3";
 
+        /// <summary>最近一次上传失败的原因（已本地化，成功或从未失败为 null）</summary>
+        public string? LastUploadError { get; private set; }
+
         public S3StorageService(S3Source source)
         {
             _src = source;
@@ -251,6 +254,7 @@ namespace SideDesk.Services
         /// <summary>上传本地文件到指定前缀下（UNSIGNED-PAYLOAD 流式 + 进度回调）</summary>
         public async Task<bool> UploadFileAsync(string localPath, string parentPrefix, Action<double>? progress = null)
         {
+            LastUploadError = null;
             try
             {
                 string key = parentPrefix + Path.GetFileName(localPath);
@@ -263,6 +267,9 @@ namespace SideDesk.Services
                 {
                     string err = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
                     System.Diagnostics.Debug.WriteLine($"[S3] upload failed: HTTP {(int)resp.StatusCode} - {err}");
+                    LastUploadError = resp.StatusCode == HttpStatusCode.Forbidden
+                        ? Framework.Lang.T("cloudDrive.uploadNoWritePermission")
+                        : Framework.Lang.T("cloudDrive.uploadFailedReason");
                     return false;
                 }
                 await resp.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
@@ -272,8 +279,19 @@ namespace SideDesk.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[S3] upload error: {ex.Message}");
+                LastUploadError = Framework.Lang.T("cloudDrive.uploadFailedReason");
                 return false;
             }
+        }
+
+        /// <summary>
+        /// 上传前预检：试列目标前缀以验证连接与凭证（能列≠一定能写，只读凭证仍靠上传失败兜底）。
+        /// 返回 null=放行；非 null=拦截原因（已本地化）。
+        /// </summary>
+        public async Task<string?> ProbeWritableAsync(string parentPrefix)
+        {
+            var probe = await ListDirectoryAsync(parentPrefix).ConfigureAwait(false);
+            return probe == null ? Framework.Lang.T("cloudDrive.uploadProbeFailed") : null;
         }
 
         /// <summary>下载对象到本地文件（进度回调，百分比基于 Content-Length）</summary>

@@ -20,7 +20,8 @@
                 <MenuItem Header="{l:T common.todayTodos}" Click="AddTodoPanel_Click"/>
                 <MenuItem Header="{l:T common.clipboardFavorites}" Click="AddClipboardPanel_Click"/>
                 <MenuItem Header="{l:T common.systemInfo}" Click="AddSystemMonitorPanel_Click"/>
-                <MenuItem Header="{l:T common.usageStatistics}" Click="AddUsageStatsPanel_Click"/>
+                <!-- 暂时隐藏「使用统计」入口（需要时取消注释恢复）
+                <MenuItem Header="{l:T common.usageStatistics}" Click="AddUsageStatsPanel_Click"/> -->
                 <MenuItem Header="{l:T common.screenTime}" Click="AddScreenTimePanel_Click"/>
                 <!-- 暂时隐藏「AI 对话」入口（需要时取消注释恢复）
                 <MenuItem Header="{l:T common.aiChat}" Click="AddAIChatPanel_Click"/> -->
@@ -30,6 +31,7 @@
                 <MenuItem Header="{l:T common.countdown}" Click="AddCountdownPanel_Click"/>
                 <MenuItem Header="{l:T common.pomodoroAlarm}" Click="AddPomodoroPanel_Click"/>
                 <MenuItem Header="{l:T common.signalLight}" Click="AddSignalLightPanel_Click"/>
+                <MenuItem Header="{l:T common.checkIn}" Click="AddCheckInPanel_Click"/>
                 <MenuItem Header="{l:T common.imageCarousel}" Click="AddImageCarouselPanel_Click"/>
                 <MenuItem Header="{l:T common.dailyActivity}" Click="AddDailyActivityPanel_Click"/>
                 <MenuItem Header="{l:T common.calendar}" Click="AddCalendarPanel_Click"/>

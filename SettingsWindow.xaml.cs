@@ -82,13 +82,16 @@ namespace SideDesk
             // 背景透明度
             bgOpacityBox.Text = _app.AppSettings.BackgroundOpacity.ToString("F0");
 
-            // 隐藏模块外框时同时隐藏标题
+            // 卡片内字体大小
+            cardFontSizeBox.Text = Framework.AppSettings.Instance.CardFontSize.ToString("F0");
+
+            // 隐藏卡片外框时同时隐藏标题
             hideModuleTitleSwitch.IsChecked = Framework.AppSettings.Instance.HideModuleTitle;
 
             // 显示通知条
             showNotificationStripSwitch.IsChecked = _app.AppSettings.ShowNotificationStrip;
 
-            // 分享/团队组件边框颜色
+            // 分享/团队卡片边框颜色
             shareBorderHexBox.Text = Framework.AppSettings.Instance.ShareBorderColor;
             teamBorderHexBox.Text = Framework.AppSettings.Instance.TeamBorderColor;
             BuildBorderSwatches(shareBorderSwatches, shareBorderHexBox, isShare: true);
@@ -204,7 +207,7 @@ namespace SideDesk
             }
         }
 
-        /// <summary>切换到好友页（供外部导航调用，如好友模块圆加号）</summary>
+        /// <summary>切换到好友页（供外部导航调用，如好友卡片圆加号）</summary>
         public void SwitchToFriendsPage()
         {
             if (navList.SelectedIndex == 4)
@@ -247,11 +250,28 @@ namespace SideDesk
                 navList.SelectedIndex = 2; // 触发 Nav_Changed 显示账户页
         }
 
+        /// <summary>切换到关于页（供外部导航调用，如升级就绪通知条点击）：固定索引直连，不经页面名字符串映射，杜绝映射错位跳错页</summary>
+        public void SwitchToAboutPage()
+        {
+            if (navList.SelectedIndex == 14)
+                Nav_Changed(this, null!); // 已在关于页：手动触发以确保显示并刷新
+            else
+                navList.SelectedIndex = 14; // 触发 Nav_Changed 显示关于页
+        }
+
         /// <summary>外部状态变化（如离线标记切换）时刷新账户页 UI</summary>
         public void RefreshAccountPage() => RefreshAccountUI();
 
+        /// <summary>账号作用域切换后刷新依赖窗口/账号数据的视图（账户页 + 当前可见的窗口管理页）</summary>
+        public void RefreshAfterScopeSwitch()
+        {
+            RefreshAccountUI();
+            if (pageWindows.Visibility == Visibility.Visible) _ = RefreshWindowListAsync();
+        }
+
         /// <summary>按页面名称导航（供通知动作 open_settings 调用）。
-        /// 支持名称：general/windows/account/teams/friends/cloudspaces/appearance/programs/plugins/tools/modules/mydata/shortcuts/about</summary>
+        /// 索引必须与 Nav_Changed / XAML navList 顺序一致（12=LLM 模型页插入后后续页顺移）。
+        /// 支持名称：general/windows/account/teams/friends/cloudspaces/appearance/programs/plugins/tools/modules/mydata/llmkeys/shortcuts/about/developer</summary>
         public void NavigateToPage(string page)
         {
             int index = page.Trim().ToLowerInvariant() switch
@@ -268,9 +288,10 @@ namespace SideDesk
                 "tools" => 9,
                 "modules" => 10,
                 "mydata" => 11,
-                "shortcuts" => 12,
-                "about" => 13,
-                "developer" or "dev" => 14,
+                "llmkeys" or "llm" or "models" => 12,
+                "shortcuts" or "hotkeys" => 13,
+                "about" => 14,
+                "developer" or "dev" => 15,
                 _ => -1
             };
             if (index < 0) return;
@@ -502,6 +523,7 @@ namespace SideDesk
         /// <summary>根据当前登录/同步状态刷新账户页 UI（离线时视为未登录）</summary>
         private void RefreshAccountUI()
         {
+            UpdateTeamActionButtonsEnabled();
             if (accountStatusText == null) return; // 尚未加载完成
             var s = _app.AppSettings;
             // 已登录 = 持有 Token + 不离线 + 本次会话经接口确认；未确认/离线都不宣称已登录
@@ -770,7 +792,7 @@ namespace SideDesk
         private void InvalidateLocalToken(string message)
         {
             var s = _app.AppSettings;
-            // 作用域即将从 u:A 回退到未归属 local：先记录是否曾登录（用于决定是否提示重启）
+            // 作用域即将从 u:A 回退到未归属 local：先记录是否曾登录（用于决定是否切换窗口数据）
             bool wasLoggedIn = !string.IsNullOrEmpty(s.AccountUserId);
             s.AccountToken = null;
             s.AccountUserId = null;
@@ -789,9 +811,9 @@ namespace SideDesk
             RefreshAccountUI();
             RefreshCorpSelector();
 
-            // 作用域已回退：窗口仍显示旧账号数据，提示重启加载未登录（本地）数据
+            // 作用域已回退：进程内切换到未登录（本地）数据，无需重启打断用户
             if (wasLoggedIn)
-                App.PromptRestartForAccountSwitch(Framework.Lang.T("login.sessionExpiredRestartConfirm"));
+                _app.ReloadWindowConfigsForNewScope();
         }
 
         /// <summary>刷新本地备份状态。</summary>
@@ -802,13 +824,15 @@ namespace SideDesk
             if (t.HasValue)
             {
                 backupStatusText.Text = Framework.Lang.TF("settings.latestBackup", t);
-                restoreBtn.IsEnabled = true;
+                if (restoreLastBackupMenu != null) restoreLastBackupMenu.IsEnabled = true;
             }
             else
             {
                 backupStatusText.Text = Framework.Lang.T("settings.noLocalBackupYet");
-                restoreBtn.IsEnabled = false;
+                if (restoreLastBackupMenu != null) restoreLastBackupMenu.IsEnabled = false;
             }
+            // 「恢复」按钮始终可用：即使没有本地备份，仍可从外部备份文件恢复
+            restoreBtn.IsEnabled = true;
         }
 
         /// <summary>创建本地备份（覆盖最后一个）</summary>
@@ -821,8 +845,18 @@ namespace SideDesk
             RefreshBackupUI();
         }
 
-        /// <summary>从最后一次本地备份恢复</summary>
+        /// <summary>「恢复」下拉按钮：弹出恢复方式菜单（直接恢复最近备份 / 选择备份文件恢复）。</summary>
         private void Restore_Click(object sender, RoutedEventArgs e)
+        {
+            var menu = restoreBtn.ContextMenu;
+            if (menu == null) return;
+            menu.PlacementTarget = restoreBtn;
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            menu.IsOpen = true;
+        }
+
+        /// <summary>下拉项：直接从最近一次本地备份恢复。</summary>
+        private void RestoreLastBackup_Click(object sender, RoutedEventArgs e)
         {
             if (!Services.CloudSyncService.HasLocalBackup())
             {
@@ -833,26 +867,56 @@ namespace SideDesk
                 Framework.Lang.T("settings.restoreBackup"), MessageBoxButton.OKCancel, MessageBoxImage.Warning);
             if (r != MessageBoxResult.OK) return;
 
-            int n = Services.CloudSyncService.RestoreLocalBackup();
+            ShowRestoreResult(Services.CloudSyncService.RestoreLocalBackup());
+        }
+
+        /// <summary>下拉项：选择一个备份文件（.zip 备份包或 .json 配置包）恢复。</summary>
+        private void RestoreFromFile_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new OpenFileDialog
+            {
+                Title = Framework.Lang.T("settings.restoreBackup"),
+                Filter = Framework.Lang.T("settings.backupFileFilter")
+            };
+            // 默认定位到本地备份目录（若存在），方便直接选择最近备份包
+            try
+            {
+                string dir = Services.CloudSyncService.LocalBackupDir;
+                if (System.IO.Directory.Exists(dir)) dlg.InitialDirectory = dir;
+            }
+            catch { }
+            if (dlg.ShowDialog(this) != true) return;
+
+            var r = MessageBox.Show(Framework.Lang.T("settings.restoreFromFileConfirm"),
+                Framework.Lang.T("settings.restoreBackup"), MessageBoxButton.OKCancel, MessageBoxImage.Warning);
+            if (r != MessageBoxResult.OK) return;
+
+            ShowRestoreResult(Services.CloudSyncService.RestoreFromBackupFile(dlg.FileName));
+        }
+
+        /// <summary>统一提示恢复结果（n>=0 为成功恢复的文件数，-1 为失败）。</summary>
+        private void ShowRestoreResult(int n)
+        {
             if (n >= 0)
                 MessageBox.Show(Framework.Lang.TF("settings.restoreConfigFilesDone", n), Framework.Lang.T("common.restore"), MessageBoxButton.OK, MessageBoxImage.Information);
             else
                 MessageBox.Show(Framework.Lang.T("settings.restoreFailedPleaseRetry"), Framework.Lang.T("common.restore"), MessageBoxButton.OK, MessageBoxImage.Warning);
         }
 
-        /// <summary>导出全部配置为 JSON 文件</summary>
+        /// <summary>导出全部配置与数据为压缩包（.zip：config-bundle.json + sidedesk.db）。导出的 zip 可用「恢复 → 选择备份文件恢复…」还原。</summary>
         private void ExportConfig_Click(object sender, RoutedEventArgs e)
         {
             var dlg = new SaveFileDialog
             {
                 Title = Framework.Lang.T("settings.exportConfiguration"),
-                Filter = Framework.Lang.T("settings.jsonFilter"),
-                FileName = $"SideDesk-config-{DateTime.Now:yyyyMMdd-HHmmss}.json"
+                Filter = Framework.Lang.T("settings.backupZipFilter"),
+                DefaultExt = "zip",
+                FileName = $"SideDesk-backup-{DateTime.Now:yyyyMMdd-HHmmss}.zip"
             };
             if (dlg.ShowDialog(this) != true) return;
             try
             {
-                System.IO.File.WriteAllText(dlg.FileName, Services.CloudSyncService.BuildConfigBundleJson(indented: true));
+                Services.CloudSyncService.ExportBackupZip(dlg.FileName);
                 MessageBox.Show(Framework.Lang.T("settings.configurationExported"), Framework.Lang.T("common.export"), MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
@@ -873,7 +937,7 @@ namespace SideDesk
                     MessageBoxButton.OKCancel, MessageBoxImage.Question);
                 if (r != MessageBoxResult.OK) return;
 
-                // 作用域即将从 u:A 回退到未归属 local：记录是否已绑定账号（用于退出后提示重启）
+                // 作用域即将从 u:A 回退到未归属 local：记录是否已绑定账号（用于退出后切换窗口数据）
                 bool wasLoggedIn = !string.IsNullOrEmpty(s.AccountUserId);
                 s.AccountToken = null;
                 s.AccountUserId = null;
@@ -889,9 +953,9 @@ namespace SideDesk
                 RefreshAccountUI();
                 RefreshCorpSelector();
 
-                // 作用域已回退：窗口仍显示旧账号数据，提示重启加载未登录（本地）数据
+                // 作用域已回退：进程内切换到未登录（本地）数据，无需重启打断用户
                 if (wasLoggedIn)
-                    App.PromptRestartForAccountSwitch(Framework.Lang.T("login.loggedOutRestartConfirm"));
+                    _app.ReloadWindowConfigsForNewScope();
                 return;
             }
 
@@ -1119,7 +1183,7 @@ namespace SideDesk
                 {
                     Text = CloudSpaceManager.GetDisplayUrl(space),
                     Foreground = (Brush)FindResource("BrushTextMuted"),
-                    FontSize = (double)FindResource("FontSizeTiny"),
+                    FontSize = (double)FindResource("FontSizeSmall"),
                     TextTrimming = TextTrimming.CharacterEllipsis
                 });
                 Grid.SetColumn(info, 1);
@@ -1296,12 +1360,6 @@ namespace SideDesk
             menu.IsOpen = true;
         }
 
-        private void RestoreBuiltinSpaces_Click(object sender, RoutedEventArgs e)
-        {
-            CloudSpaceManager.RestoreBuiltins();
-            RefreshCloudSpaceList();
-        }
-
         /// <summary>WebDAV 存储源配置对话框（space=null 表示新建）。
         /// 保存后自动同步一条关联的云空间条目，可在列表中打开直连使用</summary>
         private void ShowCloudSpaceEditDialog(CloudSpace? space)
@@ -1362,7 +1420,7 @@ namespace SideDesk
 
             var davTestBtn = new Button
             {
-                Content = Framework.Lang.T("settings.s3TestConnection"), Style = (Style)FindResource("StandardButtonStyle"),
+                Content = Framework.Lang.T("settings.testConnection"), Style = (Style)FindResource("StandardButtonStyle"),
                 Padding = new Thickness(10, 4, 10, 4), FontSize = 12, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 12, 0, 0)
             };
             root.Children.Add(davTestBtn);
@@ -1394,7 +1452,7 @@ namespace SideDesk
                 davTestBtn.Content = Framework.Lang.T("settings.s3Testing");
                 var (ok, err) = await Task.Run(() => new WebDavStorageService(built).TestConnectionAsync());
                 davTestBtn.IsEnabled = true;
-                davTestBtn.Content = Framework.Lang.T("settings.s3TestConnection");
+                davTestBtn.Content = Framework.Lang.T("settings.testConnection");
                 if (ok)
                     MessageBox.Show(Framework.Lang.T("settings.s3ConnectionOk"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Information);
                 else
@@ -1530,7 +1588,7 @@ namespace SideDesk
 
             // 测试连接 + web 引导按钮行
             var toolRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 14, 0, 0) };
-            var testBtn = new Button { Content = Framework.Lang.T("settings.s3TestConnection"), Style = (Style)FindResource("StandardButtonStyle"), Padding = new Thickness(10, 4, 10, 4), FontSize = 12 };
+            var testBtn = new Button { Content = Framework.Lang.T("settings.testConnection"), Style = (Style)FindResource("StandardButtonStyle"), Padding = new Thickness(10, 4, 10, 4), FontSize = 12 };
             var guideBtn = new Button { Content = Framework.Lang.T("settings.s3WebGuide"), Style = (Style)FindResource("GhostButtonStyle"), Padding = new Thickness(10, 4, 10, 4), FontSize = 12, Margin = new Thickness(8, 0, 0, 0) };
             toolRow.Children.Add(testBtn);
             toolRow.Children.Add(guideBtn);
@@ -1570,7 +1628,7 @@ namespace SideDesk
                 testBtn.Content = Framework.Lang.T("settings.s3Testing");
                 var (ok, err) = await Task.Run(() => new S3StorageService(built).TestConnectionAsync());
                 testBtn.IsEnabled = true;
-                testBtn.Content = Framework.Lang.T("settings.s3TestConnection");
+                testBtn.Content = Framework.Lang.T("settings.testConnection");
                 if (ok)
                     MessageBox.Show(Framework.Lang.T("settings.s3ConnectionOk"), Framework.Lang.T("common.notice"), MessageBoxButton.OK, MessageBoxImage.Information);
                 else
@@ -1753,9 +1811,18 @@ namespace SideDesk
             s.Save();
         }
 
+        /// <summary>未登录时禁用「添加团队/加入团队」按钮：这两个操作依赖账号接口，无 Token 时必然失败</summary>
+        private void UpdateTeamActionButtonsEnabled()
+        {
+            bool loggedIn = !string.IsNullOrEmpty(_app.AppSettings.AccountToken);
+            if (addTeamBtn != null) addTeamBtn.IsEnabled = loggedIn;
+            if (joinTeamBtn != null) joinTeamBtn.IsEnabled = loggedIn;
+        }
+
         /// <summary>刷新团队列表（异步加载，失败优雅降级）</summary>
         private async Task RefreshTeamListAsync()
         {
+            UpdateTeamActionButtonsEnabled();
             if (teamListPanel == null) return;
             teamListPanel.Children.Clear();
 
@@ -1765,6 +1832,9 @@ namespace SideDesk
                 teamListPanel.Children.Add(BuildTeamHintText(Framework.Lang.T("settings.loginRequiredViewTeams")));
                 return;
             }
+
+            // 打开团队页即把待处理申请/邀请补进通知中心（覆盖 WS/同步链路不可用场景；Id 去重防重复）
+            _ = Services.TeamNotificationService.Instance.BackfillPendingAsync();
 
             teamListPanel.Children.Add(BuildTeamHintText(Framework.Lang.T("cloudDrive.loading")));
             var teams = await TeamService.Instance.ListTeamsAsync();
@@ -1826,6 +1896,19 @@ namespace SideDesk
                 Orientation = Orientation.Horizontal,
                 VerticalAlignment = VerticalAlignment.Center
             };
+            // 管理员（创建者）标识：团队名前显示皇冠（Emoji.Wpf 彩色渲染）
+            if (team.IsAdmin)
+            {
+                headerRow.Children.Add(new Emoji.Wpf.TextBlock
+                {
+                    Text = "👑",
+                    FontSize = (double)FindResource("FontSizeNormal"),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 4, 0),
+                    ToolTip = Framework.Lang.T("common.admin")
+                });
+            }
+
             headerRow.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = team.Name,
@@ -1908,13 +1991,14 @@ namespace SideDesk
                     Cursor = System.Windows.Input.Cursors.Hand,
                     ToolTip = Framework.Lang.T("settings.addMember"),
                     Tag = team,
-                    Background = Brushes.Transparent,
-                    BorderBrush = (Brush)FindResource("BrushTextMuted"),
-                    BorderThickness = new Thickness(1),
+                    // 实心主题色圆底 + 白字，与旁边的实心头像堆叠风格一致；描边同头像用面板色做堆叠间隔
+                    Background = (Brush)FindResource("BrushAccent"),
+                    BorderBrush = (Brush)FindResource("BrushInputBG"),
+                    BorderThickness = new Thickness(1.5),
                     Content = new TextBlock
                     {
                         Text = "+",
-                        Foreground = (Brush)FindResource("BrushTextMuted"),
+                        Foreground = Brushes.White,
                         FontSize = 14,
                         FontWeight = FontWeights.Bold,
                         HorizontalAlignment = HorizontalAlignment.Center,
@@ -2061,6 +2145,14 @@ namespace SideDesk
             return palette[Math.Abs(hash) % palette.Length];
         }
 
+        /// <summary>团队管理：系统浏览器打开 web 控制台团队管理页（前端路由 team/my-teams）。
+        /// 内嵌 WebView2 登录态与系统浏览器隔离，故已登录时先换一次性交接码实现免登直达；
+        /// 未登录或换取失败（如后端未部署该接口）则降级为直接打开，由前端守卫引导登录。</summary>
+        private async void TeamManage_Click(object sender, RoutedEventArgs e)
+        {
+            await OAuthLoginService.OpenConsolePageAsync("/team/my-teams");
+        }
+
         /// <summary>添加团队：弹出输入框，调用创建接口</summary>
         private async void AddTeam_Click(object sender, RoutedEventArgs e)
         {
@@ -2132,7 +2224,10 @@ namespace SideDesk
             {
                 var (ok, msg) = await TeamService.Instance.HandleApplicationAsync(a.Id, "accept");
                 if (ok)
+                {
+                    TeamNotificationService.Instance.RemoveForApplication(a.Id); // 已审批：通知中心同步移除，红点跟着消
                     await RefreshTeamListAsync(); // 后端会 WS 通知申请人；本地刷新成员列表与剩余申请
+                }
                 else
                     ThemedMessageBox.Show(this, string.IsNullOrEmpty(msg) ? Framework.Lang.T("common.operationFailed") : msg, Framework.Lang.T("common.notice"));
             };
@@ -2150,7 +2245,10 @@ namespace SideDesk
             {
                 var (ok, msg) = await TeamService.Instance.HandleApplicationAsync(a.Id, "reject");
                 if (ok)
+                {
+                    TeamNotificationService.Instance.RemoveForApplication(a.Id);
                     await RefreshTeamApplicationsAsync();
+                }
                 else
                     ThemedMessageBox.Show(this, string.IsNullOrEmpty(msg) ? Framework.Lang.T("common.operationFailed") : msg, Framework.Lang.T("common.notice"));
             };
@@ -2215,6 +2313,7 @@ namespace SideDesk
                 var (ok, msg) = await TeamService.Instance.HandleInvitationAsync(inv.Id, "accept");
                 if (ok)
                 {
+                    TeamNotificationService.Instance.RemoveForApplication(inv.Id); // 已处理：通知中心同步移除
                     await RefreshTeamListAsync();
                     RefreshCorpSelector(); // 入团后团队切换下拉需补齐
                 }
@@ -2235,7 +2334,10 @@ namespace SideDesk
             {
                 var (ok, msg) = await TeamService.Instance.HandleInvitationAsync(inv.Id, "reject");
                 if (ok)
+                {
+                    TeamNotificationService.Instance.RemoveForApplication(inv.Id);
                     await RefreshTeamInvitationsAsync();
+                }
                 else
                     ThemedMessageBox.Show(this, string.IsNullOrEmpty(msg) ? Framework.Lang.T("common.operationFailed") : msg, Framework.Lang.T("common.notice"));
             };
@@ -2290,7 +2392,8 @@ namespace SideDesk
             if (!loggedIn)
             {
                 friendPageSubtitle.Text = Framework.Lang.T("settings.loginRequiredFriendFeatures");
-                myFriendCodeText.Text = Framework.Lang.T("common.pleaseLogInFirst");
+                // 未登录无好友码，整卡隐藏
+                friendCodeCard.Visibility = Visibility.Collapsed;
                 friendListPanel.Children.Clear();
                 friendRequestPanel.Children.Clear();
                 friendRequestSection.Visibility = Visibility.Collapsed;
@@ -2486,12 +2589,13 @@ namespace SideDesk
             allowFriendSearchSwitch.Checked += AllowFriendSearch_Changed;
             allowFriendSearchSwitch.Unchecked += AllowFriendSearch_Changed;
 
-            // 关闭被搜索时不显示好友码
+            // 关闭被搜索时整卡隐藏好友码
             if (!allowSearch)
             {
-                myFriendCodeText.Text = Framework.Lang.T("settings.searchDiscoveryDisabled");
+                friendCodeCard.Visibility = Visibility.Collapsed;
                 return;
             }
+            friendCodeCard.Visibility = Visibility.Visible;
             myFriendCodeText.Text = string.IsNullOrEmpty(code) ? Framework.Lang.T("common.failedToFetch") : code;
         }
 
@@ -2758,7 +2862,47 @@ namespace SideDesk
             }
         }
 
-        // ===== 分享/团队组件边框颜色 =====
+        // ===== 卡片内字体大小 =====
+
+        private void CardFontSize_LostFocus(object sender, RoutedEventArgs e)
+        {
+            ApplyCardFontSize();
+        }
+
+        private void CardFontSize_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                ApplyCardFontSize();
+                cardFontSizeBox.MoveFocus(new TraversalRequest(FocusNavigationDirection.Next));
+            }
+        }
+
+        private void ApplyCardFontSize()
+        {
+            if (_isLoading) return;
+            // 限定 9-24px（与 AppSettings.CardFontSize 一致）；非法输入回退当前值
+            if (!double.TryParse(cardFontSizeBox.Text, out double size) || size < 9 || size > 24)
+            {
+                cardFontSizeBox.Text = Framework.AppSettings.Instance.CardFontSize.ToString("F0");
+                return;
+            }
+
+            if (size != Framework.AppSettings.Instance.CardFontSize)
+            {
+                Framework.AppSettings.Instance.CardFontSize = size;
+                Framework.AppSettings.Instance.Save();
+                cardFontSizeBox.Text = Framework.AppSettings.Instance.CardFontSize.ToString("F0");
+                // 即时重新渲染所有主窗口的原生面板（卡片标题自动大 1 号）
+                foreach (Window window in Application.Current.Windows)
+                {
+                    if (window is MainWindow mw)
+                        mw.RefreshNativePanels();
+                }
+            }
+        }
+
+        // ===== 分享/团队卡片边框颜色 =====
 
         private static readonly string[] BorderColorPresets =
             { "#A855F7", "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#EC4899", "#06B6D4", "#8E8E8E" };
@@ -3373,7 +3517,7 @@ namespace SideDesk
                     {
                         Text = sub,
                         Foreground = (Brush)FindResource("BrushTextMuted"),
-                        FontSize = (double)FindResource("FontSizeTiny"),
+                        FontSize = (double)FindResource("FontSizeSmall"),
                         TextTrimming = TextTrimming.CharacterEllipsis
                     });
                 row.Children.Add(info);
@@ -3420,7 +3564,7 @@ namespace SideDesk
                 {
                     Text = prog.ExePath,
                     Foreground = (Brush)FindResource("BrushTextMuted"),
-                    FontSize = (double)FindResource("FontSizeTiny"),
+                    FontSize = (double)FindResource("FontSizeSmall"),
                     TextTrimming = TextTrimming.CharacterEllipsis
                 };
                 info.Children.Add(nameBlock);
@@ -3516,7 +3660,7 @@ namespace SideDesk
                 {
                     Text = browser.ExePath,
                     Foreground = (Brush)FindResource("BrushTextMuted"),
-                    FontSize = (double)FindResource("FontSizeTiny"),
+                    FontSize = (double)FindResource("FontSizeSmall"),
                     TextTrimming = TextTrimming.CharacterEllipsis
                 });
                 Grid.SetColumn(browserInfo, 0);
@@ -3566,7 +3710,7 @@ namespace SideDesk
                         {
                             Text = profile.Directory,
                             Foreground = (Brush)FindResource("BrushTextMuted"),
-                            FontSize = (double)FindResource("FontSizeTiny"),
+                            FontSize = (double)FindResource("FontSizeSmall"),
                             TextTrimming = TextTrimming.CharacterEllipsis
                         });
                         Grid.SetColumn(profileInfo, 0);
@@ -4218,7 +4362,7 @@ namespace SideDesk
 
         #endregion
 
-        #region 模块 - 数据模版管理
+        #region 数据看板 - 数据模版管理
 
         // 「我的数据看板」独立窗口的列表容器（原内嵌在设置页，现移入独立窗口）
         private Window? _dashboardListWindow;
@@ -4288,7 +4432,7 @@ namespace SideDesk
             win.Show();
         }
 
-        /// <summary>刷新模块页面（连接方式开关 + 模版列表）</summary>
+        /// <summary>刷新数据看板页面（连接方式开关 + 模版列表）</summary>
         private void RefreshModulesPage()
         {
             // 初始化连接方式 RadioButton 状态
@@ -4307,7 +4451,7 @@ namespace SideDesk
             RefreshTemplateList();
         }
 
-        /// <summary>隐藏浏览器模式切换（模块配置区下拉框触发）</summary>
+        /// <summary>隐藏浏览器模式切换（卡片配置区下拉框触发）</summary>
         private void HiddenBrowserMode_Changed(object sender, SelectionChangedEventArgs e)
         {
             if (_isLoading) return;
@@ -4781,7 +4925,7 @@ namespace SideDesk
                     Text = Framework.Lang.TF("settings.itemStatusOwner", item.TargetUrl, item.RefreshIntervalSeconds, source)
                         + (string.IsNullOrEmpty(item.VarKey) ? "" : Framework.Lang.TF("crash.contextVariable", item.VarKey)),
                     Foreground = (Brush)FindResource("BrushTextMuted"),
-                    FontSize = (double)FindResource("FontSizeTiny"),
+                    FontSize = (double)FindResource("FontSizeSmall"),
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     Margin = new Thickness(0, 2, 0, 0)
                 });
@@ -4827,7 +4971,7 @@ namespace SideDesk
             }
         }
 
-        /// <summary>数据模块连接方式切换（RadioButton）</summary>
+        /// <summary>数据卡片连接方式切换（RadioButton）</summary>
         private void DataFetchMode_Changed(object sender, RoutedEventArgs e)
         {
             if (rbModeExtension == null || rbModeCdp == null) return;
@@ -5031,7 +5175,7 @@ namespace SideDesk
                 {
                     Text = descText,
                     Foreground = (Brush)FindResource("BrushTextMuted"),
-                    FontSize = (double)FindResource("FontSizeTiny"),
+                    FontSize = (double)FindResource("FontSizeSmall"),
                     TextTrimming = TextTrimming.CharacterEllipsis
                 });
                 info.Children.Add(new Emoji.Wpf.TextBlock
@@ -5039,7 +5183,7 @@ namespace SideDesk
                     Text = Framework.Lang.TF("settings.itemStatusSelector", tpl.TargetUrl, tpl.Selector, tpl.RefreshIntervalSeconds)
                         + (string.IsNullOrEmpty(tpl.TeamName) ? "" : Framework.Lang.TF("crash.contextTeam", tpl.TeamName)),
                     Foreground = (Brush)FindResource("BrushTextMuted"),
-                    FontSize = (double)FindResource("FontSizeTiny"),
+                    FontSize = (double)FindResource("FontSizeSmall"),
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     Margin = new Thickness(0, 2, 0, 0)
                 });
@@ -5330,6 +5474,18 @@ namespace SideDesk
             }
             catch { }
 
+            // 产品图标：复用文件图标加载（带缓存）从运行中 exe 提取编译期内嵌图标；失败保持隐藏不影响布局
+            try
+            {
+                var iconSrc = Services.FaviconService.LoadFileIcon(Environment.ProcessPath);
+                if (iconSrc != null)
+                {
+                    aboutIconImage.Source = iconSrc;
+                    aboutIconImage.Visibility = Visibility.Visible;
+                }
+            }
+            catch { }
+
             // 订阅更新事件
             SubscribeUpdateEvents();
 
@@ -5450,7 +5606,7 @@ namespace SideDesk
 
         #endregion
 
-        #region 小屏窗口管理
+        #region 微屏窗口管理
 
         /// <summary>加载并显示所有窗口（本地 + 服务器团队窗口）</summary>
         private async Task RefreshWindowListAsync()
@@ -5466,9 +5622,19 @@ namespace SideDesk
             {
                 windowListPanel.Children.Add(BuildSectionHeader(Framework.Lang.T("settings.myWindows")));
                 windowListPanel.Children.Add(BuildListHeaderRow());
-                foreach (var win in mgr.Windows)
+                for (int i = 0; i < mgr.Windows.Count; i++)
                 {
-                    windowListPanel.Children.Add(BuildWindowRow(win.Name, win.OwnerType, win.ShareMode, win.ServerId, win.Id, isVisible: true));
+                    var win = mgr.Windows[i];
+                    windowListPanel.Children.Add(BuildWindowRow(
+                        index: i + 1,
+                        name: win.Name,
+                        typeText: win.Type == WindowType.WebView ? Framework.Lang.T("common.web") : Framework.Lang.T("common.native"),
+                        moduleText: (win.Panels?.Count ?? 0).ToString(),
+                        config: win,
+                        serverId: win.ServerId,
+                        localId: win.Id,
+                        ownerType: win.OwnerType,
+                        toggleEnabled: true));
                 }
             }
 
@@ -5493,13 +5659,22 @@ namespace SideDesk
                         {
                             windowListPanel.Children.Add(BuildSectionHeader(Framework.Lang.T("cloudDrive.teamWindows")));
                             windowListPanel.Children.Add(BuildListHeaderRow());
-                            foreach (var bar in teamBars)
+                            for (int ti = 0; ti < teamBars.Count; ti++)
                             {
+                                var bar = teamBars[ti];
                                 string title = bar["title"]?.ToString() ?? Framework.Lang.T("digitalEmployee.untitled");
                                 bool canEdit = bar["canEdit"]?.ToObject<bool>() ?? false;
-                                bool canDelete = bar["canDelete"]?.ToObject<bool>() ?? false;
                                 string perm = canEdit ? Framework.Lang.T("settings.editable") : Framework.Lang.T("common.readOnly");
-                                windowListPanel.Children.Add(BuildWindowRow(title, "team", null, bar["barServerId"]?.ToString(), null, perm, true));
+                                windowListPanel.Children.Add(BuildWindowRow(
+                                    index: ti + 1,
+                                    name: title,
+                                    typeText: perm,
+                                    moduleText: "-",
+                                    config: null,
+                                    serverId: bar["barServerId"]?.ToString(),
+                                    localId: null,
+                                    ownerType: "team",
+                                    toggleEnabled: false));
                             }
                         }
                     }
@@ -5535,31 +5710,42 @@ namespace SideDesk
             };
         }
 
-        /// <summary>列表表头行</summary>
+        /// <summary>列表表头行：序号 | 名称 | 类型 | 卡片 | 显示 | 操作（与独立微屏管理窗口同构）</summary>
         private UIElement BuildListHeaderRow()
         {
             var grid = new Grid { Margin = new Thickness(0, 0, 0, 4) };
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(30) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(52) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(40) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(44) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36) });
 
             var mutedBrush = (System.Windows.Media.Brush)FindResource("BrushTextMuted");
-            void AddHeader(string text, int col)
+            void AddHeader(string text, int col, bool center = false)
             {
-                var tb = new TextBlock { Text = text, FontSize = 11, Foreground = mutedBrush, VerticalAlignment = VerticalAlignment.Center };
+                var tb = new TextBlock
+                {
+                    Text = text,
+                    FontSize = 11,
+                    Foreground = mutedBrush,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    HorizontalAlignment = center ? HorizontalAlignment.Center : HorizontalAlignment.Left
+                };
                 Grid.SetColumn(tb, col);
                 grid.Children.Add(tb);
             }
-            AddHeader(Framework.Lang.T("common.show"), 0);
+            AddHeader(Framework.Lang.T("common.indexNumber"), 0);
             AddHeader(Framework.Lang.T("common.name"), 1);
             AddHeader(Framework.Lang.T("common.type"), 2);
-            AddHeader("", 3);
+            AddHeader(Framework.Lang.T("common.module"), 3, true);
+            AddHeader(Framework.Lang.T("common.show"), 4, true);
+            AddHeader(Framework.Lang.T("common.actions"), 5, true);
             return grid;
         }
 
-        /// <summary>构建窗口列表行：[✓] 名称  类型  ⋯</summary>
-        private UIElement BuildWindowRow(string name, string ownerType, string? shareMode, string? serverId, string? localId, string? permText = null, bool isVisible = true)
+        /// <summary>构建窗口列表行：序号 | 名称 | 类型 | 卡片 | 显示(ShowInTabs) | ⋯</summary>
+        private UIElement BuildWindowRow(int index, string name, string typeText, string moduleText, WindowConfig? config, string? serverId, string? localId, string ownerType, bool toggleEnabled)
         {
             var border = new Border
             {
@@ -5570,25 +5756,28 @@ namespace SideDesk
             };
 
             var grid = new Grid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(30) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(52) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(40) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(44) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36) });
 
-            // Col 0: 显示 checkbox
-            var chk = new CheckBox
-            {
-                IsChecked = isVisible,
-                VerticalAlignment = VerticalAlignment.Center,
-                Tag = serverId ?? localId
-            };
-            chk.Checked += WindowVisible_Changed;
-            chk.Unchecked += WindowVisible_Changed;
-            Grid.SetColumn(chk, 0);
-            grid.Children.Add(chk);
+            var mutedBrush = (System.Windows.Media.Brush)FindResource("BrushTextMuted");
 
-            // Col 1: 名称
-            var nameText = new TextBlock
+            // Col 0: 序号
+            var idxText = new TextBlock
+            {
+                Text = index.ToString(),
+                FontSize = 12,
+                Foreground = mutedBrush,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Grid.SetColumn(idxText, 0);
+            grid.Children.Add(idxText);
+
+            // Col 1: 名称（窗口名可含 emoji，用 Emoji.Wpf.TextBlock 彩色渲染）
+            var nameText = new Emoji.Wpf.TextBlock
             {
                 Text = name,
                 FontSize = 13,
@@ -5599,23 +5788,45 @@ namespace SideDesk
             Grid.SetColumn(nameText, 1);
             grid.Children.Add(nameText);
 
-            // Col 2: 类型标签
-            string tag = ownerType == "team" ? Framework.Lang.T("common.team") : Framework.Lang.T("common.personal");
-            if (shareMode == "copy") tag = Framework.Lang.T("common.copy");
-            else if (shareMode == "reference") tag = Framework.Lang.T("common.reference");
-            if (permText != null) tag = permText;
-
+            // Col 2: 类型（本地=原生/网页；团队=权限）
             var tagText = new TextBlock
             {
-                Text = tag,
+                Text = typeText,
                 FontSize = 11,
-                Foreground = (System.Windows.Media.Brush)FindResource("BrushTextMuted"),
+                Foreground = mutedBrush,
                 VerticalAlignment = VerticalAlignment.Center
             };
             Grid.SetColumn(tagText, 2);
             grid.Children.Add(tagText);
 
-            // Col 3: ⋯ 按钮
+            // Col 3: 卡片数
+            var moduleTextBlock = new TextBlock
+            {
+                Text = moduleText,
+                FontSize = 12,
+                Foreground = mutedBrush,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Grid.SetColumn(moduleTextBlock, 3);
+            grid.Children.Add(moduleTextBlock);
+
+            // Col 4: 显示复选框（是否显示该 bar 于顶部标签栏）
+            var chk = new CheckBox
+            {
+                IsChecked = config?.ShowInTabs ?? false,
+                IsEnabled = toggleEnabled,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Cursor = System.Windows.Input.Cursors.Hand,
+                Tag = config
+            };
+            chk.Checked += WindowVisible_Changed;
+            chk.Unchecked += WindowVisible_Changed;
+            Grid.SetColumn(chk, 4);
+            grid.Children.Add(chk);
+
+            // Col 5: ⋯ 按钮
             var moreBtn = new Button
             {
                 Content = "⋯",
@@ -5623,7 +5834,7 @@ namespace SideDesk
                 Width = 28,
                 Height = 24,
                 Background = System.Windows.Media.Brushes.Transparent,
-                Foreground = (System.Windows.Media.Brush)FindResource("BrushTextMuted"),
+                Foreground = mutedBrush,
                 BorderThickness = new Thickness(0),
                 Cursor = System.Windows.Input.Cursors.Hand,
                 VerticalAlignment = VerticalAlignment.Center,
@@ -5631,7 +5842,7 @@ namespace SideDesk
                 Tag = new WindowRowTag { ServerId = serverId, LocalId = localId, OwnerType = ownerType }
             };
             moreBtn.Click += WindowMore_Click;
-            Grid.SetColumn(moreBtn, 3);
+            Grid.SetColumn(moreBtn, 5);
             grid.Children.Add(moreBtn);
 
             border.Child = grid;
@@ -5669,7 +5880,7 @@ namespace SideDesk
             menu.IsOpen = true;
         }
 
-        /// <summary>「编辑」菜单项点击 → 弹出树状结构窗口，列出该窗口下所有组件和分组（支持删除/拖拽排序，保存后更新主窗口）</summary>
+        /// <summary>「编辑」菜单项点击 → 弹出树状结构窗口，列出该窗口下所有卡片和分组（支持删除/拖拽排序，保存后更新主窗口）</summary>
         private void WindowEdit_Click(WindowRowTag tag)
         {
             var app = (App)Application.Current;
@@ -5682,7 +5893,7 @@ namespace SideDesk
             ShowWindowStructureDialog(win);
         }
 
-        /// <summary>弹出窗口结构编辑对话框：树状展示组件与分组，支持拖拽排序、右键删除，点击保存后同步更新主窗口</summary>
+        /// <summary>弹出窗口结构编辑对话框：树状展示卡片与分组，支持拖拽排序、右键删除，点击保存后同步更新主窗口</summary>
         private void ShowWindowStructureDialog(WindowConfig win)
         {
             var app = (App)Application.Current;
@@ -5785,7 +5996,7 @@ namespace SideDesk
 
                 var ctx = new ContextMenu { Style = (Style)FindResource("DarkContextMenuStyle") };
 
-                // 分享模块：登录 + 窗口与模块均已同步（有 ServerId）+ 引用导入的模块需允许再分享（与侧边栏模块级分享一致）
+                // 分享卡片：登录 + 窗口与卡片均已同步（有 ServerId）+ 引用导入的卡片需允许再分享（与侧边栏卡片级分享一致）
                 if (!string.IsNullOrEmpty(app.AppSettings.AccountToken)
                     && !string.IsNullOrEmpty(win.ServerId)
                     && !string.IsNullOrEmpty(panel.ServerId)
@@ -6051,8 +6262,9 @@ namespace SideDesk
             return string.IsNullOrEmpty(panel.Title) ? typeName : panel.Title;
         }
 
-        /// <summary>PanelType → 中文类型名（与「添加模块」菜单的标准命名一致）</summary>
-        private static string GetPanelTypeName(PanelType type) => type switch
+        /// <summary>PanelType → 中文类型名（与「添加卡片」菜单的标准命名一致）。
+        /// internal：通知文案在服务端未给显示名时（便签/待办等）按类型回退本地化名，复用同一份映射避免多处不一致</summary>
+        internal static string GetPanelTypeName(PanelType type) => type switch
         {
             PanelType.QuickGroup => Framework.Lang.T("common.shortcut"),
             PanelType.StickyNotes => Framework.Lang.T("common.stickyNotes"),
@@ -6088,21 +6300,84 @@ namespace SideDesk
             var app = (App)Application.Current;
             if (!string.IsNullOrEmpty(tag.LocalId))
             {
+                string? serverId = tag.ServerId;
                 app.WindowConfigs.Remove(tag.LocalId);
-                // 删除已同步两侧 dock，广播刷新所有窗口的顶部标签
-                app.RefreshAllWindowTabs();
+                // 删光所有 bar 后立即补一个空 bar，避免侧边栏空白且右键失效的死状态
+                app.WindowConfigs.EnsureAtLeastOneBar();
+                // 刷新所有主窗口标签并修正活动索引（删除已同步两侧 dock）
+                ApplyWindowStructureChange();
                 // 如果有 ServerId 则同步删除服务器端
-                if (!string.IsNullOrEmpty(tag.ServerId))
+                if (!string.IsNullOrEmpty(serverId))
                 {
-                    _ = Services.CloudSyncService.Instance.DeleteBarOnServerAsync(tag.ServerId);
+                    _ = Services.CloudSyncService.Instance.DeleteBarOnServerAsync(serverId);
                 }
             }
             _ = RefreshWindowListAsync();
         }
 
+        /// <summary>「显示」复选框：切换该 bar 是否出现在顶部标签栏（ShowInTabs），与独立微屏管理窗口同语义</summary>
         private void WindowVisible_Changed(object sender, RoutedEventArgs e)
         {
-            // TODO: 同步可见性到服务器 (PUT /sidebar/layout)
+            if (sender is not CheckBox chk || chk.Tag is not WindowConfig config) return;
+            ToggleShowInTabs(config, chk.IsChecked == true);
+        }
+
+        /// <summary>切换微屏在顶部标签栏的显示状态，同步两侧 dock 的 WindowIds 并刷新所有主窗口</summary>
+        private void ToggleShowInTabs(WindowConfig config, bool show)
+        {
+            var app = (App)Application.Current;
+            var configManager = app.WindowConfigs;
+            if (configManager == null) return;
+
+            config.ShowInTabs = show;
+            if (show)
+            {
+                // 按 Windows 列表中的顺序插回两侧 dock 的 WindowIds
+                int orderIndex = configManager.Windows.IndexOf(config);
+                InsertIntoDock(configManager, configManager.LeftDock, config.Id, orderIndex);
+                InsertIntoDock(configManager, configManager.RightDock, config.Id, orderIndex);
+            }
+            else
+            {
+                configManager.LeftDock.WindowIds.Remove(config.Id);
+                configManager.RightDock.WindowIds.Remove(config.Id);
+            }
+
+            configManager.Save();
+            ApplyWindowStructureChange();
+        }
+
+        /// <summary>按全局顺序将窗口 Id 插入 dock 的 WindowIds（保持与 Windows 列表一致的相对顺序）</summary>
+        private static void InsertIntoDock(WindowConfigManager configManager, DockWindowState dock, string windowId, int orderIndex)
+        {
+            if (dock.WindowIds.Contains(windowId)) return;
+            int insertAt = 0;
+            for (int i = 0; i < orderIndex && i < configManager.Windows.Count; i++)
+            {
+                var prevId = configManager.Windows[i].Id;
+                int pos = dock.WindowIds.IndexOf(prevId);
+                if (pos >= 0) insertAt = pos + 1;
+            }
+            dock.WindowIds.Insert(Math.Min(insertAt, dock.WindowIds.Count), windowId);
+        }
+
+        /// <summary>微屏结构变更（删除/显隐切换）后统一兜底：刷新所有主窗口标签并修正活动索引，避免停留在已删除/已隐藏的微屏</summary>
+        private static void ApplyWindowStructureChange()
+        {
+            var app = (App)Application.Current;
+            app.RefreshAllWindowTabs();
+            foreach (Window w in Application.Current.Windows)
+            {
+                if (w is not MainWindow mw || !mw.IsLoaded) continue;
+                var dock = mw.DockState;
+                if (dock == null) continue;
+                if (dock.ActiveIndex >= dock.WindowIds.Count)
+                    dock.ActiveIndex = Math.Max(0, dock.WindowIds.Count - 1);
+                if (dock.WindowIds.Count > 0)
+                    mw.SwitchToWindowByIndex(dock.ActiveIndex);
+                else
+                    mw.sidebarPanel.ClearContent();
+            }
         }
 
         /// <summary>窗口行 Tag 数据</summary>
@@ -6113,7 +6388,7 @@ namespace SideDesk
             public string? OwnerType { get; set; }
         }
 
-        /// <summary>分享窗口按钮点击：整个小屏分享（复用统一创建分享对话框，仅传 barServerId）</summary>
+        /// <summary>分享窗口按钮点击：整个微屏分享（复用统一创建分享对话框，仅传 barServerId）</summary>
         private void ShareWindow_Click(object sender, RoutedEventArgs e)
         {
             if (sender is not Button btn || btn.Tag is not string serverId) return;
@@ -6209,7 +6484,7 @@ namespace SideDesk
                             OwnerType = "personal"
                         };
                         app.WindowConfigs.AddToAllDocks(newWin);
-                        // 新小屏同步进入两侧 dock，广播刷新所有窗口的顶部标签
+                        // 新微屏同步进入两侧 dock，广播刷新所有窗口的顶部标签
                         app.RefreshAllWindowTabs();
 
                         dialog.Close();
@@ -6295,8 +6570,8 @@ namespace SideDesk
             {
                 string shareId = s["shareId"]?.ToString() ?? "";
                 bool isItem = s["shareLevel"]?.ToString() == "item";
-                // 模块显示名：优先后端返回的 title（QuickGroup 等后端已回退 itemData 内分组名）；
-                // 仍为空（便签等显示名不在 title 列的类型）按模块类型回退本地化默认标题；
+                // 卡片显示名：优先后端返回的 title（QuickGroup 等后端已回退 itemData 内分组名）；
+                // 仍为空（便签等显示名不在 title 列的类型）按卡片类型回退本地化默认标题；
                 // 后端仅当源模块确实不存在时才返回「已删除」，此处原样显示
                 string itemTitle = s["itemTitle"]?.ToString();
                 if (string.IsNullOrEmpty(itemTitle))

@@ -199,9 +199,9 @@ namespace SideDesk
 
         private static string FormatNum(double v) => v == Math.Floor(v) ? v.ToString("0") : v.ToString("0.#");
 
-        // ==================== 归属信息（团队/个人 · 共享组件 · 创作者） ====================
+        // ==================== 归属信息（团队/个人 · 共享卡片 · 创作者） ====================
 
-        /// <summary>归属查询上下文：团队名表（加密ID → 名称）+ 模块创作者表（ServerId → 归属信息）</summary>
+        /// <summary>归属查询上下文：团队名表（加密ID → 名称）+ 卡片创作者表（ServerId → 归属信息）</summary>
         private class OwnershipContext
         {
             public Dictionary<string, string>? Teams;
@@ -211,7 +211,7 @@ namespace SideDesk
         /// <summary>团队名缓存（加密团队ID → 团队名），设置窗口生命周期内只拉一次</summary>
         private Dictionary<string, string>? _teamNameCache;
 
-        /// <summary>加载归属上下文：团队列表（解析团队名）+ 批量查模块创作者；未登录/后端不可达时对应表为 null，调用方降级显示</summary>
+        /// <summary>加载归属上下文：团队列表（解析团队名）+ 批量查卡片创作者；未登录/后端不可达时对应表为 null，调用方降级显示</summary>
         private async Task<OwnershipContext> LoadOwnershipAsync(IEnumerable<string?> serverIds)
         {
             var ctx = new OwnershipContext { Teams = _teamNameCache };
@@ -233,7 +233,7 @@ namespace SideDesk
             return ctx;
         }
 
-        /// <summary>共享组件标识 + 创作者（不含团队/个人归属，供已有作用域文字的行追加）</summary>
+        /// <summary>共享卡片标识 + 创作者（不含团队/个人归属，供已有作用域文字的行追加）</summary>
         private static string ShareCreatorText(PanelItem p, OwnershipContext ctx)
         {
             var parts = new List<string>();
@@ -245,7 +245,7 @@ namespace SideDesk
             return string.Join(" · ", parts);
         }
 
-        /// <summary>模块归属完整描述：团队「名」/个人 · 共享组件(复制/引用) · 创作者 XX</summary>
+        /// <summary>卡片归属完整描述：团队「名」/个人 · 共享卡片(复制/引用) · 创作者 XX</summary>
         private string OwnershipText(PanelItem p, OwnershipContext ctx)
         {
             var parts = new List<string>();

@@ -60,7 +60,7 @@ public class DataPollingService : IDisposable
     // 所有数据项（按身份去重：同一看板模板/同一变量分布在多个窗口时只轮询一次）
     private readonly List<DataDashboardItem> _items = new();
     // 数据项分组：身份 key -> 所有重复实例（含轮询代表实例）。
-    // 值更新后同步给全部重复实例并按各自 Id 发事件，保证多个小屏窗口的面板同步刷新。
+    // 值更新后同步给全部重复实例并按各自 Id 发事件，保证多个微屏窗口的面板同步刷新。
     private readonly Dictionary<string, List<DataDashboardItem>> _itemGroups = new();
     private readonly object _itemsLock = new();
 
@@ -323,7 +323,7 @@ public class DataPollingService : IDisposable
 
     /// <summary>
     /// 数据项身份标识 = 数据模块（后端实例）：同模板+同浏览器+同网址/选择器即同一数据模块，
-    /// 同一模块出现在多个小屏窗口时共享同一个轮询实例。
+    /// 同一模块出现在多个微屏窗口时共享同一个轮询实例。
     /// 变量名（VarKey）是模块的属性、不参与身份——避免同一模块因一个组件设了变量、另一个没设而被拆成两个实例。
     /// </summary>
     public static string GetItemIdentity(DataDashboardItem item)

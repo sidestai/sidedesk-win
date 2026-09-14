@@ -23,6 +23,17 @@ namespace SideDesk.Services
         {
             try
             {
+                // 点过即已读：本地标记 + 回传服务端（红点随之更新）
+                NotificationSyncService.Instance.MarkRead(context);
+
+                // 免打扰标识（如欢迎引导）：任一入口点过即永久抑制，避免重启后同条通知再以未读复现
+                if (context != null && !string.IsNullOrEmpty(context.NoticeKey)
+                    && Application.Current is App app)
+                {
+                    app.AppSettings.DismissNotice(context.NoticeKey);
+                    app.AppSettings.Save();
+                }
+
                 switch (action.ActionType)
                 {
                     case NotificationActionType.OpenUrl:
@@ -65,6 +76,10 @@ namespace SideDesk.Services
 
                     case NotificationActionType.InputReply:
                         ShowInputReply(action, context);
+                        break;
+
+                    case NotificationActionType.TeamApplyHandle:
+                        await HandleTeamApplyAsync(action);
                         break;
 
                     case NotificationActionType.Dismiss:
@@ -115,6 +130,38 @@ namespace SideDesk.Services
                         settingsWin.NavigateToPage(page);
                 });
             });
+        }
+
+        /// <summary>
+        /// 团队加入申请 / 邀请的审批（payload: applicationId / kind=join|invite / decision=accept|reject）。
+        /// 成功后清除通知中心里的对应条目（未读红点随之更新）并刷新设置窗团队页；失败弹出后端提示语。
+        /// </summary>
+        private static async Task HandleTeamApplyAsync(NotificationAction action)
+        {
+            var applicationId = action.GetPayloadString("applicationId");
+            if (string.IsNullOrWhiteSpace(applicationId)) return;
+
+            bool isInvite = string.Equals(action.GetPayloadString("kind", "join"), "invite", StringComparison.OrdinalIgnoreCase);
+            var decision = action.GetPayloadString("decision", "accept");
+            bool accepted = string.Equals(decision, "accept", StringComparison.OrdinalIgnoreCase);
+
+            var (ok, msg) = isInvite
+                ? await TeamService.Instance.HandleInvitationAsync(applicationId, decision)
+                : await TeamService.Instance.HandleApplicationAsync(applicationId, decision);
+
+            if (!ok)
+            {
+                Application.Current?.Dispatcher.InvokeAsync(() =>
+                    ThemedMessageBox.Show(null,
+                        string.IsNullOrEmpty(msg) ? Framework.Lang.T("common.operationFailed") : msg,
+                        Framework.Lang.T("common.notice")));
+                return;
+            }
+
+            Debug.WriteLine($"[NotificationAction] team {(isInvite ? "invite" : "apply")} {applicationId} {decision}ed");
+            TeamNotificationService.Instance.RemoveForApplication(applicationId);
+            // 接受邀请才改变本人成员关系（需重建团队切换下拉）；管理员审批他人申请只刷新团队页列表
+            (Application.Current as App)?.NotifySettingsTeamChanged(membershipChanged: isInvite && accepted);
         }
 
         /// <summary>打开本地文件或文件夹</summary>

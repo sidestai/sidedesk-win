@@ -27,7 +27,7 @@ namespace SideDesk.Windows
             AllowsTransparency = true;
             Background = Brushes.Transparent;
             ShowInTaskbar = true;
-            Topmost = true;
+            // 不居顶：普通 Z 序窗口，允许被其他应用窗口自然覆盖
 
             var root = new Border
             {
@@ -79,6 +79,8 @@ namespace SideDesk.Windows
             clearBtn.Click += (s, e) =>
             {
                 NotificationService.Instance.ClearHistory();
+                // 服务端同清，避免下次同步把已清条目拉回来
+                Services.NotificationSyncService.Instance.ClearServer();
                 RefreshList();
             };
 
@@ -128,12 +130,9 @@ namespace SideDesk.Windows
             root.Child = grid;
             Content = root;
 
-            // 打开时标记全部已读
-            Loaded += (s, e) =>
-            {
-                NotificationService.Instance.MarkAllRead();
-                RefreshList();
-            };
+            // 打开时不批量标已读：未读状态以服务端逐条记录为准，列表行显示红点，
+            // 点击某行才标已读（行内红点消失；全部已读后外层菜单红点随之消除）
+            Loaded += (s, e) => RefreshList();
 
             // 订阅历史变更（新通知进入时实时刷新）
             NotificationService.Instance.HistoryChanged += OnHistoryChanged;
@@ -177,10 +176,10 @@ namespace SideDesk.Windows
         {
             var stack = new StackPanel { Margin = new Thickness(0, 0, 0, 2) };
 
-            // 标题行：未读圆点 + 标题 + 时间
+            // 标题行：未读圆点 + 标题 + 时间（超一个月的陈旧未读不显示红点）
             var titleRow = new StackPanel { Orientation = Orientation.Horizontal };
 
-            if (!n.IsRead)
+            if (n.ShowUnread)
             {
                 titleRow.Children.Add(new System.Windows.Shapes.Ellipse
                 {
@@ -196,7 +195,7 @@ namespace SideDesk.Windows
             {
                 Text = n.Title,
                 FontSize = 11.5,
-                FontWeight = n.IsRead ? FontWeights.Normal : FontWeights.SemiBold,
+                FontWeight = n.ShowUnread ? FontWeights.SemiBold : FontWeights.Normal,
                 Foreground = (Brush)FindResource("BrushTextMain"),
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 VerticalAlignment = VerticalAlignment.Center
@@ -224,7 +223,7 @@ namespace SideDesk.Windows
                     TextWrapping = TextWrapping.Wrap,
                     MaxHeight = 32,
                     TextTrimming = TextTrimming.CharacterEllipsis,
-                    Margin = new Thickness(n.IsRead ? 0 : 12, 2, 0, 0)
+                    Margin = new Thickness(n.ShowUnread ? 12 : 0, 2, 0, 0)
                 });
             }
 
@@ -234,16 +233,17 @@ namespace SideDesk.Windows
                 Padding = new Thickness(10, 8, 10, 8),
                 CornerRadius = new CornerRadius(6),
                 Background = Brushes.Transparent,
-                Cursor = n.ClickMain != null ? Cursors.Hand : Cursors.Arrow
+                Cursor = Cursors.Hand
             };
 
             // 悬停高亮
             item.MouseEnter += (s, e) => item.Background = (Brush)FindResource("BrushInputBG");
             item.MouseLeave += (s, e) => item.Background = Brushes.Transparent;
 
-            // 点击执行 clickMain
+            // 点过即已读：本地标记 + 回传服务端，行内未读红点随之消失；有主体动作时继续执行
             item.MouseLeftButtonUp += async (s, e) =>
             {
+                NotificationSyncService.Instance.MarkRead(n);
                 if (n.ClickMain != null)
                     await NotificationActionService.ExecuteAsync(n.ClickMain, n);
             };

@@ -158,7 +158,7 @@ namespace SideDesk.Models
 
         /// <summary>云空间显示名称（内置项按当前语言翻译，用户项用原名；存储的 Name 保持不变仅作标识）</summary>
         public static string GetDisplayName(CloudSpace space)
-            => space.IsBuiltin ? Framework.Lang.T("cloudDrive.builtinSpaceName") : space.Name;
+            => space.IsBuiltin ? Framework.Lang.T("cloudDrive.metadeskDrive") : space.Name;
 
         /// <summary>云空间描述行（内置项显示翻译后的说明，用户项显示地址）</summary>
         public static string GetDisplayUrl(CloudSpace space)

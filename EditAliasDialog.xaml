@@ -1,0 +1,68 @@
+<Window x:Class="SideDesk.EditAliasDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="clr-namespace:SideDesk.Framework"
+        Title="{l:T nativePanel.editAlias}" Width="360" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False"
+        Background="{DynamicResource BrushDialogBG}" Foreground="{DynamicResource BrushTextMain}">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- 别名输入 -->
+        <TextBlock Grid.Row="0" Text="{l:T nativePanel.aliasLabel}"
+                   Foreground="{DynamicResource BrushTextSec}"
+                   FontSize="{DynamicResource FontSizeSmall}" Margin="0,0,0,6"/>
+        <TextBox x:Name="aliasBox" Grid.Row="1" Style="{StaticResource GlobalTextBoxStyle}"/>
+        <TextBlock Grid.Row="2" Text="{l:T nativePanel.aliasEmptyHint}" TextWrapping="Wrap"
+                   Foreground="{DynamicResource BrushTextMuted}"
+                   FontSize="{DynamicResource FontSizeTiny}" Margin="0,4,0,14"/>
+
+        <!-- 原始文件名：标签独立成行（与「别名」标签同结构），只读框才能与上方别名输入框同左缘同宽对齐；
+             只读 TextBox 而非 TextBlock —— WPF 的 TextBlock 不支持鼠标选中，
+             只读 TextBox 才能让用户自行拖选文字复制；外面套 Border 与 LockTitleDialog 的信息区观感一致 -->
+        <TextBlock Grid.Row="3" Text="{l:T common.originalFileName}"
+                   Foreground="{DynamicResource BrushTextSec}"
+                   FontSize="{DynamicResource FontSizeSmall}" Margin="0,0,0,6"/>
+        <Border Grid.Row="4" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="4"
+                Background="{DynamicResource BrushInputBG}" Padding="6,3">
+            <TextBox x:Name="originalNameBox" IsReadOnly="True" IsReadOnlyCaretVisible="False"
+                     BorderThickness="0" Background="Transparent" Padding="0"
+                     FontSize="{DynamicResource FontSizeSmall}" TextWrapping="Wrap"
+                     MaxHeight="60" VerticalScrollBarVisibility="Auto"
+                     Foreground="{DynamicResource BrushTextMain}"
+                     ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+        </Border>
+
+        <!-- 原始路径：与原始文件名同结构（标签独立成行、框通栏对齐）；
+             路径为空（如外部网络文件项 Path 存的是 ID 或空串）时整行隐藏 -->
+        <TextBlock x:Name="originalPathLabel" Grid.Row="5" Text="{l:T common.originalPath}"
+                   Foreground="{DynamicResource BrushTextSec}"
+                   FontSize="{DynamicResource FontSizeSmall}" Margin="0,12,0,6"/>
+        <Border x:Name="originalPathHolder" Grid.Row="6" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1"
+                CornerRadius="4" Background="{DynamicResource BrushInputBG}" Padding="6,3">
+            <TextBox x:Name="originalPathBox" IsReadOnly="True" IsReadOnlyCaretVisible="False"
+                     BorderThickness="0" Background="Transparent" Padding="0"
+                     FontSize="{DynamicResource FontSizeSmall}" TextWrapping="Wrap"
+                     MaxHeight="40" VerticalScrollBarVisibility="Auto"
+                     Foreground="{DynamicResource BrushTextMain}"
+                     ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+        </Border>
+
+        <!-- 按钮 -->
+        <StackPanel Grid.Row="7" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="{l:T common.ok}" Width="80" Margin="0,0,10,0" Click="Ok_Click" IsDefault="True"
+                    Style="{StaticResource PrimaryButtonStyle}"/>
+            <Button Content="{l:T common.cancel}" Width="80" Click="Cancel_Click" IsCancel="True"
+                    Style="{StaticResource StandardButtonStyle}"/>
+        </StackPanel>
+    </Grid>
+</Window>

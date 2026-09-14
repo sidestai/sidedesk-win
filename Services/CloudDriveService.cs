@@ -92,6 +92,9 @@ namespace SideDesk.Services
         private static readonly Lazy<CloudDriveService> _lazy = new(() => new CloudDriveService());
         public static CloudDriveService Instance => _lazy.Value;
 
+        /// <summary>最近一次上传失败的原因（已本地化，成功或从未失败为 null）</summary>
+        public string? LastUploadError { get; private set; }
+
         private const string BaseUrl = Constants.URLs.ServerBaseUrl;
         /// <summary>企业 ID（动态读取：选中团队时用团队 ID，否则用默认个人 ID）</summary>
         private static string CorpId
@@ -159,13 +162,25 @@ namespace SideDesk.Services
                 var data = await ParseResponseTokenAsync(resp).ConfigureAwait(false);
                 if (data is not JObject obj) return null;
 
-                return obj.ToObject<StsTokenResult>();
+                var sts = obj.ToObject<StsTokenResult>();
+                return sts;
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[CloudDrive] failed to get STS credentials: {ex.Message}");
                 return null;
             }
+        }
+
+        /// <summary>
+        /// 上传前预检：登录态探测（元桌云盘对已登录用户目录默认可写，无目录级只读概念）。
+        /// 返回 null=放行；非 null=拦截原因（已本地化）。STS/网络类失败由 UploadFileAsync 的 LastUploadError 兜底提示。
+        /// </summary>
+        public Task<string?> ProbeUploadAsync()
+        {
+            if (string.IsNullOrEmpty(GetToken()))
+                return Task.FromResult<string?>(Framework.Lang.T("cloudDrive.loginRequiredUpload"));
+            return Task.FromResult<string?>(null);
         }
 
         #endregion
@@ -320,13 +335,17 @@ namespace SideDesk.Services
         /// </summary>
         public async Task<bool> UploadFileAsync(string localPath, string parentId, Action<double>? progress = null)
         {
+            LastUploadError = null;
             string fileName = Path.GetFileName(localPath);
             long fileSize = new FileInfo(localPath).Length;
 
             // 1. 获取 STS 临时凭证
             var sts = await RequestStsTokenAsync().ConfigureAwait(false);
             if (sts == null || string.IsNullOrEmpty(sts.AccessKeyId))
+            {
+                LastUploadError = Framework.Lang.T("cloudDrive.uploadStsFailed");
                 return false;
+            }
 
             // 2. 构建 ossKey
             string ossKey = $"cloud-drive/{CorpId}/{fileName}";
@@ -340,11 +359,12 @@ namespace SideDesk.Services
 
             // 5. 调 register 入库
             var result = await RegisterFileAsync(parentId, fileName, ossKey, fileSize, md5).ConfigureAwait(false);
+            if (result == null) LastUploadError = Framework.Lang.T("cloudDrive.uploadFailedReason");
             return result != null;
         }
 
         /// <summary>OSS V1 签名直传（HMAC-SHA1）</summary>
-        private static async Task<bool> PutFileToOssAsync(StsTokenResult sts, string ossKey, string localPath, Action<double>? progress)
+        private async Task<bool> PutFileToOssAsync(StsTokenResult sts, string ossKey, string localPath, Action<double>? progress)
         {
             try
             {
@@ -374,6 +394,9 @@ namespace SideDesk.Services
                 {
                     string errBody = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
                     System.Diagnostics.Debug.WriteLine($"[CloudDrive] OSS upload failed: HTTP {(int)resp.StatusCode} - {errBody}");
+                    LastUploadError = resp.StatusCode == System.Net.HttpStatusCode.Forbidden
+                        ? Framework.Lang.T("cloudDrive.uploadNoWritePermission")
+                        : Framework.Lang.T("cloudDrive.uploadFailedReason");
                     return false;
                 }
 
@@ -384,6 +407,7 @@ namespace SideDesk.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[CloudDrive] OSS upload error: {ex.Message}");
+                LastUploadError = Framework.Lang.T("cloudDrive.uploadFailedReason");
                 return false;
             }
         }
@@ -454,15 +478,83 @@ namespace SideDesk.Services
 
         #endregion
 
-        #region 下载
+        #region 下载（私有桶：后端预签名直链）
 
-        /// <summary>根据 ossKey 构建 OSS 下载地址（需 bucket 公读或后续改为签名URL）</summary>
-        public string? BuildDownloadUrl(CloudDriveFile file)
+        // 元桌云盘桶为私有 ACL、STS 角色 uploader 只授 PutObject，客户端无法直接下载；
+        // 下载改由后端 GET /cloud-drive/presign 用只读凭证签发限时直链，客户端普通 GET 即可。
+
+        /// <summary>GET /cloud-drive/presign?fileId=xxx — 请求文件的限时下载直链（后端校验归属后签名）</summary>
+        public async Task<string?> RequestPresignedUrlAsync(string fileId)
         {
-            if (file.IsFolder || string.IsNullOrEmpty(file.OssKey)) return null;
-            // 暂时使用公读地址；若 bucket 为私有则需后端提供签名下载接口
-            return $"https://oneshop-disk.oss-cn-shanghai.aliyuncs.com/{file.OssKey}";
+            try
+            {
+                if (string.IsNullOrEmpty(fileId)) return null;
+                string url = $"{BaseUrl}/api/cloud-drive/presign?fileId={Uri.EscapeDataString(fileId)}";
+                using var req = CreateRequest(HttpMethod.Get, url);
+                using var resp = await HttpLog.SendAsync(_http, req).ConfigureAwait(false);
+                var data = await ParseResponseTokenAsync(resp).ConfigureAwait(false);
+                if (data is not JObject obj) return null;
+                return obj["url"]?.Value<string>();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[CloudDrive] presign failed: {ex.Message}");
+                return null;
+            }
         }
+
+        /// <summary>普通 GET 下载直链到本地文件（进度回调）：预签名 URL 已带签名，无需再认证</summary>
+        public async Task<bool> DownloadUrlToFileAsync(string url, string savePath, Action<double>? progress = null)
+        {
+            try
+            {
+                using var resp = await _uploadHttp.GetAsync(url, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    string errBody = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    System.Diagnostics.Debug.WriteLine($"[CloudDrive] download failed: HTTP {(int)resp.StatusCode} - {errBody}");
+                    return false;
+                }
+                long total = resp.Content.Headers.ContentLength ?? -1;
+                long received = 0;
+                int lastPct = -1;
+                await using var src = await resp.Content.ReadAsStreamAsync().ConfigureAwait(false);
+                await using var dst = new FileStream(savePath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true);
+                byte[] buffer = new byte[81920];
+                int read;
+                while ((read = await src.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false)) > 0)
+                {
+                    await dst.WriteAsync(buffer, 0, read).ConfigureAwait(false);
+                    received += read;
+                    if (total > 0)
+                    {
+                        int pct = (int)(received * 100 / total);
+                        if (pct != lastPct) { lastPct = pct; progress?.Invoke(pct); }
+                    }
+                }
+                progress?.Invoke(100);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[CloudDrive] download error: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>按文件记录 ID 请求预签名直链并下载到本地（元桌云盘文件的统一下载入口）</summary>
+        public async Task<bool> DownloadViaPresignedUrlAsync(string fileId, string savePath, Action<double>? progress = null)
+        {
+            string? url = await RequestPresignedUrlAsync(fileId).ConfigureAwait(false);
+            if (string.IsNullOrEmpty(url)) return false;
+            return await DownloadUrlToFileAsync(url, savePath, progress).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// 元桌云盘为私有桶，不提供匿名直链（浏览器打开必 AccessDenied），一律返回 null：
+        /// 云盘窗口据此走 SaveFileDialog + DownloadToFileAsync（内部请求预签名直链）流程。
+        /// </summary>
+        public string? BuildDownloadUrl(CloudDriveFile file) => null;
 
         #endregion
     }

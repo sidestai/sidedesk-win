@@ -29,7 +29,8 @@ public enum PanelType
     ScreenTime,      // 屏幕时长
     Countdown,       // 倒计时器
     Pomodoro,        // 番茄闹钟
-    WebBaidu         // 百度搜索（内嵌网页组件）
+    WebBaidu,        // 百度搜索（内嵌网页组件）
+    CheckIn          // 打卡（多个打卡按钮，点击计数并写入每日活跃）
 }
 
 public class PanelItem
@@ -89,6 +90,8 @@ public class PanelItem
     public string DailyActivityView { get; set; } = "Month";      // 每日活跃视图模式：Month(当月热力图)/Today(仅今日)/Week(前后5天逐日)
     public string DailyActivityType { get; set; } = "screen";     // 每日活跃组件展示的数据类型：screen=本地屏幕使用时长，其他=服务端类型（含内置固定类型番茄/屏幕时长/健身记录/鼠标键盘活跃）
     public PomodoroSettings? Pomodoro { get; set; }                    // 番茄闹钟数据
+    public List<CheckInItem>? CheckInItems { get; set; }               // 打卡组件：打卡按钮列表（行级存储）
+    public int CheckInColumns { get; set; } = 2;                       // 打卡组件：每排列数（1~4）
     /// <summary>归属类型: personal=个人, team=团队</summary>
     public string OwnerType { get; set; } = "personal";
     /// <summary>所属团队 ID（OwnerType=team 时有值）</summary>
@@ -138,6 +141,8 @@ public class FileAreaItem
     public string Id { get; set; } = Guid.NewGuid().ToString();
     public string Path { get; set; } = "";      // 文件或文件夹完整路径
     public string Name { get; set; } = "";      // 显示名称
+    /// <summary>用户自定义别名：非空时屏幕上优先于 Name 显示（项右键菜单「编辑别名」设置，清空恢复原名）</summary>
+    public string? Alias { get; set; }
     public bool IsFolder { get; set; }          // 是否为文件夹
     public DateTime AddedAt { get; set; } = DateTime.Now;
 
@@ -319,6 +324,36 @@ public class PomodoroSettings
     }
 }
 
+/// <summary>
+/// 打卡项：一个可点击的打卡按钮，每点一次当日计数 +1，并镜像写入「每日活跃」同名类型。
+/// 与番茄钟 CompletedCount 同构：本地保留当日计数（离线可用、跨天自动清零），点击时同步累加到服务端每日活跃。
+/// </summary>
+public class CheckInItem
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string Text { get; set; } = "";              // 打卡内容文字（同时作为「每日活跃」的类型名）
+    public string Icon { get; set; } = "";              // emoji 图标
+    public string Color { get; set; } = "#4A90D9";      // 主题色（hex）
+    public int Count { get; set; } = 0;                 // 当日打卡次数
+    public string? CountDate { get; set; }              // 计数所属日期（yyyy-MM-dd，跨天自动清零）
+    public int SortIndex { get; set; } = 0;             // 排序序号
+
+    /// <summary>确保计数为当天（跨天清零）</summary>
+    public void EnsureTodayCount()
+    {
+        var today = DateTime.Now.ToString("yyyy-MM-dd");
+        if (CountDate != today)
+        {
+            CountDate = today;
+            Count = 0;
+        }
+    }
+
+    /// <summary>当日打卡次数（跨天未点击时返回 0，不改动持久值，供渲染展示）</summary>
+    public int TodayCount()
+        => CountDate == DateTime.Now.ToString("yyyy-MM-dd") ? Count : 0;
+}
+
 public class WindowConfig
 {
     public string Id { get; set; } = Guid.NewGuid().ToString();
@@ -333,7 +368,7 @@ public class WindowConfig
     public bool IsAppMode { get; set; } = false;
     /// <summary>窗口级启用的工具列表（显示在底部工具栏）</summary>
     public List<string> EnabledTools { get; set; } = new();
-    /// <summary>是否显示在顶部标签列表中（小屏管理中勾选才显示）</summary>
+    /// <summary>是否显示在顶部标签列表中（微屏管理中勾选才显示）</summary>
     public bool ShowInTabs { get; set; } = true;
     /// <summary>归属类型: personal=个人, team=团队</summary>
     public string OwnerType { get; set; } = "personal";
@@ -382,9 +417,24 @@ public class WindowConfigManager
     /// <summary>变量集定义（多变量聚合：求和/求平均/最大/最小/计数，生成本地新变量）</summary>
     public List<VariableSet> VariableSets { get; set; } = new();
 
+    /// <summary>
+    /// 本内存实例加载时所归属的数据作用域（"local" 或 "u:{密文}"），由 LocalDbService 加载时打标。
+    /// 与 <see cref="Services.LocalDbService.CurrentScope"/> 不一致即表示登录态已变更、而窗口尚未按新作用域重载：
+    /// 此时内存里是旧作用域的数据（登出重启后往往只剩兜底空窗口），任何“以内存为准”的全量写库或结构上传
+    /// 都会把新作用域下的既有数据整体清空（本地 DeleteMissing + 服务端对账软删），因此必须一律拒绝。
+    /// </summary>
+    [Newtonsoft.Json.JsonIgnore]
+    public string? LoadedScope { get; set; }
+
     public static WindowConfigManager Load()
     {
         var mgr = LoadCore();
+        // 作用域戳兜底：LoadManager 已按实际读取的作用域打标；其余兜底路径（库损坏/旧 JSON 回退/异常）
+        // 返回的实例语义是“当前作用域下没有数据”，同样按当前作用域打标
+        if (string.IsNullOrEmpty(mgr.LoadedScope))
+            mgr.LoadedScope = Services.LocalDbService.CurrentScope();
+        // dock 成员自愈：dock 状态与窗口表是两份独立持久化，异常写入可能使二者脱节
+        mgr.RepairDockMembership();
         // 快捷分组门面：将全局配置管理器注入 QuickGroupManager（快捷数据已改存面板）
         QuickGroupManager.Init(mgr);
         // 遗留 JSON → SQLite 迁移预热：各管理器为惰性迁移（首次访问才触发），
@@ -658,7 +708,7 @@ public class WindowConfigManager
     }
 
     /// <summary>
-    /// 新增小屏并同步加入左右两侧 dock 的顶部标签（多屏/双侧布局下所有窗口都能看到新小屏）。
+    /// 新增微屏并同步加入左右两侧 dock 的顶部标签（多屏/双侧布局下所有窗口都能看到新微屏）。
     /// </summary>
     public void AddToAllDocks(WindowConfig config)
     {
@@ -688,6 +738,13 @@ public class WindowConfigManager
     public void EnsureDefault()
     {
         if (Services.LocalDbService.GetStateFlag(DefaultBarSeededFlag)) return; // 已初始化过，永不再填充
+        // 全库只播一次：其他作用域已播过示例（如曾在登录态首次安装）时，本作用域只置标不播 ——
+        // 否则登出回 local / 切换账号会再播一份示例 bar，随后被晋升搬进账号作用域造成重复窗口
+        if (Services.LocalDbService.AnyScopeStateFlag(DefaultBarSeededFlag))
+        {
+            Services.LocalDbService.SetStateFlag(DefaultBarSeededFlag);
+            return;
+        }
         Services.LocalDbService.SetStateFlag(DefaultBarSeededFlag);
 
         if (Windows.Count == 0)
@@ -705,12 +762,12 @@ public class WindowConfigManager
             const string todoEat = "Eat";
             const string todoSleep = "Sleep";
 #else
-            const string noteHowTo = "如何使用元桌小屏\n· 右键侧边栏可添加/编辑模块\n· 拖拽模块标题栏可排序\n· 设置中可换主题、语言与停靠位置";
-            const string noteWelcome = "欢迎使用元桌小屏！\n这是一条常驻屏幕边缘的智能侧边栏：便签、待办、快捷方式、计时器……触手可及，无需切换窗口。";
+            const string noteHowTo = "如何使用微屏\n· 右键侧边栏可添加/编辑模块\n· 拖拽模块标题栏可排序\n· 设置中可换主题、语言与停靠位置";
+            const string noteWelcome = "欢迎使用微屏！\n这是一条常驻屏幕边缘的智能侧边栏：便签、待办、快捷方式、计时器……触手可及，无需切换窗口。";
             const string groupName = "常用网址";
             const string browserName = "元桌浏览器";
             const string browserUrl = "https://yzllq.com";
-            const string officialName = "元桌小屏官网";
+            const string officialName = "微屏官网";
             const string bingName = "必应";
             const string todoEat = "吃饭";
             const string todoSleep = "睡觉";
@@ -790,7 +847,7 @@ public class WindowConfigManager
 
     /// <summary>
     /// 兜底保证至少存在一个 bar：所有 bar 被删光（或数据异常为空）时创建一个空的原生 bar。
-    /// 否则侧边栏会 ClearContent 折叠 nativePanel → 右键失效，且空白态无「新建小屏」入口，陷入无法新增模块的死状态。
+    /// 否则侧边栏会 ClearContent 折叠 nativePanel → 右键失效，且空白态无「新建微屏」入口，陷入无法新增模块的死状态。
     /// 与 EnsureDefault「首次安装播种示例面板」不同：这里只建一个空 bar（尊重用户已清空内容的意图），
     /// 空 bar 会显示「右键添加模块」提示且右键可用。
     /// </summary>
@@ -803,5 +860,39 @@ public class WindowConfigManager
             Type = WindowType.Native,
             Panels = new List<PanelItem>()
         });
+    }
+
+    /// <summary>
+    /// dock 成员自愈：把 ShowInTabs=true 但不在 dock 里的窗口按 Windows 顺序补回两侧 dock。
+    /// dock 状态（local_app_state）与窗口表（local_bar）是两份独立持久化：历史上「以内存为准」的
+    /// 全量重写在内存为空时执行，会把 dock 写坏成只剩兜底窗口，而窗口表随后被写回/晋升补齐，
+    /// 二者脱节后设置页（读 Windows）能看到窗口、主窗口标签栏（读 dock）却只剩一个。
+    /// 以 ShowInTabs 为据不会复活用户主动隐藏的窗口（隐藏时 ShowInTabs=false 且已移出 dock）；
+    /// 只补末尾不重建，保留用户拖拽调整过的既有标签顺序。仅修内存，随后续正常 Save 自然落库。
+    /// </summary>
+    public void RepairDockMembership()
+    {
+        bool changed = false;
+
+        // 孤儿 id 清理：dock 里指向已不存在窗口的 id（删除/晋升剪枝硬删行时未同步清理 dock state，
+        // 孤儿随 dock 晋升进入账号作用域）。孤儿占据索引会造成序号断层（标签只剩 2..N）
+        // 且 ActiveIndex 落空无高亮、徽章指向不存在的项；清理后越界的 ActiveIndex 回落到末尾。
+        foreach (var dock in new[] { LeftDock, RightDock })
+        {
+            int before = dock.WindowIds.Count;
+            dock.WindowIds.RemoveAll(id => GetById(id) == null);
+            if (dock.WindowIds.Count != before) changed = true;
+            if (dock.ActiveIndex >= dock.WindowIds.Count)
+                dock.ActiveIndex = Math.Max(0, dock.WindowIds.Count - 1);
+        }
+
+        foreach (var win in Windows)
+        {
+            if (!win.ShowInTabs) continue;
+            if (!LeftDock.WindowIds.Contains(win.Id)) { LeftDock.WindowIds.Add(win.Id); changed = true; }
+            if (!RightDock.WindowIds.Contains(win.Id)) { RightDock.WindowIds.Add(win.Id); changed = true; }
+        }
+        if (changed)
+            System.Diagnostics.Debug.WriteLine($"[WindowConfig] dock membership repaired: {LeftDock.WindowIds.Count} left / {RightDock.WindowIds.Count} right");
     }
 }
