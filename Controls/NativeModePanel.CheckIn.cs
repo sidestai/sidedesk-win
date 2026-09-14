@@ -11,10 +11,10 @@ using SideDesk.Models;
 namespace SideDesk.Controls
 {
     /// <summary>
-    /// 「打卡」组件：多个打卡按钮，每点一次当日计数 +1（按钮右上角徽标显示数字），
+    /// 「打卡」卡片：多个打卡按钮，每点一次当日计数 +1（按钮右上角徽标显示数字），
     /// 并以打卡内容文字为类型名镜像写入「每日活跃」当日数值（作用域跟随当前窗口）。
     /// 弹出窗提供常用打卡预设一键添加 + 自定义（文字 / 图标 / 颜色）。
-    /// 数据结构与云同步遵循行级存储（row_type = check_in），与信号灯等组件一致。
+    /// 数据结构与云同步遵循行级存储（row_type = check_in），与信号灯等卡片一致。
     /// </summary>
     public partial class NativeModePanel
     {
@@ -42,7 +42,16 @@ namespace SideDesk.Controls
             "🌬", "💪", "✍", "📖", "🎯", "⏰", "🍵", "🥗"
         };
 
-        // ==================== 组件渲染 ====================
+        /// <summary>按钮样式选项：(值, 文字 i18n 键)。右键「样式」子菜单使用，勾选当前值。</summary>
+        private static readonly (string Value, string TextKey)[] CheckInStyles =
+        {
+            ("TextOnly", "nativePanel.checkInStyleTextOnly"),
+            ("IconOnly", "nativePanel.checkInStyleIconOnly"),
+            ("IconTextVertical", "nativePanel.checkInStyleIconTextVertical"),
+            ("IconTextHorizontal", "nativePanel.checkInStyleIconTextHorizontal"),
+        };
+
+        // ==================== 卡片渲染 ====================
 
         private UIElement BuildCheckInWidget(PanelItem item)
         {
@@ -86,6 +95,23 @@ namespace SideDesk.Controls
                     columnsMenu.Items.Add(colItem);
                 }
                 mc.AddCustomMenuItem(columnsMenu);
+
+                // 右键「样式」子菜单：4 种按钮样式，勾选当前值（计数徽标在所有样式下始终显示）
+                string style = string.IsNullOrEmpty(item.CheckInStyle) ? "IconTextVertical" : item.CheckInStyle;
+                var styleMenu = new MenuItem { Header = Framework.Lang.T("common.style") };
+                foreach (var (value, textKey) in CheckInStyles)
+                {
+                    string capturedValue = value;
+                    var styleItem = new MenuItem
+                    {
+                        Header = Framework.Lang.T(textKey),
+                        IsCheckable = true,
+                        IsChecked = capturedValue == style
+                    };
+                    styleItem.Click += (s, e) => { item.CheckInStyle = capturedValue; _configManager?.Save(); RenderPanels(); };
+                    styleMenu.Items.Add(styleItem);
+                }
+                mc.AddCustomMenuItem(styleMenu);
             }
 
             return module;
@@ -108,39 +134,18 @@ namespace SideDesk.Controls
                 MinHeight = 56
             };
 
-            var content = new StackPanel
-            {
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            if (!string.IsNullOrEmpty(ci.Icon))
-            {
-                content.Children.Add(new Emoji.Wpf.TextBlock
-                {
-                    Text = ci.Icon,
-                    FontSize = 20,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    Margin = new Thickness(0, 0, 0, 2)
-                });
-            }
-            content.Children.Add(new TextBlock
-            {
-                Text = string.IsNullOrEmpty(ci.Text) ? Framework.Lang.T("common.checkIn") : ci.Text,
-                FontSize = 11,
-                Foreground = (Brush)FindResource("BrushTextMain"),
-                HorizontalAlignment = HorizontalAlignment.Center,
-                TextAlignment = TextAlignment.Center,
-                TextWrapping = TextWrapping.Wrap,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                MaxHeight = 30
-            });
-            card.Child = content;
+            // 按样式决定图标/文字显隐与排列方向（计数徽标在所有样式下都保留）
+            string style = string.IsNullOrEmpty(panel.CheckInStyle) ? "IconTextVertical" : panel.CheckInStyle;
+            bool textOnly = style == "TextOnly";
+            bool showIcon = !textOnly;
+            bool showText = style != "IconOnly";
+            bool horizontal = style == "IconTextHorizontal";
 
-            // 计数徽标（右上角叠加，始终显示数字，初始 0）
+            // 计数徽标（始终显示当日计数）：仅文字样式内联到文字末尾同一行，其余样式右上角叠加
             var badgeText = new TextBlock
             {
                 Text = ci.TodayCount().ToString(),
-                FontSize = 10,
+                FontSize = FS(10),
                 FontWeight = FontWeights.Bold,
                 Foreground = Brushes.White,
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -153,15 +158,87 @@ namespace SideDesk.Controls
                 MinWidth = 18,
                 Height = 18,
                 Padding = new Thickness(4, 0, 4, 0),
-                HorizontalAlignment = HorizontalAlignment.Right,
-                VerticalAlignment = VerticalAlignment.Top,
-                Margin = new Thickness(0, 4, 4, 0),
                 Child = badgeText
             };
 
             var overlay = new Grid { Margin = new Thickness(0) };
-            overlay.Children.Add(card);
-            overlay.Children.Add(badge);
+
+            if (textOnly)
+            {
+                // 仅文字：文字与计数同一行，数字排在末尾（不换行、更省空间）
+                card.MinHeight = 0;
+                card.Padding = new Thickness(6, 4, 6, 4);
+
+                var row = new Grid { VerticalAlignment = VerticalAlignment.Center };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var text = new TextBlock
+                {
+                    Text = string.IsNullOrEmpty(ci.Text) ? Framework.Lang.T("common.checkIn") : ci.Text,
+                    FontSize = FS(13),
+                    Foreground = (Brush)FindResource("BrushTextMain"),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    TextAlignment = TextAlignment.Left,
+                    TextWrapping = TextWrapping.NoWrap,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    Margin = new Thickness(0, 0, 6, 0)
+                };
+                Grid.SetColumn(text, 0);
+                row.Children.Add(text);
+
+                badge.HorizontalAlignment = HorizontalAlignment.Right;
+                badge.VerticalAlignment = VerticalAlignment.Center;
+                Grid.SetColumn(badge, 1);
+                row.Children.Add(badge);
+
+                card.Child = row;
+                overlay.Children.Add(card);
+            }
+            else
+            {
+                var content = new StackPanel
+                {
+                    Orientation = horizontal ? Orientation.Horizontal : Orientation.Vertical,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                if (showIcon && !string.IsNullOrEmpty(ci.Icon))
+                {
+                    content.Children.Add(new Emoji.Wpf.TextBlock
+                    {
+                        Text = ci.Icon,
+                        FontSize = horizontal ? 18 : 20,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Margin = horizontal ? new Thickness(0, 0, 5, 0) : new Thickness(0, 0, 0, 2)
+                    });
+                }
+                if (showText)
+                {
+                    content.Children.Add(new TextBlock
+                    {
+                        Text = string.IsNullOrEmpty(ci.Text) ? Framework.Lang.T("common.checkIn") : ci.Text,
+                        FontSize = FS(11),
+                        Foreground = (Brush)FindResource("BrushTextMain"),
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        TextAlignment = horizontal ? TextAlignment.Left : TextAlignment.Center,
+                        TextWrapping = horizontal ? TextWrapping.NoWrap : TextWrapping.Wrap,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                        MaxHeight = 30
+                    });
+                }
+                card.Child = content;
+
+                // 计数徽标右上角叠加
+                badge.HorizontalAlignment = HorizontalAlignment.Right;
+                badge.VerticalAlignment = VerticalAlignment.Top;
+                badge.Margin = new Thickness(0, 4, 4, 0);
+
+                overlay.Children.Add(card);
+                overlay.Children.Add(badge);
+            }
 
             // 左键：打卡 +1（原地刷新徽标，避免整面板重绘造成闪烁）
             overlay.MouseLeftButtonUp += (s, e) =>
@@ -256,8 +333,8 @@ namespace SideDesk.Controls
                     Cursor = Cursors.Hand
                 };
                 var chipContent = new StackPanel { Orientation = Orientation.Horizontal };
-                chipContent.Children.Add(new Emoji.Wpf.TextBlock { Text = icon, FontSize = 14, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) });
-                chipContent.Children.Add(new TextBlock { Text = label, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("BrushTextMain") });
+                chipContent.Children.Add(new Emoji.Wpf.TextBlock { Text = icon, FontSize = FS(14), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) });
+                chipContent.Children.Add(new TextBlock { Text = label, FontSize = FS(12), VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("BrushTextMain") });
                 chip.Child = chipContent;
                 string capturedIcon = icon;
                 chip.MouseLeftButtonUp += (s, e) =>
@@ -296,7 +373,7 @@ namespace SideDesk.Controls
                     listStack.Children.Add(new TextBlock
                     {
                         Text = Framework.Lang.T("nativePanel.checkInPresets"),
-                        FontSize = 11,
+                        FontSize = FS(11),
                         Opacity = 0.5,
                         Foreground = (Brush)FindResource("BrushTextMuted")
                     });
@@ -351,7 +428,7 @@ namespace SideDesk.Controls
                     {
                         row.Children.Add(new Emoji.Wpf.TextBlock
                         {
-                            Text = ci.Icon, FontSize = 14, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0)
+                            Text = ci.Icon, FontSize = FS(14), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0)
                         });
                     }
                     row.Children.Add(new TextBlock
@@ -377,7 +454,7 @@ namespace SideDesk.Controls
             root.Children.Add(doneBtn);
 
             dialog.Content = root;
-            // 关闭时统一提交并刷新组件（预设/自定义/删除均已实时落库，这里保证组件重绘反映最终状态）
+            // 关闭时统一提交并刷新卡片（预设/自定义/删除均已实时落库，这里保证卡片重绘反映最终状态）
             dialog.Closed += (s, e) => { _configManager?.Save(); RenderPanels(); };
             dialog.ShowDialog();
         }
@@ -439,7 +516,7 @@ namespace SideDesk.Controls
             var iconLabel = new TextBlock { Text = Framework.Lang.T("common.iconLabel"), Width = 72, VerticalAlignment = VerticalAlignment.Center };
             DockPanel.SetDock(iconLabel, Dock.Left);
             iconRow.Children.Add(iconLabel);
-            var iconPreview = new Emoji.Wpf.TextBlock { Text = existing?.Icon ?? "", FontSize = 18, Width = 30, VerticalAlignment = VerticalAlignment.Center };
+            var iconPreview = new Emoji.Wpf.TextBlock { Text = existing?.Icon ?? "", FontSize = FS(18), Width = 30, VerticalAlignment = VerticalAlignment.Center };
             DockPanel.SetDock(iconPreview, Dock.Right);
             iconRow.Children.Add(iconPreview);
             var iconBox = new TextBox { Text = existing?.Icon ?? "", Style = textBoxStyle };
@@ -453,7 +530,7 @@ namespace SideDesk.Controls
             {
                 var eb = new Button
                 {
-                    Content = new Emoji.Wpf.TextBlock { Text = em, FontSize = 15 },
+                    Content = new Emoji.Wpf.TextBlock { Text = em, FontSize = FS(15) },
                     Width = 28, Height = 28, Margin = new Thickness(0, 0, 4, 4),
                     Background = Brushes.Transparent,
                     BorderBrush = (Brush)FindResource("BrushBorder"),

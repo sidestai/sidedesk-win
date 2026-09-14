@@ -44,7 +44,7 @@ public class BrowserConnection
 
 /// <summary>
 /// 数据轮询服务 - 中央数据源，统一管理所有数据看板项的定时抓取。
-/// 面板组件只负责展示，不发起请求。
+/// 面板卡片只负责展示，不发起请求。
 /// </summary>
 public class DataPollingService : IDisposable
 {
@@ -66,7 +66,7 @@ public class DataPollingService : IDisposable
 
     // 每个去重后数据源一个定时器：相同看板（同一数据源）只起一个轮询实例，不同看板各跑各的
     private readonly Dictionary<string, DispatcherTimer> _timers = new();
-    // “是否允许远程调试?”确认弹窗自动允许：开启数据模块时每 5 秒扫一次，检测到就模拟点击“允许”；
+    // “是否允许远程调试?”确认弹窗自动允许：开启数据卡片时每 5 秒扫一次，检测到就模拟点击“允许”；
     // _lastRemoteDebugNotified 限流气泡通知（15 秒内只提一次）
     private DispatcherTimer? _remoteDebugPromptTimer;
     private DateTime _lastRemoteDebugNotified = DateTime.MinValue;
@@ -245,7 +245,7 @@ public class DataPollingService : IDisposable
         var scope = CurrentDataScope();
         if (scope != "local")
         {
-            // 布局与内容类数据（窗口/组件/便签/待办/剪贴板收藏等）同步晋升：未归属 local 数据归入当前登录者
+            // 布局与内容类数据（窗口/卡片/便签/待办/剪贴板收藏等）同步晋升：未归属 local 数据归入当前登录者
             try { LocalDbService.AdoptScope("local", scope); }
             catch (Exception ex) { Debug.WriteLine($"[DataPolling] local-db scoped promotion failed: {ex.Message}"); }
         }
@@ -322,9 +322,9 @@ public class DataPollingService : IDisposable
     }
 
     /// <summary>
-    /// 数据项身份标识 = 数据模块（后端实例）：同模板+同浏览器+同网址/选择器即同一数据模块，
-    /// 同一模块出现在多个微屏窗口时共享同一个轮询实例。
-    /// 变量名（VarKey）是模块的属性、不参与身份——避免同一模块因一个组件设了变量、另一个没设而被拆成两个实例。
+    /// 数据项身份标识 = 数据卡片（后端实例）：同模板+同浏览器+同网址/选择器即同一数据卡片，
+    /// 同一卡片出现在多个微屏窗口时共享同一个轮询实例。
+    /// 变量名（VarKey）是卡片的属性、不参与身份——避免同一卡片因一个卡片设了变量、另一个没设而被拆成两个实例。
     /// </summary>
     public static string GetItemIdentity(DataDashboardItem item)
     {
@@ -359,7 +359,7 @@ public class DataPollingService : IDisposable
 
             totalBefore = candidates.Count;
 
-            // 按身份去重：同一数据模块只保留一个轮询实例，同时记录全部重复实例用于值/事件同步
+            // 按身份去重：同一数据卡片只保留一个轮询实例，同时记录全部重复实例用于值/事件同步
             foreach (var d in candidates)
             {
                 var key = GetItemIdentity(d);
@@ -371,7 +371,7 @@ public class DataPollingService : IDisposable
                 }
                 else if (!string.IsNullOrEmpty(d.VarKey) && string.IsNullOrEmpty(group[0].VarKey))
                 {
-                    // 变量是模块属性：代表实例没变量而新成员有则提升为代表，保证按变量名可查到该模块
+                    // 变量是卡片属性：代表实例没变量而新成员有则提升为代表，保证按变量名可查到该卡片
                     var idx = _items.IndexOf(group[0]);
                     if (idx >= 0) _items[idx] = d;
                 }
@@ -521,7 +521,7 @@ public class DataPollingService : IDisposable
                 _timers[item.Id] = timer;
             }
 
-            // 数据模块开启（存在数据项）时启动远程调试确认弹窗扫描；没有数据项则停掉
+            // 数据卡片开启（存在数据项）时启动远程调试确认弹窗扫描；没有数据项则停掉
             if (_remoteDebugPromptTimer == null)
             {
                 _remoteDebugPromptTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
@@ -1278,7 +1278,7 @@ public class DataPollingService : IDisposable
         => Uri.TryCreate(url, UriKind.Absolute, out var u) ? u.Host : null;
 
     /// <summary>启动 app 模式浏览器进程（干净独立窗口，无地址栏/标签栏）。启动成功返回进程，失败返回 null。
-    /// hideWindow=true 时（数据模块后台抓取）在窗口出现后用 ShowWindow(SW_HIDE) 隐藏，不占用屏幕。
+    /// hideWindow=true 时（数据卡片后台抓取）在窗口出现后用 ShowWindow(SW_HIDE) 隐藏，不占用屏幕。
     /// hideFromTaskbar=true 时（点击数据项打开）在窗口出现后设为工具窗口样式，不在任务栏显示。</summary>
     private static Process? LaunchAppModeProcess(string exePath, string userDataDir, string url, bool hideWindow = false, bool hideFromTaskbar = false)
     {
@@ -1329,7 +1329,7 @@ public class DataPollingService : IDisposable
         }
     }
 
-    /// <summary>轮询等待 app 窗口句柄出现，然后用 ShowWindow(SW_HIDE) 隐藏（数据模块后台窗口，不占用屏幕）。
+    /// <summary>轮询等待 app 窗口句柄出现，然后用 ShowWindow(SW_HIDE) 隐藏（数据卡片后台窗口，不占用屏幕）。
     /// 窗口委托给已运行浏览器（启动进程自身退出）时拿不到本进程句柄，则放弃隐藏。</summary>
     private static async Task HideAppWindowWhenReadyAsync(Process proc)
     {
@@ -1418,7 +1418,7 @@ public class DataPollingService : IDisposable
     }
 
     /// <summary>移除窗口的任务栏按钮：加 WS_EX_TOOLWINDOW 并去掉 WS_EX_APPWINDOW。
-    /// 数据模块打开的 app 窗口统一由点击数据项管理显隐，不占用任务栏</summary>
+    /// 数据卡片打开的 app 窗口统一由点击数据项管理显隐，不占用任务栏</summary>
     private static void HideWindowFromTaskbar(IntPtr hwnd)
     {
         var ex = NativeMethods.GetWindowLongPtr(hwnd, NativeMethods.GWL_EXSTYLE);
@@ -1511,7 +1511,7 @@ public class DataPollingService : IDisposable
                 }
                 NativeMethods.ShowWindow(hwnd, NativeMethods.SW_SHOW);
                 NativeMethods.SetForegroundWindow(hwnd);
-                HideWindowFromTaskbar(hwnd); // 数据模块窗口恢复显示后仍不进任务栏
+                HideWindowFromTaskbar(hwnd); // 数据卡片窗口恢复显示后仍不进任务栏
                 lock (_appModeHiddenHwnds) { _appModeHiddenHwnds.Remove(hwnd); }
                 shown = true;
             }
@@ -1676,11 +1676,11 @@ public class DataPollingService : IDisposable
                 var hwnd = proc.MainWindowHandle;
                 if (hwnd != IntPtr.Zero)
                 {
-                    // 恢复最小化或被隐藏的窗口（数据模块后台窗口默认以 SW_HIDE 隐藏）；
+                    // 恢复最小化或被隐藏的窗口（数据卡片后台窗口默认以 SW_HIDE 隐藏）；
                     // 从隐藏记录中移除，避免后续轮询的 ReassertHiddenAppWindows 把用户正在看的窗口又藏回去
                     NativeMethods.ShowWindow(hwnd, NativeMethods.IsIconic(hwnd) ? NativeMethods.SW_RESTORE : NativeMethods.SW_SHOW);
                     NativeMethods.SetForegroundWindow(hwnd);
-                    HideWindowFromTaskbar(hwnd); // 数据模块窗口重套去任务栏样式（防浏览器重置）
+                    HideWindowFromTaskbar(hwnd); // 数据卡片窗口重套去任务栏样式（防浏览器重置）
                     lock (_appModeHiddenHwnds) { _appModeHiddenHwnds.Remove(hwnd); }
                     Debug.WriteLine($"[DataPolling] ✓ previously opened app window activated and shown: {url}");
                     return true;

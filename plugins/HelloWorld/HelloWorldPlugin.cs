@@ -7,14 +7,14 @@ using SideDesk.Services.Plugins;
 namespace HelloWorld;
 
 /// <summary>
-/// 问候组件插件入口（插件市场开源示例）
+/// 问候卡片插件入口（插件市场开源示例）
 /// UI 由松散 XAML（ui.xaml）提供，本类作为 DataContext 提供数据与命令。
 /// 拉取源码后可在插件编辑器中直接修改编译。
 /// </summary>
 public class HelloWorldPlugin : ISideDeskPlugin, INotifyPropertyChanged
 {
     public string Id => "hello-world";
-    public string Name => "问候组件";
+    public string Name => "问候卡片";
     public string Version => "0.1.0";
 
     private static readonly string[] Greetings =

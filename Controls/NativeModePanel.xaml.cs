@@ -42,7 +42,7 @@ namespace SideDesk.Controls
         /// </summary>
         private bool _suppressBarBroadcast = false;
 
-        // 数字员工全局库（懒加载，模块间共享）
+        // 数字员工全局库（懒加载，卡片间共享）
         private DigitalEmployeeManager? _digitalEmployeeManager;
         private DigitalEmployeeManager DigitalEmployees
         {
@@ -71,9 +71,10 @@ namespace SideDesk.Controls
         private const double EXPAND_WIDTH = 100;
 
 
-        // 计数器 UI 引用
-        private Button? _keyCountValueButton;
-        private Button? _mouseDistanceValueButton;
+        // 系统指标卡片 UI 引用（CPU / 内存 / 网络，随系统信息卡片渲染创建）
+        private Button? _cpuValueButton;
+        private Button? _memoryValueButton;
+        private Button? _netValueButton;
 
         // 初始化标志
         private bool _isInitialized = false;
@@ -81,10 +82,10 @@ namespace SideDesk.Controls
         // 编辑模式（持久化到 AppSettings）
         private bool _isEditMode = false;
 
-        // 顶层面板拖拽排序指示器（编辑模式下上下拖动模块/分组调换位置）
+        // 顶层面板拖拽排序指示器（编辑模式下上下拖动卡片/分组调换位置）
         // 指示器为 XAML 中的常驻叠加层 panelDropIndicator，不再动态插入/移除子元素，避免布局抖动
 
-        // 右键菜单打开时记录的插入位置：当右键点在两个模块之间时，新增模块插入到该位置；null 表示按默认追加
+        // 右键菜单打开时记录的插入位置：当右键点在两个卡片之间时，新增卡片插入到该位置；null 表示按默认追加
         private int? _pendingInsertIndex;
 
         // 今日待办到点提醒
@@ -106,7 +107,7 @@ namespace SideDesk.Controls
         /// <summary>请求主窗口调整宽度</summary>
         public event Action<double>? RequestWidthChange;
 
-        /// <summary>当前活跃的原生面板实例（供本地桥等外部入口落地新增模块，如数据模板市场）</summary>
+        /// <summary>当前活跃的原生面板实例（供本地桥等外部入口落地新增卡片，如数据模板市场）</summary>
         public static NativeModePanel? Instance { get; private set; }
 
         public NativeModePanel()
@@ -120,7 +121,10 @@ namespace SideDesk.Controls
             keyCountText.ToolTip = FormatKeyCountTooltip(_keyboardHookService?.TodayKeyCount ?? 0);
             mouseDistText.ToolTip = FormatMouseDistanceTooltip(_mouseHookService?.TodayMouseDistance ?? 0);
 
-            // 订阅主题变更事件，重建所有面板（独立模块 + 快捷分组）以应用新主题颜色
+            // 鼠键记录器开关（每条侧边栏独立）：关闭时不装钩子、状态栏整条隐藏
+            ApplyKeyMouseRecorderState();
+
+            // 订阅主题变更事件，重建所有面板（独立卡片 + 快捷分组）以应用新主题颜色
             App.ThemeChanged += () =>
             {
                 // 主题切换时所有面板各自重建，属仅展示重渲染，不广播给其他侧边栏
@@ -159,6 +163,7 @@ namespace SideDesk.Controls
             try { RenderPanels(); }
             finally { _suppressBarBroadcast = false; }
             RefreshToolsBar();  // 刷新底部工具栏
+            ApplyKeyMouseRecorderState();  // 切换微屏后按该微屏的鼠键记录器开关装/卸钩子与显隐状态栏
         }
 
         /// <summary>
@@ -184,6 +189,9 @@ namespace SideDesk.Controls
             _mouseHookService = new MouseHookService();
             _mouseHookService.MouseDistanceChanged += OnMouseDistanceChanged;
 
+            // 系统指标（CPU/内存/网络）采样为进程级单例，常驻后台采样；面板订阅刷新（Unloaded 退订防泄漏）
+            SystemMetricsService.Instance.MetricsChanged += OnSystemMetricsChanged;
+
             // 启用拖放
             AllowDrop = true;
             Drop += NativeModePanel_Drop;
@@ -192,7 +200,7 @@ namespace SideDesk.Controls
             // 剪贴板监控随面板初始化启动（随时记录，供历史弹窗展示最近 50 条）
             EnsureClipboardServiceStarted();
 
-            // 顶层面板拖拽排序（编辑模式下上下拖动模块/分组调换位置），只订阅一次
+            // 顶层面板拖拽排序（编辑模式下上下拖动卡片/分组调换位置），只订阅一次
             dynamicContent.AllowDrop = true;
             dynamicContent.DragOver += DynamicContent_DragOver;
             dynamicContent.DragLeave += DynamicContent_DragLeave;
@@ -225,13 +233,17 @@ namespace SideDesk.Controls
             mobileVoice.SessionStopRequested -= VoiceQrPopup_OnSessionStop;
             mobileVoice.SessionAborted -= VoiceQrPopup_OnSessionAborted;
 
+            // 退订系统指标事件（单例常驻，不退订会泄漏面板）
+            SystemMetricsService.Instance.MetricsChanged -= OnSystemMetricsChanged;
+
             StopServices();
         }
 
         /// <summary>启动所有后台服务</summary>
         public void StartServices()
         {
-            // 启动键盘/鼠标钩子
+            // 鼠键记录器未开启时不装钩子（状态栏显隐由 ApplyKeyMouseRecorderState 统一管）
+            if (_currentWindowConfig?.KeyMouseRecorderEnabled != true) return;
             _keyboardHookService?.Start();
             _mouseHookService?.Start();
         }
@@ -242,6 +254,32 @@ namespace SideDesk.Controls
             _keyboardHookService?.Stop();
             _mouseHookService?.Stop();
             _quickGroupUIService?.Shutdown();
+        }
+
+        /// <summary>
+        /// 应用当前微屏的「鼠键记录器」开关（每条侧边栏独立配置）：开启 = 安装全局键鼠钩子计数并显示状态栏；关闭 = 卸载钩子且状态栏整条隐藏。
+        /// 开启时同步回显一次当前计数（钩子回调只在有新输入时触发，切换瞬间需要立即刷新）。
+        /// </summary>
+        private void ApplyKeyMouseRecorderState()
+        {
+            bool on = _currentWindowConfig?.KeyMouseRecorderEnabled == true;
+            statusBarBorder.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+            if (on)
+            {
+                _keyboardHookService?.Start();
+                _mouseHookService?.Start();
+                int keys = _keyboardHookService?.TodayKeyCount ?? 0;
+                long dist = _mouseHookService?.TodayMouseDistance ?? 0;
+                keyCountText.Text = $"⌨ {KeyboardHookService.FormatCount(keys)}";
+                keyCountText.ToolTip = FormatKeyCountTooltip(keys);
+                mouseDistText.Text = $"🖱 {MouseHookService.FormatDistance(dist)}";
+                mouseDistText.ToolTip = FormatMouseDistanceTooltip(dist);
+            }
+            else
+            {
+                _keyboardHookService?.Stop();
+                _mouseHookService?.Stop();
+            }
         }
 
 
@@ -275,8 +313,13 @@ namespace SideDesk.Controls
             _panelWebViews.Clear();
         }
 
+        /// <summary>卡片字号换算（设计基准 12）：卡片内各处字号随 设置→外观→卡片内字体大小 同步缩放；标题用 FS(13) 即自动大 1 号</summary>
+        private static double FS(double designSize) => Framework.AppSettings.Instance.FS(designSize);
+
         private void RenderPanels()
         {
+            // 卡片内字体大小：卡内未显式指定字号的文本继承此值（显式字号经 FS() 换算跟随）
+            this.FontSize = Framework.AppSettings.Instance.CardFontSize;
             DisposePanelWebViews();
             dynamicContent.Children.Clear();
             pinnedContent.Children.Clear();
@@ -320,7 +363,7 @@ namespace SideDesk.Controls
                 var widget = BuildPanelWidget(panel);
                 if (widget != null)
                 {
-                    // 置顶模块渲染到置顶区（压缩下方滚动区高度），其余渲染到滚动区
+                    // 置顶卡片渲染到置顶区（压缩下方滚动区高度），其余渲染到滚动区
                     if (panel.IsPinned)
                     {
                         pinnedContent.Children.Add(widget);
@@ -336,19 +379,62 @@ namespace SideDesk.Controls
             // 置顶区可见性（无置顶项时整块隐藏）
             SyncPinnedAreaVisibility(hasPinned);
 
-            // 空窗口提示
+            // 空窗口提示：反色半透明浮层（底=BrushTextMain@80% + 字=BrushBG，项目反色配色规范）+ 纯文字，
+            // 窄边栏不变形，壁纸等任意背景下清晰可读；点击第二行打开添加卡片对话框
             if (_currentWindowConfig.Panels.Count == 0)
             {
-                dynamicContent.Children.Add(new Emoji.Wpf.TextBlock
+                var hintStack = new StackPanel
+                {
+                    HorizontalAlignment = HorizontalAlignment.Center
+                };
+
+                // 说明文字
+                hintStack.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = Framework.Lang.T("nativePanel.rightClickToAdd"),
-                    Foreground = (Brush)FindResource("BrushTextMuted"),
+                    Foreground = (Brush)FindResource("BrushBG"),
+                    Opacity = 0.75,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    TextAlignment = TextAlignment.Center,
+                    TextWrapping = TextWrapping.Wrap,
+                    FontSize = 11,
+                    Margin = new Thickness(0, 0, 0, 6)
+                });
+
+                // 可点击文字行：打开添加卡片对话框（下划线 + 手型光标）
+                var linkText = new Emoji.Wpf.TextBlock
+                {
+                    Text = Framework.Lang.T("nativePanel.clickToAddCard"),
+                    Foreground = (Brush)FindResource("BrushBG"),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    TextAlignment = TextAlignment.Center,
+                    TextWrapping = TextWrapping.Wrap,
+                    FontSize = 12,
+                    FontWeight = FontWeights.SemiBold,
+                    TextDecorations = TextDecorations.Underline,
+                    Cursor = System.Windows.Input.Cursors.Hand
+                };
+                linkText.MouseLeftButtonUp += (s, ev) => ShowAddCardDialog();
+                linkText.MouseEnter += (s, ev) => linkText.Opacity = 0.8;
+                linkText.MouseLeave += (s, ev) => linkText.Opacity = 1;
+                hintStack.Children.Add(linkText);
+
+                // 反色半透明底：克隆主题画刷再调透明度，避免污染全局资源
+                var scrim = ((Brush)FindResource("BrushTextMain")).Clone();
+                scrim.Opacity = 0.8;
+
+                var hintCard = new Border
+                {
+                    Child = hintStack,
+                    Background = scrim,
+                    CornerRadius = new CornerRadius(8),
+                    Padding = new Thickness(12, 10, 12, 10),
                     HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(0, 50, 0, 0),
-                    FontSize = 14,
-                    Opacity = 0.5
-                });
+                    Margin = new Thickness(8, 50, 8, 0)
+                };
+
+                dynamicContent.Children.Add(hintCard);
             }
 
             // 重新渲染后，更新瞬移窗口区（编辑模式切换时需要重建）
@@ -357,7 +443,7 @@ namespace SideDesk.Controls
                 UpdateTeleportWidget();
             }
 
-            // 本次渲染若源于对 bar 数据的修改（增删改组件/排序等），通知其他正在显示同一 bar 的侧边栏同步刷新；
+            // 本次渲染若源于对 bar 数据的修改（增删改卡片/排序等），通知其他正在显示同一 bar 的侧边栏同步刷新；
             // 仅展示场景（tab 切换/主题切换/全局刷新）由 _suppressBarBroadcast 抑制，避免级联与无谓重载。
             if (!_suppressBarBroadcast)
                 BroadcastBarToOtherWindows();
@@ -365,7 +451,7 @@ namespace SideDesk.Controls
 
         /// <summary>
         /// 广播当前 bar（微屏）的变更：通知其他正在显示同一 bar 的侧边栏同步刷新，
-        /// 使在任一侧边栏上对组件的增删改都能实时反映到显示同一 bar 的其他侧边栏。
+        /// 使在任一侧边栏上对卡片的增删改都能实时反映到显示同一 bar 的其他侧边栏。
         /// 发起变更的本窗口已自行渲染，作为 except 排除，避免重复重绘。
         /// </summary>
         private void BroadcastBarToOtherWindows()
@@ -381,7 +467,7 @@ namespace SideDesk.Controls
             var widget = CreatePanelWidget(panel);
             if (widget == null) return null;
 
-            // 未走 WrapWidget 的自定义卡片模块，在顶层统一附加可调高能力（编辑模式显示拖拽手柄）
+            // 未走 WrapWidget 的自定义卡片，在顶层统一附加可调高能力（编辑模式显示拖拽手柄）
             if (widget is FrameworkElement wfe && wfe.Uid != "wrapHandled")
                 widget = WrapResizable(wfe, panel);
 
@@ -407,7 +493,7 @@ namespace SideDesk.Controls
             return false;
         }
 
-        /// <summary>同步置顶区可见性：有置顶模块时显示；无置顶项时整块隐藏（占位提示一并清理）</summary>
+        /// <summary>同步置顶区可见性：有置顶卡片时显示；无置顶项时整块隐藏（占位提示一并清理）</summary>
         private void SyncPinnedAreaVisibility(bool hasPinned)
         {
             pinnedArea.Visibility = hasPinned ? Visibility.Visible : Visibility.Collapsed;
@@ -437,7 +523,7 @@ namespace SideDesk.Controls
         }
 
         /// <summary>
-        /// 增量插入新增的顶层面板 widget：不重建已有模块，保留滚动位置与各面板运行状态。
+        /// 增量插入新增的顶层面板 widget：不重建已有卡片，保留滚动位置与各面板运行状态。
         /// panelIndex 为面板在 Panels 中的下标（AddPanelToGroupOrTop 返回）。
         /// </summary>
         private void InsertPanelWidgetIncremental(PanelItem panel, int panelIndex)
@@ -451,7 +537,7 @@ namespace SideDesk.Controls
             }
             else
             {
-                // 首个模块加入时，滚动区里只有“右键添加模块”空态占位，先清掉
+                // 首个卡片加入时，滚动区里只有“右键添加卡片”空态占位，先清掉
                 if (_currentWindowConfig != null && _currentWindowConfig.Panels.Count == 1)
                     dynamicContent.Children.Clear();
 
@@ -515,8 +601,8 @@ namespace SideDesk.Controls
             var module = CreateModuleControl(defaultTitle, item, fillMode: fillContent);
 
             // 将 onAddClick 转为自定义菜单项（编辑模式下也保留：
-            // 否则新建模块自动进入编辑模式后，用户找不到“向当前模块添加内容”的入口，
-            // 只能走右键菜单重新新建一个同类模块）
+            // 否则新建卡片自动进入编辑模式后，用户找不到“向当前卡片添加内容”的入口，
+            // 只能走右键菜单重新新建一个同类卡片）
             if (onAddClick != null)
             {
                 var addMi = new MenuItem { Header = addMenuHeader };
@@ -572,18 +658,18 @@ namespace SideDesk.Controls
                 OnRemovePanel = (p) => RemovePanel(p),
                 OnShowSettings = (p, t) => ShowPanelSettingsDialog(p, t),
                 OnRenamePanel = (p, t) => PromptRenamePanel(p, t),
-                // 窗口级引用分享限制下发到每个模块（与模块自身限制叠加）
+                // 窗口级引用分享限制下发到每个卡片（与卡片自身限制叠加）
                 WindowEditBlocked = _currentWindowConfig?.IsShareReadOnly ?? false
             };
 
-            // 模块级分享（已同步且有窗口 ServerId 时显示；引用导入的模块需分享者授予再分享权限）
+            // 卡片级分享（已同步且有窗口 ServerId 时显示；引用导入的卡片需分享者授予再分享权限）
             var app = (App)Application.Current;
             if (!string.IsNullOrEmpty(item.ServerId)
                 && !string.IsNullOrEmpty(_currentWindowConfig?.ServerId)
                 && !string.IsNullOrEmpty(app.AppSettings.AccountToken)
                 && (item.ShareMode != "reference" || item.AllowReShare))
             {
-                // Tag=keepWhenReadOnly：只读模块若允许再分享，菜单项不被禁用
+                // Tag=keepWhenReadOnly：只读卡片若允许再分享，菜单项不被禁用
                 var shareMi = new MenuItem { Header = Framework.Lang.T("nativePanel.shareModule"), Tag = "keepWhenReadOnly" };
                 shareMi.Click += (_, _) => ShareModule_Click(item);
                 module.AddCustomMenuItem(shareMi);
@@ -592,7 +678,7 @@ namespace SideDesk.Controls
             return module;
         }
 
-        /// <summary>构建「置顶显示」可勾选菜单项：勾选后模块固定渲染在滚动区上方的置顶区，压缩滚动区高度</summary>
+        /// <summary>构建「置顶显示」可勾选菜单项：勾选后卡片固定渲染在滚动区上方的置顶区，压缩滚动区高度</summary>
         private MenuItem BuildPinMenuItem(PanelItem item)
         {
             var mi = new MenuItem
@@ -611,7 +697,7 @@ namespace SideDesk.Controls
         }
 
         /// <summary>
-        /// 将模块内容包入可约束高度的 ScrollViewer：
+        /// 将卡片内容包入可约束高度的 ScrollViewer：
         /// 设置了 item.PanelHeight 时应用固定高度并内部滚动；未设置时为自动高度。
         /// 内容未溢出（无法滚动）时将滑轮事件转发给外层页面，避免吞掉页面滚动。
         /// </summary>
@@ -626,8 +712,8 @@ namespace SideDesk.Controls
             if (item.PanelHeight.HasValue && item.PanelHeight.Value > 0)
             {
                 host.Height = item.PanelHeight.Value;
-                // 固定高度时，让内容至少擑满可视区域：短内容填满整个模块，长内容仍可滚动。
-                // 快捷组件传 fillViewport:false：项保持自然高度，不随面板高度拉伸。
+                // 固定高度时，让内容至少擑满可视区域：短内容填满整个卡片，长内容仍可滚动。
+                // 快捷卡片传 fillViewport:false：项保持自然高度，不随面板高度拉伸。
                 if (fillViewport && content is FrameworkElement cfe)
                 {
                     cfe.SetBinding(FrameworkElement.MinHeightProperty,
@@ -652,12 +738,12 @@ namespace SideDesk.Controls
             return host;
         }
 
-        /// <summary>模块高度拖拽进行中标志：为 true 时抑制顶层面板的拖拽调序逻辑，避免二者冲突。</summary>
+        /// <summary>卡片高度拖拽进行中标志：为 true 时抑制顶层面板的拖拽调序逻辑，避免二者冲突。</summary>
         private bool _resizingModule;
 
         /// <summary>
-        /// 创建模块底部拖拽手柄：拖拽调整内容区高度并持久化到 item.PanelHeight；双击恢复自动高度。
-        /// emphasized：无外框卡片（如快捷组件）的手柄悬浮在内容下方间隙中、无背景衬托，
+        /// 创建卡片底部拖拽手柄：拖拽调整内容区高度并持久化到 item.PanelHeight；双击恢复自动高度。
+        /// emphasized：无外框卡片（如快捷卡片）的手柄悬浮在内容下方间隙中、无背景衬托，
         /// 需加大命中区域与线条可见度，否则用户无法发现。
         /// </summary>
         private Border CreateResizeGrip(ScrollViewer host, PanelItem item, bool emphasized = false)
@@ -693,7 +779,7 @@ namespace SideDesk.Controls
                 if (e.ClickCount == 2)
                 {
                     host.ClearValue(FrameworkElement.HeightProperty);
-                    // 同时清除内容的 MinHeight 绑定（固定高度时曾绑定到视口高度），否则模块仍被钉在原高度无法收缩
+                    // 同时清除内容的 MinHeight 绑定（固定高度时曾绑定到视口高度），否则卡片仍被钉在原高度无法收缩
                     if (host.Content is FrameworkElement contentFe)
                         System.Windows.Data.BindingOperations.ClearBinding(contentFe, FrameworkElement.MinHeightProperty);
                     item.PanelHeight = null;
@@ -740,8 +826,8 @@ namespace SideDesk.Controls
         }
 
         /// <summary>
-        /// 为未走 WrapWidget 的自定义卡片模块统一附加「可调整高度」能力：
-        /// 优先将拖拽手柄放入卡片外框内部底部（与 WrapWidget 模块视觉一致，而非悬浮在卡片下方）；
+        /// 为未走 WrapWidget 的自定义卡片统一附加「可调整高度」能力：
+        /// 优先将拖拽手柄放入卡片外框内部底部（与 WrapWidget 卡片视觉一致，而非悬浮在卡片下方）；
         /// 编辑模式才显示手柄并允许拖拽。WrapWidget 已自带手柄，不在此重复包裹（通过 Uid 标记区分）。
         /// </summary>
         private UIElement WrapResizable(FrameworkElement widget, PanelItem item)
@@ -794,8 +880,8 @@ namespace SideDesk.Controls
                 return card;
             }
 
-            // 回退：非标准外框卡片（如快捷组件直接返回裸内容），在顶层包裹。
-            // 此类模块没有卡片背景衬托，手柄悬浮在内容下方间隙中，必须用强调样式才可见。
+            // 回退：非标准外框卡片（如快捷卡片直接返回裸内容），在顶层包裹。
+            // 此类卡片没有卡片背景衬托，手柄悬浮在内容下方间隙中，必须用强调样式才可见。
             var spacing = widget.Margin;
             widget.Margin = new Thickness(0);
             var outerHost = BuildResizableHost(widget, item);
@@ -841,9 +927,9 @@ namespace SideDesk.Controls
         }
 
         /// <summary>
-        /// 模块删除后通知服务端软删除对应 item（Group 类型由服务端连带删子项）。
+        /// 卡片删除后通知服务端软删除对应 item（Group 类型由服务端连带删子项）。
         /// 旧版只删本地不通知服务端，残留的 item 会被结构对账“补齐缺失”重新带回本地，
-        /// 造成已删除模块“复活”/导入副本重复。
+        /// 造成已删除卡片“复活”/导入副本重复。
         /// </summary>
         private static void NotifyServerDeletePanel(PanelItem item)
         {
@@ -861,12 +947,12 @@ namespace SideDesk.Controls
             }
         }
 
-        /// <summary>模块级分享：创建分享链接（传入 itemServerId）</summary>
+        /// <summary>卡片级分享：创建分享链接（传入 itemServerId）</summary>
         private async void ShareModule_Click(PanelItem item)
         {
             var barServerId = _currentWindowConfig?.ServerId;
 
-            // 如果模块还没有 ServerId，调用轻量接口创建
+            // 如果卡片还没有 ServerId，调用轻量接口创建
             if (string.IsNullOrEmpty(item.ServerId))
             {
                 if (string.IsNullOrEmpty(barServerId))
@@ -884,7 +970,7 @@ namespace SideDesk.Controls
 
             var itemServerId = item.ServerId;
 
-            // 复用统一的创建分享对话框（模块级：附带 itemServerId）
+            // 复用统一的创建分享对话框（卡片级：附带 itemServerId）
             ThemedMessageBox.ShowCreateShareDialog(Window.GetWindow(this), barServerId!, itemServerId, Framework.Lang.T("nativePanel.shareModule"));
         }
 
@@ -937,7 +1023,7 @@ namespace SideDesk.Controls
             return false;
         }
 
-        /// <summary>模块删除后延迟触发 GC，回收大对象内存（图片/位图等）。
+        /// <summary>卡片删除后延迟触发 GC，回收大对象内存（图片/位图等）。
         /// 使用延迟避免阻塞 UI；仅收集 Gen0/Gen1 以降低性能影响。</summary>
         private static void RequestGCAfterRemoval()
         {
@@ -969,7 +1055,7 @@ namespace SideDesk.Controls
 
         #region Panel Builders
 
-        /// <summary>构建分组容器：可展开/收起、右键添加模块</summary>
+        /// <summary>构建分组容器：可展开/收起、右键添加卡片</summary>
         private UIElement BuildGroupWidget(PanelItem item)
         {
             item.ChildPanels ??= new List<PanelItem>();
@@ -988,19 +1074,19 @@ namespace SideDesk.Controls
                 Background = Brushes.Transparent,
                 Foreground = (Brush)FindResource("BrushTextMuted"),
                 BorderThickness = new Thickness(0),
-                FontSize = 9,
+                FontSize = FS(9),
                 Padding = new Thickness(0),
                 Cursor = Cursors.Hand
             };
             module.InsertHeaderLeft(arrowBtn);
 
-            // 内容区（子面板）：高度完全由内部组件撑开，分组自身不设固定高度、不加滚动条
+            // 内容区（子面板）：高度完全由内部卡片撑开，分组自身不设固定高度、不加滚动条
             var contentPanel = new StackPanel
             {
                 Visibility = item.IsExpanded ? Visibility.Visible : Visibility.Collapsed
             };
 
-            // 右键菜单：添加模块到分组
+            // 右键菜单：添加卡片到分组
             var groupContextMenu = new ContextMenu();
             int pendingGroupInsertIdx = -1; // 右键位置对应的插入索引
             groupContextMenu.Opened += (s, ev) =>
@@ -1123,8 +1209,8 @@ namespace SideDesk.Controls
                 if (child.IsPinned) continue; // 已置顶的子面板由 RenderPanels 提取到置顶区渲染
                 var widget = CreatePanelWidget(child);
                 if (widget == null) continue;
-                // 与顶层渲染一致：未走 WrapWidget 的自定义卡片模块（如快捷组件）也附加可调高能力，
-                // 否则编辑模式下分组内的此类模块没有底部拖拽手柄、无法调整高度（PanelHeight 也不生效）
+                // 与顶层渲染一致：未走 WrapWidget 的自定义卡片（如快捷卡片）也附加可调高能力，
+                // 否则编辑模式下分组内的此类卡片没有底部拖拽手柄、无法调整高度（PanelHeight 也不生效）
                 if (widget is FrameworkElement cwfe && cwfe.Uid != "wrapHandled")
                     widget = WrapResizable(cwfe, child);
                 contentPanel.Children.Add(widget);
@@ -1144,7 +1230,7 @@ namespace SideDesk.Controls
             return module;
         }
 
-        /// <summary>模块/分组设置对话框：修改标题和背景色</summary>
+        /// <summary>卡片/分组设置对话框：修改标题和背景色</summary>
         private void ShowPanelSettingsDialog(PanelItem item, string defaultTitle)
         {
             bool isGroup = item.Type == PanelType.Group;
@@ -1174,7 +1260,7 @@ namespace SideDesk.Controls
             });
             var titleBox = new EmojiTextBox
             {
-                // 未自定义标题的模块 Title 为 null，回退显示默认标题（与模块上实际显示的一致），避免空名称
+                // 未自定义标题的卡片 Title 为 null，回退显示默认标题（与卡片上实际显示的一致），避免空名称
                 Text = string.IsNullOrEmpty(item.Title) ? defaultTitle : item.Title,
                 Margin = new Thickness(0, 0, 0, 14)
             };
@@ -1333,7 +1419,7 @@ namespace SideDesk.Controls
             customDock.Children.Add(customBox);
             var applyColorBtn = new Button
             {
-                Content = Framework.Lang.T("common.apps"), FontSize = 10, Padding = new Thickness(8, 3, 8, 3),
+                Content = Framework.Lang.T("common.apps"), FontSize = FS(10), Padding = new Thickness(8, 3, 8, 3),
                 Margin = new Thickness(6, 0, 0, 0),
                 Style = (Style)FindResource("GhostButtonStyle")
             };
@@ -1384,8 +1470,8 @@ namespace SideDesk.Controls
                     item.TeamId = newTeamId;
                     item.TeamName = newTeamName;
                 }
-                // 团队模块每次保存都对齐服务端（修复历史脏数据：本地已是团队但服务器 corp_id 仍为空）；
-                // 个人模块仅在归属变化时推送；分组内子模块不在此补创建，留给全量同步
+                // 团队卡片每次保存都对齐服务端（修复历史脏数据：本地已是团队但服务器 corp_id 仍为空）；
+                // 个人卡片仅在归属变化时推送；分组内子卡片不在此补创建，留给全量同步
                 bool needSync = ownerChanged || item.OwnerType == "team";
                 if (needSync)
                 {
@@ -1413,7 +1499,7 @@ namespace SideDesk.Controls
             dialog.ShowDialog();
         }
 
-        /// <summary>构建“模块设置”菜单项</summary>
+        /// <summary>构建“卡片设置”菜单项</summary>
         private MenuItem BuildSettingsMenuItem(PanelItem item, string defaultTitle)
         {
             var mi = new MenuItem { Header = Framework.Lang.T("common.moduleSettings") };
@@ -1528,7 +1614,7 @@ namespace SideDesk.Controls
             _quickGroupUIService = new QuickGroupUIService(_groupPanel);
             _quickGroupUIService.OwnerWindow = _mainWindow;
             _quickGroupUIService.OwnerWindowConfig = _currentWindowConfig;
-            // 绑定模式下标题栏是面板调序拖拽手柄，编辑模式时显示移动光标（与其他模块标题栏一致）
+            // 绑定模式下标题栏是面板调序拖拽手柄，编辑模式时显示移动光标（与其他卡片标题栏一致）
             _quickGroupUIService.IsEditMode = _isEditMode;
 
             // 分组删除时门面已移除对应面板，这里只需保存并重绘
@@ -1558,7 +1644,7 @@ namespace SideDesk.Controls
             var buffer = new StackPanel { VerticalAlignment = VerticalAlignment.Top };
             buffer.Children.Add(content);
             var host = BuildResizableHost(buffer, item, fillViewport: false);
-            // 快捷组件内部不显示滚动条（保留滚轮滚动）：高度不足时不出现右侧竖条，避免卡片内视觉割裂
+            // 快捷卡片内部不显示滚动条（保留滚轮滚动）：高度不足时不出现右侧竖条，避免卡片内视觉割裂
             host.VerticalScrollBarVisibility = ScrollBarVisibility.Hidden;
             if (!_isEditMode) return host;
             var stack = new StackPanel();
@@ -1569,9 +1655,9 @@ namespace SideDesk.Controls
 
         private UIElement BuildStickyNotesWidget(PanelItem item)
         {
-            // 便签数据 per-panel 存储：新建/导入的模块一律从空列表开始。
-            // 旧版全局库（sticky-notes.json）已在升级后首次启动时由 WindowConfigManager.Load 一次性迁入遗留模块，
-            // 不能在此处再播种，否则导入分享得到的新模块会被全局遗留数据污染
+            // 便签数据 per-panel 存储：新建/导入的卡片一律从空列表开始。
+            // 旧版全局库（sticky-notes.json）已在升级后首次启动时由 WindowConfigManager.Load 一次性迁入遗留卡片，
+            // 不能在此处再播种，否则导入分享得到的新卡片会被全局遗留数据污染
             item.StickyNotes ??= new List<StickyNote>();
 
             var container = new StackPanel();
@@ -1635,7 +1721,7 @@ namespace SideDesk.Controls
                     // 删除按钮
                     var delBtn = new Button
                     {
-                        Content = "✕", Width = 20, Height = 20, FontSize = 10,
+                        Content = "✕", Width = 20, Height = 20, FontSize = FS(10),
                         Background = Brushes.Transparent,
                         Foreground = (Brush)FindResource("BrushTextMuted"),
                         BorderThickness = new Thickness(0), Padding = new Thickness(0),
@@ -1729,7 +1815,7 @@ namespace SideDesk.Controls
 
             var favModule = WrapWidget(Framework.Lang.T("nativePanel.clipboardFavorites"), container, item, () => ShowClipboardPickDialog(item));
 
-            // 拖拽收藏：从剪贴板历史弹窗拖条目到本模块即添加收藏
+            // 拖拽收藏：从剪贴板历史弹窗拖条目到本卡片即添加收藏
             favModule.AllowDrop = true;
             favModule.DragOver += (s, e) =>
             {
@@ -1888,9 +1974,12 @@ namespace SideDesk.Controls
 
         private UIElement BuildSystemMonitorWidget(PanelItem item)
         {
+            // 只展示系统指标：键盘敲击与鼠标移动计数不进卡片（底部状态栏已有常驻展示，
+            // 卡片里再放一份属于重复信息且挤占 CPU/内存/网络的纵向空间）；钩子服务仍照常运行供状态栏取数
             var container = new StackPanel();
-            CreateKeyCountPanel(container);
-            CreateMouseDistancePanel(container);
+            CreateCpuPanel(container);
+            CreateMemoryPanel(container);
+            CreateNetworkPanel(container);
             return WrapWidget(Framework.Lang.T("nativePanel.systemInfo"), container, item);
         }
 
@@ -1934,8 +2023,8 @@ namespace SideDesk.Controls
         }
 
         /// <summary>
-        /// 构建百度搜索组件：标准 ModuleControl 外框（标题栏/下拉菜单/拖拽手柄），内容区为内嵌 WebView2 加载百度首页。
-        /// 填充模式：内容区无滚动条，WebView 始终 100% 铺满组件内容区（网页自带滚动）。
+        /// 构建百度搜索卡片：标准 ModuleControl 外框（标题栏/下拉菜单/拖拽手柄），内容区为内嵌 WebView2 加载百度首页。
+        /// 填充模式：内容区无滚动条，WebView 始终 100% 铺满卡片内容区（网页自带滚动）。
         /// </summary>
         private UIElement BuildWebBaiduWidget(PanelItem item)
         {
@@ -2258,7 +2347,7 @@ namespace SideDesk.Controls
                 blinkTimer = null;
             };
 
-            // 每个信号灯模块只有一组灯（单个 PanelItem 内记录多个灯），菜单项用“设置信号灯”更达意
+            // 每个信号灯卡片只有一组灯（单个 PanelItem 内记录多个灯），菜单项用“设置信号灯”更达意
             return WrapWidget(Framework.Lang.T("nativePanel.signalLight"), container, item, () => ShowSignalLightEditDialog(item), null, Framework.Lang.T("nativePanel.setSignalLight"));
         }
 
@@ -2368,7 +2457,7 @@ namespace SideDesk.Controls
                     var rightBtns = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
                     var editBtn = new Button
                     {
-                        Content = "✎", Width = 22, Height = 22, FontSize = 10,
+                        Content = "✎", Width = 22, Height = 22, FontSize = FS(10),
                         Background = Brushes.Transparent,
                         Foreground = (Brush)FindResource("BrushTextSec"),
                         BorderThickness = new Thickness(0), Padding = new Thickness(0),
@@ -2379,7 +2468,7 @@ namespace SideDesk.Controls
                     rightBtns.Children.Add(editBtn);
                     var delBtn = new Button
                     {
-                        Content = "✕", Width = 22, Height = 22, FontSize = 10,
+                        Content = "✕", Width = 22, Height = 22, FontSize = FS(10),
                         Background = Brushes.Transparent,
                         Foreground = (Brush)FindResource("BrushTextMuted"),
                         BorderThickness = new Thickness(0), Padding = new Thickness(0),
@@ -2575,7 +2664,7 @@ namespace SideDesk.Controls
 
                         var delBtn = new Button
                         {
-                            Content = "✕", Width = 22, Height = 22, FontSize = 10,
+                            Content = "✕", Width = 22, Height = 22, FontSize = FS(10),
                             Background = Brushes.Transparent,
                             Foreground = (Brush)FindResource("BrushTextMuted"),
                             BorderThickness = new Thickness(0), Padding = new Thickness(0),
@@ -2839,7 +2928,7 @@ namespace SideDesk.Controls
             var titleBlock = new Emoji.Wpf.TextBlock
             {
                 Text = todo.Text,
-                FontSize = 15,
+                FontSize = FS(15),
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = (Brush)FindResource("BrushTextMain"),
                 Margin = new Thickness(0, 0, 0, 14)
@@ -2979,7 +3068,7 @@ namespace SideDesk.Controls
             return module;
         }
 
-        // ==================== 图片轮播模块 ====================
+        // ==================== 图片轮播卡片 ====================
 
         /// <summary>加载指定目录下的图片文件路径列表</summary>
         private List<string> LoadCarouselImages(PanelItem item)
@@ -3025,7 +3114,7 @@ namespace SideDesk.Controls
             // 序号标签
             var infoLabel = new TextBlock
             {
-                FontSize = 10,
+                FontSize = FS(10),
                 Foreground = Brushes.White,
                 Background = new SolidColorBrush(Color.FromArgb(120, 0, 0, 0)),
                 Padding = new Thickness(4, 1, 4, 1),
@@ -3245,8 +3334,11 @@ namespace SideDesk.Controls
                 CornerRadius = new CornerRadius(4)
             };
 
-            // 右键菜单：计时器级 + 模块级操作
+            // 右键菜单：计时器级 + 卡片级操作
             var cardMenu = new ContextMenu();
+            var editMenuItem = new MenuItem { Header = Framework.Lang.T("common.edit") };
+            editMenuItem.Click += (s, e) => ShowTimerEditDialog(timer, panelItem);
+            cardMenu.Items.Add(editMenuItem);
             var deleteMenuItem = new MenuItem { Header = Framework.Lang.T("nativePanel.deleteTimer") };
             deleteMenuItem.Click += (s, e) => DeleteTimer(timer, panelItem);
             cardMenu.Items.Add(deleteMenuItem);
@@ -3267,7 +3359,7 @@ namespace SideDesk.Controls
             var timeDisplay = new Emoji.Wpf.TextBlock
             {
                 Text = FormatTimeSpan(timer.GetElapsed()),
-                FontSize = 24,
+                FontSize = FS(24),
                 FontWeight = FontWeights.Bold,
                 FontFamily = new FontFamily("Consolas"),
                 Foreground = timer.IsRunning ? (Brush)FindResource("BrushAccent") : (Brush)FindResource("BrushTextMain"),
@@ -3302,7 +3394,7 @@ namespace SideDesk.Controls
                 Content = timer.IsRunning ? BuildStopIcon() : BuildPlayIcon(),
                 Width = 22,
                 Height = 22,
-                FontSize = 10,
+                FontSize = FS(10),
                 Background = timer.IsRunning ? Brushes.IndianRed : new SolidColorBrush(Color.FromRgb(52, 152, 219)),
                 Foreground = Brushes.White,
                 BorderThickness = new Thickness(0),
@@ -3331,11 +3423,18 @@ namespace SideDesk.Controls
                 }
                 else
                 {
+                    TimeSpan segment = TimeSpan.Zero;
                     if (timer.StartTime.HasValue)
-                        timer.ElapsedTime += (DateTime.Now - timer.StartTime.Value);
+                    {
+                        segment = DateTime.Now - timer.StartTime.Value;
+                        timer.ElapsedTime += segment;
+                    }
                     timer.IsRunning = false;
                     timer.StartTime = null;
                     AccumulateToDailyRecord(timer);
+                    // 勾选「记录到每日活跃」时：把本次时段时长（分钟）按计时器名称写入每日活跃数据
+                    if (timer.StoreToDailyActivity && segment.TotalSeconds > 0)
+                        WriteTimerToDailyActivity(timer, segment);
                     _configManager?.Save();
                     RenderPanels();
                 }
@@ -3424,7 +3523,7 @@ namespace SideDesk.Controls
         }
 
         /// <summary>
-        /// 删除指定计时器；若删除后模块为空，询问是否删除整个计时器模块。
+        /// 删除指定计时器；若删除后卡片为空，询问是否删除整个计时器卡片。
         /// 供编辑模式的✕按钮与右键菜单共用。
         /// </summary>
         private void DeleteTimer(TimerItem timer, PanelItem panelItem)
@@ -3433,7 +3532,7 @@ namespace SideDesk.Controls
             if (!panelItem.TimerItems.Remove(timer)) return;
             _configManager?.Save();
 
-            // 如果删除后没有计时器了，询问是否删除整个模块
+            // 如果删除后没有计时器了，询问是否删除整个卡片
             if (panelItem.TimerItems.Count == 0)
             {
                 var result = MessageBox.Show(
@@ -3497,30 +3596,55 @@ namespace SideDesk.Controls
             // 用户可以选择继续点击开始按钮继续计时
         }
 
+        /// <summary>
+        /// 将计时器本次时段时长写入「每日活跃」数据（服务端）：类型=计时器名称，数值=分钟。
+        /// 作用域跟随当前窗口（团队=CorpId，个人=null）。未登录/后端不可达时静默失败。
+        /// </summary>
+        private void WriteTimerToDailyActivity(TimerItem timer, TimeSpan segment)
+        {
+            string type = string.IsNullOrWhiteSpace(timer.Name) ? Framework.Lang.T("common.timer") : timer.Name.Trim();
+            string? corpId = _currentWindowConfig?.OwnerType == "team" ? _currentWindowConfig?.CorpId : null;
+            _ = Services.DailyActivityService.Instance.AddAsync(corpId, type, DateTime.Now, segment.TotalMinutes);
+        }
+
         private void ShowTimerEditDialog(TimerItem timer, PanelItem panelItem)
         {
             var dialog = new Window
             {
                 Title = Framework.Lang.T("nativePanel.editTimer"),
                 Width = 350,
-                Height = 250,
+                SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Owner = _mainWindow,
                 ResizeMode = ResizeMode.NoResize,
-                Background = (Brush)FindResource("BrushDialogBG")
+                ShowInTaskbar = false,
+                Background = (Brush)FindResource("BrushDialogBG"),
+                Foreground = (Brush)FindResource("BrushTextMain")
             };
+            // 标题栏跟随当前主题（深色模式下的 DWM 标题栏）
+            dialog.SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(dialog);
 
             var mainPanel = new StackPanel { Margin = new Thickness(20) };
 
             // 名称
             mainPanel.Children.Add(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("common.nameLabel"), Margin = new Thickness(0, 0, 0, 5), Foreground = (Brush)FindResource("BrushTextMain") });
-            var nameBox = new TextBox { Text = timer.Name, Margin = new Thickness(0, 0, 0, 15) };
+            var nameBox = new TextBox { Text = timer.Name, Margin = new Thickness(0, 0, 0, 15), Style = (Style)FindResource("GlobalTextBoxStyle") };
             mainPanel.Children.Add(nameBox);
 
             // 超时时间
             mainPanel.Children.Add(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("nativePanel.maxDurationSeconds"), Margin = new Thickness(0, 0, 0, 5), Foreground = (Brush)FindResource("BrushTextMain") });
-            var timeoutBox = new TextBox { Text = timer.TimeoutSeconds.ToString(), Margin = new Thickness(0, 0, 0, 15) };
+            var timeoutBox = new TextBox { Text = timer.TimeoutSeconds.ToString(), Margin = new Thickness(0, 0, 0, 15), Style = (Style)FindResource("GlobalTextBoxStyle") };
             mainPanel.Children.Add(timeoutBox);
+
+            // 记录到每日活跃（按计时器名称累计时长）
+            var storeChk = new CheckBox
+            {
+                Content = Framework.Lang.T("nativePanel.timerStoreToDailyActivity"),
+                IsChecked = timer.StoreToDailyActivity,
+                Style = (Style)FindResource("DarkCheckBoxStyle"),
+                Margin = new Thickness(0, 0, 0, 15)
+            };
+            mainPanel.Children.Add(storeChk);
 
             // 按钮
             var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
@@ -3529,10 +3653,8 @@ namespace SideDesk.Controls
             {
                 Content = Framework.Lang.T("common.save"),
                 Width = 80,
-                Height = 30,
                 Margin = new Thickness(0, 0, 8, 0),
-                Background = (Brush)FindResource("BrushAccent"),
-                Foreground = (Brush)FindResource("BrushAccentText")
+                Style = (Style)FindResource("PrimaryButtonStyle")
             };
             saveBtn.Click += (s, e) =>
             {
@@ -3541,6 +3663,7 @@ namespace SideDesk.Controls
                 {
                     timer.TimeoutSeconds = timeout;
                 }
+                timer.StoreToDailyActivity = storeChk.IsChecked == true;
                 _configManager?.Save();
                 RenderPanels();
                 dialog.Close();
@@ -3550,7 +3673,7 @@ namespace SideDesk.Controls
             {
                 Content = Framework.Lang.T("common.cancel"),
                 Width = 80,
-                Height = 30
+                Style = (Style)FindResource("StandardButtonStyle")
             };
             cancelBtn.Click += (s, e) => dialog.Close();
 
@@ -3893,7 +4016,7 @@ namespace SideDesk.Controls
                         // 删除按钮
                         var delBtn = new Button
                         {
-                            Content = "✕", FontSize = 10,
+                            Content = "✕", FontSize = FS(10),
                             Padding = new Thickness(3, 0, 3, 0),
                             Background = Brushes.Transparent,
                             Foreground = (Brush)FindResource("BrushTextMuted"),
@@ -3911,7 +4034,7 @@ namespace SideDesk.Controls
                         // 打开按钮
                         var openBtn = new Button
                         {
-                            Content = "📂", FontSize = 10,
+                            Content = "📂", FontSize = FS(10),
                             Padding = new Thickness(3, 0, 3, 0),
                             Background = Brushes.Transparent,
                             BorderThickness = new Thickness(0),
@@ -3946,7 +4069,7 @@ namespace SideDesk.Controls
                             : new Emoji.Wpf.TextBlock
                             {
                                 Text = isFolder ? "📁" : "📄",
-                                FontSize = 15,
+                                FontSize = FS(15),
                                 VerticalAlignment = VerticalAlignment.Center,
                                 Margin = new Thickness(0, 0, 5, 0)
                             };
@@ -4519,7 +4642,7 @@ namespace SideDesk.Controls
         /// <summary>弹出显示布局：文件夹图标+label 触发按钮，点击弹出浮层列出所有文件项（参考快捷组弹出菜单效果）</summary>
         private UIElement BuildFileAreaPopupContent(PanelItem item)
         {
-            // label：取模块标题（去掉开头 emoji 避免与文件夹图标重复）并附加项数
+            // label：取卡片标题（去掉开头 emoji 避免与文件夹图标重复）并附加项数
             string title = string.IsNullOrEmpty(item.Title) ? Framework.Lang.T("common.fileArea") : item.Title;
             string label = StripLeadingEmoji(title);
             if (label.Length == 0) label = Framework.Lang.T("common.fileArea");
@@ -4530,7 +4653,7 @@ namespace SideDesk.Controls
             triggerContent.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = "📁",
-                FontSize = 30,
+                FontSize = FS(30),
                 HorizontalAlignment = HorizontalAlignment.Center
             });
             triggerContent.Children.Add(new Emoji.Wpf.TextBlock
@@ -4658,7 +4781,7 @@ namespace SideDesk.Controls
                 : new Emoji.Wpf.TextBlock
                 {
                     Text = isFolder ? "📁" : "📄",
-                    FontSize = 15,
+                    FontSize = FS(15),
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(0, 0, 7, 0)
                 };
@@ -5099,7 +5222,7 @@ namespace SideDesk.Controls
             copyBtn.Click += (s, e) => { doCopy(); e.Handled = true; };
             row.MouseLeftButtonUp += (s, e) => { if (!e.Handled) doCopy(); };
 
-            // 拖拽到「剪贴板收藏」模块：按住移动超过阈值发起拖拽（单击仍为复制）
+            // 拖拽到「剪贴板收藏」卡片：按住移动超过阈值发起拖拽（单击仍为复制）
             Point? dragStart = null;
             row.MouseLeftButtonDown += (s, e) => { dragStart = e.GetPosition(null); };
             row.MouseMove += (s, e) =>
@@ -5209,7 +5332,45 @@ namespace SideDesk.Controls
 
         #endregion
 
-        #region 添加模块菜单事件
+        #region 添加卡片菜单事件
+
+        /// <summary>根据处理方法名调用对应的添加卡片处理函数（供 AddCardDialog 使用）</summary>
+        internal void InvokeAddCardHandler(string handlerName)
+        {
+            var args = new RoutedEventArgs();
+            switch (handlerName)
+            {
+                case "AddGroupPanel_Click": AddGroupPanel_Click(this, args); break;
+                case "AddQuickGroupPanel_Click": AddQuickGroupPanel_Click(this, args); break;
+                case "AddStickyNotesPanel_Click": AddStickyNotesPanel_Click(this, args); break;
+                case "AddTodoPanel_Click": AddTodoPanel_Click(this, args); break;
+                case "AddClipboardPanel_Click": AddClipboardPanel_Click(this, args); break;
+                case "AddSystemMonitorPanel_Click": AddSystemMonitorPanel_Click(this, args); break;
+                case "AddScreenTimePanel_Click": AddScreenTimePanel_Click(this, args); break;
+                case "AddFileAreaPanel_Click": AddFileAreaPanel_Click(this, args); break;
+                case "AddDataDashboard_Click": AddDataDashboard_Click(this, args); break;
+                case "AddTimerPanel_Click": AddTimerPanel_Click(this, args); break;
+                case "AddCountdownPanel_Click": AddCountdownPanel_Click(this, args); break;
+                case "AddPomodoroPanel_Click": AddPomodoroPanel_Click(this, args); break;
+                case "AddSignalLightPanel_Click": AddSignalLightPanel_Click(this, args); break;
+                case "AddCheckInPanel_Click": AddCheckInPanel_Click(this, args); break;
+                case "AddDailyActivityPanel_Click": AddDailyActivityPanel_Click(this, args); break;
+                case "AddCalendarPanel_Click": AddCalendarPanel_Click(this, args); break;
+                case "AddFriendPanel_Click": AddFriendPanel_Click(this, args); break;
+                case "AddWebBaiduPanel_Click": AddWebBaiduPanel_Click(this, args); break;
+                case "AddFromTeamLibrary_Click": AddFromTeamLibrary_Click(this, args); break;
+            }
+        }
+
+        /// <summary>显示添加卡片对话框</summary>
+        private void ShowAddCardDialog()
+        {
+            var dialog = new AddCardDialog(handlerName => InvokeAddCardHandler(handlerName))
+            {
+                Owner = Window.GetWindow(this)
+            };
+            dialog.ShowDialog();
+        }
 
         private void AddPanel(PanelType type)
         {
@@ -5320,7 +5481,7 @@ namespace SideDesk.Controls
             PanelItem newPanelItem;
             if (type == PanelType.Timer)
             {
-                // 计时器支持 0-n 个：新建组件时默认带 1 个，避免空模块
+                // 计时器支持 0-n 个：新建卡片时默认带 1 个，避免空卡片
                 newPanelItem = new PanelItem 
                 { 
                     Type = PanelType.Timer,
@@ -5385,7 +5546,7 @@ namespace SideDesk.Controls
         private void AddScreenTimePanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.ScreenTime);
         private void AddWebBaiduPanel_Click(object sender, RoutedEventArgs e) => AddPanel(PanelType.WebBaidu);
 
-        /// <summary>打开团队组件库，选择团队共享模块添加到当前窗口（数据共享互通）</summary>
+        /// <summary>打开团队卡片库，选择团队共享卡片添加到当前窗口（数据共享互通）</summary>
         private void AddFromTeamLibrary_Click(object sender, RoutedEventArgs e)
         {
             var app = (App)Application.Current;
@@ -5510,7 +5671,7 @@ namespace SideDesk.Controls
             AppendDataTemplateMarketEntry(menu);
         }
 
-        /// <summary>数据块菜单末尾追加「数据模板市场」入口：打开 web 模板市场在线选择模板并动态配置为数据模块</summary>
+        /// <summary>数据块菜单末尾追加「数据模板市场」入口：打开 web 模板市场在线选择模板并动态配置为数据卡片</summary>
         private static void AppendDataTemplateMarketEntry(MenuItem menu)
         {
             menu.Items.Add(new Separator());
@@ -5533,7 +5694,7 @@ namespace SideDesk.Controls
             Value = "--"
         };
 
-        /// <summary>根据模版新建一个包含单个数据项的数据看板模块</summary>
+        /// <summary>根据模版新建一个包含单个数据项的数据看板卡片</summary>
         private void AddDataBlockPanel(Models.DataTemplate tpl)
         {
             if (_currentWindowConfig == null || _configManager == null) return;
@@ -5546,7 +5707,7 @@ namespace SideDesk.Controls
             AddTopLevelPanel(newPanel);
         }
 
-        /// <summary>从数据模板市场添加配置好的数据模块（由 DataTemplateMarketBridge 本地桥在 UI 线程调用）</summary>
+        /// <summary>从数据模板市场添加配置好的数据卡片（由 DataTemplateMarketBridge 本地桥在 UI 线程调用）</summary>
         public void AddDataTemplateFromMarket(Models.DataTemplate tpl)
         {
             if (_currentWindowConfig == null || _configManager == null) return;
@@ -5570,7 +5731,7 @@ namespace SideDesk.Controls
             Services.DataPollingService.Instance.SyncFromConfigs(_configManager);
         }
 
-        /// <summary>根据模版向分组内添加一个数据看板模块</summary>
+        /// <summary>根据模版向分组内添加一个数据看板卡片</summary>
         private void AddDataBlockToGroup(PanelItem groupItem, Models.DataTemplate tpl, int insertIndex = -1)
         {
             InsertChildPanel(groupItem, new PanelItem
@@ -5618,10 +5779,10 @@ namespace SideDesk.Controls
             AddTopLevelPanel(newPanel);
         }
 
-        /// <summary>顶层「添加模块」新面板添加到顶层（支持按右键位置插入）；分组内部添加请用 AddModuleToGroup。返回插入下标</summary>
+        /// <summary>顶层「添加卡片」新面板添加到顶层（支持按右键位置插入）；分组内部添加请用 AddModuleToGroup。返回插入下标</summary>
         private int AddPanelToGroupOrTop(PanelItem newPanel)
         {
-            // 若右键点击位置落在两个顶层模块之间，则插入到该位置
+            // 若右键点击位置落在两个顶层卡片之间，则插入到该位置
             if (_pendingInsertIndex is int insertIdx)
             {
                 _pendingInsertIndex = null;
@@ -5632,18 +5793,18 @@ namespace SideDesk.Controls
                     return insertIdx;
                 }
             }
-            // 顶层「添加模块」始终添加到顶层；只有在分组的右键菜单里添加才会进入分组（走 AddModuleToGroup）
+            // 顶层「添加卡片」始终添加到顶层；只有在分组的右键菜单里添加才会进入分组（走 AddModuleToGroup）
             _currentWindowConfig!.Panels.Add(newPanel);
             return _currentWindowConfig.Panels.Count - 1;
         }
 
-        /// <summary>新增顶层模块：保存配置并增量插入 widget，不重建已有模块（避免整 bar 闪烁/丢滚动位置）</summary>
+        /// <summary>新增顶层卡片：保存配置并增量插入 widget，不重建已有卡片（避免整 bar 闪烁/丢滚动位置）</summary>
         private void AddTopLevelPanel(PanelItem newPanel)
         {
             int index = AddPanelToGroupOrTop(newPanel);
             _configManager?.Save();
             InsertPanelWidgetIncremental(newPanel, index);
-            // 增量插入不经过 RenderPanels，需显式广播：让其他显示同一 bar 的侧边栏同步出现新组件
+            // 增量插入不经过 RenderPanels，需显式广播：让其他显示同一 bar 的侧边栏同步出现新卡片
             BroadcastBarToOtherWindows();
         }
 
@@ -5707,7 +5868,7 @@ namespace SideDesk.Controls
 
             var container = new StackPanel();
 
-            // 按模块指定的 Id 顺序取出存在的员工
+            // 按卡片指定的 Id 顺序取出存在的员工
             var shown = item.DigitalEmployeeIds
                 .Select(id => DigitalEmployees.GetById(id))
                 .Where(emp => emp != null)
@@ -5830,7 +5991,7 @@ namespace SideDesk.Controls
                 card.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = emp.Role,
-                    FontSize = 10,
+                    FontSize = FS(10),
                     HorizontalAlignment = HorizontalAlignment.Center,
                     TextAlignment = TextAlignment.Center,
                     Foreground = (Brush)FindResource("BrushTextMuted"),
@@ -5970,7 +6131,7 @@ namespace SideDesk.Controls
             var nameCol = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             nameCol.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = emp.Name, FontSize = 18, FontWeight = FontWeights.Bold,
+                Text = emp.Name, FontSize = FS(18), FontWeight = FontWeights.Bold,
                 Foreground = (Brush)FindResource("BrushTextMain")
             });
             if (!string.IsNullOrWhiteSpace(emp.Role) || !string.IsNullOrWhiteSpace(emp.Department))
@@ -6055,7 +6216,7 @@ namespace SideDesk.Controls
             var nameCol = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             nameCol.Children.Add(new Emoji.Wpf.TextBlock
             {
-                Text = emp.Name, FontSize = 14, FontWeight = FontWeights.SemiBold,
+                Text = emp.Name, FontSize = FS(14), FontWeight = FontWeights.SemiBold,
                 Foreground = (Brush)FindResource("BrushTextMain")
             });
             if (!string.IsNullOrWhiteSpace(emp.Role) || !string.IsNullOrWhiteSpace(emp.Department))
@@ -6112,7 +6273,7 @@ namespace SideDesk.Controls
             panel.Children.Add(new TextBlock
             {
                 Text = Framework.Lang.T("nativePanel.openBackendHint"),
-                FontSize = 10,
+                FontSize = FS(10),
                 Foreground = (Brush)FindResource("BrushTextMuted"),
                 Opacity = 0.7,
                 Margin = new Thickness(0, 8, 0, 0)
@@ -6226,7 +6387,7 @@ namespace SideDesk.Controls
             catch { }
         }
 
-        /// <summary>每日活跃模块：根据 item.DailyActivityView 渲染 本月热力图 / 今日 / 本周(前后5天) 视图；
+        /// <summary>每日活跃卡片：根据 item.DailyActivityView 渲染 本月热力图 / 今日 / 本周(前后5天) 视图；
         /// 数据来源由 item.DailyActivityType 决定（screen=本地屏幕使用，其他=服务端独立数据表类型）</summary>
         private UIElement BuildDailyActivityWidget(PanelItem item)
         {
@@ -6421,7 +6582,7 @@ namespace SideDesk.Controls
                 var label = new TextBlock
                 {
                     Text = isToday ? Framework.Lang.TF("nativePanel.dateToday", date) : $"{date:M/d} {weekNames[(int)date.DayOfWeek]}",
-                    FontSize = 10,
+                    FontSize = FS(10),
                     Foreground = isToday ? accent : (Brush)FindResource("BrushTextMuted"),
                     FontWeight = isToday ? FontWeights.SemiBold : FontWeights.Normal,
                     VerticalAlignment = VerticalAlignment.Center
@@ -6459,7 +6620,7 @@ namespace SideDesk.Controls
                     Text = isFuture ? "" : minutes > 0
                         ? FormatDailyActivityValue(type, minutes)
                         : Framework.Lang.T("window.noRecords"),
-                    FontSize = 10,
+                    FontSize = FS(10),
                     Foreground = (Brush)FindResource("BrushTextSec"),
                     VerticalAlignment = VerticalAlignment.Center,
                     Opacity = isFuture ? 0.4 : 1
@@ -6509,7 +6670,7 @@ namespace SideDesk.Controls
                 weekHeader.Children.Add(new TextBlock
                 {
                     Text = wd,
-                    FontSize = 9,
+                    FontSize = FS(9),
                     TextAlignment = TextAlignment.Center,
                     HorizontalAlignment = HorizontalAlignment.Stretch,
                     Foreground = (Brush)FindResource("BrushTextMuted"),
@@ -6518,7 +6679,7 @@ namespace SideDesk.Controls
             }
             root.Children.Add(weekHeader);
 
-            // 日历格子：7 列自适应铺满可用宽度（不管模块多宽，每行始终 7 个）
+            // 日历格子：7 列自适应铺满可用宽度（不管卡片多宽，每行始终 7 个）
             var grid = new UniformGrid
             {
                 Columns = 7,
@@ -6583,9 +6744,9 @@ namespace SideDesk.Controls
             return root;
         }
 
-        // ==================== 日历模块 ====================
+        // ==================== 日历卡片 ====================
 
-        /// <summary>日历模块：紧凑月历 + 鼠标悬停弹出放大窗口（适配微屏看不清的场景）</summary>
+        /// <summary>日历卡片：紧凑月历 + 鼠标悬停弹出放大窗口（适配微屏看不清的场景）</summary>
         private UIElement BuildCalendarWidget(PanelItem item)
         {
             var root = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
@@ -6596,7 +6757,7 @@ namespace SideDesk.Controls
             var dayText = new TextBlock
             {
                 Text = today.Day.ToString(),
-                FontSize = 42,
+                FontSize = FS(42),
                 FontWeight = FontWeights.Bold,
                 Foreground = (Brush)FindResource("BrushTextMain"),
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -6654,7 +6815,7 @@ namespace SideDesk.Controls
             return WrapWidget(Framework.Lang.T("nativePanel.calendar"), root, item);
         }
 
-        /// <summary>添加活动小点（日历组件用）</summary>
+        /// <summary>添加活动小点（日历卡片用）</summary>
         private void AddActivityDot(StackPanel panel, string brushKey)
         {
             panel.Children.Add(new Ellipse
@@ -6789,7 +6950,7 @@ namespace SideDesk.Controls
             stack.Children.Add(new TextBlock
             {
                 Text = $"{month.Year}/{month.Month:D2}",
-                FontSize = 16,
+                FontSize = FS(16),
                 FontWeight = FontWeights.Bold,
                 Foreground = (Brush)FindResource("BrushTextMain"),
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -6808,9 +6969,9 @@ namespace SideDesk.Controls
             return popupRoot;
         }
 
-        // ==================== 插件模块 ====================
+        // ==================== 插件卡片 ====================
 
-        /// <summary>构建外部插件模块 UI</summary>
+        /// <summary>构建外部插件卡片 UI</summary>
         private UIElement BuildPluginWidget(PanelItem item)
         {
             var pluginId = item.PluginId;
@@ -6879,7 +7040,7 @@ namespace SideDesk.Controls
             _        => Framework.Lang.T("common.offline"),
         };
 
-        /// <summary>后端好友列表缓存（供好友模块展示与选择器使用）</summary>
+        /// <summary>后端好友列表缓存（供好友卡片展示与选择器使用）</summary>
         private List<FriendUser>? _friendListCache;
 
         /// <summary>若缓存为空则异步加载后端好友列表，完成后刷新面板</summary>
@@ -6996,7 +7157,7 @@ namespace SideDesk.Controls
             var container = new StackPanel();
             var cache = _friendListCache;
 
-            // 按模块指定的 userId 顺序取出存在的好友（缓存未就绪时视为空）
+            // 按卡片指定的 userId 顺序取出存在的好友（缓存未就绪时视为空）
             var shown = cache == null
                 ? new List<FriendUser>()
                 : item.FriendUserIds!
@@ -7039,7 +7200,7 @@ namespace SideDesk.Controls
             circle.Child = new TextBlock
             {
                 Text = "+",
-                FontSize = 28,
+                FontSize = FS(28),
                 FontWeight = FontWeights.Light,
                 Foreground = (Brush)FindResource("BrushTextMuted"),
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -7102,7 +7263,7 @@ namespace SideDesk.Controls
             col.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = string.IsNullOrWhiteSpace(f.NickName) ? f.UserName : f.NickName,
-                FontSize = 14,
+                FontSize = FS(14),
                 FontWeight = FontWeights.SemiBold,
                 Foreground = (Brush)FindResource("BrushTextMain"),
                 TextTrimming = TextTrimming.CharacterEllipsis,
@@ -7120,7 +7281,7 @@ namespace SideDesk.Controls
             return row;
         }
 
-        /// <summary>选择好友弹窗：列出全部后端好友并勾选，勾选者将在模块列表中展示</summary>
+        /// <summary>选择好友弹窗：列出全部后端好友并勾选，勾选者将在卡片列表中展示</summary>
         private async void ShowFriendPickerDialog(PanelItem item)
         {
             if (_configManager == null) return;
@@ -7174,7 +7335,7 @@ namespace SideDesk.Controls
                 {
                     Text = Framework.Lang.T("nativePanel.noFriendsYetPlease"),
                     Foreground = (Brush)FindResource("BrushTextMuted"),
-                    FontSize = 12
+                    FontSize = FS(12),
                 });
             }
             else
@@ -7215,13 +7376,13 @@ namespace SideDesk.Controls
                     {
                         Text = string.IsNullOrWhiteSpace(f.NickName) ? f.UserName : f.NickName,
                         Foreground = (Brush)FindResource("BrushTextMain"),
-                        FontSize = 13
+                        FontSize = FS(13),
                     });
                     nameCol.Children.Add(new Emoji.Wpf.TextBlock
                     {
                         Text = f.IsOnline == 1 ? Framework.Lang.T("common.online") : Framework.Lang.T("common.offline"),
                         Foreground = (Brush)FindResource("BrushTextMuted"),
-                        FontSize = 10,
+                        FontSize = FS(10),
                         Margin = new Thickness(0, 1, 0, 0)
                     });
                     row.Children.Add(nameCol);
@@ -7280,7 +7441,7 @@ namespace SideDesk.Controls
             AddTopLevelPanel(newPanel);
         }
 
-        /// <summary>通过邀请码添加新好友（暂无后端，先根据邀请码创建一个新的好友模块）</summary>
+        /// <summary>通过邀请码添加新好友（暂无后端，先根据邀请码创建一个新的好友卡片）</summary>
         private void ShowAddFriendByCodeDialog()
         {
             if (_currentWindowConfig == null || _configManager == null) return;
@@ -7353,7 +7514,7 @@ namespace SideDesk.Controls
         #region 剪贴板收藏（已移除自动监听）
         #endregion
 
-        #region 键盘/鼠标计数器 UI
+        #region 键盘/鼠标计数器 UI（仅底部状态栏展示，不进系统信息卡片）
 
         /// <summary>底部状态栏统计的完整信息 Tooltip：窄侧边栏下数字可能被截断看不全，悬停显示带千分位的精确值</summary>
         private static string FormatKeyCountTooltip(int count)
@@ -7366,8 +7527,6 @@ namespace SideDesk.Controls
         {
             Dispatcher.BeginInvoke(() =>
             {
-                if (_keyCountValueButton != null)
-                    _keyCountValueButton.Content = $"⌨ {KeyboardHookService.FormatCount(count)}";
                 keyCountText.Text = $"⌨ {KeyboardHookService.FormatCount(count)}";
                 keyCountText.ToolTip = FormatKeyCountTooltip(count);
             });
@@ -7379,19 +7538,18 @@ namespace SideDesk.Controls
             if (distance % 100 != 0) return;
             Dispatcher.BeginInvoke(() =>
             {
-                if (_mouseDistanceValueButton != null)
-                    _mouseDistanceValueButton.Content = $"🖱 {MouseHookService.FormatDistance(distance)}";
                 mouseDistText.Text = $"🖱 {MouseHookService.FormatDistance(distance)}";
                 mouseDistText.ToolTip = FormatMouseDistanceTooltip(distance);
             });
         }
 
-        private void CreateKeyCountPanel(StackPanel container)
+        /// <summary>通用系统指标数字块：图标自带语义、撑满整行、Accent 底色。</summary>
+        private Button CreateMetricCard(string content, string toolTip)
         {
-            // 数字块自带 ⌨ 图标自说明并撑满整行；左侧不再放标签（窄组件下标签会被截成省略号白点）
-            _keyCountValueButton = new Button
+            return new Button
             {
-                Content = $"⌨ {KeyboardHookService.FormatCount(_keyboardHookService?.TodayKeyCount ?? 0)}",
+                Content = content,
+                ToolTip = toolTip,
                 Height = 28,
                 Margin = new Thickness(4, 2, 4, 2), Padding = new Thickness(2),
                 Background = (Brush)FindResource("BrushAccent"),
@@ -7400,26 +7558,59 @@ namespace SideDesk.Controls
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 HorizontalContentAlignment = HorizontalAlignment.Center
             };
-
-            container.Children.Insert(0, _keyCountValueButton);
         }
 
-        private void CreateMouseDistancePanel(StackPanel container)
-        {
-            // 数字块自带 🖱 图标自说明并撑满整行；左侧不再放标签（窄组件下标签会被截成省略号白点）
-            _mouseDistanceValueButton = new Button
-            {
-                Content = $"🖱 {MouseHookService.FormatDistance(_mouseHookService?.TodayMouseDistance ?? 0)}",
-                Height = 28,
-                Margin = new Thickness(4, 2, 4, 2), Padding = new Thickness(2),
-                Background = (Brush)FindResource("BrushAccent"),
-                Foreground = (Brush)FindResource("BrushTextMain"), BorderThickness = new Thickness(0),
-                FontSize = 12, FontWeight = FontWeights.Bold,
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                HorizontalContentAlignment = HorizontalAlignment.Center
-            };
+        private static string FormatMemGB(ulong bytes) => $"{bytes / 1073741824.0:0.0} GB";
 
-            container.Children.Add(_mouseDistanceValueButton);
+        /// <summary>字节/秒 速率格式化：不足 1KB 显示 0K，KB 级取整，MB 级一位小数。</summary>
+        private static string FormatNetRate(double bytesPerSec)
+        {
+            if (bytesPerSec < 1024) return "0K";
+            if (bytesPerSec < 1048576) return $"{bytesPerSec / 1024:0}K";
+            return $"{bytesPerSec / 1048576:0.0}M";
+        }
+
+        // CPU / 内存 / 网络三块的可见文本与 ToolTip 生成（仅用图标+数字+单位，无翻译词）
+        private static string CpuText(SystemMetrics? m) => m == null || m.CpuPercent < 0 ? "🖥 --" : $"🖥 {m.CpuPercent:0}%";
+        private static string CpuTip(SystemMetrics? m) => m == null || m.CpuPercent < 0 ? "CPU --" : $"CPU {m.CpuPercent:0}%";
+        private static string MemText(SystemMetrics? m) => m == null || m.MemoryTotalBytes == 0 ? "🧠 --" : $"🧠 {m.MemoryPercent}%";
+        private static string MemTip(SystemMetrics? m) => m == null || m.MemoryTotalBytes == 0 ? "RAM --"
+            : $"{FormatMemGB(m.MemoryUsedBytes)} / {FormatMemGB(m.MemoryTotalBytes)} ({m.MemoryPercent}%)";
+        private static string NetText(SystemMetrics? m) => m == null ? "🌐 --" : $"🌐 {FormatNetRate(m.NetDownBytesPerSec + m.NetUpBytesPerSec)}/s";
+        private static string NetTip(SystemMetrics? m) => m == null ? "NET --"
+            : $"↓ {FormatNetRate(m.NetDownBytesPerSec)}/s  ↑ {FormatNetRate(m.NetUpBytesPerSec)}/s";
+
+        private void CreateCpuPanel(StackPanel container)
+        {
+            var m = SystemMetricsService.Instance.Last;
+            _cpuValueButton = CreateMetricCard(CpuText(m), CpuTip(m));
+            container.Children.Add(_cpuValueButton);
+        }
+
+        private void CreateMemoryPanel(StackPanel container)
+        {
+            var m = SystemMetricsService.Instance.Last;
+            _memoryValueButton = CreateMetricCard(MemText(m), MemTip(m));
+            container.Children.Add(_memoryValueButton);
+        }
+
+        private void CreateNetworkPanel(StackPanel container)
+        {
+            var m = SystemMetricsService.Instance.Last;
+            _netValueButton = CreateMetricCard(NetText(m), NetTip(m));
+            container.Children.Add(_netValueButton);
+        }
+
+        /// <summary>系统指标更新回调（后台线程触发）：切回 UI 线程刷新 CPU/内存/网络三块；无对应卡片（引用为空）时跳过。</summary>
+        private void OnSystemMetricsChanged(SystemMetrics m)
+        {
+            if (_cpuValueButton == null && _memoryValueButton == null && _netValueButton == null) return;
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (_cpuValueButton != null) { _cpuValueButton.Content = CpuText(m); _cpuValueButton.ToolTip = CpuTip(m); }
+                if (_memoryValueButton != null) { _memoryValueButton.Content = MemText(m); _memoryValueButton.ToolTip = MemTip(m); }
+                if (_netValueButton != null) { _netValueButton.Content = NetText(m); _netValueButton.ToolTip = NetTip(m); }
+            });
         }
 
         #endregion
@@ -7500,7 +7691,7 @@ namespace SideDesk.Controls
                 Content = "✕", Width = 18, Height = 18,
                 Background = Brushes.Transparent,
                 Foreground = (Brush)FindResource("BrushTextMuted"),
-                BorderThickness = new Thickness(0), FontSize = 10,
+                BorderThickness = new Thickness(0), FontSize = FS(10),
                 Padding = new Thickness(0), Cursor = Cursors.Hand,
                 ToolTip = Framework.Lang.T("common.delete"), Visibility = Visibility.Collapsed
             };
@@ -7577,7 +7768,7 @@ namespace SideDesk.Controls
                 Content = "✕", Width = 18, Height = 18,
                 Background = Brushes.Transparent,
                 Foreground = (Brush)FindResource("BrushTextMuted"),
-                BorderThickness = new Thickness(0), FontSize = 10,
+                BorderThickness = new Thickness(0), FontSize = FS(10),
                 Padding = new Thickness(0), Cursor = Cursors.Hand,
                 ToolTip = Framework.Lang.T("common.delete"), Visibility = Visibility.Collapsed
             };
@@ -7647,7 +7838,7 @@ namespace SideDesk.Controls
             if (e.Data.GetDataPresent("QuickGroupId")) return;
             // 顶层面板排序：交由 dynamicContent 的冒泡事件处理，此处不拦截
             if (e.Data.GetDataPresent("PanelItemId")) return;
-            // 剪贴板历史→收藏拖拽：由收藏模块自己的 DragOver/Drop 处理，此处不拦截
+            // 剪贴板历史→收藏拖拽：由收藏卡片自己的 DragOver/Drop 处理，此处不拦截
             if (e.Data.GetDataPresent(ClipboardDragFormat)) return;
             _quickGroupUIService?.HandleDragOver(e);
         }
@@ -7690,7 +7881,7 @@ namespace SideDesk.Controls
             fe.PreviewMouseMove += (s, e) =>
             {
                 if (!ready || e.LeftButton != MouseButtonState.Pressed) return;
-                // 若正在拖拽调整模块高度，则不触发面板调序
+                // 若正在拖拽调整卡片高度，则不触发面板调序
                 if (_resizingModule) { ready = false; return; }
                 Point pos = e.GetPosition(fe);
                 if (Math.Abs(pos.X - start.X) > SystemParameters.MinimumHorizontalDragDistance ||
@@ -7778,8 +7969,8 @@ namespace SideDesk.Controls
         /// <summary>根据拖放的 Y 坐标计算目标插入位置（数据层面板索引）</summary>
         private int GetPanelDropIndex(DragEventArgs e) => GetPanelDrop(e).index;
 
-        /// <summary>根据 dynamicContent 内容坐标系中的位置计算顶层面板插入位置（以各模块中线为界）。
-        /// 返回 Panels 列表索引（供 AddPanelToGroupOrTop 使用）：存在置顶模块时，滚动区可视索引需换算为列表索引。</summary>
+        /// <summary>根据 dynamicContent 内容坐标系中的位置计算顶层面板插入位置（以各卡片中线为界）。
+        /// 返回 Panels 列表索引（供 AddPanelToGroupOrTop 使用）：存在置顶卡片时，滚动区可视索引需换算为列表索引。</summary>
         private int GetPanelInsertIndexAt(Point pos)
         {
             double y = 0; int visIdx = 0;
@@ -7793,7 +7984,7 @@ namespace SideDesk.Controls
             return UnpinnedVisualIndexToPanelIndex(visIdx);
         }
 
-        /// <summary>滚动区可视索引（未置顶模块子集序号）→ Panels 列表索引</summary>
+        /// <summary>滚动区可视索引（未置顶卡片子集序号）→ Panels 列表索引</summary>
         private int UnpinnedVisualIndexToPanelIndex(int visIdx)
         {
             if (_currentWindowConfig == null) return visIdx;
@@ -7863,7 +8054,7 @@ namespace SideDesk.Controls
         }
 
         /// <summary>将指定面板拖入滚动区目标位置并持久化（拖入滚动区即取消置顶）。
-        /// insertIdx 为滚动区可视索引（未置顶模块子集序号，含拖拽项自身）。</summary>
+        /// insertIdx 为滚动区可视索引（未置顶卡片子集序号，含拖拽项自身）。</summary>
         private void MovePanelToIndex(string draggedId, int insertIdx)
         {
             if (_currentWindowConfig == null || _configManager == null) return;
@@ -7886,19 +8077,19 @@ namespace SideDesk.Controls
             var unpinned = panels.Where(p => !p.IsPinned).ToList();
             if (insertIdx < 0) insertIdx = 0;
             if (insertIdx > unpinned.Count) insertIdx = unpinned.Count;
-            // 可视索引 → 列表索引：末尾追加到列表尾部，否则定位到对应未置顶模块之前
+            // 可视索引 → 列表索引：末尾追加到列表尾部，否则定位到对应未置顶卡片之前
             int newIdx = insertIdx == unpinned.Count ? panels.Count : panels.IndexOf(unpinned[insertIdx]);
             // 未置顶且位置未变时无需刷新；置顶项状态已变化，必须保存并重渲染
             if (!wasPinned && newIdx == oldIdx) { panels.Insert(oldIdx, item); return; }
             panels.Insert(newIdx, item);
             _configManager.Save();
             RenderPanels();
-            // 排序同步：将当前所有模块的顺序推送到服务端
+            // 排序同步：将当前所有卡片的顺序推送到服务端
             _ = PushItemPositionsAsync();
         }
 
         /// <summary>将指定面板拖入置顶区目标位置并持久化（拖入置顶区即自动置顶）。
-        /// insertIdx 为置顶区可视索引（置顶模块子集序号，含拖拽项自身）。</summary>
+        /// insertIdx 为置顶区可视索引（置顶卡片子集序号，含拖拽项自身）。</summary>
         private void MovePanelToPinnedIndex(string draggedId, int insertIdx)
         {
             if (_currentWindowConfig == null || _configManager == null) return;
@@ -7921,7 +8112,7 @@ namespace SideDesk.Controls
             var pinned = panels.Where(p => p.IsPinned).ToList();
             if (insertIdx < 0) insertIdx = 0;
             if (insertIdx > pinned.Count) insertIdx = pinned.Count;
-            // 置顶区末尾 → 插入到最后一个置顶模块之后（无置顶模块时为列表最前）；否则定位到对应置顶模块之前
+            // 置顶区末尾 → 插入到最后一个置顶卡片之后（无置顶卡片时为列表最前）；否则定位到对应置顶卡片之前
             int newIdx = insertIdx == pinned.Count
                 ? (pinned.Count > 0 ? panels.IndexOf(pinned[pinned.Count - 1]) + 1 : 0)
                 : panels.IndexOf(pinned[insertIdx]);
@@ -7933,7 +8124,7 @@ namespace SideDesk.Controls
             _ = PushItemPositionsAsync();
         }
 
-        /// <summary>将当前窗口内所有模块的当前顺序推送到服务端</summary>
+        /// <summary>将当前窗口内所有卡片的当前顺序推送到服务端</summary>
         private async Task PushItemPositionsAsync()
         {
             if (_currentWindowConfig == null) return;
@@ -7943,7 +8134,7 @@ namespace SideDesk.Controls
                 .ToList();
             if (serverIds.Count == 0) return;
 
-            // 团队窗口的模块排序是团队共享的，透传团队加密串由后端解析
+            // 团队窗口的卡片排序是团队共享的，透传团队加密串由后端解析
             string? corpId = null;
             if (_currentWindowConfig.OwnerType == "team"
                 && !string.IsNullOrEmpty(_currentWindowConfig.CorpId))
@@ -8055,7 +8246,7 @@ namespace SideDesk.Controls
                 var leftHeader = new Emoji.Wpf.TextBlock
                 {
                     Text = Framework.Lang.T("nativePanel.lockedWindowList"),
-                    FontSize = 14,
+                    FontSize = FS(14),
                     FontWeight = FontWeights.Bold,
                     Margin = new Thickness(0, 0, 0, 8)
                 };
@@ -8178,7 +8369,7 @@ namespace SideDesk.Controls
                 var rightHeader = new Emoji.Wpf.TextBlock
                 {
                     Text = Framework.Lang.T("nativePanel.pickWindowToLockTaskbarTitle"),
-                    FontSize = 14,
+                    FontSize = FS(14),
                     FontWeight = FontWeights.Bold,
                     Margin = new Thickness(0, 0, 0, 8)
                 };
@@ -8220,7 +8411,7 @@ namespace SideDesk.Controls
                     {
                         Text = w.ProcessName,
                         Foreground = (Brush)FindResource("BrushTextSec"),
-                        FontSize = 11
+                        FontSize = FS(11),
                     });
                     itemPanel.Children.Add(textPanel);
 
@@ -8313,6 +8504,22 @@ namespace SideDesk.Controls
                     mi.Click += (s, ev) => ToggleTool(k, mi.IsChecked, act);
                     menu.Items.Add(mi);
                 }
+
+                // 每条侧边栏独立开关：鼠键记录器（开启才安装钩子计数并显示状态栏；关闭不记录不显示）
+                if (menu.Items.Count > 0) menu.Items.Add(new Separator());
+                var recorderMi = new MenuItem
+                {
+                    Header = Framework.Lang.T("nativePanel.keyMouseRecorder"),
+                    IsCheckable = true,
+                    IsChecked = _currentWindowConfig.KeyMouseRecorderEnabled
+                };
+                recorderMi.Click += (s, ev) =>
+                {
+                    _currentWindowConfig.KeyMouseRecorderEnabled = recorderMi.IsChecked;
+                    _configManager?.Save();
+                    ApplyKeyMouseRecorderState();
+                };
+                menu.Items.Add(recorderMi);
             }
         }
 
@@ -8346,11 +8553,11 @@ namespace SideDesk.Controls
         #region 布局与屏幕切换
 
         /// <summary>
-        /// 右键菜单打开时，同步勾选状态（编辑模式、隐藏模块外框）并记录插入位置
+        /// 右键菜单打开时，同步勾选状态（编辑模式、隐藏卡片外框）并记录插入位置
         /// </summary>
         private void ContextMenu_Opened(object sender, RoutedEventArgs e)
         {
-            // 记录右键点击位置对应的插入索引（用于“添加模块”时插入到两模块之间）
+            // 记录右键点击位置对应的插入索引（用于“添加卡片”时插入到两卡片之间）
             _pendingInsertIndex = null;
             try { _pendingInsertIndex = GetPanelInsertIndexAt(Mouse.GetPosition(dynamicContent)); }
             catch { _pendingInsertIndex = null; }
@@ -8358,7 +8565,7 @@ namespace SideDesk.Controls
             // 同步编辑模式 checkbox 状态
             editModeMenu.IsChecked = _isEditMode;
 
-            // 同步“隐藏模块外框”勾选状态
+            // 同步“隐藏卡片外框”勾选状态
             hideModuleFrameMenu.IsChecked = AppSettings.Instance.HideModuleFrame;
 
             // 设置屏幕菜单勾选（已移除）
@@ -8631,7 +8838,7 @@ namespace SideDesk.Controls
             {
                 Text = Framework.Lang.T("nativePanel.editDataBlockStyle"),
                 FontWeight = FontWeights.Bold,
-                FontSize = 15,
+                FontSize = FS(15),
                 Margin = new Thickness(0, 0, 0, 16),
                 Foreground = (Brush)FindResource("BrushTextMain")
             });
@@ -8728,7 +8935,7 @@ namespace SideDesk.Controls
                 customDock.Children.Add(customBox);
                 var applyBtn = new Button
                 {
-                    Content = Framework.Lang.T("common.apps"), FontSize = 10, Padding = new Thickness(6, 2, 6, 2),
+                    Content = Framework.Lang.T("common.apps"), FontSize = FS(10), Padding = new Thickness(6, 2, 6, 2),
                     Margin = new Thickness(4, 0, 0, 0),
                     Style = (Style)FindResource("GhostButtonStyle")
                 };
@@ -9375,7 +9582,7 @@ namespace SideDesk.Controls
             // ===== 页签：我的数据看板（引用式，仅展示运行中数据） =====
             var refPanel = new StackPanel();
 
-            // 后台数据 = 当前运行中的数据模块（轮询实例：面板项 + 后台项，按身份去重）+ 变量集，编辑时排除自身
+            // 后台数据 = 当前运行中的数据卡片（轮询实例：面板项 + 后台项，按身份去重）+ 变量集，编辑时排除自身
             var bgSources = Services.DataPollingService.Instance.GetAllItems()
                 .Where(d => !string.IsNullOrEmpty(d.VarKey))
                 .Where(d => editItem == null || d.Id != editItem.Id)
@@ -9879,8 +10086,8 @@ namespace SideDesk.Controls
         }
 
         /// <summary>
-        /// 填充"添加模块"菜单项（窗口右上角菜单使用，与空白处右键的 addModuleMenu 保持一致；
-        /// 复用同一组 Click 处理函数，新模块添加到当前窗口顶层）。
+        /// 填充"添加卡片"菜单项（窗口右上角菜单使用，与空白处右键的 addModuleMenu 保持一致；
+        /// 复用同一组 Click 处理函数，新卡片添加到当前窗口顶层）。
         /// </summary>
         public void PopulateAddModuleMenu(MenuItem menu)
         {
@@ -10217,7 +10424,7 @@ namespace SideDesk.Controls
             var hotkeyText = new TextBlock
             {
                 Text = Framework.Lang.TF("nativePanel.voiceHotkeyLine", VoiceStartHotkeyDisplay),
-                FontSize = 10,
+                FontSize = FS(10),
                 Opacity = 0.75,
                 TextAlignment = TextAlignment.Center,
                 Margin = new Thickness(12, 0, 12, 0)
@@ -10236,7 +10443,7 @@ namespace SideDesk.Controls
                 var scanText = new TextBlock
                 {
                     Text = Framework.Lang.T("nativePanel.voiceScanWithPhone"),
-                    FontSize = 10,
+                    FontSize = FS(10),
                     Opacity = 0.85,
                     TextAlignment = TextAlignment.Center
                 };
@@ -10247,7 +10454,7 @@ namespace SideDesk.Controls
             var statusText = new Emoji.Wpf.TextBlock
             {
                 Text = Framework.Lang.T("common.ready"),
-                FontSize = 10,
+                FontSize = FS(10),
                 Opacity = 0.85,
                 TextAlignment = TextAlignment.Center,
                 Foreground = (Brush)FindResource("BrushAccentText"),
@@ -11045,7 +11252,7 @@ namespace SideDesk.Controls
         /// </summary>
         private void UpdateTeleportWidget()
         {
-            // 如果没有瞬移窗口，隐藏组件
+            // 如果没有瞬移窗口，隐藏卡片
             if (_teleportedWindows.Count == 0)
             {
                 if (_teleportWidget != null)
@@ -11055,13 +11262,13 @@ namespace SideDesk.Controls
                 return;
             }
 
-            // 创建或更新组件
+            // 创建或更新卡片
             if (_teleportWidget == null)
             {
                 _teleportWidget = CreateTeleportWidget();
             }
 
-            // RenderPanels 全量重绘会清空 dynamicContent，组件会被甩出视觉树；
+            // RenderPanels 全量重绘会清空 dynamicContent，卡片会被甩出视觉树；
             // 只要不在树里就重新插回最前面
             if (dynamicContent != null && !dynamicContent.Children.Contains(_teleportWidget))
             {
@@ -11076,7 +11283,7 @@ namespace SideDesk.Controls
                 foreach (var window in _teleportedWindows)
                 {
                     // DockPanel 布局：图标左、还原按钮右、标题填满剩余宽度并截断，
-                    // 保证整行擑满组件宽度（横向 StackPanel 会被长标题擑宽溢出）
+                    // 保证整行擑满卡片宽度（横向 StackPanel 会被长标题擑宽溢出）
                     var itemPanel = new DockPanel
                     {
                         Margin = new Thickness(3, 2, 3, 2)
@@ -11138,7 +11345,7 @@ namespace SideDesk.Controls
         }
 
         /// <summary>
-        /// 创建瞬移窗口区组件
+        /// 创建瞬移窗口区卡片
         /// </summary>
         private Border CreateTeleportWidget()
         {

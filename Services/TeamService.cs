@@ -342,12 +342,15 @@ namespace SideDesk.Services
 
         #region 4. 团队组件库
 
-        /// <summary>GET /api/sidebar/item/team-library?corpId=X — 返回指定团队的共享模块列表</summary>
-        public async Task<List<TeamLibraryItem>?> GetTeamLibraryAsync(string corpId)
+        /// <summary>GET /api/sidebar/item/team-library[?corpId=X] — 返回指定团队的共享模块列表；省略 corpId 时返回所属全部团队</summary>
+        public async Task<List<TeamLibraryItem>?> GetTeamLibraryAsync(string? corpId = null)
         {
             try
             {
-                using var req = CreateRequest(HttpMethod.Get, $"{BaseUrl}/api/sidebar/item/team-library?corpId={corpId}");
+                var url = string.IsNullOrEmpty(corpId)
+                    ? $"{BaseUrl}/api/sidebar/item/team-library"
+                    : $"{BaseUrl}/api/sidebar/item/team-library?corpId={corpId}";
+                using var req = CreateRequest(HttpMethod.Get, url);
                 using var resp = await _http.SendAsync(req).ConfigureAwait(false);
                 var data = await ParseResponseTokenAsync(resp).ConfigureAwait(false);
                 if (data is not JArray arr) return null;

@@ -71,6 +71,11 @@ namespace SideDesk.Services
                 var data = row["data"] as JObject ?? new JObject();
                 bool read = row["read"]?.ToObject<bool>() == true;
 
+                // 落库的 data 不含 notificationId（只在实时推送时附加），列表同步时补回：
+                // 既保证与实时推送生成同一个本地 Id（去重），也让依赖 nid 的事件重启后仍能恢复进中心
+                if (!string.IsNullOrEmpty(serverId) && string.IsNullOrEmpty((string?)data["notificationId"]))
+                    data["notificationId"] = serverId;
+
                 var payload = BuildPayloadForEvent(evt, data);
                 if (payload == null) continue;
                 payload.ServerId = serverId;
@@ -245,6 +250,32 @@ namespace SideDesk.Services
                         Framework.Lang.TF(accepted ? "nativePanel.friendRequestApproved" : "nativePanel.friendRequestDeclined", friendName),
                         "friends");
                 }
+                case "team_membership_notice":
+                {
+                    var nid = (string?)data["notificationId"];
+                    if (string.IsNullOrEmpty(nid)) return null;
+                    var text = BuildTeamNoticeText(evt, data);
+                    if (text == null) return null;
+                    return BuildInfoPayload(evt + "-" + nid, text, "teams");
+                }
+                case "team_item_notice":
+                {
+                    var nid = (string?)data["notificationId"];
+                    if (string.IsNullOrEmpty(nid)) return null;
+                    var text = BuildTeamNoticeText(evt, data);
+                    if (text == null) return null;
+                    // 卡片/微屏操作告知：主体在侧边栏，设置团队页无对应视图 → 不带点击动作，仅作可回溯记录
+                    return BuildInfoPayload(evt + "-" + nid, text, null);
+                }
+                case "share_revoked_notice":
+                {
+                    var nid = (string?)data["notificationId"];
+                    if (string.IsNullOrEmpty(nid)) return null;
+                    var text = BuildTeamNoticeText(evt, data);
+                    if (text == null) return null;
+                    // 「我的分享」是独立窗口而非设置页，无可跳转的 tab → 不带点击动作，仅作可回溯记录
+                    return BuildInfoPayload(evt + "-" + nid, text, null);
+                }
                 case "notification":
                     // 富通知推送：载荷自带标题/按钮/点击动作，原样解析
                     return NotificationPayload.FromJson(data);
@@ -253,8 +284,118 @@ namespace SideDesk.Services
             }
         }
 
-        /// <summary>信息类通知：点击主体跳对应设置页（点击即触发已读回传）</summary>
-        private static NotificationPayload BuildInfoPayload(string id, string title, string settingsTab)
+        /// <summary>
+        /// 团队/分享类通知（成员身份失效、团队卡片·微屏的成员操作与移除、引用分享被取消）的本地化文案。
+        /// WS 实时气泡与通知中心条目共用同一份文案，避免两处措辞不一致；不支持的事件返回 null。
+        ///
+        /// 两类语义不同，文案措辞也不同：
+        /// - 「内容被移除」（deleted / moved / 身份失效 / 分享取消）：本地数据已由配套指令
+        ///   （team_membership_revoked / team_item_removed / team_bar_removed / share_cancelled）即时清除，
+        ///   所以文案明确说「已从您的微屏移除」；
+        /// - 「成员操作」（created / renamed / updated / relocated / restored / joined / rows_changed）：
+        ///   本地数据由 share_item_meta_updated · bar_meta_updated 刷新或等下次对账拉取，
+        ///   文案只客观陈述「谁做了什么」，不承诺本地已发生对应变化。
+        /// </summary>
+        internal static string? BuildTeamNoticeText(string evt, JObject data)
+        {
+            switch (evt)
+            {
+                case "team_membership_notice":
+                {
+                    var teamName = (string?)data["teamName"] ?? "";
+                    // disbanded=团队解散；其余（removed=被管理员移出）统一按「被移出团队」表述
+                    return (string?)data["reason"] == "disbanded"
+                        ? Framework.Lang.TF("nativePanel.teamDisbandedNotice", teamName)
+                        : Framework.Lang.TF("nativePanel.teamRemovedNotice", teamName);
+                }
+                case "team_item_notice":
+                {
+                    var teamName = (string?)data["teamName"] ?? "";
+                    var operatorName = ActorName((string?)data["operatorName"]);
+                    bool isBar = (string?)data["kind"] == "bar";
+                    var title = ContentTitle((string?)data["title"], (string?)data["panelType"], isBar);
+                    // 改名类动作：服务端 title 传的是新名，oldTitle 才是改之前的名字
+                    var oldTitle = ContentTitle((string?)data["oldTitle"], (string?)data["panelType"], isBar);
+                    var reason = (string?)data["reason"] ?? "";
+                    if (isBar)
+                    {
+                        return reason switch
+                        {
+                            "created" => Framework.Lang.TF("nativePanel.teamBarCreatedNotice", operatorName, teamName, title),
+                            "renamed" => Framework.Lang.TF("nativePanel.teamBarRenamedNotice", operatorName, teamName, oldTitle, title),
+                            "restored" => Framework.Lang.TF("nativePanel.teamBarRestoredNotice", operatorName, teamName, title),
+                            _ => Framework.Lang.TF("nativePanel.teamBarDeletedNotice", operatorName, teamName, title),
+                        };
+                    }
+                    return reason switch
+                    {
+                        "created" => Framework.Lang.TF("nativePanel.teamItemCreatedNotice", operatorName, teamName, title),
+                        "restored" => Framework.Lang.TF("nativePanel.teamItemRestoredNotice", operatorName, teamName, title),
+                        "renamed" => Framework.Lang.TF("nativePanel.teamItemRenamedNotice", operatorName, teamName, oldTitle, title),
+                        "relocated" => Framework.Lang.TF("nativePanel.teamItemRelocatedNotice", operatorName, teamName, title, BarTitle(data)),
+                        "joined" => Framework.Lang.TF("nativePanel.teamItemJoinedNotice", operatorName, teamName, title),
+                        "updated" => Framework.Lang.TF("nativePanel.teamItemUpdatedNotice", operatorName, teamName, title),
+                        "rows_changed" => Framework.Lang.TF("nativePanel.teamItemRowsChangedNotice", operatorName, teamName, title, RowsChangeDetail(data)),
+                        "moved" => Framework.Lang.TF("nativePanel.teamItemMovedNotice", operatorName, teamName, title),
+                        _ => Framework.Lang.TF("nativePanel.teamItemDeletedNotice", operatorName, teamName, title),
+                    };
+                }
+                case "share_revoked_notice":
+                {
+                    var ownerName = ActorName((string?)data["ownerName"]);
+                    bool isBar = (string?)data["shareLevel"] == "bar";
+                    var title = ContentTitle((string?)data["title"], (string?)data["panelType"], isBar);
+                    return Framework.Lang.TF(
+                        isBar ? "nativePanel.shareCancelledBarNotice" : "nativePanel.shareCancelledItemNotice",
+                        ownerName, title);
+                }
+                default:
+                    return null;
+            }
+        }
+
+        /// <summary>卡片被移动到的目标微屏名（服务端取不到时回退「未命名窗口」）</summary>
+        private static string BarTitle(JObject data)
+            => ContentTitle((string?)data["barTitle"], null, true);
+
+        /// <summary>
+        /// 行数据变更明细：只列出非零项（「新增 0 条」属于噪音），用本地化分隔符连接。
+        /// 服务端仅在真有行变更时才发 rows_changed，三项全零不会发生；万一发生则回退「修改 0 条」而不是空括号。
+        /// </summary>
+        private static string RowsChangeDetail(JObject data)
+        {
+            int added = (int?)data["added"] ?? 0;
+            int updated = (int?)data["updated"] ?? 0;
+            int deleted = (int?)data["deleted"] ?? 0;
+            var parts = new List<string>();
+            if (added > 0) parts.Add(Framework.Lang.TF("nativePanel.teamRowsAddedPart", added));
+            if (updated > 0) parts.Add(Framework.Lang.TF("nativePanel.teamRowsUpdatedPart", updated));
+            if (deleted > 0) parts.Add(Framework.Lang.TF("nativePanel.teamRowsDeletedPart", deleted));
+            if (parts.Count == 0) parts.Add(Framework.Lang.TF("nativePanel.teamRowsUpdatedPart", 0));
+            return string.Join(Framework.Lang.T("nativePanel.teamRowsPartSeparator"), parts);
+        }
+
+        /// <summary>操作者名：服务端取不到昵称/账号名（账号已注销等）时回退「未知用户」</summary>
+        private static string ActorName(string? name)
+            => string.IsNullOrEmpty(name) ? Framework.Lang.T("nativePanel.unknownUser") : name!;
+
+        /// <summary>
+        /// 通知里的内容名：服务端显示名优先；无显示名的类型（便签/待办等 title 列为空）按 panelType
+        /// 回退本地化类型名，再回退「未命名卡片/窗口」—— 不能只显示「删除了」而没有宾语。
+        /// </summary>
+        private static string ContentTitle(string? title, string? panelType, bool isBar)
+        {
+            if (!string.IsNullOrEmpty(title)) return title!;
+            if (!string.IsNullOrEmpty(panelType) && Enum.TryParse<PanelType>(panelType, out var pt))
+            {
+                var typeName = SettingsWindow.GetPanelTypeName(pt);
+                if (!string.IsNullOrEmpty(typeName)) return typeName;
+            }
+            return Framework.Lang.T(isBar ? "settings.untitledWindow" : "settings.untitledModule");
+        }
+
+        /// <summary>信息类通知：点击主体跳对应设置页（点击即触发已读回传）；settingsTab 为 null 时不带点击动作</summary>
+        private static NotificationPayload BuildInfoPayload(string id, string title, string? settingsTab)
         {
             return new NotificationPayload
             {
@@ -263,11 +404,13 @@ namespace SideDesk.Services
                 Timestamp = DateTime.Now,
                 Timeout = 15,
                 DisplayMode = NotificationDisplayMode.Silent,
-                ClickMain = new NotificationAction
-                {
-                    Type = "open_settings",
-                    Payload = new Dictionary<string, object> { ["tab"] = settingsTab }
-                }
+                ClickMain = settingsTab == null
+                    ? null
+                    : new NotificationAction
+                    {
+                        Type = "open_settings",
+                        Payload = new Dictionary<string, object> { ["tab"] = settingsTab }
+                    }
             };
         }
 

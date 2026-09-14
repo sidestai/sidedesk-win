@@ -37,17 +37,21 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ContextMenu">
+                    <!-- MaxHeight 限屏高：条目超出工作区时由内部 ScrollViewer 滚动，避免弹出层越界被裁切 -->
                     <Border Background="{TemplateBinding Background}"
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
                             CornerRadius="8"
                             Padding="{TemplateBinding Padding}"
                             Margin="0,2,10,10"
+                            MaxHeight="{Binding Source={x:Static SystemParameters.WorkArea}, Path=Height}"
                             SnapsToDevicePixels="True">
                         <Border.Effect>
                             <DropShadowEffect BlurRadius="20" ShadowDepth="4" Opacity="0.35" Color="Black" />
                         </Border.Effect>
-                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle" />
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" CanContentScroll="True">
+                            <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle" />
+                        </ScrollViewer>
                     </Border>
                 </ControlTemplate>
             </Setter.Value>
@@ -121,7 +125,7 @@
                                               Visibility="Collapsed" />
                                     </Grid>
                                 </Border>
-                                <!-- 子菜单弹出层 -->
+                                <!-- 子菜单弹出层：MaxHeight 限屏高，子项过多（如「添加卡片」）时内部 ScrollViewer 滚动 -->
                                 <Popup x:Name="PART_Popup"
                                        AllowsTransparency="True"
                                        Focusable="False"
@@ -136,11 +140,14 @@
                                             CornerRadius="8"
                                             Padding="4"
                                             Margin="0,2,10,10"
+                                            MaxHeight="{Binding Source={x:Static SystemParameters.WorkArea}, Path=Height}"
                                             SnapsToDevicePixels="True">
                                         <Border.Effect>
                                             <DropShadowEffect BlurRadius="20" ShadowDepth="4" Opacity="0.35" Color="Black" />
                                         </Border.Effect>
-                                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle" />
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto" CanContentScroll="True">
+                                            <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle" />
+                                        </ScrollViewer>
                                     </Border>
                                 </Popup>
                             </Grid>
@@ -1050,9 +1057,9 @@
         </Setter>
     </Style>
 
-    <!-- ===== 模块基础组件公共样式 ===== -->
+    <!-- ===== 卡片基础组件公共样式 ===== -->
 
-    <!-- 模块外框 Border 样式 -->
+    <!-- 卡片外框 Border 样式 -->
     <Style x:Key="ModuleBorder" TargetType="Border">
         <Setter Property="Margin" Value="0,0,0,6" />
         <Setter Property="Padding" Value="3" />
@@ -1062,14 +1069,14 @@
         <Setter Property="BorderThickness" Value="1" />
     </Style>
 
-    <!-- 模块标题 TextBlock 样式 -->
+    <!-- 卡片标题 TextBlock 样式 -->
     <Style x:Key="ModuleHeaderTitle" TargetType="TextBlock">
         <Setter Property="FontSize" Value="13" />
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
     </Style>
 
-    <!-- 模块右上角菜单按钮样式 -->
+    <!-- 卡片右上角菜单按钮样式 -->
     <Style x:Key="ModuleMenuButton" TargetType="Button">
         <Setter Property="FontSize" Value="12" />
         <Setter Property="Padding" Value="4,0,4,0" />
@@ -1080,7 +1087,7 @@
         <Setter Property="HorizontalAlignment" Value="Right" />
     </Style>
 
-    <!-- 模块底部拖拽手柄样式 -->
+    <!-- 卡片底部拖拽手柄样式 -->
     <Style x:Key="ModuleResizeGrip" TargetType="Border">
         <Setter Property="Height" Value="6" />
         <Setter Property="Background" Value="Transparent" />

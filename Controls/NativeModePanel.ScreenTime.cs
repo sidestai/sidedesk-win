@@ -11,7 +11,7 @@ using SideDesk.Windows;
 namespace SideDesk.Controls
 {
     /// <summary>
-    /// 「屏幕时长」组件：基于 WindowUsageStats 采集数据，支持 列表 / 饼图 / 分类 / 窗口 四种展示风格，
+    /// 「屏幕时长」卡片：基于 WindowUsageStats 采集数据，支持 列表 / 饼图 / 分类 / 窗口 四种展示风格，
     /// 风格持久化到 PanelItem.ScreenTimeStyle。
     /// </summary>
     public partial class NativeModePanel
@@ -25,7 +25,7 @@ namespace SideDesk.Controls
             (Framework.Lang.T("common.window"), "Window")
         };
 
-        /// <summary>窄宽紧凑模式：组件宽度低于 100px 时为 true，时长省略秒数</summary>
+        /// <summary>窄宽紧凑模式：卡片宽度低于 100px 时为 true，时长省略秒数</summary>
         private bool _screenTimeCompact;
 
         private UIElement BuildScreenTimeWidget(PanelItem item)
@@ -101,7 +101,7 @@ namespace SideDesk.Controls
                 var dur = new Emoji.Wpf.TextBlock
                 {
                     Text = WindowUsageStats.FormatDuration(app.TotalDuration, !_screenTimeCompact),
-                    FontSize = 11,
+                    FontSize = FS(11),
                     Foreground = new SolidColorBrush(Color.FromRgb(100, 200, 255)),
                     VerticalAlignment = VerticalAlignment.Center
                 };
@@ -111,7 +111,7 @@ namespace SideDesk.Controls
                 var name = new Emoji.Wpf.TextBlock
                 {
                     Text = app.ProcessName,
-                    FontSize = 12,
+                    FontSize = FS(12),
                     Foreground = (Brush)FindResource("BrushTextMain"),
                     VerticalAlignment = VerticalAlignment.Center,
                     TextTrimming = TextTrimming.CharacterEllipsis
@@ -160,7 +160,7 @@ namespace SideDesk.Controls
                 row.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = $"{ProgramCategoryManager.GetDisplayName(kv.Key)}  {ratio:P0}  {WindowUsageStats.FormatDuration(TimeSpan.FromSeconds(kv.Value), !_screenTimeCompact)}",
-                    FontSize = 11,
+                    FontSize = FS(11),
                     Foreground = (Brush)FindResource("BrushTextMain"),
                     VerticalAlignment = VerticalAlignment.Center
                 });
@@ -210,7 +210,7 @@ namespace SideDesk.Controls
                 var dur = new Emoji.Wpf.TextBlock
                 {
                     Text = WindowUsageStats.FormatDuration(TimeSpan.FromSeconds(kv.Value), !_screenTimeCompact),
-                    FontSize = 11,
+                    FontSize = FS(11),
                     Foreground = (Brush)FindResource("BrushTextSec"),
                     VerticalAlignment = VerticalAlignment.Center
                 };
@@ -232,7 +232,7 @@ namespace SideDesk.Controls
                 var name = new Emoji.Wpf.TextBlock
                 {
                     Text = $"{ProgramCategoryManager.GetDisplayName(kv.Key)}  {ratio:P0}",
-                    FontSize = 12,
+                    FontSize = FS(12),
                     Foreground = (Brush)FindResource("BrushTextMain"),
                     VerticalAlignment = VerticalAlignment.Center
                 };
@@ -258,7 +258,7 @@ namespace SideDesk.Controls
                 var time = new Emoji.Wpf.TextBlock
                 {
                     Text = rec.Timestamp.ToString("HH:mm"),
-                    FontSize = 10,
+                    FontSize = FS(10),
                     Foreground = (Brush)FindResource("BrushTextMuted"),
                     Width = 38,
                     VerticalAlignment = VerticalAlignment.Center
@@ -269,7 +269,7 @@ namespace SideDesk.Controls
                 var dur = new Emoji.Wpf.TextBlock
                 {
                     Text = WindowUsageStats.FormatDuration(rec.Duration, !_screenTimeCompact),
-                    FontSize = 10,
+                    FontSize = FS(10),
                     Foreground = new SolidColorBrush(Color.FromRgb(100, 200, 255)),
                     Width = 50,
                     TextAlignment = TextAlignment.Right,
@@ -283,7 +283,7 @@ namespace SideDesk.Controls
                 mid.Children.Add(new Emoji.Wpf.TextBlock
                 {
                     Text = rec.ProcessName,
-                    FontSize = 11,
+                    FontSize = FS(11),
                     FontWeight = FontWeights.Medium,
                     Foreground = (Brush)FindResource("BrushTextMain"),
                     TextTrimming = TextTrimming.CharacterEllipsis
@@ -293,7 +293,7 @@ namespace SideDesk.Controls
                     mid.Children.Add(new Emoji.Wpf.TextBlock
                     {
                         Text = sub,
-                        FontSize = 10,
+                        FontSize = FS(10),
                         Foreground = (Brush)FindResource("BrushTextMuted"),
                         TextTrimming = TextTrimming.CharacterEllipsis
                     });
@@ -399,7 +399,7 @@ namespace SideDesk.Controls
             return new Emoji.Wpf.TextBlock
             {
                 Text = Framework.Lang.T("screenTime.noDataEnableUsage"),
-                FontSize = 11,
+                FontSize = FS(11),
                 Foreground = (Brush)FindResource("BrushTextMuted"),
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 8, 0, 8)

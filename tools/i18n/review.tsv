@@ -41,7 +41,7 @@
 （暂无团队，可点击右上角添加）	(No teams; click the top-right buttons to add)	settings.noTeamsAddTopRight	LangEn
 （暂无小屏）	(No screens)	screenTime.noScreens	en.json,LangEn
 (暂无员工，请先管理添加)	(No employees; please add some in management first)	nativePanel.noEmployeesPleaseAdd	en.json,LangEn
-（暂无云空间，可点击“恢复内置”或手动添加）	(No cloud spaces. Click "Restore built-in" or add manually)	settings.noCloudSpacesHint	en.json,LangEn
+（暂无云空间，可手动添加）	(No cloud spaces; add manually)	settings.noCloudSpacesHint	en.json,LangEn
 （暂无运行中的数据项）	(No running data items)	nativePanel.noRunningDataItems	en.json,LangEn
 ，提前{0}分钟	, {0} minutes early	nativePanel.minutesEarly	en.json,LangEn
 ，提前{0}分钟提醒	, remind {0} minutes early	nativePanel.remindMinutesEarly	en.json,LangEn
@@ -561,7 +561,6 @@ WebView2 初始化失败: {0}	WebView2 initialization failed: {0}	common.webview
 恢复	Restore	common.restore	en.json,LangEn
 恢复备份	Restore Backup	settings.restoreBackup	en.json,LangEn
 恢复将用最近一次备份覆盖当前全部配置，需要重启应用后生效。确定继续吗？	Restoring overwrites all current settings with the latest backup and requires an app restart. Continue?	settings.restoreBackupConfirm	en.json,LangEn
-恢复内置	Restore built-in	settings.restoreBuiltIn	en.json,LangEn
 恢复设置	Restore Settings	settings.restoreSettings	en.json,LangEn
 恢复失败，请检查网络连接或登录状态	Restore failed. Please check your network connection or login status	settings.restoreFailedPleaseCheck	en.json,LangEn
 恢复失败，请重试。	Restore failed. Please retry.	settings.restoreFailedPleaseRetry	en.json,LangEn
@@ -596,7 +595,6 @@ WebView2 初始化失败: {0}	WebView2 initialization failed: {0}	common.webview
 简介/职责	Bio / Responsibilities	digitalEmployee.bioResponsibilities	en.json,LangEn
 简体中文	Simplified Chinese	settings.simplifiedChinese	en.json,LangEn
 将从服务器拉取已同步的设置覆盖本地当前配置，是否继续？	Synced settings will be pulled from the server and overwrite the local configuration. Continue?	settings.pullSettingsConfirm	en.json,LangEn
-将缺失的内置云盘预设补回列表	Restore missing built-in cloud drive presets to the list	settings.restoreMissingBuiltIn	en.json,LangEn
 阶段结束后自动开始下一阶段	Automatically start the next phase when one ends	nativePanel.autoStartNextPhase	en.json,LangEn
 接口响应	API Response	login.apiResponse	en.json,LangEn
 接受	Accept	common.accept	LangEn
@@ -1199,7 +1197,6 @@ WebView2 初始化失败: {0}	WebView2 initialization failed: {0}	common.webview
 已登录	Logged in	common.loggedIn	en.json,LangEn
 已复制	Copied	common.copied	en.json,LangEn
 已复制 ✓	Copied ✓	settings.copiedCheck	en.json,LangEn
-已关闭被搜索	Search discovery disabled	settings.searchDiscoveryDisabled	en.json,LangEn
 已关闭软件渲染模式，重启应用后恢复 GPU 硬件加速。	Software rendering disabled. GPU hardware acceleration will be restored after restarting the app.	settings.softwareRenderingDisabled	LangEn
 已关联	Linked	nativePanel.linked	en.json,LangEn
 已恢复 {0} 个配置文件，重启应用后生效。	Restored {0} configuration files. They take effect after restarting the app.	settings.restoreConfigFilesDone	en.json,LangEn
@@ -1377,3 +1374,4 @@ WebView2 初始化失败: {0}	WebView2 initialization failed: {0}	common.webview
 左侧	Left	common.left	en.json,LangEn
 左侧面板	Left panel	settings.leftPanel	en.json,LangEn
 左对齐	Align left	nativePanel.alignLeft	en.json,LangEn
+团队管理	Team Management	settings.teamManage	en.json,LangEn

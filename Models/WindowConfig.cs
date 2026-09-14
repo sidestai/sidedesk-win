@@ -48,11 +48,11 @@ public class PanelItem
     public List<PanelItem>? ChildPanels { get; set; } // 分组子面板
     public bool IsExpanded { get; set; } = true;      // 分组是否展开
     public string? GroupBGColor { get; set; }              // 分组自定义背景色（hex字符串，null=跟随主题）
-    public string? BGColor { get; set; }                   // 模块自定义背景色（hex字符串，null=跟随主题）
+    public string? BGColor { get; set; }                   // 卡片自定义背景色（hex字符串，null=跟随主题）
     public List<StickyNote>? StickyNotes { get; set; } // 便签数据（per-panel）
     public List<TodoItem>? TodoItems { get; set; } // 今日待办数据（per-panel）
     public bool SkipWrapper { get; set; } = false;     // 是否跳过外层容器包装
-    public bool HideFrame { get; set; } = false;       // 单个模块独立隐藏外框（边框/标题/背景/内边距）
+    public bool HideFrame { get; set; } = false;       // 单个卡片独立隐藏外框（边框/标题/背景/内边距）
     public bool IsPinned { get; set; } = false;        // 是否置顶（渲染在滚动区上方的置顶区，压缩滚动区高度）
     public int DashboardColumns { get; set; } = 1;     // 数据看板每排列数（1~4）
     public List<SignalLightItem>? SignalLights { get; set; } // 信号灯数据
@@ -61,16 +61,16 @@ public class PanelItem
     public string SignalLightAlignment { get; set; } = "Center"; // 信号灯对齐：Left/Center/Right
     public string FileAreaLayout { get; set; } = "List";         // 文件区布局：LargeIcons/SmallIcons/List
     public int FileAreaColumns { get; set; } = 1;                // 文件区列数（1~4）
-    public double? PanelHeight { get; set; }                     // 模块内容区自定义高度（px）；null=自动高度
-    public List<string>? DigitalEmployeeIds { get; set; }        // 数字员工模块：展示的员工 Id 列表（引用全局员工库）
-    public int DigitalEmployeeColumns { get; set; } = 3;         // 数字员工模块：每排展示的员工数（1~5）
-    public string? FriendName { get; set; }                      // 好友模块：名字
-    public string? FriendAvatarPath { get; set; }                // 好友模块：头像图片路径
-    public string? FriendEmoji { get; set; }                     // 好友模块：Emoji/文字头像（无图片时的兜底）
-    public string? FriendStatusText { get; set; }                // 好友模块：状态文字
-    public string FriendOnlineStatus { get; set; } = "online";   // 好友模块：在线状态 online/away/busy/offline
-    public string FriendDisplayMode { get; set; } = "HorizontalSmall"; // 好友模块：显示方式 HorizontalSmall/VerticalLarge
-    public List<string>? FriendUserIds { get; set; }             // 好友模块：展示的好友 userId 加密串列表（引用后端真实好友，与实际数据分离的显示副本）
+    public double? PanelHeight { get; set; }                     // 卡片内容区自定义高度（px）；null=自动高度
+    public List<string>? DigitalEmployeeIds { get; set; }        // 数字员工卡片：展示的员工 Id 列表（引用全局员工库）
+    public int DigitalEmployeeColumns { get; set; } = 3;         // 数字员工卡片：每排展示的员工数（1~5）
+    public string? FriendName { get; set; }                      // 好友卡片：名字
+    public string? FriendAvatarPath { get; set; }                // 好友卡片：头像图片路径
+    public string? FriendEmoji { get; set; }                     // 好友卡片：Emoji/文字头像（无图片时的兜底）
+    public string? FriendStatusText { get; set; }                // 好友卡片：状态文字
+    public string FriendOnlineStatus { get; set; } = "online";   // 好友卡片：在线状态 online/away/busy/offline
+    public string FriendDisplayMode { get; set; } = "HorizontalSmall"; // 好友卡片：显示方式 HorizontalSmall/VerticalLarge
+    public List<string>? FriendUserIds { get; set; }             // 好友卡片：展示的好友 userId 加密串列表（引用后端真实好友，与实际数据分离的显示副本）
     public string? CarouselFolder { get; set; }                  // 图片轮播：图片所在目录
     public int CarouselIntervalSeconds { get; set; } = 5;        // 图片轮播：切换间隔（秒）
     public bool CarouselRandom { get; set; } = false;            // 图片轮播：随机播放（否则顺序）
@@ -78,20 +78,21 @@ public class PanelItem
     public string CarouselStretch { get; set; } = "Uniform";     // 图片轮播：填充方式 Uniform/UniformToFill/Fill
     public double CarouselHeight { get; set; } = 140;            // 图片轮播：显示区高度（px）
     public bool CarouselAutoPlay { get; set; } = true;           // 图片轮播：自动播放
-    public string? PluginId { get; set; }                        // 插件模块：插件 ID（对应 plugin.json 中的 id）
-    // ===== 快捷方式组件（原 quickgroups.json 分组数据，已改为面板自有 + item_row 行级存储）=====
-    public List<QuickItem>? QuickItems { get; set; }             // 快捷方式组件：快捷项列表（行级存储）
-    public string QuickGroupName { get; set; } = "快捷方式";      // 快捷方式组件：分组名
-    public int QuickColumns { get; set; } = 1;                   // 快捷方式组件：布局列数（1~4）
-    public string QuickDisplayMode { get; set; } = "grid";       // 快捷方式组件：显示模式 grid/list/popup
-    public bool QuickHideFrame { get; set; } = false;            // 快捷方式组件：隐藏外框（背景/边框/标题栏/内边距）
-    public int QuickOrder { get; set; }                          // 快捷方式组件：排序序号（原分组 Order）
-    public string ScreenTimeStyle { get; set; } = "List";        // 屏幕时长组件展示风格：List/Pie/Category/Window
+    public string? PluginId { get; set; }                        // 插件卡片：插件 ID（对应 plugin.json 中的 id）
+    // ===== 快捷方式卡片（原 quickgroups.json 分组数据，已改为面板自有 + item_row 行级存储）=====
+    public List<QuickItem>? QuickItems { get; set; }             // 快捷方式卡片：快捷项列表（行级存储）
+    public string QuickGroupName { get; set; } = "快捷方式";      // 快捷方式卡片：分组名
+    public int QuickColumns { get; set; } = 1;                   // 快捷方式卡片：布局列数（1~4）
+    public string QuickDisplayMode { get; set; } = "grid";       // 快捷方式卡片：显示模式 grid/list/popup
+    public bool QuickHideFrame { get; set; } = false;            // 快捷方式卡片：隐藏外框（背景/边框/标题栏/内边距）
+    public int QuickOrder { get; set; }                          // 快捷方式卡片：排序序号（原分组 Order）
+    public string ScreenTimeStyle { get; set; } = "List";        // 屏幕时长卡片展示风格：List/Pie/Category/Window
     public string DailyActivityView { get; set; } = "Month";      // 每日活跃视图模式：Month(当月热力图)/Today(仅今日)/Week(前后5天逐日)
-    public string DailyActivityType { get; set; } = "screen";     // 每日活跃组件展示的数据类型：screen=本地屏幕使用时长，其他=服务端类型（含内置固定类型番茄/屏幕时长/健身记录/鼠标键盘活跃）
+    public string DailyActivityType { get; set; } = "screen";     // 每日活跃卡片展示的数据类型：screen=本地屏幕使用时长，其他=服务端类型（含内置固定类型番茄/屏幕时长/健身记录/鼠标键盘活跃）
     public PomodoroSettings? Pomodoro { get; set; }                    // 番茄闹钟数据
-    public List<CheckInItem>? CheckInItems { get; set; }               // 打卡组件：打卡按钮列表（行级存储）
-    public int CheckInColumns { get; set; } = 2;                       // 打卡组件：每排列数（1~4）
+    public List<CheckInItem>? CheckInItems { get; set; }               // 打卡卡片：打卡按钮列表（行级存储）
+    public int CheckInColumns { get; set; } = 2;                       // 打卡卡片：每排列数（1~4）
+    public string CheckInStyle { get; set; } = "IconTextVertical";     // 打卡卡片：按钮样式（TextOnly/IconOnly/IconTextVertical/IconTextHorizontal）
     /// <summary>归属类型: personal=个人, team=团队</summary>
     public string OwnerType { get; set; } = "personal";
     /// <summary>所属团队 ID（OwnerType=team 时有值）</summary>
@@ -106,20 +107,20 @@ public class PanelItem
     public string? ShareMode { get; set; }
     /// <summary>导入权限快照（仅 reference 有意义）：允许编辑数据（含便签/todo 等行数据）</summary>
     public bool AllowEdit { get; set; } = true;
-    /// <summary>导入权限快照（仅 reference 有意义）：允许删除行/模块</summary>
+    /// <summary>导入权限快照（仅 reference 有意义）：允许删除行/卡片</summary>
     public bool AllowDelete { get; set; } = true;
     /// <summary>导入权限快照（仅 reference 有意义）：允许再分享</summary>
     public bool AllowReShare { get; set; } = false;
     /// <summary>引用分享且不允许编辑 → 内容只读（拦截一切行数据修改）</summary>
     [Newtonsoft.Json.JsonIgnore]
     public bool IsShareReadOnly => ShareMode == "reference" && !AllowEdit;
-    /// <summary>引用分享且不允许删除 → 禁止删除模块/行</summary>
+    /// <summary>引用分享且不允许删除 → 禁止删除卡片/行</summary>
     [Newtonsoft.Json.JsonIgnore]
     public bool IsShareDeleteBlocked => ShareMode == "reference" && !AllowDelete;
 }
 
 /// <summary>
-/// 数字员工组件行包装：行级存储/同步用（原始数据为 List&lt;string&gt; 员工 Id 引用）
+/// 数字员工卡片行包装：行级存储/同步用（原始数据为 List&lt;string&gt; 员工 Id 引用）
 /// </summary>
 public class DigitalEmployeeRow
 {
@@ -128,7 +129,7 @@ public class DigitalEmployeeRow
 }
 
 /// <summary>
-/// 好友组件行包装：行级存储/同步用（原始数据为 List&lt;string&gt; 好友 userId 加密串引用）
+/// 好友卡片行包装：行级存储/同步用（原始数据为 List&lt;string&gt; 好友 userId 加密串引用）
 /// </summary>
 public class FriendUserRow
 {
@@ -174,7 +175,13 @@ public class TimerItem
     public bool IsRunning { get; set; } = false;
     public DateTime? StartTime { get; set; }
     public TimeSpan ElapsedTime { get; set; } = TimeSpan.Zero;
-    
+
+    /// <summary>
+    /// 勾选后：每次停止计时时，把本次时段时长（分钟）按「计时器名称」写入每日活跃数据（DailyActivityService）。
+    /// 默认关闭，不影响原有本地当日统计。
+    /// </summary>
+    public bool StoreToDailyActivity { get; set; } = false;
+
     /// <summary>
     /// 历史记录：日期 -> 总秒数
     /// </summary>
@@ -368,6 +375,8 @@ public class WindowConfig
     public bool IsAppMode { get; set; } = false;
     /// <summary>窗口级启用的工具列表（显示在底部工具栏）</summary>
     public List<string> EnabledTools { get; set; } = new();
+    /// <summary>是否开启鼠键记录器（每条侧边栏独立：开启才安装键鼠钩子计数并显示底部状态栏；关闭不记录不显示）</summary>
+    public bool KeyMouseRecorderEnabled { get; set; } = false;
     /// <summary>是否显示在顶部标签列表中（微屏管理中勾选才显示）</summary>
     public bool ShowInTabs { get; set; } = true;
     /// <summary>归属类型: personal=个人, team=团队</summary>
@@ -382,16 +391,16 @@ public class WindowConfig
     public string? ShareId { get; set; }
     /// <summary>来源分享短码（分享导入时有值，展示/再分享用）</summary>
     public string? ShareCode { get; set; }
-    /// <summary>导入权限快照（仅 reference 有意义）：允许编辑数据（含模块内行数据）</summary>
+    /// <summary>导入权限快照（仅 reference 有意义）：允许编辑数据（含卡片内行数据）</summary>
     public bool AllowEdit { get; set; } = true;
     /// <summary>导入权限快照（仅 reference 有意义）：允许删除</summary>
     public bool AllowDelete { get; set; } = true;
     /// <summary>导入权限快照（仅 reference 有意义）：允许再分享</summary>
     public bool AllowReShare { get; set; } = false;
-    /// <summary>引用分享且不允许编辑 → 窗口内所有模块内容只读</summary>
+    /// <summary>引用分享且不允许编辑 → 窗口内所有卡片内容只读</summary>
     [Newtonsoft.Json.JsonIgnore]
     public bool IsShareReadOnly => ShareMode == "reference" && !AllowEdit;
-    /// <summary>引用分享且不允许删除 → 窗口内模块禁止删除</summary>
+    /// <summary>引用分享且不允许删除 → 窗口内卡片禁止删除</summary>
     [Newtonsoft.Json.JsonIgnore]
     public bool IsShareDeleteBlocked => ShareMode == "reference" && !AllowDelete;
 }
@@ -502,8 +511,8 @@ public class WindowConfigManager
 
     /// <summary>
     /// 旧版全局便签库一次性迁移：per-panel 存储引入前便签数据存于全局 sticky-notes.json。
-    /// 升级后首次启动时将全局数据迁入尚无 per-panel 数据的遗留便签模块，并写入完成标记；
-    /// 之后新建/导入的便签模块一律从空列表开始（否则新面板会被全局遗留数据污染）。
+    /// 升级后首次启动时将全局数据迁入尚无 per-panel 数据的遗留便签卡片，并写入完成标记；
+    /// 之后新建/导入的便签卡片一律从空列表开始（否则新面板会被全局遗留数据污染）。
     /// </summary>
     private static void MigrateLegacyStickyNotesOnce(WindowConfigManager mgr)
     {
@@ -577,7 +586,7 @@ public class WindowConfigManager
     /// <summary>
     /// 一次性合并重名重复窗口：旧版同步 bug（结构同步 500 + xid- 遗留密文反复新建）
     /// 使服务端产生重复窗口，结构拉取又把它们补齐成同名本地窗口。
-    /// 升级后首次启动时，同名个人窗口仅保留模块最多的一个，其余移除
+    /// 升级后首次启动时，同名个人窗口仅保留卡片最多的一个，其余移除
     /// （其内容为同批 bug 的重复镜像，服务端会在下次同步对账时级联软删）。
     /// </summary>
     private static void ConsolidateDuplicateWindowsOnce(WindowConfigManager mgr)
@@ -762,7 +771,7 @@ public class WindowConfigManager
             const string todoEat = "Eat";
             const string todoSleep = "Sleep";
 #else
-            const string noteHowTo = "如何使用微屏\n· 右键侧边栏可添加/编辑模块\n· 拖拽模块标题栏可排序\n· 设置中可换主题、语言与停靠位置";
+            const string noteHowTo = "如何使用微屏\n· 右键侧边栏可添加/编辑卡片\n· 拖拽卡片标题栏可排序\n· 设置中可换主题、语言与停靠位置";
             const string noteWelcome = "欢迎使用微屏！\n这是一条常驻屏幕边缘的智能侧边栏：便签、待办、快捷方式、计时器……触手可及，无需切换窗口。";
             const string groupName = "常用网址";
             const string browserName = "元桌浏览器";
@@ -847,9 +856,9 @@ public class WindowConfigManager
 
     /// <summary>
     /// 兜底保证至少存在一个 bar：所有 bar 被删光（或数据异常为空）时创建一个空的原生 bar。
-    /// 否则侧边栏会 ClearContent 折叠 nativePanel → 右键失效，且空白态无「新建微屏」入口，陷入无法新增模块的死状态。
+    /// 否则侧边栏会 ClearContent 折叠 nativePanel → 右键失效，且空白态无「新建微屏」入口，陷入无法新增卡片的死状态。
     /// 与 EnsureDefault「首次安装播种示例面板」不同：这里只建一个空 bar（尊重用户已清空内容的意图），
-    /// 空 bar 会显示「右键添加模块」提示且右键可用。
+    /// 空 bar 会显示「右键添加卡片」提示且右键可用。
     /// </summary>
     public void EnsureAtLeastOneBar()
     {

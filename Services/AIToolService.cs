@@ -27,15 +27,15 @@ namespace SideDesk.Services
                 new { type = "function", function = new { name = "list_windows", description = "列出所有微屏窗口配置（ID、名称、类型、面板数量）", parameters = new { type = "object", properties = new { }, required = new string[] { } } } },
                 new { type = "function", function = new { name = "list_ws_clients", description = "列出当前已连接的 WebSocket 客户端（浏览器扩展）", parameters = new { type = "object", properties = new { }, required = new string[] { } } } },
                 new { type = "function", function = new { name = "broadcast_ws", description = "向所有已连接的 WebSocket 客户端（浏览器扩展）广播消息", parameters = new { type = "object", properties = new { message = new { type = "string", description = "要广播的消息内容" } }, required = new[] { "message" } } } },
-                new { type = "function", function = new { name = "list_notes", description = "获取所有便签列表（含全局便签和模块内便签）", parameters = new { type = "object", properties = new { }, required = new string[] { } } } },
+                new { type = "function", function = new { name = "list_notes", description = "获取所有便签列表（含全局便签和卡片内便签）", parameters = new { type = "object", properties = new { }, required = new string[] { } } } },
                 new { type = "function", function = new { name = "search_notes", description = "根据关键词搜索便签内容（模糊匹配）", parameters = new { type = "object", properties = new { keyword = new { type = "string", description = "搜索关键词" } }, required = new[] { "keyword" } } } },
-                new { type = "function", function = new { name = "add_note", description = "新建一条便签。可指定目标窗口和便签模块（名称或序号），不指定则创建全局便签", parameters = new { type = "object", properties = new { content = new { type = "string", description = "便签内容" }, window = new { type = "string", description = "目标窗口名称、序号或方位（可选，如'主页'、'1'、'左侧'、'右侧'）" }, panel = new { type = "string", description = "目标便签模块标题或序号（可选，如'便签'或'1'）" } }, required = new[] { "content" } } } },
+                new { type = "function", function = new { name = "add_note", description = "新建一条便签。可指定目标窗口和便签卡片（名称或序号），不指定则创建全局便签", parameters = new { type = "object", properties = new { content = new { type = "string", description = "便签内容" }, window = new { type = "string", description = "目标窗口名称、序号或方位（可选，如'主页'、'1'、'左侧'、'右侧'）" }, panel = new { type = "string", description = "目标便签卡片标题或序号（可选，如'便签'或'1'）" } }, required = new[] { "content" } } } },
                 new { type = "function", function = new { name = "delete_note", description = "删除便签（两步确认）：第一次调用返回匹配便签的预览，用户确认后用 confirm=true 再次调用才真正删除", parameters = new { type = "object", properties = new { target = new { type = "string", description = "便签序号（按 list_notes 顺序，1-based）或内容关键词" }, window = new { type = "string", description = "限定窗口范围（可选，名称/序号/方位）" }, confirm = new { type = "string", description = "是否确认删除：'true' 表示用户已确认，立即执行删除", @enum = new[] { "true", "false" } } }, required = new[] { "target" } } } },
                 new { type = "function", function = new { name = "list_clipboard_history", description = "获取最近的剪贴板历史记录（最多100条复制记录，含文本/图片/文件）", parameters = new { type = "object", properties = new { }, required = new string[] { } } } },
                 new { type = "function", function = new { name = "search_clipboard_history", description = "根据关键词搜索剪贴板历史记录（模糊匹配，含文件路径）", parameters = new { type = "object", properties = new { keyword = new { type = "string", description = "搜索关键词" } }, required = new[] { "keyword" } } } },
                 new { type = "function", function = new { name = "list_clipboard_favorites", description = "获取所有剪贴板收藏内容（用户手动保存的剪贴板信息）", parameters = new { type = "object", properties = new { }, required = new string[] { } } } },
                 new { type = "function", function = new { name = "search_clipboard_favorites", description = "根据关键词搜索剪贴板收藏内容（模糊匹配）", parameters = new { type = "object", properties = new { keyword = new { type = "string", description = "搜索关键词" } }, required = new[] { "keyword" } } } },
-                new { type = "function", function = new { name = "get_pomodoro_status", description = "获取番茄闹钟组件当前状态（模式、是否运行中、剩余时间、今日完成数）", parameters = new { type = "object", properties = new { window = new { type = "string", description = "目标窗口名称或序号（可选，如'2'、'主页'），不传则返回所有窗口的番茄闹钟" } }, required = new string[] { } } } },
+                new { type = "function", function = new { name = "get_pomodoro_status", description = "获取番茄闹钟卡片当前状态（模式、是否运行中、剩余时间、今日完成数）", parameters = new { type = "object", properties = new { window = new { type = "string", description = "目标窗口名称或序号（可选，如'2'、'主页'），不传则返回所有窗口的番茄闹钟" } }, required = new string[] { } } } },
                 new { type = "function", function = new { name = "start_pomodoro", description = "开始番茄钟（切换到工作模式并开始计时）", parameters = new { type = "object", properties = new { window = new { type = "string", description = "目标窗口名称或序号（可选，如'2'、'主页'），不传则作用于所有窗口的番茄闹钟" } }, required = new string[] { } } } },
                 new { type = "function", function = new { name = "stop_pomodoro", description = "停止/暂停当前番茄闹钟计时（剩余时间保留，可随时继续）", parameters = new { type = "object", properties = new { window = new { type = "string", description = "目标窗口名称或序号（可选，如'2'、'主页'），不传则作用于所有窗口的番茄闹钟" } }, required = new string[] { } } } },
                 new { type = "function", function = new { name = "start_short_break", description = "开始短休息（切换到短休息模式并开始计时）", parameters = new { type = "object", properties = new { window = new { type = "string", description = "目标窗口名称或序号（可选，如'2'、'主页'），不传则作用于所有窗口的番茄闹钟" } }, required = new string[] { } } } },
@@ -340,7 +340,7 @@ namespace SideDesk.Services
             return new { keyword = kw, matchCount = items.Count, items };
         }
 
-        /// <summary>收集所有窗口的剪贴板收藏条目（含分组子模块）</summary>
+        /// <summary>收集所有窗口的剪贴板收藏条目（含分组子卡片）</summary>
         private static IEnumerable<(ClipboardSavedItem item, string source)> CollectClipboardFavoriteItems(App app)
         {
             foreach (var w in app.WindowConfigs.Windows)
@@ -393,7 +393,7 @@ namespace SideDesk.Services
             var app = (App)System.Windows.Application.Current;
             var note = new StickyNote { Content = content.Trim() };
 
-            // 指定了窗口：添加到该窗口的便签模块（per-panel 存储）
+            // 指定了窗口：添加到该窗口的便签卡片（per-panel 存储）
             if (!string.IsNullOrWhiteSpace(window))
             {
                 var win = ResolveWindow(app, window.Trim());
@@ -402,12 +402,12 @@ namespace SideDesk.Services
 
                 var target = ResolveStickyNotesPanel(win, panel?.Trim());
                 if (target == null)
-                    return new { success = false, error = $"窗口'{win.Name}'中找不到便签模块" };
+                    return new { success = false, error = $"窗口'{win.Name}'中找不到便签卡片" };
 
                 target.StickyNotes!.Insert(0, note);
                 app.WindowConfigs.Save();
                 app.Dispatcher.BeginInvoke(() => app.RefreshAllNativePanels());
-                return new { success = true, message = $"便签已创建到窗口'{win.Name}'的便签模块", id = note.Id, location = $"panel:{target.Title ?? "StickyNotes"}@{win.Name}" };
+                return new { success = true, message = $"便签已创建到窗口'{win.Name}'的便签卡片", id = note.Id, location = $"panel:{target.Title ?? "StickyNotes"}@{win.Name}" };
             }
 
             // 未指定窗口：创建全局便签
@@ -444,7 +444,7 @@ namespace SideDesk.Services
             }
             else
             {
-                // 全局 + 所有窗口模块
+                // 全局 + 所有窗口卡片
                 foreach (var n in StickyNoteManager.GetAll())
                     candidates.Add((n, "global", null));
                 foreach (var w in app.WindowConfigs.Windows)
@@ -513,7 +513,7 @@ namespace SideDesk.Services
 
         // ═══════════ 番茄闹钟工具 ═══════════
 
-        /// <summary>收集番茄闹钟组件（顶层 + 分组内子模块）；win 非空时仅限该窗口</summary>
+        /// <summary>收集番茄闹钟卡片（顶层 + 分组内子卡片）；win 非空时仅限该窗口</summary>
         private static List<(PanelItem item, string source)> CollectPomodoroPanels(App app, WindowConfig? win = null)
         {
             var list = new List<(PanelItem, string)>();
@@ -540,7 +540,7 @@ namespace SideDesk.Services
             _ => Framework.Lang.T("common.pomodoro")
         };
 
-        /// <summary>生成单个番茄组件的状态快照</summary>
+        /// <summary>生成单个番茄卡片的状态快照</summary>
         private static object PomodoroSnapshot(PanelItem p, string source)
         {
             var s = p.Pomodoro ??= new PomodoroSettings();
@@ -581,7 +581,7 @@ namespace SideDesk.Services
             return null;
         }
 
-        /// <summary>获取番茄闹钟组件当前状态（可按窗口定位）</summary>
+        /// <summary>获取番茄闹钟卡片当前状态（可按窗口定位）</summary>
         public static object Tool_GetPomodoroStatus(string? window = null)
         {
             var app = (App)System.Windows.Application.Current;
@@ -591,7 +591,7 @@ namespace SideDesk.Services
             return new { total = panels.Count, items = panels.Select(t => PomodoroSnapshot(t.item, t.source)).ToList() };
         }
 
-        /// <summary>获取今日已完成的番茄数量（可按窗口定位，默认多个组件合计）</summary>
+        /// <summary>获取今日已完成的番茄数量（可按窗口定位，默认多个卡片合计）</summary>
         public static object Tool_GetPomodoroCount(string? window = null)
         {
             var app = (App)System.Windows.Application.Current;
@@ -624,7 +624,7 @@ namespace SideDesk.Services
         /// <summary>
         /// 番茄闹钟统一控制：mode 非空时先切换模式（重置为新模式满时长），
         /// start=true 开始/继续，start=false 暂停并结算剩余时间。
-        /// 状态变更在 UI 线程执行，完成后保存配置并重绘面板（组件重绘时自动恢复计时器）。
+        /// 状态变更在 UI 线程执行，完成后保存配置并重绘面板（卡片重绘时自动恢复计时器）。
         /// </summary>
         private static object ApplyPomodoroAction(string? mode, bool start, string? window = null)
         {
@@ -642,7 +642,7 @@ namespace SideDesk.Services
                         var s = p.Pomodoro ??= new PomodoroSettings();
                         s.EnsureTodayCount();
 
-                        // 切换模式：重置为新模式满时长（与组件内手动切换逻辑一致，但不计入完成数）
+                        // 切换模式：重置为新模式满时长（与卡片内手动切换逻辑一致，但不计入完成数）
                         if (!string.IsNullOrEmpty(mode) && s.Mode != mode)
                         {
                             s.Mode = mode;
@@ -663,7 +663,7 @@ namespace SideDesk.Services
                         }
                         else
                         {
-                            // 暂停：结算剩余时间（与组件内暂停逻辑一致）
+                            // 暂停：结算剩余时间（与卡片内暂停逻辑一致）
                             if (s.IsRunning && s.StartTime.HasValue)
                                 s.RemainingSeconds = Math.Max(0, s.RemainingSeconds - (DateTime.Now - s.StartTime.Value).TotalSeconds);
                             s.IsRunning = false;
@@ -686,7 +686,7 @@ namespace SideDesk.Services
             return new
             {
                 success = true,
-                message = $"{actionLabel}（共 {panels.Count} 个番茄闹钟组件）",
+                message = $"{actionLabel}（共 {panels.Count} 个番茄闹钟卡片）",
                 items = panels.Select(t => PomodoroSnapshot(t.item, t.source)).ToList()
             };
         }
@@ -721,10 +721,10 @@ namespace SideDesk.Services
             return app.WindowConfigs.Windows.FirstOrDefault(w => w.Name.Equals(nameOrIndex, StringComparison.OrdinalIgnoreCase));
         }
 
-        /// <summary>按标题或 1-based 序号解析窗口内的便签模块（含分组子模块）</summary>
+        /// <summary>按标题或 1-based 序号解析窗口内的便签卡片（含分组子卡片）</summary>
         private static PanelItem? ResolveStickyNotesPanel(WindowConfig win, string? nameOrIndex)
         {
-            // 收集所有便签模块（顶层 + 分组内）
+            // 收集所有便签卡片（顶层 + 分组内）
             var notePanels = new List<PanelItem>();
             foreach (var p in win.Panels)
             {
@@ -736,7 +736,7 @@ namespace SideDesk.Services
             if (notePanels.Count == 0) return null;
 
             if (string.IsNullOrWhiteSpace(nameOrIndex))
-                return notePanels[0]; // 默认第一个便签模块
+                return notePanels[0]; // 默认第一个便签卡片
 
             if (int.TryParse(nameOrIndex, out int idx) && idx >= 1 && idx <= notePanels.Count)
                 return notePanels[idx - 1];

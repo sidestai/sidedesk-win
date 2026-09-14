@@ -165,6 +165,8 @@ public static class LocalDbService
         // deleted_synced 标记该墓碑是否已成功上报服务端，上报后仍保留一段时间供追查，到期由 PurgeOldTombstones 清理
         AddColumnIfMissing(conn, "local_bar", "deleted_synced", "INTEGER NOT NULL DEFAULT 0");
         AddColumnIfMissing(conn, "local_item", "deleted_synced", "INTEGER NOT NULL DEFAULT 0");
+        // 每条侧边栏独立的鼠键记录器开关（开启才安装键鼠钩子计数并显示底部状态栏）
+        AddColumnIfMissing(conn, "local_bar", "keymouse_recorder", "INTEGER NOT NULL DEFAULT 0");
 
         using var cmd = conn.CreateCommand();
         cmd.CommandText = @"
@@ -185,6 +187,7 @@ CREATE TABLE IF NOT EXISTS local_bar (
   share_mode    TEXT,
   source_bar_id TEXT,
   enabled_tools TEXT,
+  keymouse_recorder INTEGER NOT NULL DEFAULT 0,
   created_at    TEXT,
   updated_at    TEXT,
   deleted_at    TEXT,
@@ -478,16 +481,16 @@ DELETE FROM local_clipboard_item WHERE user_id=$scope;";
         cmd.CommandText = @"
 INSERT INTO local_bar
   (local_uid, user_id, server_id, title, bg_color, window_type, url, is_edit_mode, is_app_mode,
-   show_in_tabs, owner_type, corp_id, share_mode, source_bar_id, enabled_tools, created_at, updated_at)
+   show_in_tabs, owner_type, corp_id, share_mode, source_bar_id, enabled_tools, keymouse_recorder, created_at, updated_at)
 VALUES
-  ($uid, $scope, $sid, $title, $bg, $wtype, $url, $edit, $app, $tabs, $owner, $corp, $share, $src, $tools, $created, $updated)
+  ($uid, $scope, $sid, $title, $bg, $wtype, $url, $edit, $app, $tabs, $owner, $corp, $share, $src, $tools, $keymouse, $created, $updated)
 ON CONFLICT(local_uid) DO UPDATE SET
   user_id=excluded.user_id,
   server_id=excluded.server_id, title=excluded.title, bg_color=excluded.bg_color,
   window_type=excluded.window_type, url=excluded.url, is_edit_mode=excluded.is_edit_mode,
   is_app_mode=excluded.is_app_mode, show_in_tabs=excluded.show_in_tabs, owner_type=excluded.owner_type,
   corp_id=excluded.corp_id, share_mode=excluded.share_mode, source_bar_id=excluded.source_bar_id,
-  enabled_tools=excluded.enabled_tools, updated_at=excluded.updated_at,
+  enabled_tools=excluded.enabled_tools, keymouse_recorder=excluded.keymouse_recorder, updated_at=excluded.updated_at,
   deleted_at=NULL, deleted_synced=0;";
         cmd.Parameters.AddWithValue("$uid", win.Id);
         cmd.Parameters.AddWithValue("$scope", scope);
@@ -504,6 +507,7 @@ ON CONFLICT(local_uid) DO UPDATE SET
         cmd.Parameters.AddWithValue("$share", (object?)win.ShareMode ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$src", (object?)win.SourceBarId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$tools", JsonConvert.SerializeObject(win.EnabledTools));
+        cmd.Parameters.AddWithValue("$keymouse", win.KeyMouseRecorderEnabled ? 1 : 0);
         cmd.Parameters.AddWithValue("$created", win.CreatedAt.ToString("o"));
         cmd.Parameters.AddWithValue("$updated", now);
         cmd.ExecuteNonQuery();
@@ -1107,6 +1111,55 @@ ON CONFLICT(key) DO UPDATE SET value=excluded.value;";
     }
 
     /// <summary>
+    /// 硬删指定 uid 的窗口/模块行，**不打删除墓碑**（语义与 <see cref="TombstoneMissing"/> 相反）。
+    /// 用于「本设备失去访问权」而非「用户主动删除」的场景：被移出团队后清理该团队的窗口/卡片，
+    /// 或收到 team_item_removed / team_bar_removed 后移除作者已删除、已改归属的团队卡片。
+    /// 这些数据在服务端仍归属团队或作者，若留下墓碑，下次结构上传会把删除意图上报到服务端，
+    /// 进而软删其他成员仍在使用的团队窗口/卡片。
+    /// 调用顺序：先从内存移除 → 调本方法 → 再 WindowConfigManager.Save()（此时 TombstoneMissing 已找不到这些行）。
+    /// 行级数据（便签/待办/快捷项/看板行等）由随后的 Save 全量重写自动清理，此处不单独处理。
+    /// </summary>
+    public static void HardDeleteRows(IEnumerable<string>? barUids, IEnumerable<string>? itemUids)
+    {
+        var bars = (barUids ?? Enumerable.Empty<string>()).Where(u => !string.IsNullOrEmpty(u)).Distinct().ToList();
+        var items = (itemUids ?? Enumerable.Empty<string>()).Where(u => !string.IsNullOrEmpty(u)).Distinct().ToList();
+        if (bars.Count == 0 && items.Count == 0) return;
+        try
+        {
+            using var conn = Open();
+            var scope = CurrentScope();
+            using var tx = conn.BeginTransaction();
+            Delete(conn, "local_bar", scope, bars);
+            Delete(conn, "local_item", scope, items);
+            tx.Commit();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[LocalDb] hard delete rows failed: {ex.Message}");
+        }
+
+        // 只删当前作用域的行；按 IN 分批规避 SQLite 参数上限
+        static void Delete(SqliteConnection conn, string table, string scope, List<string> uids)
+        {
+            const int batch = 400;
+            for (int start = 0; start < uids.Count; start += batch)
+            {
+                var slice = uids.Skip(start).Take(batch).ToList();
+                using var cmd = conn.CreateCommand();
+                var names = new List<string>();
+                for (int i = 0; i < slice.Count; i++)
+                {
+                    names.Add($"$u{i}");
+                    cmd.Parameters.AddWithValue($"$u{i}", slice[i]);
+                }
+                cmd.CommandText = $"DELETE FROM {table} WHERE user_id=$scope AND local_uid IN ({string.Join(",", names)})";
+                cmd.Parameters.AddWithValue("$scope", scope);
+                cmd.ExecuteNonQuery();
+            }
+        }
+    }
+
+    /// <summary>
     /// 硬删超过保留期的已确认墓碑（每进程一次，由 LoadManager 启动加载时触发）。
     /// 只清 deleted_synced=1 的 —— 未确认的墓碑必须留到成功上报为止，否则删除意图丢失、已删窗口会在拉取时复活。
     /// </summary>
@@ -1155,7 +1208,7 @@ ON CONFLICT(key) DO UPDATE SET value=excluded.value;";
         {
             cmd.CommandText = @"SELECT local_uid, server_id, title, bg_color, window_type, url,
   is_edit_mode, is_app_mode, show_in_tabs, owner_type, corp_id, share_mode, source_bar_id,
-  enabled_tools, created_at
+  enabled_tools, keymouse_recorder, created_at
 FROM local_bar WHERE deleted_at IS NULL AND user_id=$scope ORDER BY id";
             cmd.Parameters.AddWithValue("$scope", scope);
             using var rd = cmd.ExecuteReader();
@@ -1177,9 +1230,10 @@ FROM local_bar WHERE deleted_at IS NULL AND user_id=$scope ORDER BY id";
                     ShareMode = rd.IsDBNull(11) ? null : rd.GetString(11),
                     SourceBarId = rd.IsDBNull(12) ? null : rd.GetString(12),
                     EnabledTools = SafeDeserializeList<string>(rd.IsDBNull(13) ? null : rd.GetString(13)) ?? new(),
+                    KeyMouseRecorderEnabled = rd.GetInt64(14) != 0,
                 };
                 DateTime created = DateTime.Now;
-                if (!rd.IsDBNull(14) && DateTime.TryParse(rd.GetString(14), out var c)) created = c;
+                if (!rd.IsDBNull(15) && DateTime.TryParse(rd.GetString(15), out var c)) created = c;
                 win.CreatedAt = created;
                 bars.Add((win, created));
             }

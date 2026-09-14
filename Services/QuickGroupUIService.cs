@@ -47,7 +47,7 @@ namespace SideDesk.Services
             (Brush)Application.Current.FindResource("BrushTextSec");
 
         /// <summary>
-        /// 为模块容器应用主题背景色（显式获取资源，确保每次创建时使用当前主题）
+        /// 为卡片容器应用主题背景色（显式获取资源，确保每次创建时使用当前主题）
         /// </summary>
         private static void ApplyModuleBackground(Border border)
         {
@@ -55,7 +55,7 @@ namespace SideDesk.Services
         }
 
         /// <summary>
-        /// 为模块容器应用主题背景色（StackPanel 等无 Background 属性的容器，用 Border 包裹）
+        /// 为卡片容器应用主题背景色（StackPanel 等无 Background 属性的容器，用 Border 包裹）
         /// </summary>
         private static Border WrapWithThemeBackground(FrameworkElement content)
         {
@@ -654,7 +654,7 @@ namespace SideDesk.Services
 
         private Border BuildGroupPanel(QuickGroup group)
         {
-            // 切换「隐藏模块外框」并重建当前视图（隐藏后去掉背景/边框/标题栏/内边距，不占位）
+            // 切换「隐藏卡片外框」并重建当前视图（隐藏后去掉背景/边框/标题栏/内边距，不占位）
             void ToggleHideFrame()
             {
                 group.HideFrame = !group.HideFrame;
@@ -679,13 +679,13 @@ namespace SideDesk.Services
             var titleBar = new DockPanel { Margin = new Thickness(5, 3, 5, 3) };
             // 1:1 面板绑定模式（LoadSingleGroup）下本分组卡片即顶层面板：标题栏改挂「面板调序拖拽手柄」标记，
             // 由编辑模式下 NativeModePanel.AttachPanelDragHandlers（挂在面板容器上）识别并发起 PanelItemId 拖拽，
-            // 从而支持与其他模块调序、拖入/拖出置顶区；
+            // 从而支持与其他卡片调序、拖入/拖出置顶区；
             // 旧版多分组容器模式仍保留 Tag=group.Id（UpdateGroupTitleCount 与组间调序使用）
             bool panelBound = !string.IsNullOrEmpty(_boundGroupId);
             titleBar.Tag = panelBound ? ModuleControl.DragHandleTag : group.Id;
             if (panelBound && IsEditMode)
                 titleBar.Cursor = Cursors.SizeAll;
-            // 隐藏模块外框时一并隐藏标题栏（不占位）
+            // 隐藏卡片外框时一并隐藏标题栏（不占位）
             if (group.HideFrame)
                 titleBar.Visibility = Visibility.Collapsed;
 
@@ -837,7 +837,7 @@ namespace SideDesk.Services
                 QuickGroupManager.UpdateGroup(group);
             };
 
-            // 弹出菜单模式：用单个触发按钮（模块名）代替项目网格，点击后弹出全部项
+            // 弹出菜单模式：用单个触发按钮（卡片名）代替项目网格，点击后弹出全部项
             if (isPopup)
             {
                 outerPanel.Children.Add(BuildPopupTriggerButton(group));
@@ -850,7 +850,7 @@ namespace SideDesk.Services
                 }
             }
             
-            // 渲染子模块（便签、计时器等）
+            // 渲染子卡片（便签、计时器等）
             if (group.ChildPanels != null && group.ChildPanels.Count > 0)
             {
                 foreach (var childPanel in group.ChildPanels)
@@ -954,7 +954,7 @@ namespace SideDesk.Services
                 popup.Items.Add(hideFrameItem);
                 popup.Items.Add(new Separator());
 
-                // 分享模块（item 级分享）：已登录 + 窗口与模块均已同步 + 非引用导入或允许再分享时才显示
+                // 分享卡片（item 级分享）：已登录 + 窗口与卡片均已同步 + 非引用导入或允许再分享时才显示
                 bool canShareGroup = !string.IsNullOrEmpty(group.Panel.ServerId)
                     && !string.IsNullOrEmpty(OwnerWindowConfig?.ServerId)
                     && !string.IsNullOrEmpty(((App)Application.Current).AppSettings.AccountToken)
@@ -1127,14 +1127,14 @@ namespace SideDesk.Services
             RefreshGroupView();
         }
 
-        /// <summary>分享快捷组模块（item 级分享）：确保模块已同步后弹出创建分享对话框。
+        /// <summary>分享快捷组卡片（item 级分享）：确保卡片已同步后弹出创建分享对话框。
         /// 与 NativeModePanel.ShareModule_Click 逻辑一致，复用 ThemedMessageBox.ShowCreateShareDialog。</summary>
         private async void ShareGroup_Click(QuickGroup group)
         {
             var panel = group.Panel;
             var barServerId = OwnerWindowConfig?.ServerId;
 
-            // 模块还没有 ServerId：先确保窗口已同步，再创建模块 ServerId
+            // 卡片还没有 ServerId：先确保窗口已同步，再创建卡片 ServerId
             if (string.IsNullOrEmpty(panel.ServerId))
             {
                 if (string.IsNullOrEmpty(barServerId))
@@ -1158,7 +1158,7 @@ namespace SideDesk.Services
         #region Module Widget Building
 
         /// <summary>
-        /// 构建模块widget（便签、计时器等）
+        /// 构建卡片widget（便签、计时器等）
         /// </summary>
         private FrameworkElement BuildModuleWidget(PanelItem panel, string groupId)
         {
@@ -1608,7 +1608,7 @@ namespace SideDesk.Services
             timer.DailyRecords[today] += (int)elapsed.TotalSeconds;
         }
 
-        // 其他模块的占位实现
+        // 其他卡片的占位实现
         private FrameworkElement BuildClipboardModule(PanelItem panel, string groupId) => WrapWithThemeBackground(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("nativePanel.clipboardFavorites"), Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), Margin = new Thickness(8) });
         private FrameworkElement BuildUsageStatsModule(PanelItem panel, string groupId) => WrapWithThemeBackground(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("nativePanel.usageStatistics"), Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), Margin = new Thickness(8) });
         private FrameworkElement BuildAIChatModule(PanelItem panel, string groupId) => WrapWithThemeBackground(new Emoji.Wpf.TextBlock { Text = Framework.Lang.T("nativePanel.aiChat"), Foreground = (Brush)Application.Current.FindResource("BrushTextMain"), Margin = new Thickness(8) });

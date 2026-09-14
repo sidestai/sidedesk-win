@@ -12,7 +12,7 @@ using SideDesk.Models;
 namespace SideDesk.Controls
 {
     /// <summary>
-    /// 「番茄闹钟」组件：番茄工作法计时器，支持 番茄钟/短休息/长休息 三阶段循环，
+    /// 「番茄闹钟」卡片：番茄工作法计时器，支持 番茄钟/短休息/长休息 三阶段循环，
     /// 可自定义各阶段时长、自动切换下一阶段、到时闪烁/弹窗提醒，并统计当日完成番茄数。
     /// </summary>
     public partial class NativeModePanel
@@ -26,7 +26,7 @@ namespace SideDesk.Controls
             var p = item.Pomodoro;
             p.EnsureTodayCount();
 
-            // ===== 红色卡片容器（自包含，不依赖模块背景色）=====
+            // ===== 红色卡片容器（自包含，不依赖卡片背景色）=====
             var card = new Border
             {
                 CornerRadius = new CornerRadius(8),
@@ -43,7 +43,7 @@ namespace SideDesk.Controls
             {
                 Content = GetPomodoroModeLabel(p.Mode) + " ▾",
                 Height = 26,
-                FontSize = 12,
+                FontSize = FS(12),
                 FontWeight = FontWeights.Bold,
                 Background = Brushes.White,
                 Foreground = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33)),
@@ -70,7 +70,7 @@ namespace SideDesk.Controls
             var timeDisplay = new TextBlock
             {
                 Text = FormatPomodoroTime(p.GetRemaining()),
-                FontSize = 22,
+                FontSize = FS(22),
                 FontWeight = FontWeights.Bold,
                 FontFamily = new FontFamily("Consolas"),
                 Foreground = Brushes.White,
@@ -103,7 +103,7 @@ namespace SideDesk.Controls
             {
                 Content = p.IsRunning ? Framework.Lang.T("common.pause") : Framework.Lang.T("common.start"),
                 Height = 28,
-                FontSize = 13,
+                FontSize = FS(13),
                 FontWeight = FontWeights.Bold,
                 Background = Brushes.White,
                 Foreground = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33)),
@@ -120,7 +120,7 @@ namespace SideDesk.Controls
             var statusText = new Emoji.Wpf.TextBlock
             {
                 Text = BuildPomodoroStatus(p),
-                FontSize = 11,
+                FontSize = FS(11),
                 Foreground = new SolidColorBrush(Color.FromArgb(0xCC, 0xFF, 0xFF, 0xFF)),
                 HorizontalAlignment = HorizontalAlignment.Center
             };
@@ -305,7 +305,7 @@ namespace SideDesk.Controls
                 p.StartTime = DateTime.Now;
             }
 
-            // 刷新页签样式需要重绘整个模块（页签引用不在此作用域）；
+            // 刷新页签样式需要重绘整个卡片（页签引用不在此作用域）；
             // 若 AutoStartNext，重绘时 BuildPomodoroWidget 会检测 IsRunning 自动恢复计时
             RenderPanels();
         }
@@ -372,7 +372,7 @@ namespace SideDesk.Controls
             {
                 Text = Framework.Lang.TF("nativePanel.pomodoroAutoRecordHint", Services.DailyActivityTypes.Pomodoro),
                 Foreground = (Brush)FindResource("BrushTextSec"),
-                FontSize = 12,
+                FontSize = FS(12),
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 0, 0, 12)
             });
@@ -437,7 +437,7 @@ namespace SideDesk.Controls
             root.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = wasWork ? Framework.Lang.T("nativePanel.pomodoroComplete") : Framework.Lang.T("nativePanel.breakOverEmoji"),
-                FontSize = 18,
+                FontSize = FS(18),
                 FontWeight = FontWeights.Bold,
                 Foreground = (Brush)FindResource("BrushTextMain"),
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -448,7 +448,7 @@ namespace SideDesk.Controls
                 Text = wasWork
                     ? Framework.Lang.TF("nativePanel.pomodoroDayComplete", p.CompletedCount)
                     : Framework.Lang.T("nativePanel.breakComplete"),
-                FontSize = 13,
+                FontSize = FS(13),
                 Foreground = (Brush)FindResource("BrushTextMuted"),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 TextWrapping = TextWrapping.Wrap,

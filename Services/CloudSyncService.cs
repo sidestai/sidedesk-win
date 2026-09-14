@@ -965,6 +965,11 @@ namespace SideDesk.Services
 
                 bool changed = false;
                 var removedWindowIds = new List<string>();
+                // 失效引用窗口下的卡片、以及窗口内残留的共享面板，ServerId 都指向分享者的源模块：
+                // 本地行必须硬删（不打墓碑），否则下次结构上传会把删除意图报到源模块上，
+                // 源模块属团队且本机是其成员时服务端会判定有删除权 → 真删源模块（分享者与其他成员一起丢数据）。
+                // 窗口自身保留墓碑：入口空壳归本人所有，需让服务端软删，否则下次结构拉取会把它补回来。
+                var revokedItemUids = new List<string>();
 
                 // 1) 窗口级：导入的引用窗口分享已失效 → 移除整个窗口
                 for (int i = mgr.Windows.Count - 1; i >= 0; i--)
@@ -974,6 +979,7 @@ namespace SideDesk.Services
                     bool valid = validImportLocalIds.Contains(w.Id) || validSourceBarIds.Contains(w.SourceBarId!);
                     if (!valid)
                     {
+                        foreach (var p in EnumeratePanelsRecursive(w.Panels)) revokedItemUids.Add(p.Id);
                         mgr.Windows.RemoveAt(i);
                         removedWindowIds.Add(w.Id);
                         changed = true;
@@ -985,7 +991,7 @@ namespace SideDesk.Services
                 foreach (var w in mgr.Windows)
                 {
                     if (w.OwnerType == "team") continue;
-                    if (RemoveRevokedSharedPanels(w.Panels, structureItemIds, validItemServerIds, validImportLocalIds))
+                    if (RemoveRevokedSharedPanels(w.Panels, structureItemIds, validItemServerIds, validImportLocalIds, revokedItemUids))
                     {
                         changed = true;
                         System.Diagnostics.Debug.WriteLine($"[CloudSync] share expired, cleaned leftover shared components in window {w.Name}");
@@ -994,6 +1000,8 @@ namespace SideDesk.Services
 
                 if (changed)
                 {
+                    // 先硬删引用行再 Save：Save 内的 TombstoneMissing 找不到这些行，墓碑无从生成
+                    if (revokedItemUids.Count > 0) LocalDbService.HardDeleteRows(null, revokedItemUids);
                     System.Windows.Application.Current?.Dispatcher?.Invoke(() =>
                     {
                         mgr.Save();
@@ -1010,8 +1018,9 @@ namespace SideDesk.Services
             }
         }
 
-        /// <summary>递归移除失效共享面板：ServerId 非空、非团队模块、不在自己云端结构、也不在有效导入记录中的面板</summary>
-        private static bool RemoveRevokedSharedPanels(List<PanelItem> panels, HashSet<string> structureItemIds, HashSet<string> validItemServerIds, HashSet<string> validImportLocalIds)
+        /// <summary>递归移除失效共享面板：ServerId 非空、非团队模块、不在自己云端结构、也不在有效导入记录中的面板。
+        /// sink 收集被移除面板（含子面板）的本地 uid，供调用方硬删本地库行</summary>
+        private static bool RemoveRevokedSharedPanels(List<PanelItem> panels, HashSet<string> structureItemIds, HashSet<string> validItemServerIds, HashSet<string> validImportLocalIds, List<string> sink)
         {
             bool removed = false;
             for (int i = panels.Count - 1; i >= 0; i--)
@@ -1024,12 +1033,13 @@ namespace SideDesk.Services
                     && !validImportLocalIds.Contains(p.Id);
                 if (candidate)
                 {
+                    foreach (var c in EnumeratePanelsRecursive(new List<PanelItem> { p })) sink.Add(c.Id);
                     panels.RemoveAt(i);
                     removed = true;
                     continue;
                 }
                 if (p.ChildPanels != null)
-                    removed |= RemoveRevokedSharedPanels(p.ChildPanels, structureItemIds, validItemServerIds, validImportLocalIds);
+                    removed |= RemoveRevokedSharedPanels(p.ChildPanels, structureItemIds, validItemServerIds, validImportLocalIds, sink);
             }
             return removed;
         }
@@ -1233,7 +1243,7 @@ namespace SideDesk.Services
             // 新增/修改：新快照中有，且与旧快照不同
             foreach (var kv in newRows)
             {
-                if (!oldRows.TryGetValue(kv.Key, out var oldRow) || !JToken.DeepEquals(oldRow, kv.Value))
+                if (!oldRows.TryGetValue(kv.Key, out var oldRow) || !RowsContentEquals(oldRow, kv.Value))
                     changedRows.Add(BuildRowPayload(kv.Key, rowType, kv.Value, idMap));
             }
 
@@ -1375,7 +1385,7 @@ namespace SideDesk.Services
             {
                 foreach (var kv in currents[i])
                 {
-                    bool modified = !snaps[i].TryGetValue(kv.Key, out var snapRow) || !JToken.DeepEquals(snapRow, kv.Value);
+                    bool modified = !snaps[i].TryGetValue(kv.Key, out var snapRow) || !RowsContentEquals(snapRow, kv.Value);
                     if (modified) mergedRows[kv.Key] = kv.Value;
                 }
             }
@@ -1411,7 +1421,7 @@ namespace SideDesk.Services
             var changedRows = new List<Dictionary<string, object>>();
             foreach (var kv in mergedRows)
             {
-                if (!oldUnion.TryGetValue(kv.Key, out var oldRow) || !JToken.DeepEquals(oldRow, kv.Value))
+                if (!oldUnion.TryGetValue(kv.Key, out var oldRow) || !RowsContentEquals(oldRow, kv.Value))
                     changedRows.Add(BuildRowPayload(kv.Key, rowType, kv.Value, idMap));
             }
 
@@ -1451,13 +1461,13 @@ namespace SideDesk.Services
             foreach (var p in group)
             {
                 var currentArr = new JArray(ParseRowsFromJson(GetListDataJson(p) ?? "[]").Values);
-                if (!JToken.DeepEquals(currentArr, arr))
+                if (!RowsContentEquals(currentArr, arr))
                 {
                     needAlign = true;
                     break;
                 }
                 if (!_rowSnapshots.TryGetValue(p.Id, out var snap)
-                    || !JToken.DeepEquals(new JArray(ParseRowsFromJson(snap).Values), arr))
+                    || !RowsContentEquals(new JArray(ParseRowsFromJson(snap).Values), arr))
                 {
                     needAlign = true;
                     break;
@@ -1654,16 +1664,20 @@ namespace SideDesk.Services
                 }
 
                 // 第三遍：移除服务端已不存在的本地共享面板（仅限有 ServerId 的，不动本地自建面板）
+                // 这些面板是源模块引用，本地行硬删不打墓碑：删除意图一旦上报，源模块属团队且本机是其成员时会被真删
+                var revokedUids = new List<string>();
                 for (int i = win.Panels.Count - 1; i >= 0; i--)
                 {
                     var p = win.Panels[i];
                     if (string.IsNullOrEmpty(p.ServerId)) continue;
                     if (!serverIds.Contains(p.ServerId))
                     {
+                        foreach (var c in EnumeratePanelsRecursive(new List<PanelItem> { p })) revokedUids.Add(c.Id);
                         win.Panels.RemoveAt(i);
                         changed = true;
                     }
                 }
+                if (revokedUids.Count > 0) LocalDbService.HardDeleteRows(null, revokedUids);
 
                 // 第四遍：新增面板全量拉行
                 foreach (var np in newPanels)
@@ -1735,6 +1749,57 @@ namespace SideDesk.Services
                 SideDesk.Services.LocalDbService.SaveRowServerIds(entries);
         }
 
+        /// <summary>行内容比较（数字容忍）：服务端 JS 数字存储往返会把 36.0 规范化为 36，
+        /// 而 JToken.DeepEquals 对 double/整数形态差异判不相等，导致「合并判有变更 → 再推送 →
+        /// 服务端再广播」在团队多客户端间无限乒乓循环。数字一律按数值等价比较，
+        /// 其余类型维持 DeepEquals 语义。</summary>
+        private static bool RowsContentEquals(JToken a, JToken b)
+        {
+            if (a is JObject ao)
+            {
+                if (b is not JObject bo || ao.Count != bo.Count) return false;
+                foreach (var prop in ao.Properties())
+                {
+                    if (!bo.TryGetValue(prop.Name, out var bValue)) return false;
+                    if (!RowsContentEquals(prop.Value, bValue)) return false;
+                }
+                return true;
+            }
+            if (a is JArray aa)
+            {
+                if (b is not JArray ba || aa.Count != ba.Count) return false;
+                for (int i = 0; i < aa.Count; i++)
+                    if (!RowsContentEquals(aa[i], ba[i])) return false;
+                return true;
+            }
+            if (a is JValue av && b is JValue bv)
+            {
+                bool aNum = av.Type is JTokenType.Integer or JTokenType.Float;
+                bool bNum = bv.Type is JTokenType.Integer or JTokenType.Float;
+                if (aNum && bNum) return NumericEquals(av, bv);
+            }
+            return JToken.DeepEquals(a, b);
+        }
+
+        /// <summary>Integer/Float 跨类型数值等价比较：优先 decimal 精确比较，超出范围时退回 double</summary>
+        private static bool NumericEquals(JValue a, JValue b)
+        {
+            try
+            {
+                return Convert.ToDecimal(a.Value, System.Globalization.CultureInfo.InvariantCulture)
+                    == Convert.ToDecimal(b.Value, System.Globalization.CultureInfo.InvariantCulture);
+            }
+            catch (OverflowException)
+            {
+                return Convert.ToDouble(a.Value, System.Globalization.CultureInfo.InvariantCulture)
+                    == Convert.ToDouble(b.Value, System.Globalization.CultureInfo.InvariantCulture);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
         /// <summary>将服务端行数据合并到本地模块列表（增/改/删）；replaceAll=true 时以服务端结果整体替换（全量拉取/分享取消刷新）</summary>
         private bool MergeRowsIntoPanel(PanelItem p, JArray serverRows, bool replaceAll = false)
         {
@@ -1761,7 +1826,7 @@ namespace SideDesk.Services
                     content["Id"] = rowId;
                     freshRows[rowId!] = content;
                 }
-                bool changed = !JToken.DeepEquals(new JArray(localRows.Values), new JArray(freshRows.Values));
+                bool changed = !RowsContentEquals(new JArray(localRows.Values), new JArray(freshRows.Values));
                 if (changed)
                 {
                     var freshArr = new JArray(freshRows.Values);
@@ -1799,7 +1864,7 @@ namespace SideDesk.Services
                     if (localRows.TryGetValue(rowId!, out var existing))
                     {
                         // 已存在：比较 updatedAt，服务端较新则覆盖
-                        if (!JToken.DeepEquals(existing, content))
+                        if (!RowsContentEquals(existing, content))
                         {
                             localRows[rowId!] = content;
                             mergeChanged = true;

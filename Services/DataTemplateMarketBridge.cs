@@ -12,7 +12,7 @@ namespace SideDesk.Services;
 ///（由 MarketWindow 的 WebView2 拦截转发），无需 WebSocket。
 /// 协议：/data-templates/list 查询全部模板（内置 + 用户自建）；
 /// /data-templates/open?tid=&lt;加密行ID&gt; 按模板 ID 唤起客户端原生数据项配置对话框；
-/// /data-templates/add?config=&lt;urlencoded JSON&gt; 将市场页配置好的模板落地为侧边栏数据模块。
+/// /data-templates/add?config=&lt;urlencoded JSON&gt; 将市场页配置好的模板落地为侧边栏数据卡片。
 /// </summary>
 public static class DataTemplateMarketBridge
 {
@@ -87,7 +87,7 @@ public static class DataTemplateMarketBridge
     /// <summary>
     /// 添加市场页配置好的模板（TargetUrl 占位符已由页面替换为实际值）：
     /// 存入 user-templates.json（Id 冲突自动追加时间戳，避免覆盖同名历史实例），
-    /// 再切 UI 线程在当前侧边栏新建数据看板模块并同步轮询服务。
+    /// 再切 UI 线程在当前侧边栏新建数据看板卡片并同步轮询服务。
     /// </summary>
     private static (int Status, string Json) AddTemplate(string query)
     {
@@ -109,7 +109,7 @@ public static class DataTemplateMarketBridge
             tpl.Id = $"{tpl.Id}-{DateTimeOffset.Now.ToUnixTimeMilliseconds()}";
         manager.SaveUserTemplate(tpl);
 
-        // 落地 UI：当前活跃的侧边栏面板新增数据模块
+        // 落地 UI：当前活跃的侧边栏面板新增数据卡片
         Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
         {
             try

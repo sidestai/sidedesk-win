@@ -12,8 +12,8 @@ using SideDesk.Framework;
 namespace SideDesk.Controls
 {
     /// <summary>
-    /// 模块基础组件：所有面板模块（含插件）的统一基类。
-    /// 提供标准外框、标题栏、右上角菜单（模块设置/隐藏外框/置顶/删除）、
+    /// 卡片基础组件：所有面板卡片（含插件）的统一基类。
+    /// 提供标准外框、标题栏、右上角菜单（卡片设置/隐藏外框/置顶/删除）、
     /// 编辑模式拖拽手柄、内容区可调高等通用能力。
     /// 子类/调用方仅需关注内容逻辑，通过 Content 属性注入即可。
     /// </summary>
@@ -31,24 +31,24 @@ namespace SideDesk.Controls
         public string DefaultTitle { get; set; }
         public bool IsEditMode { get; set; }
         public WindowConfigManager? ConfigManager { get; set; }
-        /// <summary>背景色覆盖（优先于 Item.BGColor，用于 Group 等需要特殊背景色的模块）</summary>
+        /// <summary>背景色覆盖（优先于 Item.BGColor，用于 Group 等需要特殊背景色的卡片）</summary>
         public string? BGColorOverride { get; set; }
-        /// <summary>窗口级限制：引用导入的窗口不允许编辑（由 NativeModePanel 注入），与模块级限制叠加</summary>
+        /// <summary>窗口级限制：引用导入的窗口不允许编辑（由 NativeModePanel 注入），与卡片级限制叠加</summary>
         public bool WindowEditBlocked { get; set; }
 
-        /// <summary>编辑受限（模块自身或所属窗口的引用分享不允许编辑）→ 内容区只读，拦截行数据增删改</summary>
+        /// <summary>编辑受限（卡片自身或所属窗口的引用分享不允许编辑）→ 内容区只读，拦截行数据增删改</summary>
         private bool EditBlocked => Item.IsShareReadOnly || WindowEditBlocked;
-        // 注：删除模块=取消引用，始终允许（不受 AllowDelete 限制）；AllowDelete 仅控制组件内行数据删除，
+        // 注：删除卡片=取消引用，始终允许（不受 AllowDelete 限制）；AllowDelete 仅控制卡片内行数据删除，
         // 由后端 item-row.push 鉴权保障（allowDelete=false 时静默跳过删除），客户端不单独拦截行删除入口。
 
         // ===== 回调（由 NativeModePanel 注入）=====
         /// <summary>请求重新渲染所有面板</summary>
         public Action? OnRenderPanels { get; set; }
-        /// <summary>请求删除当前模块</summary>
+        /// <summary>请求删除当前卡片</summary>
         public Action<PanelItem>? OnRemovePanel { get; set; }
-        /// <summary>请求打开模块设置对话框</summary>
+        /// <summary>请求打开卡片设置对话框</summary>
         public Action<PanelItem, string>? OnShowSettings { get; set; }
-        /// <summary>请求重命名模块</summary>
+        /// <summary>请求重命名卡片</summary>
         public Action<PanelItem, string>? OnRenamePanel { get; set; }
 
         // ===== 内部 UI 引用 =====
@@ -72,7 +72,7 @@ namespace SideDesk.Controls
         // 内容区（Content 属性存储在此）
         private UIElement? _moduleContent;
 
-        /// <summary>模块高度拖拽进行中标志</summary>
+        /// <summary>卡片高度拖拽进行中标志</summary>
         private bool _resizingModule;
 
         public ModuleControl(PanelItem item, string defaultTitle, bool isEditMode, WindowConfigManager? configManager, bool groupMode = false, bool fillMode = false)
@@ -90,7 +90,7 @@ namespace SideDesk.Controls
             BuildVisualTree();
         }
 
-        /// <summary>设置模块内容（替代直接设置 Content，确保内容放入正确的容器）</summary>
+        /// <summary>设置卡片内容（替代直接设置 Content，确保内容放入正确的容器）</summary>
         public void SetContent(UIElement content)
         {
             _moduleContent = content;
@@ -125,14 +125,14 @@ namespace SideDesk.Controls
             }
         }
 
-        /// <summary>添加自定义菜单项（插入到标准菜单项“模块设置”之后）</summary>
+        /// <summary>添加自定义菜单项（插入到标准菜单项“卡片设置”之后）</summary>
         public void AddCustomMenuItem(UIElement menuItem)
         {
             _customMenuItems.Add(menuItem);
-            // 直接插入到已有菜单中（位置：模块设置之后、分隔线/标准项之前）
+            // 直接插入到已有菜单中（位置：卡片设置之后、分隔线/标准项之前）
             if (_moduleMenu != null)
             {
-                int insertIndex = 1 + _customMenuItems.Count - 1; // 1(模块设置) + 已有自定义项数 - 1
+                int insertIndex = 1 + _customMenuItems.Count - 1; // 1(卡片设置) + 已有自定义项数 - 1
                 _moduleMenu.Items.Insert(insertIndex, menuItem);
                 // 确保分隔线存在（第一个自定义项插入时添加）
                 if (_customMenuItems.Count == 1)
@@ -149,7 +149,7 @@ namespace SideDesk.Controls
                 AddCustomMenuItem(mi);
         }
 
-        /// <summary>获取显示标题（置顶模块自动添加 📌 前缀）</summary>
+        /// <summary>获取显示标题（置顶卡片自动添加 📌 前缀）</summary>
         public virtual string GetDisplayTitle()
         {
             var title = string.IsNullOrEmpty(Item.Title) ? DefaultTitle : Item.Title;
@@ -169,7 +169,7 @@ namespace SideDesk.Controls
             _header.Margin = margin;
         }
 
-        /// <summary>设置整个模块的右键菜单（Group 模式使用自定义菜单替代标准菜单）</summary>
+        /// <summary>设置整个卡片的右键菜单（Group 模式使用自定义菜单替代标准菜单）</summary>
         public void SetModuleContextMenu(ContextMenu menu)
         {
             _rootBorder.ContextMenu = menu;
@@ -216,7 +216,7 @@ namespace SideDesk.Controls
             _titleBlock = new Emoji.Wpf.TextBlock
             {
                 Text = GetDisplayTitle(),
-                FontSize = 13,
+                FontSize = Framework.AppSettings.Instance.FS(13), // 卡片标题自动比卡片内字体（基准 12）大 1 号
                 VerticalAlignment = VerticalAlignment.Center,
                 Foreground = GetBrush("BrushTextMain")
             };
@@ -287,7 +287,7 @@ namespace SideDesk.Controls
                 _mainStack.Children.Add(_resizeGrip);
             }
 
-            // 外框（分享导入/团队归属模块使用设置中的标识边框色）
+            // 外框（分享导入/团队归属卡片使用设置中的标识边框色）
             var (specialBrush, specialThickness) = ResolveSpecialBorder();
             _rootBorder = new Border
             {
@@ -402,7 +402,7 @@ namespace SideDesk.Controls
             return host;
         }
 
-        /// <summary>创建底部拖拽手柄（编辑模式下调整模块高度）</summary>
+        /// <summary>创建底部拖拽手柄（编辑模式下调整卡片高度）</summary>
         private Border CreateResizeGrip()
         {
             var grip = new Border
@@ -497,7 +497,7 @@ namespace SideDesk.Controls
         {
             _moduleMenu = new ContextMenu();
 
-            // 模块设置（引用分享只读时点击拦截提醒，不禁用——WPF 禁用菜单项 ToolTip 不显示，用户无感知）
+            // 卡片设置（引用分享只读时点击拦截提醒，不禁用——WPF 禁用菜单项 ToolTip 不显示，用户无感知）
             var settingsMi = new MenuItem { Header = Framework.Lang.T("common.moduleSettings") };
             if (EditBlocked)
             {
@@ -535,7 +535,7 @@ namespace SideDesk.Controls
                 _moduleMenu.Items.Add(new Separator());
             }
 
-            // 隐藏模块外框
+            // 隐藏卡片外框
             var hideFrameMi = new MenuItem
             {
                 Header = Framework.Lang.T("common.hideModuleFrame"),
@@ -565,9 +565,9 @@ namespace SideDesk.Controls
             };
             _moduleMenu.Items.Add(pinMi);
 
-            // 删除模块：引用分享时语义为“取消引用/移除共享组件”，始终允许——接收方有权移除自己侧边栏的共享组件，
-            // 后端 sync.remove 对非属主仅解除引用并删除 share_import 记录、永不软删源模块。
-            // AllowDelete 只控制组件内行数据的删除（由内容区拦截层与后端 item-row 鉴权保障），不控制取消引用。
+            // 删除卡片：引用分享时语义为“取消引用/移除共享卡片”，始终允许——接收方有权移除自己侧边栏的共享卡片，
+            // 后端 sync.remove 对非属主仅解除引用并删除 share_import 记录、永不软删源卡片。
+            // AllowDelete 只控制卡片内行数据的删除（由内容区拦截层与后端 item-row 鉴权保障），不控制取消引用。
             var deleteMi = new MenuItem { Header = Framework.Lang.T("nativePanel.deleteModule") };
             deleteMi.Click += (s, e) => OnRemovePanel?.Invoke(Item);
             _moduleMenu.Items.Add(deleteMi);
@@ -637,7 +637,7 @@ namespace SideDesk.Controls
 
         // ===== 工具方法 =====
 
-        /// <summary>分享/团队组件的标识边框：分享导入优先于团队归属；无标识时返回 null（用默认边框）</summary>
+        /// <summary>分享/团队卡片的标识边框：分享导入优先于团队归属；无标识时返回 null（用默认边框）</summary>
         private (Brush? brush, double thickness) ResolveSpecialBorder()
         {
             var s = AppSettings.Instance;

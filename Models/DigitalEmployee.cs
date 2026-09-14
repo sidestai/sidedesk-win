@@ -38,7 +38,7 @@ public class DigitalEmployee
 }
 
 /// <summary>
-/// 数字员工全局管理器：所有员工统一存储，模块中通过 Id 引用需要展示的员工
+/// 数字员工全局管理器：所有员工统一存储，卡片中通过 Id 引用需要展示的员工
 /// </summary>
 public class DigitalEmployeeManager
 {

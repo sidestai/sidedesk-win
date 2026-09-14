@@ -72,7 +72,7 @@ namespace SideDesk.Models
     }
 
     /// <summary>
-    /// 快捷组件「分组」内存门面：与 PanelItem(Type=QuickGroup) 一一对应，所有属性代理到面板。
+    /// 快捷卡片「分组」内存门面：与 PanelItem(Type=QuickGroup) 一一对应，所有属性代理到面板。
     /// 历史上快捷分组存于 quickgroups.json；改造后设置存面板 item_data、快捷项存 item_row，
     /// 本类仅为兼容 UI 层（QuickGroupUIService 等）调用而保留，不再参与任何持久化。
     /// </summary>
@@ -108,7 +108,7 @@ namespace SideDesk.Models
         [JsonIgnore]
         public List<QuickItem> Items => Panel.QuickItems ??= new List<QuickItem>();
 
-        /// <summary>分组内子模块列表（用于添加便签、剪贴板等模块）</summary>
+        /// <summary>分组内子卡片列表（用于添加便签、剪贴板等卡片）</summary>
         [JsonIgnore]
         public List<PanelItem>? ChildPanels { get => Panel.ChildPanels; set => Panel.ChildPanels = value; }
     }

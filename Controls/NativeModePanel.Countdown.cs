@@ -12,7 +12,7 @@ using SideDesk.Models;
 namespace SideDesk.Controls
 {
     /// <summary>
-    /// 「倒计时器」组件：支持添加多个倒计时（时/分输入 + 名称 + 到时提醒方式），
+    /// 「倒计时器」卡片：支持添加多个倒计时（时/分输入 + 名称 + 到时提醒方式），
     /// 标题右侧按钮启动/暂停，到时支持闪烁、弹窗、休眠、关机。
     /// </summary>
     public partial class NativeModePanel
@@ -95,7 +95,7 @@ namespace SideDesk.Controls
             var timeDisplay = new Emoji.Wpf.TextBlock
             {
                 Text = FormatCountdown(cd.GetRemaining()),
-                FontSize = 24,
+                FontSize = FS(24),
                 FontWeight = FontWeights.Bold,
                 FontFamily = new FontFamily("Consolas"),
                 Foreground = cd.IsRunning ? (Brush)FindResource("BrushAccent")
@@ -119,7 +119,7 @@ namespace SideDesk.Controls
             {
                 Text = cd.Name,
                 FontWeight = FontWeights.Bold,
-                FontSize = 13,
+                FontSize = FS(13),
                 Foreground = (Brush)FindResource("BrushTextMain"),
                 VerticalAlignment = VerticalAlignment.Center
             };
@@ -130,7 +130,7 @@ namespace SideDesk.Controls
                 Content = cd.IsRunning ? BuildPauseIcon() : BuildPlayIcon(),
                 Width = 22,
                 Height = 22,
-                FontSize = 10,
+                FontSize = FS(10),
                 Background = cd.IsRunning ? Brushes.DarkOrange : new SolidColorBrush(Color.FromRgb(46, 160, 67)),
                 Foreground = Brushes.White,
                 BorderThickness = new Thickness(0),
@@ -191,7 +191,7 @@ namespace SideDesk.Controls
                 Content = "✏",
                 Width = 24,
                 Height = 24,
-                FontSize = 12,
+                FontSize = FS(12),
                 Background = Brushes.Transparent,
                 Foreground = (Brush)FindResource("BrushTextMuted"),
                 BorderThickness = new Thickness(0),
@@ -213,7 +213,7 @@ namespace SideDesk.Controls
             var infoLine = new Emoji.Wpf.TextBlock
             {
                 Text = summary,
-                FontSize = 11,
+                FontSize = FS(11),
                 Foreground = (Brush)FindResource("BrushTextMuted"),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, 4, 0, 0)
@@ -328,7 +328,7 @@ namespace SideDesk.Controls
             root.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = Framework.Lang.T("nativePanel.timeSUp"),
-                FontSize = 18,
+                FontSize = FS(18),
                 FontWeight = FontWeights.Bold,
                 Foreground = (Brush)FindResource("BrushTextMain"),
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -337,7 +337,7 @@ namespace SideDesk.Controls
             root.Children.Add(new Emoji.Wpf.TextBlock
             {
                 Text = Framework.Lang.TF("nativePanel.countdownHasEnded", cd.Name),
-                FontSize = 13,
+                FontSize = FS(13),
                 Foreground = (Brush)FindResource("BrushTextMuted"),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, 0, 0, 16)
@@ -557,7 +557,7 @@ namespace SideDesk.Controls
 
         // ==================== 工具方法 ====================
 
-        /// <summary>删除倒计时项；模块为空时询问是否删除整个模块</summary>
+        /// <summary>删除倒计时项；卡片为空时询问是否删除整个卡片</summary>
         private void DeleteCountdown(CountdownItem cd, PanelItem panelItem)
         {
             if (panelItem.CountdownItems == null) return;

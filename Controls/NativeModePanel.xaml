@@ -71,8 +71,8 @@
             <StackPanel x:Name="toolsBarContent" Orientation="Vertical" HorizontalAlignment="Stretch"/>
         </Border>
         
-        <!-- 底部状态栏 -->
-        <Border DockPanel.Dock="Bottom" Margin="5,2" Padding="5,3" CornerRadius="3"
+        <!-- 底部状态栏（鼠键记录器开启时才显示） -->
+        <Border x:Name="statusBarBorder" DockPanel.Dock="Bottom" Margin="5,2" Padding="5,3" CornerRadius="3"
                 Background="{Binding GroupBGColor, Source={x:Static framework:AppSettings.Instance}, Converter={StaticResource StringToSolidColorBrushConverter}}">
             <StackPanel x:Name="statusBar" Orientation="Horizontal">
                 <TextBlock x:Name="keyCountText" Text="⌨ 0" Margin="0,0,10,0" FontSize="11" Style="{StaticResource DataText}"/>
@@ -80,7 +80,7 @@
             </StackPanel>
         </Border>
         
-        <!-- 置顶区：置顶模块固定显示在滚动区上方，压缩下方 ScrollViewer 的可用高度 -->
+        <!-- 置顶区：置顶卡片固定显示在滚动区上方，压缩下方 ScrollViewer 的可用高度 -->
         <Border x:Name="pinnedArea" DockPanel.Dock="Top" Visibility="Collapsed"
                 BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1"
                 Margin="2,0,2,0" Padding="0">

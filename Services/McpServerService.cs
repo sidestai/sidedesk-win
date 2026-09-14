@@ -139,11 +139,11 @@ namespace SideDesk.Services
 
             mcp.AddTool("get_status", "获取 SideDesk 运行状态（MCP服务、WebSocket服务、窗口数量等）", () => AIToolService.Tool_GetStatus());
 
-            mcp.AddTool("list_notes", "获取所有便签列表（含全局便签和模块内便签）", () => AIToolService.Tool_ListNotes());
+            mcp.AddTool("list_notes", "获取所有便签列表（含全局便签和卡片内便签）", () => AIToolService.Tool_ListNotes());
 
             mcp.AddTool("search_notes", "根据关键词搜索便签内容（模糊匹配）", (string keyword) => AIToolService.Tool_SearchNotes(keyword));
 
-            mcp.AddTool("create_note", "新建一条便签。可指定目标窗口和便签模块（名称或序号），不指定则创建全局便签", (string content, string window, string panel) => AIToolService.Tool_AddNote(content, window, panel));
+            mcp.AddTool("create_note", "新建一条便签。可指定目标窗口和便签卡片（名称或序号），不指定则创建全局便签", (string content, string window, string panel) => AIToolService.Tool_AddNote(content, window, panel));
 
             mcp.AddTool("delete_note", "删除便签（两步确认）：第一次调用返回匹配便签的预览，用户确认后用 confirm=true 再次调用才真正删除", (string target, string window, string confirm) => AIToolService.Tool_DeleteNote(target, window, confirm == "true"));
 
@@ -159,7 +159,7 @@ namespace SideDesk.Services
 
             // ═══════════ 番茄闹钟 ═══════════
 
-            mcp.AddTool("get_pomodoro_status", "获取番茄闹钟组件当前状态（模式、是否运行中、剩余时间、今日完成数）。window 传窗口名称或序号（如'2'、'主页'）定位特定窗口，传空则返回所有窗口", (string window) => AIToolService.Tool_GetPomodoroStatus(window));
+            mcp.AddTool("get_pomodoro_status", "获取番茄闹钟卡片当前状态（模式、是否运行中、剩余时间、今日完成数）。window 传窗口名称或序号（如'2'、'主页'）定位特定窗口，传空则返回所有窗口", (string window) => AIToolService.Tool_GetPomodoroStatus(window));
 
             mcp.AddTool("start_pomodoro", "开始番茄钟（切换到工作模式并开始计时）。window 传窗口名称或序号定位特定窗口，传空则作用于所有窗口", (string window) => AIToolService.Tool_StartPomodoro(window));
 

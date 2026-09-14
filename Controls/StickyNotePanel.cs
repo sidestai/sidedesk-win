@@ -135,7 +135,7 @@ namespace SideDesk.Controls
             var timeText = new Emoji.Wpf.TextBlock
             {
                 Text = _currentNote.CreatedAt.ToString("MM-dd HH:mm"),
-                FontSize = 11,
+                FontSize = Framework.AppSettings.Instance.FS(11),
                 Foreground = (Brush)Application.Current.FindResource("BrushTextMuted"),
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(10, 0, 0, 0)
@@ -148,7 +148,7 @@ namespace SideDesk.Controls
             {
                 Text = Framework.Lang.T("common.stickyNotes"),
                 Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
-                FontSize = 14,
+                FontSize = Framework.AppSettings.Instance.FS(14),
                 FontWeight = FontWeights.Bold,
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(12, 8, 0, 8)
@@ -168,7 +168,7 @@ namespace SideDesk.Controls
                 Background = Brushes.Transparent,
                 BorderThickness = new Thickness(0),
                 Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),
-                FontSize = 16,
+                FontSize = Framework.AppSettings.Instance.FS(16),
                 Cursor = Cursors.Hand,
                 Padding = new Thickness(0)
             };
@@ -223,7 +223,7 @@ namespace SideDesk.Controls
                 TextWrapping = TextWrapping.Wrap,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 Padding = new Thickness(12),
-                FontSize = 14,
+                FontSize = Framework.AppSettings.Instance.FS(14),
                 BorderThickness = new Thickness(0),
                 Background = Brushes.Transparent,
                 Foreground = (Brush)Application.Current.FindResource("BrushTextMain"),

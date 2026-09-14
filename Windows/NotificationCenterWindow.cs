@@ -16,6 +16,9 @@ namespace SideDesk.Windows
     {
         private readonly StackPanel _listPanel = new();
 
+        /// <summary>展开态的通知 ID 集合</summary>
+        private readonly HashSet<string> _expandedIds = new();
+
         public NotificationCenterWindow()
         {
             Title = Framework.Lang.T("common.notificationCenter");
@@ -175,6 +178,7 @@ namespace SideDesk.Windows
         private UIElement BuildHistoryItem(NotificationPayload n)
         {
             var stack = new StackPanel { Margin = new Thickness(0, 0, 0, 2) };
+            bool isExpanded = _expandedIds.Contains(n.Id);
 
             // 标题行：未读圆点 + 标题 + 时间（超一个月的陈旧未读不显示红点）
             var titleRow = new StackPanel { Orientation = Orientation.Horizontal };
@@ -201,6 +205,21 @@ namespace SideDesk.Windows
                 VerticalAlignment = VerticalAlignment.Center
             });
 
+            // 展开/收起指示箭头
+            var hasExpandable = !string.IsNullOrEmpty(n.Body) || (n.Buttons != null && n.Buttons.Count > 0);
+            if (hasExpandable)
+            {
+                var arrow = new TextBlock
+                {
+                    Text = isExpanded ? "\u25BC" : "\u25B6", // ▼ / ▶
+                    FontSize = 8,
+                    Foreground = (Brush)FindResource("BrushTextMuted"),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(6, 0, 0, 0)
+                };
+                titleRow.Children.Add(arrow);
+            }
+
             titleRow.Children.Add(new TextBlock
             {
                 Text = n.Timestamp.ToString("MM-dd HH:mm"),
@@ -212,7 +231,7 @@ namespace SideDesk.Windows
 
             stack.Children.Add(titleRow);
 
-            // 正文
+            // 正文（展开时显示全文，收起时限制高度）
             if (!string.IsNullOrEmpty(n.Body))
             {
                 stack.Children.Add(new Emoji.Wpf.TextBlock
@@ -221,10 +240,42 @@ namespace SideDesk.Windows
                     FontSize = 10.5,
                     Foreground = (Brush)FindResource("BrushTextMuted"),
                     TextWrapping = TextWrapping.Wrap,
-                    MaxHeight = 32,
+                    MaxHeight = isExpanded ? double.PositiveInfinity : 32,
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     Margin = new Thickness(n.ShowUnread ? 12 : 0, 2, 0, 0)
                 });
+            }
+
+            // 操作按钮行（展开时才显示）
+            if (isExpanded && n.Buttons != null && n.Buttons.Count > 0)
+            {
+                var btnRow = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Margin = new Thickness(n.ShowUnread ? 12 : 0, 6, 0, 0)
+                };
+
+                foreach (var btn in n.Buttons)
+                {
+                    var actionBtn = new Button
+                    {
+                        Content = btn.Label ?? btn.Type,
+                        FontSize = 10.5,
+                        Padding = new Thickness(10, 4, 10, 4),
+                        Style = (Style)FindResource("GhostButtonStyle"),
+                        Cursor = Cursors.Hand,
+                        Margin = new Thickness(0, 0, 6, 0)
+                    };
+                    actionBtn.Click += async (s, e) =>
+                    {
+                        e.Handled = true;
+                        NotificationSyncService.Instance.MarkRead(n);
+                        await NotificationActionService.ExecuteAsync(btn, n);
+                    };
+                    btnRow.Children.Add(actionBtn);
+                }
+
+                stack.Children.Add(btnRow);
             }
 
             var item = new Border
@@ -240,9 +291,22 @@ namespace SideDesk.Windows
             item.MouseEnter += (s, e) => item.Background = (Brush)FindResource("BrushInputBG");
             item.MouseLeave += (s, e) => item.Background = Brushes.Transparent;
 
-            // 点过即已读：本地标记 + 回传服务端，行内未读红点随之消失；有主体动作时继续执行
+            // 点击主体：切换展开/收起；已读标记 + 执行 ClickMain 动作
             item.MouseLeftButtonUp += async (s, e) =>
             {
+                // 按钮点击已通过 e.Handled 阻止冒泡，此处只处理条目空白区域
+                if (e.Handled) return;
+
+                if (hasExpandable)
+                {
+                    // 切换展开状态
+                    if (isExpanded)
+                        _expandedIds.Remove(n.Id);
+                    else
+                        _expandedIds.Add(n.Id);
+                    RefreshList();
+                }
+
                 NotificationSyncService.Instance.MarkRead(n);
                 if (n.ClickMain != null)
                     await NotificationActionService.ExecuteAsync(n.ClickMain, n);

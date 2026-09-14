@@ -195,8 +195,8 @@ public static class ThemedMessageBox
 
     /// <summary>
     /// 统一的“创建分享”对话框：选择分享模式（复制/引用）与导入方权限，确认后 POST /api/sidebar/share/create，
-    /// 成功则弹出分享结果窗（短码 + 链接）。itemServerId 为 null → 分享整个微屏（载荷仅含 barServerId）；非 null → 分享单个模块（附带 itemServerId）。
-    /// 供设置页「微屏窗口」行分享、窗口结构树节点分享、侧边栏模块分享统一复用，避免多处重复实现。
+    /// 成功则弹出分享结果窗（短码 + 链接）。itemServerId 为 null → 分享整个微屏（载荷仅含 barServerId）；非 null → 分享单个卡片（附带 itemServerId）。
+    /// 供设置页「微屏窗口」行分享、窗口结构树节点分享、侧边栏卡片分享统一复用，避免多处重复实现。
     /// </summary>
     public static void ShowCreateShareDialog(Window? owner, string barServerId, string? itemServerId, string? title = null)
     {
@@ -274,7 +274,7 @@ public static class ThemedMessageBox
             try
             {
                 // 窗口级分享（itemServerId==null）：创建前先做一次全量同步，确保本地结构与行数据都已上传服务端。
-                // 否则接收方 copy 到的会是“服务端空壳窗口”——组件仅在本地、从未同步，导入后窗口为空（组件“丢失”）。
+                // 否则接收方 copy 到的会是“服务端空壳窗口”——卡片仅在本地、从未同步，导入后窗口为空（卡片“丢失”）。
                 if (itemServerId == null)
                 {
                     confirmBtn.Content = Framework.Lang.T("cloudDrive.syncing");

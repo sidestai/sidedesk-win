@@ -165,7 +165,7 @@ namespace SideDesk.Controls
         /// <summary>填充"工具"菜单（窗口右上角菜单与底部右键菜单共用同一份工具列表）。</summary>
         public void PopulateToolsMenu(System.Windows.Controls.MenuItem menu) => nativePanel.PopulateToolsMenu(menu);
         
-        /// <summary>填充"添加模块"菜单（窗口右上角菜单使用，与空白处右键菜单内容一致）。</summary>
+        /// <summary>填充"添加卡片"菜单（窗口右上角菜单使用，与空白处右键菜单内容一致）。</summary>
         public void PopulateAddModuleMenu(System.Windows.Controls.MenuItem menu) => nativePanel.PopulateAddModuleMenu(menu);
 
         /// <summary>清空内容区域，显示空白（所有微屏均不可见时调用）。</summary>

@@ -321,7 +321,7 @@ namespace SideDesk.Framework
 
         private bool _hideModuleTitle { get; set; } = false;
 
-        /// <summary>隐藏模块外框时，是否同时隐藏模块标题栏</summary>
+        /// <summary>隐藏卡片外框时，是否同时隐藏卡片标题栏</summary>
         [JsonProperty]
         public bool HideModuleTitle
         {
@@ -332,6 +332,19 @@ namespace SideDesk.Framework
         #endregion
 
         #region 主题/外观属性
+
+        private double _cardFontSize = 12;
+
+        /// <summary>卡片内字体大小（px，默认 12，限定 9-24）；卡片标题经 FS(13) 自动比其大 1 号</summary>
+        [JsonProperty]
+        public double CardFontSize
+        {
+            get { return _cardFontSize; }
+            set { _cardFontSize = Math.Clamp(value, 9, 24); NotifyPropertyChanged("CardFontSize"); }
+        }
+
+        /// <summary>卡片字号换算：以 12 为设计基准，偏移量随 CardFontSize 同步缩放（默认值时既有 UI 视觉不变）</summary>
+        public double FS(double designSize) => CardFontSize + (designSize - 12);
 
         private bool _autoBGColor { get; set; } = false;
 
@@ -488,7 +501,7 @@ namespace SideDesk.Framework
 
         private string _shareBorderColor { get; set; } = "#A855F7";
 
-        /// <summary>分享导入组件的边框颜色（默认紫色）</summary>
+        /// <summary>分享导入卡片的边框颜色（默认紫色）</summary>
         [JsonProperty]
         public string ShareBorderColor
         {
@@ -498,7 +511,7 @@ namespace SideDesk.Framework
 
         private string _teamBorderColor { get; set; } = "#3B82F6";
 
-        /// <summary>团队归属组件的边框颜色（默认蓝色）</summary>
+        /// <summary>团队归属卡片的边框颜色（默认蓝色）</summary>
         [JsonProperty]
         public string TeamBorderColor
         {

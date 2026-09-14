@@ -8,7 +8,7 @@ namespace SideDesk.Services;
 
 /// <summary>
 /// 数字员工后端 API 服务：从后端获取用户已选择的数字员工信息与状态。
-/// 组件展示的员工来自"我的员工"列表（sidedesk_user_digital_employee），多处展示数据唯一。
+/// 卡片展示的员工来自"我的员工"列表（sidedesk_user_digital_employee），多处展示数据唯一。
 /// </summary>
 public sealed class DigitalEmployeeApiService
 {
@@ -57,7 +57,7 @@ public sealed class DigitalEmployeeApiService
         return root["data"];
     }
 
-    #region 1. 获取我的数字员工列表（组件展示数据源）
+    #region 1. 获取我的数字员工列表（卡片展示数据源）
 
     /// <summary>GET /api/digital-employee/my — 返回用户已选择的员工（含团队/状态设置）</summary>
     public async Task<List<RemoteDigitalEmployee>?> GetMyListAsync()

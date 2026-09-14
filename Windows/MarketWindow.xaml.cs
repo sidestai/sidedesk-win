@@ -58,7 +58,7 @@ public partial class MarketWindow : Window
             var options = new CoreWebView2EnvironmentOptions(
                 null, null, null, false,
                 new System.Collections.Generic.List<CoreWebView2CustomSchemeRegistration> { schemeReg });
-            // 必须使用独立用户数据目录：登录窗 / AI 对话 / 数据模块等其他 WebView2 均以默认 Environment
+            // 必须使用独立用户数据目录：登录窗 / AI 对话 / 数据卡片等其他 WebView2 均以默认 Environment
             //（无自定义 scheme）先行启动共享浏览器进程，而浏览器进程启动后 Environment 选项即锁定，
             // 再复用默认目录时本 scheme 注册会被静默忽略（表现为页面正常加载但桥探测失败、显示"未连接客户端"）
             var marketUserDataFolder = System.IO.Path.Combine(

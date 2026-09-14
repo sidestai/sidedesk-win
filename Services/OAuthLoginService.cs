@@ -22,6 +22,9 @@ namespace SideDesk.Services
     ///   4) 前端回跳 loopback /callback?code&amp;state → 校验 state → 返回「可关闭此页」HTML；
     ///   5) POST {ServerBaseUrl}/api/oauth/token（授权码 + code_verifier）换取 access_token。
     /// 任一环节失败/超时/取消均返回 null，由调用方（App.StartLoginAsync）降级到 WebView2 内嵌登录窗。
+    ///
+    /// 另提供反向的「会话交接」：<see cref="OpenConsolePageAsync"/> 用客户端已登录态换一次性交接码，
+    /// 使系统浏览器打开 web 控制台时无需重新登录。
     /// </summary>
     public static class OAuthLoginService
     {
@@ -302,6 +305,96 @@ namespace SideDesk.Services
                 if (root.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Object
                     && d.TryGetProperty("access_token", out var t2) && t2.ValueKind == JsonValueKind.String)
                     return t2.GetString();
+                return null;
+            }
+            catch { return null; }
+        }
+
+        // ══════════════════════ 会话交接（客户端 → 系统浏览器控制台免登） ══════════════════════
+
+        /// <summary>
+        /// 用系统默认浏览器打开 web 控制台页面（path 形如 /dashboard/console）。
+        /// 客户端已登录时先换一次性交接码，走 {前端}/#/handoff?code=…&redirect=… 免登直达
+        /// （长期 token 不进 URL/浏览器历史）；未登录或换取失败则直接打开目标页，由前端守卫引导登录。
+        /// </summary>
+        public static async Task<bool> OpenConsolePageAsync(string path)
+        {
+            string target = string.IsNullOrWhiteSpace(path) ? "/" : path.Trim();
+            if (!target.StartsWith("/", StringComparison.Ordinal)) target = "/" + target;
+
+            string? code = await CreateHandoffCodeAsync().ConfigureAwait(false);
+            string url = string.IsNullOrEmpty(code)
+                ? $"{Constants.URLs.FrontendBaseUrl}/#{target}"
+                : $"{Constants.URLs.FrontendBaseUrl}/#/handoff?code={Uri.EscapeDataString(code)}&redirect={Uri.EscapeDataString(target)}";
+
+            return TryOpenBrowser(url);
+        }
+
+        /// <summary>
+        /// POST {ServerBaseUrl}/api/oauth/handoff/code：凭客户端现有 token 换一次性会话交接码（60s 有效）。
+        /// 未登录 / 接口不可用（如后端未部署该接口）/ 解析失败均返回 null，由调用方降级为普通打开。
+        /// </summary>
+        private static async Task<string?> CreateHandoffCodeAsync()
+        {
+            string token;
+            try
+            {
+                var app = (App?)System.Windows.Application.Current;
+                token = app?.AppSettings?.AccountToken ?? "";
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[OAuth] handoff: read AccountToken failed: {ex.Message}");
+                return null;
+            }
+            if (string.IsNullOrEmpty(token))
+            {
+                Debug.WriteLine("[OAuth] handoff: not logged in, skip code issuing");
+                return null;
+            }
+
+            try
+            {
+                using var http = new HttpClient { Timeout = TokenHttpTimeout };
+                using var req = new HttpRequestMessage(HttpMethod.Post, $"{Constants.URLs.ServerBaseUrl}/api/oauth/handoff/code")
+                {
+                    Content = new StringContent("{}", Encoding.UTF8, "application/json"),
+                };
+                req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
+                req.Headers.TryAddWithoutValidation("User-Agent", "SideDesk-Desktop/1.0 (console handoff)");
+
+                using var resp = await HttpLog.SendAsync(http, req).ConfigureAwait(false);
+                string body = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    Debug.WriteLine($"[OAuth] handoff code request failed {(int)resp.StatusCode}: {body}");
+                    return null;
+                }
+                string? code = ExtractHandoffCode(body);
+                if (string.IsNullOrEmpty(code))
+                    Debug.WriteLine($"[OAuth] handoff response has no code: {body}");
+                return code;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[OAuth] handoff code error: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>从 ResultData 包裹的响应中取 data.code（业务码非 200 时返回 null）</summary>
+        private static string? ExtractHandoffCode(string json)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                if (root.ValueKind != JsonValueKind.Object) return null;
+                if (root.TryGetProperty("code", out var biz) && biz.ValueKind == JsonValueKind.Number && biz.GetInt32() != 200)
+                    return null;
+                if (root.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Object
+                    && d.TryGetProperty("code", out var c) && c.ValueKind == JsonValueKind.String)
+                    return c.GetString();
                 return null;
             }
             catch { return null; }

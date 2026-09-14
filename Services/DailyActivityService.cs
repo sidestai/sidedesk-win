@@ -21,7 +21,7 @@ namespace SideDesk.Services
     #endregion
 
     /// <summary>
-    /// 每日活跃内置固定类型：组件类型菜单始终展示；各来源（番茄钟/屏幕时长/健身/键鼠活跃等）
+    /// 每日活跃内置固定类型：卡片类型菜单始终展示；各来源（番茄钟/屏幕时长/健身/键鼠活跃等）
     /// 固定写入对应类型，类型名即服务端表中的 type 值。
     /// </summary>
     public static class DailyActivityTypes
@@ -40,7 +40,7 @@ namespace SideDesk.Services
     /// 每行 = 作用域(userId/corpId) + 类型 + 日期 + 当天数值。
     /// 作用域：corpId 有值=团队共享；为空=个人。
     /// 失败时返回 null/false 由 UI 优雅降级（不阻断用户操作）。
-    /// 内置内存缓存（key=作用域|类型，TTL 60s）供组件渲染同步读取。
+    /// 内置内存缓存（key=作用域|类型，TTL 60s）供卡片渲染同步读取。
     /// </summary>
     public sealed class DailyActivityService
     {
@@ -198,7 +198,7 @@ namespace SideDesk.Services
             }
         }
 
-        // ==================== 缓存读取（供组件渲染同步调用）====================
+        // ==================== 缓存读取（供卡片渲染同步调用）====================
 
         /// <summary>同步读取缓存中某天的数值；未缓存返回 null（不发起请求）</summary>
         public double? TryGetCachedValue(string? corpId, string type, DateTime date)

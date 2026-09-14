@@ -121,6 +121,17 @@ public sealed class VariableSetService
         Rebuild();
     }
 
+    /// <summary>团队成员身份失效（被移除/退出/团队解散）：清除该团队全部云端登记变量集并重算聚合</summary>
+    public void PurgeTeam(string teamId)
+    {
+        if (string.IsNullOrEmpty(teamId)) return;
+        lock (_lock)
+        {
+            _remoteSets.RemoveAll(r => r.TeamId == teamId);
+        }
+        Rebuild();
+    }
+
     /// <summary>
     /// 拉取云端登记的变量集（个人 + 已加入的每个团队），并入聚合计算（同名本地优先）。
     /// 应用启动后与打开变量详情窗时调用；后端不可达时静默跳过。

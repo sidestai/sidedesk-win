@@ -22,7 +22,7 @@
         <TextBlock Grid.Row="1" Text="{l:T team.sharedModuleHint}" FontSize="11"
                    Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,12" TextWrapping="Wrap"/>
 
-        <!-- 团队切换：选择团队后下方刷新为该团队的组件列表 -->
+        <!-- 团队切换：选择团队后下方刷新为该团队的卡片列表 -->
         <DockPanel Grid.Row="2" Margin="0,0,0,10">
             <TextBlock Text="{l:T common.team}" DockPanel.Dock="Left" VerticalAlignment="Center" FontSize="12"
                        Foreground="{DynamicResource BrushTextSec}" Margin="0,0,10,0"/>

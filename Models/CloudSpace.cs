@@ -193,19 +193,5 @@ namespace SideDesk.Models
                 SaveNoLock();
             }
         }
-
-        /// <summary>恢复内置预设（将缺失的内置项补回）</summary>
-        public static void RestoreBuiltins()
-        {
-            lock (_lock)
-            {
-                foreach (var builtin in GetBuiltinSpaces())
-                {
-                    if (!_spaces.Exists(s => s.Name == builtin.Name))
-                        _spaces.Add(builtin);
-                }
-                SaveNoLock();
-            }
-        }
     }
 }

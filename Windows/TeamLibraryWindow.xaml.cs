@@ -8,29 +8,28 @@ using SideDesk.Services;
 namespace SideDesk.Windows;
 
 /// <summary>
-/// 团队组件库窗口：浏览团队共享的模块并添加到当前窗口（数据共享互通）
+/// 团队卡片库窗口：浏览团队共享的卡片并添加到当前窗口（数据共享互通）
 /// </summary>
 public partial class TeamLibraryWindow : Window
 {
-    /// <summary>添加模块时的回调（将构造好的 PanelItem 传回调用方）</summary>
+    /// <summary>添加卡片时的回调（将构造好的 PanelItem 传回调用方）</summary>
     public Action<PanelItem>? OnAddItem { get; set; }
 
-    /// <summary>加载序号令牌：快速切换团队时丢弃过期加载结果，避免旧结果覆盖新列表</summary>
-    private int _loadToken;
+    /// <summary>我的团队列表（加密 ID 与组件库条目 CorpId 同格式，供「全部」视图补团队名）</summary>
+    private List<Team> _teams = new();
+
+    /// <summary>全部团队共享卡片缓存（初始化一次拉取；下拉计数与切团队本地过滤均复用，不再重复请求）</summary>
+    private List<TeamLibraryItem>? _allItems;
 
     public TeamLibraryWindow()
     {
         InitializeComponent();
         SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(this);
         Loaded += async (_, _) => await InitTeamSelectorAsync();
-        teamCombo.SelectionChanged += async (_, _) =>
-        {
-            if ((teamCombo.SelectedItem as ComboBoxItem)?.Tag is string corpId)
-                await LoadLibraryAsync(corpId);
-        };
+        teamCombo.SelectionChanged += (_, _) => RenderLibrary();
     }
 
-    /// <summary>拉取团队列表填充切换下拉；默认选中设置里的当前团队，未设置则选第一个，随后加载其组件库</summary>
+    /// <summary>拉取团队列表填充切换下拉（团队名后附共享卡片计数）；默认选「全部」并渲染列表</summary>
     private async System.Threading.Tasks.Task InitTeamSelectorAsync()
     {
         listPanel.Children.Add(new TextBlock
@@ -50,51 +49,51 @@ public partial class TeamLibraryWindow : Window
             teamCombo.IsEnabled = false;
             return;
         }
+        _teams = teams;
 
-        foreach (var t in teams)
-            teamCombo.Items.Add(new ComboBoxItem { Content = t.Name, Tag = t.Id });
+        // 一次拉全部团队的共享卡片：供「全部」视图、下拉计数与切团队本地过滤
+        _allItems = await TeamService.Instance.GetTeamLibraryAsync();
 
-        // 默认选中设置里的当前团队；未设置时选第一个
-        var app = (App)Application.Current;
-        string? selectedCorpId = app.AppSettings.SelectedCorpId;
-        int selIdx = 0;
-        if (!string.IsNullOrEmpty(selectedCorpId))
+        var counts = new System.Collections.Generic.Dictionary<string, int>();
+        foreach (var i in _allItems ?? new List<TeamLibraryItem>())
         {
-            for (int i = 0; i < teamCombo.Items.Count; i++)
-            {
-                if ((teamCombo.Items[i] as ComboBoxItem)?.Tag as string == selectedCorpId)
-                { selIdx = i; break; }
-            }
+            if (string.IsNullOrEmpty(i.CorpId)) continue;
+            counts[i.CorpId] = counts.TryGetValue(i.CorpId, out var c) ? c + 1 : 1;
         }
-        teamCombo.SelectedIndex = selIdx; // 触发 SelectionChanged 加载该团队的组件列表
+
+        // 「全部」项置顶（计数为全团队总数），默认选中
+        teamCombo.Items.Add(new ComboBoxItem
+        {
+            Content = $"{Framework.Lang.T("common.all")} ({_allItems?.Count ?? 0})",
+            Tag = ""
+        });
+        foreach (var t in teams)
+        {
+            teamCombo.Items.Add(new ComboBoxItem
+            {
+                Content = $"{t.Name} ({(counts.TryGetValue(t.Id, out var c) ? c : 0)})",
+                Tag = t.Id
+            });
+        }
+
+        teamCombo.SelectedIndex = 0; // 触发 SelectionChanged 渲染「全部」视图
     }
 
-    private async System.Threading.Tasks.Task LoadLibraryAsync(string corpId)
+    /// <summary>按当前选中团队渲染卡片列表（空 Tag=全部；从全团队缓存本地过滤，无网络请求）</summary>
+    private void RenderLibrary()
     {
-        int token = ++_loadToken;
         listPanel.Children.Clear();
 
-        listPanel.Children.Add(new TextBlock
-        {
-            Text = Framework.Lang.T("common.loading"),
-            FontSize = 12,
-            Foreground = (Brush)FindResource("BrushTextMuted"),
-            Margin = new Thickness(0, 20, 0, 0),
-            HorizontalAlignment = HorizontalAlignment.Center
-        });
-
-        var items = await TeamService.Instance.GetTeamLibraryAsync(corpId);
-
-        // 期间又切换了团队，丢弃过期结果
-        if (token != _loadToken) return;
-
-        listPanel.Children.Clear();
-
-        if (items == null)
+        if (_allItems == null)
         {
             listPanel.Children.Add(BuildHint(Framework.Lang.T("team.loadFailedLoginHint")));
             return;
         }
+
+        var corpId = (teamCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
+        var items = string.IsNullOrEmpty(corpId)
+            ? _allItems
+            : _allItems.Where(i => i.CorpId == corpId).ToList();
 
         if (items.Count == 0)
         {
@@ -104,7 +103,7 @@ public partial class TeamLibraryWindow : Window
 
         foreach (var libItem in items)
         {
-            listPanel.Children.Add(BuildItemRow(libItem));
+            listPanel.Children.Add(BuildItemRow(libItem, string.IsNullOrEmpty(corpId)));
         }
     }
 
@@ -122,7 +121,7 @@ public partial class TeamLibraryWindow : Window
         };
     }
 
-    private UIElement BuildItemRow(TeamLibraryItem libItem)
+    private UIElement BuildItemRow(TeamLibraryItem libItem, bool showTeam)
     {
         var border = new Border
         {
@@ -181,10 +180,16 @@ public partial class TeamLibraryWindow : Window
         }
         infoPanel.Children.Add(namePanel);
 
-        // 副标题：类型 + 创建者
-        string sub = GetTypeName(libItem.ItemType);
-        if (!string.IsNullOrEmpty(libItem.CreatorName))
-            sub += $" · {libItem.CreatorName}";
+        // 副标题：团队名（仅「全部」视图）+ 类型 + 创建者
+        var subParts = new System.Collections.Generic.List<string>();
+        if (showTeam && !string.IsNullOrEmpty(libItem.CorpId))
+        {
+            var team = _teams.Find(t => t.Id == libItem.CorpId);
+            if (team != null) subParts.Add(team.Name);
+        }
+        subParts.Add(GetTypeName(libItem.ItemType));
+        if (!string.IsNullOrEmpty(libItem.CreatorName)) subParts.Add(libItem.CreatorName);
+        string sub = string.Join(" · ", subParts);
         infoPanel.Children.Add(new TextBlock
         {
             Text = sub,
@@ -211,11 +216,11 @@ public partial class TeamLibraryWindow : Window
             Title = libItem.Title
         };
 
-        // 解析模块类型
+        // 解析卡片类型
         if (Enum.TryParse<PanelType>(libItem.ItemType, out var panelType))
             panel.Type = panelType;
 
-        // 用服务端 itemData 还原模块级设置（列表数据通过行级拉取获取）
+        // 用服务端 itemData 还原卡片级设置（列表数据通过行级拉取获取）
         if (!string.IsNullOrEmpty(libItem.ItemData))
         {
             try
@@ -242,7 +247,7 @@ public partial class TeamLibraryWindow : Window
 
         OnAddItem?.Invoke(panel);
 
-        // 添加后异步拉取该模块的行级数据（列表内容）
+        // 添加后异步拉取该卡片的行级数据（列表内容）
         _ = PullRowsForNewPanel(panel);
 
         // 标记已添加
@@ -250,7 +255,7 @@ public partial class TeamLibraryWindow : Window
         btn.IsEnabled = false;
     }
 
-    /// <summary>添加团队模块后，异步拉取其行级数据（列表内容）</summary>
+    /// <summary>添加团队卡片后，异步拉取其行级数据（列表内容）</summary>
     private async System.Threading.Tasks.Task PullRowsForNewPanel(PanelItem panel)
     {
         try
@@ -323,7 +328,7 @@ public partial class TeamLibraryWindow : Window
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
 
-    /// <summary>模块类型 -> 图标</summary>
+    /// <summary>卡片类型 -> 图标</summary>
     private static string GetTypeIcon(string itemType) => itemType switch
     {
         "QuickGroup" => "⚡",
@@ -350,7 +355,7 @@ public partial class TeamLibraryWindow : Window
         _ => "🧩"
     };
 
-    /// <summary>模块类型 -> 中文名称</summary>
+    /// <summary>卡片类型 -> 中文名称</summary>
     private static string GetTypeName(string itemType) => itemType switch
     {
         "QuickGroup" => Framework.Lang.T("common.shortcut"),
