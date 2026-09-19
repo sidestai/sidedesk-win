@@ -333,8 +333,8 @@
                           "sources":  "en.json,LangEn",
                           "files":  "Controls\\NativeModePanel.xaml.cs"
                       },
-    "（暂无云空间，可点击“恢复内置”或手动添加）":  {
-                                   "en":  "(No cloud spaces. Click \"Restore built-in\" or add manually)",
+    "（暂无云空间，可手动添加）":  {
+                                   "en":  "(No cloud spaces; add manually)",
                                    "key":  "settings.noCloudSpacesHint",
                                    "domain":  "settings",
                                    "sources":  "en.json,LangEn",
@@ -742,7 +742,13 @@
                    "sources":  "en.json,LangEn",
                    "files":  "SettingsWindow.xaml"
                },
-    "+ 添加员工":  {
+    "团队管理":  {
+                   "en":  "Team Management",
+                   "key":  "settings.teamManage",
+                   "domain":  "settings",
+                   "sources":  "en.json,LangEn",
+                   "files":  "SettingsWindow.xaml"
+               },    "+ 添加员工":  {
                    "en":  "+ Add Employee",
                    "key":  "digitalEmployee.addEmployee",
                    "domain":  "digitalEmployee",
@@ -4780,17 +4786,6 @@
                                                 "sources":  "en.json,LangEn",
                                                 "files":  "SettingsWindow.xaml.cs"
                                             },
-    "恢复内置":  {
-                 "en":  "Restore built-in",
-                 "key":  "settings.restoreBuiltIn",
-                 "domain":  "settings",
-                 "sources":  "en.json,LangEn",
-                 "files":  [
-                               "Models\\CloudSpace.cs",
-                               "SettingsWindow.xaml",
-                               "SettingsWindow.xaml.cs"
-                           ]
-             },
     "恢复设置":  {
                  "en":  "Restore Settings",
                  "key":  "settings.restoreSettings",
@@ -5114,13 +5109,6 @@
                                         "sources":  "en.json,LangEn",
                                         "files":  "SettingsWindow.xaml.cs"
                                     },
-    "将缺失的内置云盘预设补回列表":  {
-                           "en":  "Restore missing built-in cloud drive presets to the list",
-                           "key":  "settings.restoreMissingBuiltIn",
-                           "domain":  "settings",
-                           "sources":  "en.json,LangEn",
-                           "files":  "SettingsWindow.xaml"
-                       },
     "阶段结束后自动开始下一阶段":  {
                           "en":  "Automatically start the next phase when one ends",
                           "key":  "nativePanel.autoStartNextPhase",
@@ -10794,13 +10782,6 @@
                                 "ThemedMessageBox.cs"
                             ]
               },
-    "已关闭被搜索":  {
-                   "en":  "Search discovery disabled",
-                   "key":  "settings.searchDiscoveryDisabled",
-                   "domain":  "settings",
-                   "sources":  "en.json,LangEn",
-                   "files":  "SettingsWindow.xaml.cs"
-               },
     "已关闭软件渲染模式，重启应用后恢复 GPU 硬件加速。":  {
                                         "en":  "Software rendering disabled. GPU hardware acceleration will be restored after restarting the app.",
                                         "key":  "settings.softwareRenderingDisabled",

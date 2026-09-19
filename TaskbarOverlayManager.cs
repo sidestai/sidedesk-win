@@ -417,10 +417,25 @@ namespace SideDesk
 
         private static void RescanTick(object state)
         {
+            RescanPass();
+        }
+
+        /// <summary>
+        /// 立即同步执行一轮「枚举窗口 → 匹配规则 → 锁定命中项」，返回本轮锁定数。
+        /// 供规则编辑保存后立即生效使用（后台重扫定时器未启动时也能应用规则）。
+        /// </summary>
+        public static int ApplyRulesNow()
+        {
+            return RescanPass();
+        }
+
+        private static int RescanPass()
+        {
+            int applied = 0;
             try
             {
                 var rules = TitleLockRuleManager.GetAll();
-                if (rules == null || rules.Count == 0) return;
+                if (rules == null || rules.Count == 0) return 0;
 
                 HashSet<IntPtr> alreadyLocked;
                 lock (_lockSync)
@@ -446,7 +461,8 @@ namespace SideDesk
                         if (match == null) continue;
 
                         // 命中 → 锁定。persistRule=false，避免重复写规则。
-                        LockWindowTitleCore(w.Handle, match.LockText, match.MatchPattern, match.MatchMode, persistRule: false);
+                        if (LockWindowTitleCore(w.Handle, match.LockText, match.MatchPattern, match.MatchMode, persistRule: false))
+                            applied++;
                     }
                     catch (Exception ex)
                     {
@@ -458,6 +474,7 @@ namespace SideDesk
             {
                 Debug.WriteLine($"[Rescan] {ex.Message}");
             }
+            return applied;
         }
 
         /// <summary>

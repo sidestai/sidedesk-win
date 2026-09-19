@@ -1,0 +1,17 @@
+<Window x:Class="SideDesk.Windows.WechatQrDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="clr-namespace:SideDesk.Framework"
+        Title="{l:T settings.contactCustomerService}"
+        SizeToContent="WidthAndHeight"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False"
+        Background="{DynamicResource BrushDialogBG}" Foreground="{DynamicResource BrushTextMain}">
+    <StackPanel Margin="20">
+        <!-- 微信客服二维码（图内自带标题文字），exe 内嵌资源 -->
+        <Image Source="pack://application:,,,/resources/wechat-support-qr.png"
+               Width="280" RenderOptions.BitmapScalingMode="HighQuality"/>
+        <Button Content="{l:T common.close}" Margin="0,14,0,0" HorizontalAlignment="Center"
+                Padding="18,6" Click="Close_Click" IsCancel="True"
+                Style="{StaticResource StandardButtonStyle}"/>
+    </StackPanel>
+</Window>

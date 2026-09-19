@@ -213,6 +213,10 @@ namespace SideDesk
                 // 键可能变化（MatchPattern 被修改），先删旧规则再写入新规则
                 TitleLockRuleManager.RemoveExact(_editRule);
                 TitleLockRuleManager.Upsert(newRule);
+                // 编辑模式只写存储不会碰活动窗口：立即跑一轮匹配应用，
+                // 让修改当场生效（后台重扫定时器未启动时否则永远不生效）。
+                try { TaskbarOverlayManager.ApplyRulesNow(); }
+                catch { }
                 IsLocked = true;
                 ResultLockText = lockText;
                 DialogResult = true;

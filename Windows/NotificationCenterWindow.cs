@@ -180,56 +180,92 @@ namespace SideDesk.Windows
             var stack = new StackPanel { Margin = new Thickness(0, 0, 0, 2) };
             bool isExpanded = _expandedIds.Contains(n.Id);
 
-            // 标题行：未读圆点 + 标题 + 时间（超一个月的陈旧未读不显示红点）
-            var titleRow = new StackPanel { Orientation = Orientation.Horizontal };
+            // 标题行：未读圆点 + 标题 + 展开箭头 + 时间（超一个月的陈旧未读不显示红点）。
+            // 用 Grid 列约束（* 列）让标题拿到有限宽：收起时 TextTrimming 省略号才生效，
+            // 且能以「单行期望宽 vs 列实际宽」判定标题是否溢出可展开；
+            // 横向 StackPanel 给子元素无限宽，长标题只会被硬切且无法测量溢出
+            var titleRow = new Grid();
+            titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             if (n.ShowUnread)
             {
-                titleRow.Children.Add(new System.Windows.Shapes.Ellipse
+                var dot = new System.Windows.Shapes.Ellipse
                 {
                     Width = 6,
                     Height = 6,
                     Fill = (Brush)FindResource("BrushAccent"),
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(0, 0, 6, 0)
-                });
+                };
+                Grid.SetColumn(dot, 0);
+                titleRow.Children.Add(dot);
             }
 
-            titleRow.Children.Add(new Emoji.Wpf.TextBlock
+            // 标题：展开时换行显示全文（点击看全内容的主体），收起时单行省略号
+            var titleText = new Emoji.Wpf.TextBlock
             {
                 Text = n.Title,
                 FontSize = 11.5,
                 FontWeight = n.ShowUnread ? FontWeights.SemiBold : FontWeights.Normal,
                 Foreground = (Brush)FindResource("BrushTextMain"),
-                TextTrimming = TextTrimming.CharacterEllipsis,
+                TextWrapping = isExpanded ? TextWrapping.Wrap : TextWrapping.NoWrap,
+                TextTrimming = isExpanded ? TextTrimming.None : TextTrimming.CharacterEllipsis,
                 VerticalAlignment = VerticalAlignment.Center
-            });
+            };
+            Grid.SetColumn(titleText, 1);
+            titleRow.Children.Add(titleText);
 
-            // 展开/收起指示箭头
-            var hasExpandable = !string.IsNullOrEmpty(n.Body) || (n.Buttons != null && n.Buttons.Count > 0);
-            if (hasExpandable)
+            // 展开/收起指示箭头：有正文/按钮时初始即显示；标题溢出由 RefreshExpandable 布局后复核显隐
+            var hasBodyOrButtons = !string.IsNullOrEmpty(n.Body) || (n.Buttons != null && n.Buttons.Count > 0);
+            var arrow = new TextBlock
             {
-                var arrow = new TextBlock
-                {
-                    Text = isExpanded ? "\u25BC" : "\u25B6", // ▼ / ▶
-                    FontSize = 8,
-                    Foreground = (Brush)FindResource("BrushTextMuted"),
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(6, 0, 0, 0)
-                };
-                titleRow.Children.Add(arrow);
-            }
+                Text = isExpanded ? "\u25BC" : "\u25B6", // ▼ / ▶
+                FontSize = 8,
+                Foreground = (Brush)FindResource("BrushTextMuted"),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(6, 0, 0, 0),
+                Visibility = hasBodyOrButtons ? Visibility.Visible : Visibility.Collapsed
+            };
+            Grid.SetColumn(arrow, 2);
+            titleRow.Children.Add(arrow);
 
-            titleRow.Children.Add(new TextBlock
+            var timeText = new TextBlock
             {
                 Text = n.Timestamp.ToString("MM-dd HH:mm"),
                 FontSize = 9,
                 Foreground = (Brush)FindResource("BrushTextMuted"),
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(8, 0, 0, 0)
-            });
+            };
+            Grid.SetColumn(timeText, 3);
+            titleRow.Children.Add(timeText);
 
             stack.Children.Add(titleRow);
+
+            // 可展开 = 有正文/按钮，或标题单行溢出（信息类通知整段文案在 Title、Body 为空，
+            // 不看标题溢出则这类条目永远点不开、看不全）。溢出在布局后按「单行期望宽 vs 标题列实际宽」
+            // 比较，SizeChanged 时重算（窗口可拉伸，宽度变化会改变标题是否放得下）；
+            // 闭包标志供箭头显隐与点击handler共用，展开态下标题换行但列宽不变，判定与展开状态无关
+            bool expandable = hasBodyOrButtons;
+            void RefreshExpandable()
+            {
+                // 尚未布局（ActualWidth=0）或未挂到呈现源：保持初值，避免误判全亮箭头
+                if (titleText.ActualWidth <= 0 || PresentationSource.FromVisual(titleText) == null) return;
+                var formatted = new FormattedText(
+                    n.Title ?? "",
+                    System.Globalization.CultureInfo.CurrentCulture,
+                    FlowDirection.LeftToRight,
+                    new Typeface(titleText.FontFamily, titleText.FontStyle, titleText.FontWeight, titleText.FontStretch),
+                    titleText.FontSize,
+                    titleText.Foreground,
+                    VisualTreeHelper.GetDpi(titleText).PixelsPerDip);
+                expandable = hasBodyOrButtons || formatted.Width > titleText.ActualWidth + 1;
+                arrow.Visibility = expandable ? Visibility.Visible : Visibility.Collapsed;
+            }
+            titleText.SizeChanged += (s, e) => RefreshExpandable();
 
             // 正文（展开时显示全文，收起时限制高度）
             if (!string.IsNullOrEmpty(n.Body))
@@ -297,7 +333,7 @@ namespace SideDesk.Windows
                 // 按钮点击已通过 e.Handled 阻止冒泡，此处只处理条目空白区域
                 if (e.Handled) return;
 
-                if (hasExpandable)
+                if (expandable)
                 {
                     // 切换展开状态
                     if (isExpanded)

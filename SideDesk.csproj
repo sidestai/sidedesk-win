@@ -66,6 +66,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- 微信客服二维码（设置→关于，仅中文语言显示；SDK 不自动包含 png，需显式声明） -->
+    <Resource Include="resources\wechat-support-qr.png" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="ChromeProtocol.Domains" Version="2.1.1" />
     <PackageReference Include="ChromeProtocol.Runtime" Version="2.1.1" />
     <PackageReference Include="Emoji.Wpf" Version="0.3.4" />
@@ -99,32 +104,18 @@
     </None>
   </ItemGroup>
 
-  <!-- WinRT 投影瘦身（build/publish 输出各省约 24.2MB）。
-       背景：TFM 带 -windows10.0.19041 时，SDK 会把 targeting pack Microsoft.Windows.SDK.NET.Ref
-       的 C#/WinRT 投影 Microsoft.Windows.SDK.NET.dll(23.7MB) + WinRT.Runtime.dll(0.5MB) 复制进输出。
-       本工程实测零 WinRT 依赖，三重证据：
-         ① 代码中无任何 Windows.* WinRT 命名空间调用（grep 0 命中）；
-         ② SideDesk.dll 无这两个程序集的 assemblyref；
-         ③ 唯一把 TFM 绑到 19041 的 Slions.VirtualDesktop，其 VirtualDesktop.dll 只有编译器
-            自动附加的空 assemblyref，无任何 WinRT typeref（ComWrappers/Marshaler/
-            ObjectReference/Projections 全部 0 命中），运行时不会解析加载。
-       为何用物理删除：这两个文件以 runtimepack 资产形式从 restore 后的 project.assets.json
-       直接进复制列表，实测在 ResolveFrameworkReferences 前摘 FrameworkReference、以及 Remove
-       ReferenceCopyLocalPaths/RuntimeCopyLocalItems/ResolvedFileToPublish 均无效，故在复制完成后删。
-       deps.json 会残留 runtimepack.Microsoft.Windows.SDK.NET.Ref 的 runtime 条目，属**懒解析**：
-       runtimeconfig.json 的 frameworks 只有 Microsoft.NETCore.App + Microsoft.WindowsDesktop.App，
-       host 启动不校验 runtimepack，只有真正加载该程序集时才会去找文件——而本工程永不加载。
-       注意：TFM 的平台版本不能去掉，否则引用 Slions.VirtualDesktop 会 NU1202 还原失败。 -->
-  <Target Name="StripWinRTProjection" AfterTargets="CopyFilesToOutputDirectory;Publish">
-    <ItemGroup>
-      <_WinRTProjectionFile Include="$(TargetDir)Microsoft.Windows.SDK.NET.dll;$(TargetDir)WinRT.Runtime.dll"
-                            Condition="'$(TargetDir)' != ''" />
-      <_WinRTProjectionFile Include="$(PublishDir)Microsoft.Windows.SDK.NET.dll;$(PublishDir)WinRT.Runtime.dll"
-                            Condition="'$(PublishDir)' != ''" />
-    </ItemGroup>
-    <Message Importance="high"
-             Text="[WinRT瘦身] 剔除投影文件: @(_WinRTProjectionFile->'%(Filename)%(Extension)', ', ')" />
-    <Delete Files="@(_WinRTProjectionFile)" />
-  </Target>
+  <!-- WinRT 投影必须保留（勿再瘦身，否则 CDP 场景必崩）。
+       根因：Microsoft.Web.WebView2.Wpf.dll（WebView2 的 WPF 封装，App 必然加载）真实依赖
+       WinRT 投影 Microsoft.Windows.SDK.NET.dll(23.7MB) + WinRT.Runtime.dll(0.5MB)——二进制扫描确认它带
+       Windows.Foundation/Windows.Graphics(×4)/Windows.System/Windows.UI 的真实 typeref 及 WinRT.Runtime
+       assemblyref，并非空引用。
+       历史教训：曾有 StripWinRTProjection 目标在 CopyFilesToOutputDirectory/Publish 后物理删除这两文件省 24.2MB，
+       其判断依据「本工程零 WinRT 依赖」已失效——① 真正消费 WinRT 的是 WebView2 依赖而非本工程代码；
+       ② 曾误判 culprit 为 Slions.VirtualDesktop，实测 VirtualDesktop.dll 对 Microsoft.Windows.SDK.NET 0 命中。
+       删除后一旦 ChromeProtocol.Runtime 的 JsonProtocolSerialization 静态构造对所有已加载程序集调用
+       GetTypes()（CDP 首次发请求即触发），会强制解析 WebView2.Wpf 的 WinRT typeref →
+       FileNotFoundException(Microsoft.Windows.SDK.NET 10.0.17763.10) → ReflectionTypeLoadException → 进程崩溃。
+       故恢复 SDK 默认复制行为，保留两文件，不再删除。
+       注意：TFM 平台版本 19041 亦不可去，否则引用 Slions.VirtualDesktop 会 NU1202 还原失败。 -->
 
 </Project>

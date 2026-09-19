@@ -307,6 +307,23 @@ namespace SideDesk
                 System.Diagnostics.Debug.WriteLine($"[WindowUsage] start error: {ex.Message}");
             }
 
+            // 已配置标题锁定规则、但总开关还是旧默认值关闭、且用户从未主动关过 → 自动开启，
+            // 避免“规则保存了却永远不执行”的陷阱（尊重主动关闭：TitleLockUserOptOut）
+            try
+            {
+                if (!AppSettings.EnableTitleLock && !AppSettings.TitleLockUserOptOut
+                    && SideDesk.Windows.TitleLockRuleManager.GetAll()?.Count > 0)
+                {
+                    AppSettings.EnableTitleLock = true;
+                    AppSettings.Save();
+                    System.Diagnostics.Debug.WriteLine("[TitleLock] auto-enabled on startup: rules configured and user never opted out");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[TitleLock] auto-enable check error: {ex.Message}");
+            }
+
             // 启动时恢复上次保存的标题锁定规则（仅在功能开启时）
             try
             {
@@ -869,6 +886,9 @@ namespace SideDesk
 
         public void CloseAll()
         {
+            // 退出确认：仍有存活的快捷窗口时弹窗询问（默认=关闭全部；取消=不关窗口直接退出）
+            try { ConfirmCloseQuickWindowsOnExit(); } catch { }
+
             SaveState();
             WindowConfigs.Save();
             DisposeAllWebView2(); // 先释放 WebView2，避免其事件循环阻止进程退出
@@ -876,6 +896,49 @@ namespace SideDesk
                 CloseWindow(w);
             _windows.Clear();
             Shutdown();
+        }
+
+        /// <summary>
+        /// 退出前统计仍打开的快捷窗口并询问用户处置：
+        /// 确定（默认）= 先关闭这些窗口再退出；取消 = 不关闭直接退出。
+        /// 长期窗口（IsLongTermWindow）是接管的既有外部窗口，不计入也不关闭。
+        /// 选择结果写入 QuickGroupUIService.ExitCloseQuickWindows，后续各面板 Shutdown 遵循。
+        /// </summary>
+        private void ConfirmCloseQuickWindowsOnExit()
+        {
+            var openHandles = new List<IntPtr>();
+            var seen = new HashSet<IntPtr>();
+            foreach (var grp in QuickGroupManager.GetAll())
+            {
+                if (grp?.Items == null) continue;
+                foreach (var it in grp.Items)
+                {
+                    if (it == null || it.IsLongTermWindow) continue;
+                    var h = it.WindowHandle;
+                    if (h == IntPtr.Zero || !seen.Add(h)) continue;
+                    if (!NativeMethods.IsWindow(h)) continue;
+                    openHandles.Add(h);
+                }
+            }
+            if (openHandles.Count == 0) return;
+
+            var r = MessageBox.Show(
+                Framework.Lang.TF("exit.closeQuickWindowsConfirm", openHandles.Count),
+                Framework.Lang.T("common.notice"),
+                MessageBoxButton.OKCancel, MessageBoxImage.Question, MessageBoxResult.OK);
+            if (r == MessageBoxResult.OK)
+            {
+                QuickGroupUIService.ExitCloseQuickWindows = true;
+                foreach (var h in openHandles)
+                {
+                    try { NativeMethods.SendMessage(h, NativeMethods.WM_CLOSE, IntPtr.Zero, IntPtr.Zero); } catch { }
+                }
+            }
+            else
+            {
+                // 取消：保留所有快捷窗口，后续 Shutdown 不得再关（覆盖旧的「默认关非任务栏窗口」行为）
+                QuickGroupUIService.ExitCloseQuickWindows = false;
+            }
         }
 
         /// <summary>释放所有打开窗口中的 WebView2 控件（必须在退出前调用，否则 WebView2 运行时会阻止进程结束）</summary>

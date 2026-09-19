@@ -282,5 +282,12 @@
   "团队协作": { "key": "addCard.catTeam", "en": "Team" },
   "点击添加卡片": { "key": "nativePanel.clickToAddCard", "en": "Click to add card" },
   "卡片内字体大小": { "key": "settings.cardFontSize", "en": "Card font size" },
-  "调整卡片内文字大小（9-24px），卡片标题自动大 1 号": { "key": "settings.cardFontSizeHint", "en": "Adjust card text size (9-24px); card titles are automatically 1 size larger" }
+  "调整卡片内文字大小（9-24px），卡片标题自动大 1 号": { "key": "settings.cardFontSizeHint", "en": "Adjust card text size (9-24px); card titles are automatically 1 size larger" },
+  "联系客服": { "key": "settings.contactCustomerService", "en": "Contact Support" },
+  "功能建议 & 微屏社区": { "key": "settings.feedbackCommunity", "en": "Feature Suggestions & Community" },
+  "新建 Profile": { "key": "shortcut.profileCreateNew", "en": "New Profile" },
+  "默认浏览器（{0}）": { "key": "common.defaultBrowserNamed", "en": "Default browser ({0})" },
+  "多开Profile": { "key": "settings.addMultiProfile", "en": "Multi-Instance Profile" },
+  "进入个人后台": { "key": "settings.enterUserConsole", "en": "Open Personal Console" },
+  "还有{0}个快捷窗口没有关闭，您确定要关闭这些窗口吗？": { "key": "exit.closeQuickWindowsConfirm", "en": "{0} quick window(s) are still open. Are you sure you want to close them?" }
 }

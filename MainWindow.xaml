@@ -113,6 +113,9 @@
                             <MenuItem Header="{l:T common.addModule}" SubmenuOpened="AddModuleMenu_SubmenuOpened">
                                 <MenuItem Header="{l:T nativePanel.loading}"/>
                             </MenuItem>
+                            <MenuItem x:Name="toolsMenu" Header="{l:T common.tools}" SubmenuOpened="ToolsMenu_SubmenuOpened">
+                                <MenuItem Header="{l:T nativePanel.loading}"/>
+                            </MenuItem>
                             <MenuItem Header="{l:T common.screenManagement}" Click="ScreenManager_Click"/>
                             <MenuItem x:Name="notificationCenterMenu" Click="NotificationCenter_Click"
                                       Header="{l:T common.notificationCenter}" Tag="Collapsed">
@@ -132,9 +135,7 @@
                                 </MenuItem.HeaderTemplate>
                             </MenuItem>
                             <MenuItem Header="{l:T common.settings}" Click="Settings_Click"/>
-                            <MenuItem x:Name="toolsMenu" Header="{l:T common.tools}" SubmenuOpened="ToolsMenu_SubmenuOpened">
-                                <MenuItem Header="{l:T nativePanel.loading}"/>
-                            </MenuItem>
+                            <MenuItem Header="{l:T settings.about}" Click="About_Click"/>
                             <Separator x:Name="closeWindowSeparator"/>
                             <MenuItem x:Name="closeWindowMenu" Header="{l:T nativePanel.closePanel}" Click="CloseWindow_Click"/>
                             <MenuItem x:Name="accountMenu" Header="{l:T common.logIn}" Click="AccountMenu_Click"/>

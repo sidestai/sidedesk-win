@@ -915,7 +915,7 @@ public class DataPollingService : IDisposable
     }
 
     /// <summary>查找系统默认浏览器 exe 路径（从注册表 UserChoice 读取）</summary>
-    private static string FindDefaultBrowserExe()
+    public static string FindDefaultBrowserExe()
     {
         try
         {

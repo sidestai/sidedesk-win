@@ -266,10 +266,18 @@
                         <StackPanel>
                             <!-- 个人资料详情（仅登录后显示） -->
                             <StackPanel x:Name="accountProfileSection" Visibility="Collapsed">
-                                <TextBlock Text="{l:T settings.profile}"
-                                           Foreground="{DynamicResource BrushTextMain}"
-                                           FontSize="{DynamicResource FontSizeNormal}"
-                                           FontWeight="SemiBold"/>
+                                <DockPanel>
+                                    <!-- 进入个人后台：系统浏览器打开 web 控制台「我的」页（system/user-center），
+                                         已登录时经交接码免登直达；随 accountProfileSection 仅登录后显示 -->
+                                    <Button DockPanel.Dock="Right" Content="{l:T settings.enterUserConsole}"
+                                            Click="UserConsole_Click"
+                                            Style="{DynamicResource GhostButtonStyle}"
+                                            Padding="10,4" VerticalAlignment="Center" Cursor="Hand"/>
+                                    <TextBlock Text="{l:T settings.profile}"
+                                               Foreground="{DynamicResource BrushTextMain}"
+                                               FontSize="{DynamicResource FontSizeNormal}"
+                                               FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                </DockPanel>
                                 <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,12,0,12"/>
                                 <DockPanel>
                                     <!-- 头像（点击更换） -->
@@ -1437,6 +1445,20 @@
                             </Grid>
                         </StackPanel>
                     </Border>
+
+                    <!-- 支持链接：联系客服（弹微信客服二维码）+ 功能建议&微屏社区（浏览器外链）；仅中文语言显示，显隐由后台 ApplySupportLinksVisibility 控制 -->
+                    <StackPanel x:Name="supportLinksPanel" Visibility="Collapsed" Orientation="Horizontal" Margin="0,8,0,0">
+                        <TextBlock Text="{l:T settings.contactCustomerService}"
+                                   Foreground="{DynamicResource BrushAccent}"
+                                   FontSize="{DynamicResource FontSizeNormal}"
+                                   TextDecorations="Underline" Cursor="Hand"
+                                   MouseLeftButtonUp="ContactSupportLink_Click"/>
+                        <TextBlock Text="{l:T settings.feedbackCommunity}" Margin="24,0,0,0"
+                                   Foreground="{DynamicResource BrushAccent}"
+                                   FontSize="{DynamicResource FontSizeNormal}"
+                                   TextDecorations="Underline" Cursor="Hand"
+                                   MouseLeftButtonUp="CommunityLink_Click"/>
+                    </StackPanel>
                 </StackPanel>
 
                 <!-- 开发者页面 -->

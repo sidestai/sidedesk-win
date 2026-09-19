@@ -139,7 +139,10 @@ namespace SideDesk.Services
 
             if (exePath != null)
             {
-                string args = cfg.UseAppMode ? $"--app={url}" : url;
+                // 非 App 模式：必须加 --new-window 强制新窗口打开，避免命中已运行浏览器的现有标签/窗口
+                string args = cfg.UseAppMode
+                    ? $"--app={url}"
+                    : BuildNewWindowFlag(exePath) + " " + url;
                 if (!string.IsNullOrEmpty(userDataDir))
                     args += $" --user-data-dir=\"{userDataDir}\"";
 
@@ -150,8 +153,36 @@ namespace SideDesk.Services
                 return Task.CompletedTask;
             }
 
+            // 未指定浏览器且无需 App/Profile：默认浏览器打开，非 App 模式同样必须强制新窗口
+            if (!cfg.UseAppMode)
+            {
+                var defaultExe = DataPollingService.FindDefaultBrowserExe();
+                if (!string.IsNullOrEmpty(defaultExe) && File.Exists(defaultExe))
+                {
+                    var psi = new ProcessStartInfo
+                    {
+                        FileName = defaultExe,
+                        Arguments = BuildNewWindowFlag(defaultExe) + " " + url,
+                        UseShellExecute = false
+                    };
+                    Process.Start(psi);
+                    return Task.CompletedTask;
+                }
+            }
+
             Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
             return Task.CompletedTask;
+        }
+
+        /// <summary>非 App 模式强制新窗口打开 URL 的命令行标志：Chromium 系用 --new-window，Firefox 系用 -new-window</summary>
+        private static string BuildNewWindowFlag(string? browserExePath)
+        {
+            if (!string.IsNullOrEmpty(browserExePath))
+            {
+                var name = Path.GetFileNameWithoutExtension(browserExePath).ToLowerInvariant();
+                if (name == "firefox" || name == "waterfox" || name == "librewolf") return "-new-window";
+            }
+            return "--new-window";
         }
 
         /// <summary>查找 Edge 路径（默认浏览器下需要 APP 模式/Profile 时的回退，与 OpenQuickItem 逻辑一致）</summary>

@@ -82,7 +82,12 @@ namespace SideDesk
 
         /// <summary>是否显示通知条（窗口最右侧约 5px 宽的竖条，展示各种颜色的通知提醒）</summary>
         public bool ShowNotificationStrip { get; set; } = true;
-        public bool EnableTitleLock { get; set; } = false;
+        /// <summary>任务栏标题锁定总开关（启动自动恢复锁定 + 后台重扫自动捕捉重开的目标窗口）。
+        /// 默认开启：配置了规则就应当执行，避免“规则保存了却永远不生效”的陷阱。</summary>
+        public bool EnableTitleLock { get; set; } = true;
+
+        /// <summary>用户是否主动关闭过标题锁定（true=主动关闭；启动时即使已配置规则也不再自动开启，尊重用户选择）</summary>
+        public bool TitleLockUserOptOut { get; set; } = false;
         public bool EnableAutoUpdate { get; set; } = true;
         // 全局窗口切换热键（Ctrl+1~9），默认关闭以避免与浏览器等应用的 Ctrl+数字切标签冲突
         public bool EnableWindowSwitchHotkey { get; set; } = false;

@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using SideDesk.Models;
 using SideDesk.Services;
 
 namespace SideDesk;
@@ -12,6 +14,14 @@ public partial class AddShortcutDialog : Window
 {
     private bool _isBatchMode = false;
     private string _selectedColor = "#3498DB";
+    /// <summary>Profile 下拉中"新建"项的索引（-1 表示未构建）</summary>
+    private int _profileCreateNewIndex = -1;
+    /// <summary>系统默认浏览器 exe 路径（注册表 UserChoice 探测，空=未识别）</summary>
+    private readonly string _defaultBrowserExe = "";
+    /// <summary>窗口是否已关闭：async void 续体在关闭后禁止再动 DialogResult/Close</summary>
+    private bool _closed;
+    /// <summary>Ok_Click 重入保护：防止 await 期间用户重复点击确定</summary>
+    private bool _okInProgress;
     private readonly string[] _presetColors =
     {
         "#3498DB", "#2ECC71", "#E74C3C", "#9B59B6",
@@ -28,10 +38,19 @@ public partial class AddShortcutDialog : Window
     {
         InitializeComponent();
         SourceInitialized += (s, e) => App.UpdateWindowDwmTheme(this);
+        Closed += (s, e) => _closed = true;
 
-        // 加载浏览器列表
+        // 加载浏览器列表（首项标注系统默认浏览器名字）
         var app = (App)Application.Current;
-        browserCombo.Items.Add(Framework.Lang.T("common.defaultBrowser"));
+        _defaultBrowserExe = DataPollingService.FindDefaultBrowserExe();
+        var defaultLabel = Framework.Lang.T("common.defaultBrowser");
+        if (!string.IsNullOrEmpty(_defaultBrowserExe))
+        {
+            var dn = Path.GetFileNameWithoutExtension(_defaultBrowserExe);
+            if (dn.Length > 0) dn = char.ToUpperInvariant(dn[0]) + dn.Substring(1);
+            defaultLabel = Framework.Lang.TF("common.defaultBrowserNamed", dn);
+        }
+        browserCombo.Items.Add(defaultLabel);
         foreach (var browser in app.ProgramRegistry.Browsers)
         {
             browserCombo.Items.Add(browser.Name);
@@ -108,8 +127,22 @@ public partial class AddShortcutDialog : Window
 
     private void BrowserCombo_Changed(object sender, SelectionChangedEventArgs e)
     {
-        if (browserCombo.SelectedIndex <= 0)
+        // 默认浏览器：能识别出系统默浏时同样提供 Profile 行（列出默浏已配置的 Profiles）
+        if (browserCombo.SelectedIndex == 0)
         {
+            if (string.IsNullOrEmpty(_defaultBrowserExe))
+            {
+                _profileCreateNewIndex = -1;
+                profilePanel.Visibility = Visibility.Collapsed;
+                return;
+            }
+            RefreshProfileCombo(GetDefaultBrowserConfig()?.Profiles ?? new List<UserDataProfile>());
+            profilePanel.Visibility = Visibility.Visible;
+            return;
+        }
+        if (browserCombo.SelectedIndex < 0)
+        {
+            _profileCreateNewIndex = -1;
             profilePanel.Visibility = Visibility.Collapsed;
             return;
         }
@@ -118,16 +151,87 @@ public partial class AddShortcutDialog : Window
         var browserIndex = browserCombo.SelectedIndex - 1;
         if (browserIndex >= 0 && browserIndex < app.ProgramRegistry.Browsers.Count)
         {
-            var browser = app.ProgramRegistry.Browsers[browserIndex];
-            profileCombo.Items.Clear();
-            profileCombo.Items.Add(Framework.Lang.T("common.none"));
-            foreach (var profile in browser.Profiles)
-            {
-                profileCombo.Items.Add(profile.Name);
-            }
-            profileCombo.SelectedIndex = 0;
-            profilePanel.Visibility = browser.Profiles.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            RefreshProfileCombo(app.ProgramRegistry.Browsers[browserIndex].Profiles);
+            // 选了具体浏览器就显示 Profile 行：未配置时可选"默认"或"新建"
+            profilePanel.Visibility = Visibility.Visible;
         }
+    }
+
+    /// <summary>系统默认浏览器对应的已登记浏览器条目（按 exe 路径匹配）；未登记返回 null</summary>
+    private BrowserConfig? GetDefaultBrowserConfig()
+    {
+        if (string.IsNullOrEmpty(_defaultBrowserExe)) return null;
+        return ((App)Application.Current).ProgramRegistry.Browsers.Find(
+            b => string.Equals(b.ExePath, _defaultBrowserExe, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>默认浏览器未登记时自动登记一条，使"新建"Profile 有归属</summary>
+    private BrowserConfig? AutoRegisterDefaultBrowser()
+    {
+        if (string.IsNullOrEmpty(_defaultBrowserExe)) return null;
+        var registry = ((App)Application.Current).ProgramRegistry;
+        var cfg = new BrowserConfig
+        {
+            Name = Path.GetFileNameWithoutExtension(_defaultBrowserExe),
+            ExePath = _defaultBrowserExe
+        };
+        registry.Browsers.Add(cfg);
+        registry.Save();
+        return cfg;
+    }
+
+    /// <summary>重建 Profile 下拉：默认 + 已配置 Profiles + "新建"项（新建仅标记意图，确定时才创建目录）</summary>
+    private void RefreshProfileCombo(List<UserDataProfile> profiles)
+    {
+        profileCombo.Items.Clear();
+        profileCombo.Items.Add(Framework.Lang.T("common.default"));
+        foreach (var profile in profiles)
+        {
+            profileCombo.Items.Add(profile.Name);
+        }
+        profileCombo.Items.Add(Framework.Lang.T("shortcut.profileCreateNew"));
+        _profileCreateNewIndex = profileCombo.Items.Count - 1;
+        profileCombo.SelectedIndex = 0;
+    }
+
+    /// <summary>以快捷项名称为名新建 UserData 目录并登记到浏览器；失败返回 null（回退为默认）</summary>
+    private UserDataProfile? CreateProfileFromName(BrowserConfig browser, string desiredName)
+    {
+        var registry = ((App)Application.Current).ProgramRegistry;
+        var baseDir = registry.DefaultProfileBaseDir;
+        if (string.IsNullOrWhiteSpace(baseDir))
+            baseDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SideDesk", "BrowserProfiles");
+
+        // 名称清洗：剔除目录非法字符；空名回退 Profile N
+        var baseName = string.Join("", desiredName.Split(Path.GetInvalidFileNameChars())).Trim();
+        if (baseName.Length > 60) baseName = baseName.Substring(0, 60);
+        if (string.IsNullOrEmpty(baseName)) baseName = "Profile " + (browser.Profiles.Count + 1);
+
+        // 同名 Profile 或同名目录已存在时追加序号，保证新建
+        var name = baseName;
+        for (int suffix = 2;
+             browser.Profiles.Exists(p => p.Name == name) || Directory.Exists(Path.Combine(baseDir, name));
+             suffix++)
+        {
+            name = baseName + " " + suffix;
+        }
+
+        var dir = Path.Combine(baseDir, name);
+        try
+        {
+            Directory.CreateDirectory(dir);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[AddShortcut] create profile dir failed: {ex.Message}");
+            ThemedMessageBox.Show(this, Framework.Lang.T("common.operationFailed"), Framework.Lang.T("common.notice"));
+            return null;
+        }
+
+        var entry = new UserDataProfile { Name = name, Directory = dir };
+        browser.Profiles.Add(entry);
+        registry.Save();
+        return entry;
     }
 
     private void OpenWebMarket_Click(object sender, RoutedEventArgs e)
@@ -237,110 +341,169 @@ public partial class AddShortcutDialog : Window
 
     private async void Ok_Click(object sender, RoutedEventArgs e)
     {
-        if (_isBatchMode)
+        // 重入保护：favicon 异步拉取期间用户可能再次点确定，避免二次续体访问已关闭的对话框
+        if (_okInProgress || _closed) return;
+        _okInProgress = true;
+        try
         {
-            BatchResults = new List<ShortcutResult>();
-            foreach (UIElement element in batchRows.Children)
+            if (_isBatchMode)
             {
-                if (element is not Grid row) continue;
-
-                string name = "";
-                string url = "";
-                string icon = "";
-                bool isApp = false;
-
-                foreach (UIElement child in row.Children)
+                BatchResults = new List<ShortcutResult>();
+                foreach (UIElement element in batchRows.Children)
                 {
-                    if (child is TextBox tb)
+                    if (element is not Grid row) continue;
+
+                    string name = "";
+                    string url = "";
+                    string icon = "";
+                    bool isApp = false;
+
+                    foreach (UIElement child in row.Children)
                     {
-                        int col = Grid.GetColumn(tb);
-                        if (col == 0) icon = tb.Text?.Trim() ?? "";
-                        else if (col == 1) name = tb.Text?.Trim() ?? "";
-                        else if (col == 2) url = tb.Text?.Trim() ?? "";
-                    }
-                    else if (child is CheckBox cb)
-                    {
-                        isApp = cb.IsChecked ?? false;
-                    }
-                }
-
-                if (url == "https://") url = "";
-                if (!string.IsNullOrEmpty(name) || !string.IsNullOrEmpty(url))
-                {
-                    BatchResults.Add(new ShortcutResult
-                    {
-                        Name = name,
-                        Icon = string.IsNullOrEmpty(icon) ? null : icon,
-                        Url = url,
-                        IsAppMode = isApp
-                    });
-                }
-            }
-
-            if (BatchResults.Count > 0)
-            {
-                DialogResult = true;
-                Close();
-            }
-        }
-        else
-        {
-            var url = urlBox.Text?.Trim() ?? "";
-            if (url == "https://") url = "";
-
-            // 图标为空且网址有效时，自动获取 favicon 填充（缓存命中立即返回）
-            if (string.IsNullOrWhiteSpace(iconBox.Text) && !string.IsNullOrEmpty(url))
-            {
-                try
-                {
-                    var fav = await Task.Run(() => FaviconService.FetchFaviconAsync(url));
-                    if (!string.IsNullOrEmpty(fav)) iconBox.Text = fav;
-                }
-                catch { }
-            }
-
-            // 获取选中的浏览器 ID
-            string? browserId = null;
-            string? profileId = null;
-            if (browserCombo.SelectedIndex > 0)
-            {
-                var app = (App)Application.Current;
-                var browserIndex = browserCombo.SelectedIndex - 1;
-                if (browserIndex >= 0 && browserIndex < app.ProgramRegistry.Browsers.Count)
-                {
-                    var browser = app.ProgramRegistry.Browsers[browserIndex];
-                    browserId = browser.Id;
-
-                    if (profileCombo.SelectedIndex > 0)
-                    {
-                        var profileIndex = profileCombo.SelectedIndex - 1;
-                        if (profileIndex >= 0 && profileIndex < browser.Profiles.Count)
+                        if (child is TextBox tb)
                         {
-                            profileId = browser.Profiles[profileIndex].Id;
+                            int col = Grid.GetColumn(tb);
+                            if (col == 0) icon = tb.Text?.Trim() ?? "";
+                            else if (col == 1) name = tb.Text?.Trim() ?? "";
+                            else if (col == 2) url = tb.Text?.Trim() ?? "";
+                        }
+                        else if (child is CheckBox cb)
+                        {
+                            isApp = cb.IsChecked ?? false;
+                        }
+                    }
+
+                    if (url == "https://") url = "";
+                    if (!string.IsNullOrEmpty(name) || !string.IsNullOrEmpty(url))
+                    {
+                        BatchResults.Add(new ShortcutResult
+                        {
+                            Name = name,
+                            Icon = string.IsNullOrEmpty(icon) ? null : icon,
+                            Url = url,
+                            IsAppMode = isApp
+                        });
+                    }
+                }
+
+                if (BatchResults.Count > 0)
+                {
+                    TryClose(true);
+                }
+            }
+            else
+            {
+                var url = urlBox.Text?.Trim() ?? "";
+                if (url == "https://") url = "";
+
+                // 图标为空且网址有效时，自动获取 favicon 填充（缓存命中立即返回）
+                if (string.IsNullOrWhiteSpace(iconBox.Text) && !string.IsNullOrEmpty(url))
+                {
+                    try
+                    {
+                        var fav = await Task.Run(() => FaviconService.FetchFaviconAsync(url));
+                        // await 期间窗口可能已被取消/X 关闭，续体先探测再操作 UI
+                        if (_closed) return;
+                        if (!string.IsNullOrEmpty(fav)) iconBox.Text = fav;
+                    }
+                    catch { }
+                }
+                if (_closed) return;
+
+                // 获取选中的浏览器 ID
+                string? browserId = null;
+                string? profileId = null;
+                var shortcutName = nameBox.Text?.Trim() ?? "";
+                if (browserCombo.SelectedIndex == 0)
+                {
+                    // 默认浏览器：仅当实际选了 Profile 才写入 browserId（默浏本身即系统默认，绑定后启动引擎才能解析 Profile）
+                    if (profilePanel.Visibility == Visibility.Visible && profileCombo.SelectedIndex != 0)
+                    {
+                        var defCfg = GetDefaultBrowserConfig();
+                        if (profileCombo.SelectedIndex == _profileCreateNewIndex && _profileCreateNewIndex > 0)
+                        {
+                            // "新建 Profile"：确定时才用名称栏内容创建 UserData 目录并指向它
+                            defCfg ??= AutoRegisterDefaultBrowser();
+                            if (defCfg != null)
+                            {
+                                browserId = defCfg.Id;
+                                profileId = CreateProfileFromName(defCfg, shortcutName)?.Id;
+                            }
+                        }
+                        else if (defCfg != null)
+                        {
+                            var defProfileIndex = profileCombo.SelectedIndex - 1;
+                            if (defProfileIndex >= 0 && defProfileIndex < defCfg.Profiles.Count)
+                            {
+                                browserId = defCfg.Id;
+                                profileId = defCfg.Profiles[defProfileIndex].Id;
+                            }
                         }
                     }
                 }
-            }
+                else if (browserCombo.SelectedIndex > 0)
+                {
+                    var app = (App)Application.Current;
+                    var browserIndex = browserCombo.SelectedIndex - 1;
+                    if (browserIndex >= 0 && browserIndex < app.ProgramRegistry.Browsers.Count)
+                    {
+                        var browser = app.ProgramRegistry.Browsers[browserIndex];
+                        browserId = browser.Id;
 
-            SingleResult = new ShortcutResult
-            {
-                Name = nameBox.Text?.Trim() ?? "",
-                Icon = string.IsNullOrEmpty(iconBox.Text.Trim()) ? null : iconBox.Text.Trim(),
-                Url = url,
-                IsAppMode = appModeCheck.IsChecked ?? false,
-                BrowserId = browserId,
-                ProfileId = profileId,
-                BackgroundColor = _selectedColor
-            };
-            DialogResult = true;
-            Close();
+                        if (profileCombo.SelectedIndex == _profileCreateNewIndex && _profileCreateNewIndex > 0)
+                        {
+                            // "新建 Profile"：确定时才用名称栏内容创建 UserData 目录并指向它
+                            var entry = CreateProfileFromName(browser, shortcutName);
+                            if (entry != null) profileId = entry.Id;
+                        }
+                        else if (profileCombo.SelectedIndex > 0)
+                        {
+                            var profileIndex = profileCombo.SelectedIndex - 1;
+                            if (profileIndex >= 0 && profileIndex < browser.Profiles.Count)
+                            {
+                                profileId = browser.Profiles[profileIndex].Id;
+                            }
+                        }
+                    }
+                }
+
+                SingleResult = new ShortcutResult
+                {
+                    Name = nameBox.Text?.Trim() ?? "",
+                    Icon = string.IsNullOrEmpty(iconBox.Text.Trim()) ? null : iconBox.Text.Trim(),
+                    Url = url,
+                    IsAppMode = appModeCheck.IsChecked ?? false,
+                    BrowserId = browserId,
+                    ProfileId = profileId,
+                    BackgroundColor = _selectedColor
+                };
+                TryClose(true);
+            }
+        }
+        finally
+        {
+            _okInProgress = false;
         }
     }
 
     private void Cancel_Click(object sender, RoutedEventArgs e)
     {
-        DialogResult = false;
-        Close();
+        TryClose(false);
+    }
+
+    /// <summary>安全关闭：对话框可能已被 X/取消关闭，或调用方非 ShowDialog 打开，避免 DialogResult 抛异常</summary>
+    private void TryClose(bool result)
+    {
+        if (_closed) return;
+        try
+        {
+            DialogResult = result;
+        }
+        catch (InvalidOperationException)
+        {
+            // 窗口已关闭或非模态显示：忽略并继续 Close 兜底
+        }
+        if (!_closed) Close();
     }
 }
 

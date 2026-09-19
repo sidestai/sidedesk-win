@@ -65,7 +65,7 @@ namespace SideDesk
             // 配色主题（JSON 自定义主题）
             customThemeCombo.Items.Add(Framework.Lang.T("common.default"));
             var customThemes = Services.ThemeManager.LoadThemes();
-            foreach (var t in customThemes) customThemeCombo.Items.Add(t.Name);
+            foreach (var t in customThemes) customThemeCombo.Items.Add(new ComboBoxItem { Content = ThemeDisplayName(t), Tag = t.Name });
             int customIdx = 0;
             var savedTheme = Framework.AppSettings.Instance.CurrentTheme;
             if (!string.IsNullOrWhiteSpace(savedTheme))
@@ -2153,6 +2153,13 @@ namespace SideDesk
             await OAuthLoginService.OpenConsolePageAsync("/team/my-teams");
         }
 
+        /// <summary>进入个人后台：系统浏览器打开 web 控制台「我的」页（前端路由 system/user-center），
+        /// 免登交接与降级策略同 TeamManage_Click。</summary>
+        private async void UserConsole_Click(object sender, RoutedEventArgs e)
+        {
+            await OAuthLoginService.OpenConsolePageAsync("/system/user-center");
+        }
+
         /// <summary>添加团队：弹出输入框，调用创建接口</summary>
         private async void AddTeam_Click(object sender, RoutedEventArgs e)
         {
@@ -2816,7 +2823,7 @@ namespace SideDesk
         /// <summary>配色主题选择：默认 = 纯 XAML 深浅主题；其余 = resources/themes 下的 JSON 自定义主题</summary>
         private void CustomTheme_Changed(object sender, SelectionChangedEventArgs e)
         {
-            if (_isLoading) return;
+            if (_isLoading || _suppressThemeComboChange) return;
 
             if (customThemeCombo.SelectedIndex <= 0)
             {
@@ -2826,7 +2833,7 @@ namespace SideDesk
             }
             else
             {
-                var name = customThemeCombo.SelectedItem?.ToString();
+                var name = (customThemeCombo.SelectedItem as ComboBoxItem)?.Tag as string;
                 var theme = Services.ThemeManager.GetThemeByName(name);
                 if (theme == null) return;
                 Services.ThemeManager.ApplyTheme(theme);
@@ -2834,6 +2841,44 @@ namespace SideDesk
             }
 
             Framework.AppSettings.Instance.Save();
+        }
+
+        /// <summary>配色主题中文显示名（仅中文语言时生效；键为主题文件名无扩展名，比 JSON 内 name 更稳定）</summary>
+        private static readonly Dictionary<string, string> ThemeZhNames = new(System.StringComparer.OrdinalIgnoreCase)
+        {
+            ["AuroraDream_Purple"] = "极光之梦·紫",
+            ["CyberBlue_Neon"] = "赛博蓝·霓虹",
+            ["DarkFlat_Classic"] = "扁平暗色·经典",
+            ["DarkNeo_Modern"] = "新式暗色·现代",
+            ["DeepOcean_Blue"] = "深海·蓝",
+            ["Dracula_Vampire"] = "德古拉·吸血鬼",
+            ["LightPure_Elegant"] = "纯净亮色·优雅",
+            ["MatrixGreen_Terminal"] = "矩阵绿·终端",
+            ["Monokai_Pro"] = "Monokai 专业版",
+            ["SolarAmber_Warm"] = "日光琥珀·暖",
+        };
+
+        /// <summary>配色主题显示名：当前语言为中文时给中文翻译，其余语言（或无译文的新主题）显示主题原名</summary>
+        private static string ThemeDisplayName(Services.ThemeManager.JsonTheme t)
+            => Framework.Lang.Current.StartsWith("zh", System.StringComparison.OrdinalIgnoreCase)
+               && ThemeZhNames.TryGetValue(t.FileName, out var zh) ? zh : t.Name;
+
+        private bool _suppressThemeComboChange;
+
+        /// <summary>语言切换后重建配色主题下拉（中文时显示中文翻译），保持当前选中项；重建期间抑制 Changed 防误清主题</summary>
+        private void RefreshCustomThemeCombo()
+        {
+            _suppressThemeComboChange = true;
+            try
+            {
+                int keep = customThemeCombo.SelectedIndex;
+                customThemeCombo.Items.Clear();
+                customThemeCombo.Items.Add(Framework.Lang.T("common.default"));
+                foreach (var t in Services.ThemeManager.LoadThemes())
+                    customThemeCombo.Items.Add(new ComboBoxItem { Content = ThemeDisplayName(t), Tag = t.Name });
+                customThemeCombo.SelectedIndex = keep >= 0 && keep < customThemeCombo.Items.Count ? keep : 0;
+            }
+            finally { _suppressThemeComboChange = false; }
         }
 
         private void HideModuleTitleSwitch_Changed(object sender, RoutedEventArgs e)
@@ -3733,10 +3778,10 @@ namespace SideDesk
                     }
                 }
 
-                // 添加 UserData 按钮
+                // 添加多开 Profile 按钮（原「+ UserData」：为用户口语化的「多开」表述）
                 var addProfileBtn = new Button
                 {
-                    Content = "+ UserData",
+                    Content = "+ " + Framework.Lang.T("settings.addMultiProfile"),
                     Style = (Style)FindResource("GhostButtonStyle"),
                     Padding = new Thickness(8, 4, 8, 4),
                     FontSize = 11,
@@ -4031,13 +4076,18 @@ namespace SideDesk
         {
             if (_isLoading) return;
             _app.AppSettings.EnableTitleLock = titleLockSwitch.IsChecked == true;
+            _app.AppSettings.TitleLockUserOptOut = !_app.AppSettings.EnableTitleLock; // 记录用户主动选择：关闭=主动退出（启动时即使有规则也不再自动开启），开启=取消退出
             _app.AppSettings.Save();
 
             // 接通后台重扫定时器的启停：开启则启动重扫（自动捕捉重开的目标窗口），关闭则停止。
             try
             {
                 if (_app.AppSettings.EnableTitleLock)
+                {
                     TaskbarOverlayManager.EnsureRescanStarted();
+                    // 重扫定时器首次触发要等一个间隔（默认 15 秒），开启时立即应用一轮，让开关当场生效
+                    TaskbarOverlayManager.ApplyRulesNow();
+                }
                 else
                     TaskbarOverlayManager.StopRescan();
             }
@@ -4183,6 +4233,10 @@ namespace SideDesk
                 _app.AppSettings.Language = tag;
                 _app.AppSettings.Save();
                 Framework.Lang.Apply(tag);
+                // 语言切换后同步支持链接显隐（仅中文语言显示）
+                ApplySupportLinksVisibility();
+                // 语言切换后重建配色主题下拉（中文时显示中文翻译）
+                RefreshCustomThemeCombo();
             }
         }
 
@@ -5457,10 +5511,34 @@ namespace SideDesk
         private bool _isDownloadingUpdate;
         private bool _updateEventsSubscribed;
 
+        /// <summary>支持链接（联系客服 / 功能建议&微屏社区）仅中文语言（zh-CN / zh-TW）显示，其余语言隐藏</summary>
+        private void ApplySupportLinksVisibility()
+        {
+            supportLinksPanel.Visibility = Framework.Lang.Current.StartsWith("zh", System.StringComparison.OrdinalIgnoreCase)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+
+        /// <summary>联系客服：弹出微信客服二维码对话框</summary>
+        private void ContactSupportLink_Click(object sender, MouseButtonEventArgs e)
+        {
+            new WechatQrDialog { Owner = this }.ShowDialog();
+        }
+
+        /// <summary>功能建议 & 微屏社区：默认浏览器打开外链</summary>
+        private void CommunityLink_Click(object sender, MouseButtonEventArgs e)
+        {
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://support.qq.com/products/801966") { UseShellExecute = true }); }
+            catch { }
+        }
+
         private void InitUpdateUI()
         {
             // 设置开关状态
             autoUpdateSwitch.IsChecked = _app.AppSettings.EnableAutoUpdate;
+
+            // 支持链接（联系客服 / 功能建议&微屏社区）：仅中文语言显示
+            ApplySupportLinksVisibility();
 
             // 显示当前版本：产品版本（SemVer 三段，截掉 SourceLink 的 +commit 后缀）+ 文件版本（四段构建戳）
             try

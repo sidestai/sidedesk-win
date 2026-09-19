@@ -98,6 +98,19 @@ namespace SideDesk.Services
         {
             _container = container;
             _dispatcher = container.Dispatcher;
+            // 构建时间戳埋点：日志里一眼确认跑的是哪个二进制（排除旧 exe 被文件锁挡住未更新的假验证）
+            LogDebug($"service start: build={BuildStamp()} instance=0x{GetHashCode():X}");
+        }
+
+        /// <summary>当前程序集的构建（写入）时间，用于诊断日志标识二进制版本</summary>
+        private static string BuildStamp()
+        {
+            try
+            {
+                var path = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                return System.IO.File.GetLastWriteTime(path).ToString("yyyy-MM-dd HH:mm:ss");
+            }
+            catch { return "unknown"; }
         }
 
         #region Public API
@@ -105,6 +118,7 @@ namespace SideDesk.Services
         /// <summary>加载所有分组到 UI</summary>
         public void LoadGroups()
         {
+            LogDebug("rebuild: LoadGroups");
             // 分组已改为面板自有数据：绑定模式只渲染本面板的分组，
             // 避免把其他窗口/面板的快捷面板误渲染进当前容器
             if (!string.IsNullOrEmpty(_boundGroupId))
@@ -142,6 +156,7 @@ namespace SideDesk.Services
         /// <summary>仅加载指定分组到 UI（1:1 面板绑定模式）</summary>
         public void LoadSingleGroup(string groupId)
         {
+            LogDebug($"rebuild: LoadSingleGroup {groupId}");
             _boundGroupId = groupId;
             _container.Children.Clear();
             _itemButtonRefs.Clear();
@@ -533,6 +548,13 @@ namespace SideDesk.Services
             return resultId!;
         }
 
+        /// <summary>
+        /// 退出时是否关闭快捷窗口（App.CloseAll 弹窗后设置）：
+        /// true=全部关闭（含任务栏可见项），false=全部保留，null=旧行为（仅关非任务栏窗口，未经弹窗的退出路径）。
+        /// 长期窗口是接管的既有外部窗口，非 SideDesk 打开，任何情况下都不在退出时关闭。
+        /// </summary>
+        public static bool? ExitCloseQuickWindows { get; set; }
+
         /// <summary>停止所有定时器和清理资源</summary>
         public void Shutdown()
         {
@@ -543,7 +565,7 @@ namespace SideDesk.Services
             try { QuickGroupManager.RemoveTransientWindowItems(); } catch { }
             QuickGroupManager.Save();
 
-            // 关闭非任务栏窗口
+            // 收集不关闭的句柄：长期窗口永远保留；未经弹窗确认时（null）沿用旧行为保留任务栏可见窗口
             var preserveHandles = new HashSet<IntPtr>();
             try
             {
@@ -552,19 +574,26 @@ namespace SideDesk.Services
                     if (grp?.Items == null) continue;
                     foreach (var it in grp.Items)
                     {
-                        if (it != null && it.ShowInTaskbar && it.WindowHandle != IntPtr.Zero)
+                        if (it == null || it.WindowHandle == IntPtr.Zero) continue;
+                        if (it.IsLongTermWindow)
+                            preserveHandles.Add(it.WindowHandle);
+                        else if (ExitCloseQuickWindows == null && it.ShowInTaskbar)
                             preserveHandles.Add(it.WindowHandle);
                     }
                 }
             }
             catch { }
 
-            foreach (var handle in _quickItemHandles)
+            // 用户选择「不关闭直接退出」时跳过关窗；否则关闭未被保留的存活窗口
+            if (ExitCloseQuickWindows != false)
             {
-                if (preserveHandles.Contains(handle)) continue;
-                if (NativeMethods.IsWindow(handle))
+                foreach (var handle in _quickItemHandles)
                 {
-                    NativeMethods.SendMessage(handle, NativeMethods.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+                    if (preserveHandles.Contains(handle)) continue;
+                    if (NativeMethods.IsWindow(handle))
+                    {
+                        NativeMethods.SendMessage(handle, NativeMethods.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+                    }
                 }
             }
             _quickItemHandles.Clear();
@@ -772,10 +801,12 @@ namespace SideDesk.Services
             bool isPopup = group.DisplayMode == "popup";
 
             // 内容区（列表模式强制单列）；顶部对齐：限高宿主内不被均分行高拉伸，项与项紧凑排列
+            // 注意：contentPanel 自身不随 IsExpanded 设 Collapsed——显隐统一由外层 contentHost 控制；
+            // 否则「收起→视图重渲染→再展开」后 contentPanel 仍保持 Collapsed，内容区恒空
+            // （标题计数正常但新增项不可见，重启全量渲染才恢复）
             var contentPanel = new UniformGrid
             {
                 Columns = isList ? 1 : group.Columns,
-                Visibility = group.IsExpanded ? Visibility.Visible : Visibility.Collapsed,
                 Tag = "content:" + group.Id,
                 AllowDrop = true,
                 VerticalAlignment = VerticalAlignment.Top
@@ -1737,10 +1768,20 @@ namespace SideDesk.Services
                     dragStartPoint = ev.GetPosition(btn);
                 }
             };
+
+            // 抬起即清除拖拽起点：残留的起点会让之后的悬停移动被误判为拖拽（假 DoDragDrop 的 Drop/DragLeave 会抹掉高亮黄框）
+            btn.PreviewMouseLeftButtonUp += (s, ev) => dragStartPoint = null;
             
             btn.PreviewMouseMove += (s, ev) =>
             {
                 if (dragStartPoint == null || isDragging) return;
+
+                // 仅在左键按住时才可能是拖拽；悬停划过直接丢弃起点，绝不发起 DoDragDrop
+                if (ev.LeftButton != System.Windows.Input.MouseButtonState.Pressed)
+                {
+                    dragStartPoint = null;
+                    return;
+                }
                 
                 Point currentPoint = ev.GetPosition(btn);
                 Vector diff = dragStartPoint.Value - currentPoint;
@@ -1775,12 +1816,12 @@ namespace SideDesk.Services
                 }
             };
             
-            // 拖拽离开：清除提示
+            // 拖拽离开：恢复真实高亮态（若该按钮本就是前台窗口，黄框不能被拖拽提示抹掉）
             btn.DragLeave += (s, ev) =>
             {
                 if (ev.Data.GetDataPresent("QuickItemId"))
                 {
-                    btn.BorderBrush = Brushes.Transparent;
+                    RestoreItemBorder(btn);
                     ev.Handled = true;
                 }
             };
@@ -1788,7 +1829,7 @@ namespace SideDesk.Services
             // 放下：组内拖拽调序，跨分组移动项到目标分组末尾
             btn.Drop += (s, ev) =>
             {
-                btn.BorderBrush = Brushes.Transparent;
+                RestoreItemBorder(btn);
                 if (!ev.Data.GetDataPresent("QuickItemId")) return;
                 ev.Handled = true;
 
@@ -1896,6 +1937,13 @@ namespace SideDesk.Services
             return panel;
         }
 
+        /// <summary>拖拽提示结束后按真实高亮态恢复按钮边框（活动窗口=黄框，否则透明），避免拖拽路径抹掉前台高亮</summary>
+        private void RestoreItemBorder(Button btn)
+        {
+            var r = _itemButtonRefs.FirstOrDefault(x => x.Button == btn);
+            btn.BorderBrush = (r != null && r.IsActive) ? ActiveHighlightBorder : Brushes.Transparent;
+        }
+
         #endregion
 
         #region Item Actions
@@ -1904,13 +1952,22 @@ namespace SideDesk.Services
         {
             try
             {
+                // 自愈：面板重建/窗口切换可能停掉本实例的前台监视计时器（StopWatchers），
+                // 导致「切换到已有窗口」后高亮不刷新；每次打开项时幂等重启
+                EnsureForegroundWatcher();
+
                 if (item.Type == "advanced")
                 {
                     _ = AdvancedActionService.ExecuteAsync(item);
                     return;
                 }
 
-                if (TryActivateExistingWindow(item)) return;
+                if (TryActivateExistingWindow(item))
+                {
+                    // 激活后前台切换需要一点时间生效：延迟补刷高亮，不单纯依赖 700ms 计时器
+                    ScheduleHighlightRefresh();
+                    return;
+                }
 
                 if (item.Type == "program")
                 {
@@ -1939,6 +1996,7 @@ namespace SideDesk.Services
                 else
                 {
                     // URL
+                    LogDebug($"open url: item={item.Name} target={item.Target} appMode={item.UseAppMode} browserId={item.BrowserId} profileId={item.ProfileId} exeId={item.BrowserExeId} legacyProfileId={item.BrowserProfileId}");
                     // 优先检查 ProgramRegistry 浏览器配置
                     if (!string.IsNullOrEmpty(item.BrowserId))
                     {
@@ -1964,36 +2022,11 @@ namespace SideDesk.Services
                             }
                             else
                             {
-                                args = (item.Target ?? "") + regProfileArgs;
+                                // 非 App 模式：必须加 --new-window 强制新窗口打开，避免命中已运行浏览器的现有标签/窗口
+                                args = BuildNewWindowFlag(browser.ExePath) + " " + (item.Target ?? "") + regProfileArgs;
                             }
 
-                            var process = new Process();
-                            process.StartInfo.FileName = browser.ExePath;
-                            process.StartInfo.Arguments = args;
-                            process.Start();
-
-                            string pName = Path.GetFileNameWithoutExtension(browser.ExePath);
-                            Task.Run(async () =>
-                            {
-                                IntPtr foundHandle = IntPtr.Zero;
-                                int attempts = 0;
-                                while (foundHandle == IntPtr.Zero && attempts < 20)
-                                {
-                                    await Task.Delay(500);
-                                    attempts++;
-                                    foundHandle = WindowFinder.FindNewWindow(pName, _quickItemHandles);
-                                }
-                                if (foundHandle != IntPtr.Zero)
-                                {
-                                    await _dispatcher.InvokeAsync(() =>
-                                    {
-                                        item.WindowHandle = foundHandle;
-                                        _quickItemHandles.Add(foundHandle);
-                                        ApplyTaskbarVisibility(item);
-                                        ApplyTopmostIfPossible(item);
-                                    });
-                                }
-                            });
+                            LaunchBrowserAndTrack(item, browser.ExePath, args);
                             return;
                         }
                     }
@@ -2025,79 +2058,29 @@ namespace SideDesk.Services
                         if (string.IsNullOrEmpty(browserExe))
                         {
                             // 找不到浏览器，回退到系统默认浏览器（无法支持app模式和profile）
-                            Process.Start(new ProcessStartInfo(item.Target ?? "") { UseShellExecute = true });
+                            LaunchWithSystemDefaultBrowser(item, forceNewWindow: !item.UseAppMode);
                             return;
                         }
 
-                        string args = item.UseAppMode ? $"--app={item.Target}" : (item.Target ?? "");
+                        string args = item.UseAppMode
+                            ? $"--app={item.Target}"
+                            : BuildNewWindowFlag(browserExe) + " " + (item.Target ?? "");
                         args += profileArgs;
 
-                        var process = new Process();
-                        process.StartInfo.FileName = browserExe;
-                        process.StartInfo.Arguments = args;
-                        process.Start();
-
-                        string pName = Path.GetFileNameWithoutExtension(browserExe);
-                        Task.Run(async () =>
-                        {
-                            IntPtr foundHandle = IntPtr.Zero;
-                            int attempts = 0;
-                            while (foundHandle == IntPtr.Zero && attempts < 20)
-                            {
-                                await Task.Delay(500);
-                                attempts++;
-                                foundHandle = WindowFinder.FindNewWindow(pName, _quickItemHandles);
-                            }
-                            if (foundHandle != IntPtr.Zero)
-                            {
-                                await _dispatcher.InvokeAsync(() =>
-                                {
-                                    item.WindowHandle = foundHandle;
-                                    _quickItemHandles.Add(foundHandle);
-                                    ApplyTaskbarVisibility(item);
-                                    ApplyTopmostIfPossible(item);
-                                });
-                            }
-                        });
+                        LaunchBrowserAndTrack(item, browserExe, args);
                     }
                     else
                     {
                         // 普通模式：使用系统默认浏览器
                         if (!string.IsNullOrEmpty(browserExe))
                         {
-                            // 用户指定了浏览器exe
-                            var process = new Process();
-                            process.StartInfo.FileName = browserExe;
-                            process.StartInfo.Arguments = item.Target ?? "";
-                            process.Start();
-
-                            string pName = Path.GetFileNameWithoutExtension(browserExe);
-                            Task.Run(async () =>
-                            {
-                                IntPtr foundHandle = IntPtr.Zero;
-                                int attempts = 0;
-                                while (foundHandle == IntPtr.Zero && attempts < 20)
-                                {
-                                    await Task.Delay(500);
-                                    attempts++;
-                                    foundHandle = WindowFinder.FindNewWindow(pName, _quickItemHandles);
-                                }
-                                if (foundHandle != IntPtr.Zero)
-                                {
-                                    await _dispatcher.InvokeAsync(() =>
-                                    {
-                                        item.WindowHandle = foundHandle;
-                                        _quickItemHandles.Add(foundHandle);
-                                        ApplyTaskbarVisibility(item);
-                                        ApplyTopmostIfPossible(item);
-                                    });
-                                }
-                            });
+                            // 用户指定了浏览器exe（非 App 模式必须加 --new-window）
+                            LaunchBrowserAndTrack(item, browserExe, BuildNewWindowFlag(browserExe) + " " + (item.Target ?? ""));
                         }
                         else
                         {
-                            // 使用系统默认浏览器
-                            Process.Start(new ProcessStartInfo(item.Target ?? "") { UseShellExecute = true });
+                            // 使用系统默认浏览器（非 App 模式必须加 --new-window，需先解析出默认浏览器 exe）
+                            LaunchWithSystemDefaultBrowser(item, forceNewWindow: true);
                         }
                     }
                 }
@@ -2119,6 +2102,106 @@ namespace SideDesk.Services
             return paths.FirstOrDefault(File.Exists);
         }
 
+        /// <summary>非 App 模式强制新窗口打开 URL 的命令行标志：Chromium 系用 --new-window，Firefox 系用 -new-window</summary>
+        private static string BuildNewWindowFlag(string? browserExePath)
+        {
+            if (!string.IsNullOrEmpty(browserExePath))
+            {
+                var name = Path.GetFileNameWithoutExtension(browserExePath).ToLowerInvariant();
+                if (name == "firefox" || name == "waterfox" || name == "librewolf") return "-new-window";
+            }
+            return "--new-window";
+        }
+
+        /// <summary>使用系统默认浏览器打开 URL；forceNewWindow=true 时先解析默认浏览器 exe 再传 --new-window，解析失败才回退到 UseShellExecute。
+        /// 同时后台轮询回填 item.WindowHandle，保证前台窗口高亮（黄色边框）在默认浏览器路径下也能生效。</summary>
+        private void LaunchWithSystemDefaultBrowser(QuickItem item, bool forceNewWindow)
+        {
+            var url = item.Target ?? "";
+            if (forceNewWindow)
+            {
+                var defaultExe = DataPollingService.FindDefaultBrowserExe();
+                if (!string.IsNullOrEmpty(defaultExe) && File.Exists(defaultExe))
+                {
+                    LaunchBrowserAndTrack(item, defaultExe, BuildNewWindowFlag(defaultExe) + " " + url, useShellExecute: false);
+                    return;
+                }
+            }
+            // 解析失败兜底：UseShellExecute 无法传 --new-window 也拿不到具体浏览器 exe，无法跟踪窗口
+            LogDebug($"open fallback shell-execute: item={item.Name} url={url}");
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
+
+        /// <summary>启动浏览器并后台追踪「启动后新增」的窗口句柄回填到 item.WindowHandle。
+        /// 启动前先快照同进程已有窗口：轮询只认快照之外新出现的窗口，
+        /// 避免新窗口创建延迟期间把用户自开的同浏览器窗口误绑定到本项（多开同浏览器场景的黄色边框错位根因）。</summary>
+        private void LaunchBrowserAndTrack(QuickItem item, string exePath, string args, bool useShellExecute = true)
+        {
+            string pName = Path.GetFileNameWithoutExtension(exePath);
+            var before = WindowFinder.SnapshotWindows(pName);
+            LogDebug($"launch: item={item.Name} exe={exePath} args={args} preSnapshot={before.Count}");
+            var psi = new ProcessStartInfo
+            {
+                FileName = exePath,
+                Arguments = args,
+                UseShellExecute = useShellExecute
+            };
+            Process.Start(psi);
+
+            Task.Run(async () =>
+            {
+                IntPtr foundHandle = IntPtr.Zero;
+                int attempts = 0;
+                while (foundHandle == IntPtr.Zero && attempts < 20)
+                {
+                    await Task.Delay(500);
+                    attempts++;
+                    foundHandle = WindowFinder.FindNewWindow(pName, _quickItemHandles, before);
+                }
+                LogDebug($"track: item={item.Name} attempts={attempts} handle=0x{foundHandle.ToInt64():X} title={GetWindowTitle(foundHandle)}");
+                if (foundHandle != IntPtr.Zero)
+                {
+                    await _dispatcher.InvokeAsync(() =>
+                    {
+                        item.WindowHandle = foundHandle;
+                        _quickItemHandles.Add(foundHandle);
+                        ApplyTaskbarVisibility(item);
+                        ApplyTopmostIfPossible(item);
+                        try { RefreshActiveHighlight(); } catch { }
+                    });
+                    ScheduleHighlightRefresh();
+                }
+            });
+        }
+
+        /// <summary>诊断日志：写入 %LocalAppData%\SideDesk\Logs\quickitem-debug.log，用于排查前台高亮/窗口绑定问题</summary>
+        private static void LogDebug(string message)
+        {
+            try
+            {
+                var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SideDesk", "Logs");
+                if (!Directory.Exists(folder)) Directory.CreateDirectory(folder);
+                File.AppendAllText(Path.Combine(folder, "quickitem-debug.log"),
+                    $"[{DateTime.Now:HH:mm:ss.fff}] {message}{Environment.NewLine}");
+            }
+            catch { }
+        }
+
+        /// <summary>取顶层窗口标题（诊断日志用，失败返回空串）</summary>
+        private static string GetWindowTitle(IntPtr hWnd)
+        {
+            if (hWnd == IntPtr.Zero) return "";
+            try
+            {
+                int len = NativeMethods.GetWindowTextLength(hWnd);
+                if (len <= 0) return "";
+                var sb = new StringBuilder(len + 1);
+                NativeMethods.GetWindowText(hWnd, sb, sb.Capacity);
+                return sb.ToString();
+            }
+            catch { return ""; }
+        }
+
         private bool TryActivateExistingWindow(QuickItem item)
         {
             if (item.WindowHandle == IntPtr.Zero) return false;
@@ -2131,13 +2214,29 @@ namespace SideDesk.Services
             }
             try
             {
-                if (NativeMethods.IsIconic(handle))
+                bool iconic = NativeMethods.IsIconic(handle);
+                if (iconic)
                     NativeMethods.ShowWindow(handle, NativeMethods.SW_RESTORE);
-                NativeMethods.SetForegroundWindow(handle);
+                bool ok = NativeMethods.SetForegroundWindow(handle);
                 ApplyTopmostIfPossible(item);
+                LogDebug($"activate: item={item.Name} handle=0x{handle.ToInt64():X} iconic={iconic} setFg={ok} fgAfter=0x{NativeMethods.GetForegroundWindow().ToInt64():X}");
             }
             catch { }
             return true;
+        }
+
+        /// <summary>激活/启动后延迟补刷前台高亮：前台切换生效有延迟，且监视计时器可能已停，多档延迟确保黄框跟上</summary>
+        private void ScheduleHighlightRefresh()
+        {
+            Task.Run(async () =>
+            {
+                foreach (var ms in new[] { 200, 600, 1200 })
+                {
+                    await Task.Delay(ms);
+                    try { await _dispatcher.InvokeAsync(() => RefreshActiveHighlight()); }
+                    catch { }
+                }
+            });
         }
 
         private void TrackProcessMainWindow(QuickItem item, Process proc)
@@ -2317,9 +2416,21 @@ namespace SideDesk.Services
 
         #region Foreground Watcher & Long-term Window
 
+        /// <summary>上次记录的前台窗口句柄（仅诊断日志用）</summary>
+        private IntPtr _lastLoggedFg = IntPtr.Zero;
+
+        /// <summary>最近一次非 SideDesk 自身的前台窗口：面板抢焦点时用它维持高亮判定</summary>
+        private IntPtr _lastExternalFg = IntPtr.Zero;
+
         private void EnsureForegroundWatcher()
         {
-            if (_foregroundWatcher != null) return;
+            if (_foregroundWatcher != null)
+            {
+                // Shutdown 等路径可能只 Stop 未置 null：发现已停就复活，避免高亮静默失效
+                if (!_foregroundWatcher.IsEnabled) _foregroundWatcher.Start();
+                return;
+            }
+            LogDebug("watcher: (re)started");
             _foregroundWatcher = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(700) };
             _foregroundWatcher.Tick += (s, e) => RefreshActiveHighlight();
             _foregroundWatcher.Start();
@@ -2338,9 +2449,30 @@ namespace SideDesk.Services
         private void RefreshActiveHighlight()
         {
             if (_itemButtonRefs.Count == 0) return;
-            IntPtr fg;
-            try { fg = NativeMethods.GetForegroundWindow(); }
+            IntPtr fgRaw;
+            try { fgRaw = NativeMethods.GetForegroundWindow(); }
             catch { return; }
+
+            // 自身窗口抢到前台时不作为判定依据：点击按钮的 mouse-down、悬停展开/收回都会
+            // 短暂把前台变成 SideDesk 面板自己（日志中反复出现的 fg→「微屏」），
+            // 严格匹配会导致黄框闪断/鼠标移开即消失；此时沿用最近一次外部窗口作为「当前窗口」
+            //（同 NativeModePanel._lastExternalForeground 粘贴收藏的处理套路）
+            IntPtr fg = fgRaw;
+            if (fgRaw != IntPtr.Zero)
+            {
+                NativeMethods.GetWindowThreadProcessId(fgRaw, out uint fgPid);
+                if (fgPid == Environment.ProcessId)
+                    fg = _lastExternalFg;
+                else
+                    _lastExternalFg = fgRaw;
+            }
+
+            // 前台变化时间线：记录每次生效 fg 切换（含标题），自身窗口短暂抢焦点已被过滤
+            if (fg != _lastLoggedFg)
+            {
+                LogDebug($"fg change: 0x{_lastLoggedFg.ToInt64():X}({GetWindowTitle(_lastLoggedFg)}) -> 0x{fg.ToInt64():X}({GetWindowTitle(fg)}) raw=0x{fgRaw.ToInt64():X}({GetWindowTitle(fgRaw)})");
+                _lastLoggedFg = fg;
+            }
 
             foreach (var r in _itemButtonRefs)
             {
@@ -2354,6 +2486,7 @@ namespace SideDesk.Services
                 bool active = alive && fg != IntPtr.Zero && r.Item.WindowHandle == fg;
                 if (active == r.IsActive) continue;
                 r.IsActive = active;
+                LogDebug($"highlight: item={r.Item.Name} active={active} handle=0x{r.Item.WindowHandle.ToInt64():X} fg=0x{fg.ToInt64():X} fgTitle={GetWindowTitle(fg)}");
                 r.Button.BorderBrush = active ? ActiveHighlightBorder : Brushes.Transparent;
                 r.Button.FontWeight = active ? FontWeights.Bold : FontWeights.Normal;
             }

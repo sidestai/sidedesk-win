@@ -451,6 +451,13 @@ namespace SideDesk
 
         private void Settings_Click(object sender, RoutedEventArgs e) => OpenSettingsWindow(null);
 
+        /// <summary>主菜单“关于”：打开设置窗口并直达关于页（固定索引导航，不经页面名映射，杜绝错位）</summary>
+        private void About_Click(object sender, RoutedEventArgs e)
+        {
+            OpenSettingsWindow(null);
+            _settingsWindow?.SwitchToAboutPage();
+        }
+
         /// <summary>打开（或激活）设置窗口；page 非空时定位到指定设置页（如 "account"）。</summary>
         private void OpenSettingsWindow(string? page)
         {
