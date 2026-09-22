@@ -1,8 +1,0 @@
-{
-  "common.dataTemplates": "数据模板",
-  "common.iconLabel": "图标：",
-  "common.importWindow": "📥 导入窗口",
-  "common.nameLabel": "名称：",
-  "nativePanel.columnCountValue": "{0} 列",
-  "window.processLabel": "进程: {0}"
-}
