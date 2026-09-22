@@ -1,16 +1,80 @@
-升级：
+# SideDesk
 
-可以选择几个元素，共享给别人或者团队
-输入共享码添加进来，该控件所有人可以操作（可以只读）
+A Windows desktop sidebar utility built with WPF (.NET 10). It provides a persistent AppBar sidebar with sticky notes, todos, data dashboards, AI assistant, cloud drive integration, and a dual-mode plugin system (native DLL + HTML/WebView2).
 
-一个人可以有多个团队，不会切换到具体团队，也就是说任何一个桌面可以放不同团队共享过来的模块
+## Features
 
+- **Persistent Sidebar** — Windows AppBar that stays on screen edge, supports multi-monitor and per-monitor DPI
+- **Sticky Notes & Todos** — Markdown-rendered notes with cloud sync
+- **Data Dashboard** — Configurable widgets with variable-driven data sources
+- **AI Assistant** — Multi-model chat with configurable LLM providers
+- **Cloud Drive** — WebDAV / S3 / Baidu Pan integration
+- **Plugin System** — Native (.NET DLL) and HTML (WebView2 sandboxed) plugin modes
+- **Team Sharing** — Share modules across team members with permission control
+- **Multi-language** — 13 languages (zh-CN, zh-TW, en, ja, ko, de, es, fr, it, pl, pt-BR, ru, tr)
+- **Auto Update** — Velopack-based self-updating
 
-https://pan.baidu.com/union/home
+## Requirements
 
+- Windows 10 19041+ or Windows 11
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+- WebView2 Runtime (pre-installed on Windows 11; auto-downloaded on Windows 10)
 
-# 版本号由 csproj 按构建时间自动生成（FileVersion = 1.0.<距2025-01-01天数>.<HHmm>），packVersion 取前三段（SemVer，粒度到天）：
-$exe = "F:\_WORK\_SIDEDESK\sidedesk-win-exe\bin\Release\net10.0-windows10.0.19041\SideDesk.exe"
-$vi = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exe)
-$packVer = "$($vi.FileMajorPart).$($vi.FileMinorPart).$($vi.FileBuildPart)"
-vpk pack --packId com.desktxp.sidedesk --packDir F:\_WORK\_SIDEDESK\sidedesk-win-exe\bin\Release\net10.0-windows10.0.19041 --mainExe SideDesk.exe --outputDir F:\_WORK\_SIDEDESK\sidedesk-win-exe\bin\updates --signParams "/sha1 c2ce45210f4a17db124fae5429de4dcbee28b81d /tr http://timestamp.sectigo.com?td=sha256 /td sha256 /fd sha256" --shortcuts None  --exclude ".*\.pdb$|.*/logs/.*|.*\.xml$" --packVersion 1.0.8
+## Build
+
+```powershell
+# Default build (Chinese region backend)
+dotnet build SideDesk.slnx -c Release
+
+# Build with international region backend
+dotnet build SideDesk.slnx -c Release -p:ApiRegion=en
+```
+
+The `ApiRegion` property controls which backend API domain is used at compile time (see `Constants.cs`).
+
+## Project Structure
+
+```
+├── SideDesk.slnx           Solution file
+├── SideDesk.csproj         Main project
+├── Controls/               UI controls (sidebar panels, native mode, etc.)
+├── Framework/              Core infrastructure (i18n, settings, runtime log)
+├── Models/                 Data models
+├── Services/               Business logic services
+│   └── Plugins/            Plugin loading and hosting
+├── Windows/                Dialog windows and popups
+├── Themes/                 Light/Dark theme resources
+├── langs/                  Runtime translation dictionaries (JSON)
+├── resources/themes/       User-selectable color themes
+├── plugins/                Example plugins
+│   ├── DeskClock/          Native plugin example
+│   ├── HelloWorld/         Native plugin example
+│   ├── HelloWorldHtml/     HTML plugin example
+│   └── SystemCleaner/      Native plugin with UI
+└── docs/
+    └── html-plugin-spec.md HTML plugin development specification
+```
+
+## Plugin Development
+
+SideDesk supports two plugin modes:
+
+| Mode | Format | Runtime |
+|------|--------|---------|  
+| Native | .NET DLL implementing `ISideDeskPlugin` | In-process (AssemblyLoadContext) |
+| HTML | Static HTML/CSS/JS with `plugin.json` manifest | WebView2 sandbox (isolated origin) |
+
+See [docs/html-plugin-spec.md](docs/html-plugin-spec.md) for the full HTML plugin specification.
+
+Example plugins are in the `plugins/` directory.
+
+## Configuration
+
+Backend API endpoints are defined in `Constants.cs` and selected at build time via the `ApiRegion` property. To use your own backend:
+
+1. Modify the URLs in `Constants.cs`
+2. Build with your preferred region flag
+
+## License
+
+See [LICENSE](LICENSE).
