@@ -2,6 +2,8 @@
 
 A Windows desktop sidebar utility built with WPF (.NET 10). It provides a persistent AppBar sidebar with sticky notes, todos, data dashboards, AI assistant, cloud drive integration, and a dual-mode plugin system (native DLL + HTML/WebView2).
 
+To get Mac version please visit: https://github.com/sidestai/sidedesk-mac
+
 ## Features
 
 - **Persistent Sidebar** — Windows AppBar that stays on screen edge, supports multi-monitor and per-monitor DPI
